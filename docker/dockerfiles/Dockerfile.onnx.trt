@@ -1,0 +1,45 @@
+FROM roboflow/roboflow-inference-server-trt-base:latest
+
+WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.waf.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip install --upgrade pip  && pip install \
+    -r _requirements.txt \
+    -r requirements.sam.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    -r requirements.waf.txt \
+    --upgrade
+
+RUN pip uninstall pillow -y && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd
+
+RUN conda install -c anaconda libstdcxx-ng
+
+WORKDIR /app/
+COPY inference inference
+COPY docker/config/trt_http.py trt_http.py
+
+ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
+ENV REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider
+ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
+ENV CORE_MODEL_SAM_ENABLED=False
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+
+ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

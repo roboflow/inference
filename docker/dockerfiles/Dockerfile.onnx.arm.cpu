@@ -1,0 +1,45 @@
+FROM arm64v8/python:3.8-slim-bullseye
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update -y && apt install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    gdal-bin \
+    libgdal-dev \
+    python3-pip \
+    curl \
+    libopenblas-dev \
+    libprotobuf-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libffi-dev \
+    git
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.cpu.txt \
+    requirements/requirements.http.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.sam.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    -r requirements.cpu.txt \
+    --upgrade
+
+COPY inference inference
+COPY docker/config/cpu_http.py cpu_http.py
+
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+
+ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

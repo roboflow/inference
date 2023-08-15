@@ -1,0 +1,1 @@
+docker/publish/deploy_docker_image.sh roboflow/roboflow-inference-server-udp-gpu docker/dockerfiles/Dockerfile.onnx.udp.gpu

@@ -1,0 +1,44 @@
+FROM public.ecr.aws/lambda/python:3.10
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN yum update -y && yum install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6  \
+    python3-pip \
+    git \
+    zlib-devel \
+    libjpeg-devel \
+    gcc \
+    mesa-libGL \
+    && yum clean all
+
+COPY requirements/requirements.clip.txt \
+    requirements/requirements.cpu.txt \
+    requirements/requirements.http.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN /var/lang/bin/python3.10 -m pip install --upgrade pip
+RUN pip3 install certifi==2022.12.07 setuptools==65.5.1 --target "${LAMBDA_TASK_ROOT}"
+RUN pip3 install \
+    -r _requirements.txt \
+    -r requirements.clip.txt \
+    -r requirements.cpu.txt \
+    -r requirements.http.txt \
+    mangum \
+    --upgrade --target "${LAMBDA_TASK_ROOT}"
+
+RUN pip3 uninstall pillow -y && pip3 install --upgrade pip && CC="cc -mavx2" pip3 install -U --force-reinstall --compile pillow-simd
+
+COPY inference ${LAMBDA_TASK_ROOT}/inference
+COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
+
+ENV LAMBDA=True
+ENV CORE_MODEL_SAM_ENABLED=False
+ENV ALLOW_NUMPY_INPUT=False
+
+CMD [ "lambda.handler" ]

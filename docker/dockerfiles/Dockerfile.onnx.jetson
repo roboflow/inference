@@ -1,0 +1,57 @@
+FROM nvcr.io/nvidia/l4t-ml:r32.5.0-py3
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LANG en_US.UTF-8 
+
+RUN apt-get update -y && apt-get install -y \
+    lshw \
+    git \
+    python3-pip \
+    python3-matplotlib \
+    gfortran \
+    build-essential \
+    libatlas-base-dev \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    wget \
+    python3-shapely \
+    gdal-bin \
+    libgdal-dev
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.http.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --ignore-installed PyYAML
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.sam.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    --upgrade
+
+RUN pip3 uninstall --yes onnxruntime
+RUN wget https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.whl -O onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
+RUN pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
+
+WORKDIR /app/
+COPY inference inference
+COPY docker/config/trt_http.py trt_http.py
+
+ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
+ENV REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider
+ENV PROJECT=roboflow-platform
+ENV ORT_TENSORRT_FP16_ENABLE=1
+ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
+ENV CORE_MODEL_SAM_ENABLED=False
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV OPENBLAS_CORETYPE=ARMV8 
+
+ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

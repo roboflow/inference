@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+title: Roboflow Inference Server
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Robfolow
+    email: support@roboflow.com
+repository-code: 'https://github.com/roboflow/inference-server'
+url: 'https://roboflow.com'
+abstract: >-
+  An opinionated, easy-to-use inference server for use with
+  computer vision models.
+keywords:
+  - computer vision
+  - inference
+license: Apache-2.0
