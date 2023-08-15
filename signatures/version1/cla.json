@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "onuralpszr",
+      "id": 1688848,
+      "comment_id": 1679685536,
+      "created_at": "2023-08-15T22:08:17Z",
+      "repoId": 673010778,
+      "pullRequestNo": 1
+    }
+  ]
 }
