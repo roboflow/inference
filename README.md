@@ -72,7 +72,7 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 - Run on arm64 CPU:
 
 ```bash
-docker run --net=host roboflow/roboflow-inference-server-arm-cpu:latest
+docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
   
 - Run on Nvidia GPU with TensorRT Runtime:
