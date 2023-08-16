@@ -165,17 +165,3 @@ Before a new release is published, a new version of the documentation should be 
 ```bash
 mike deploy <version-number>
 ```
-
-## Initial Benchmark Speed Results 📈
-
-The Roboflow team has run initial benchmarks on the inference server. Our results are below.
-
-### Legacy TRT 
-
-- Node Benchmark: 50FPS (36 frames in 0.72s)
-- Python Benchmark: 22FPS (93FPS internal)
-
-### ONNX TRT
-
-- Node Benchmark: 63FPS (36 frames in 0.57s)
-- Python Benchmark: 27FPS (53FPS internal)
