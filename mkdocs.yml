@@ -52,6 +52,7 @@ nav:
     - Interfaces:
       - Base Interface: library/interfaces/base.md
       - HTTP Interface: library/interfaces/http.md
+      - UDP Stream Interface: library/interfaces/udp.md
   - Add a Model: add_a_model.md
   - Contributing: contributing.md
   - Changelog: changelog.md
