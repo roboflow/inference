@@ -2,7 +2,7 @@ name: Test WorkFlow
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
 
 jobs:
   build:
