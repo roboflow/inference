@@ -1,7 +1,4 @@
-import glob
 import json
-import os
-import signal
 import socket
 import sys
 import threading
@@ -25,10 +22,6 @@ from inference.core.env import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
-from inference.core.interfaces.videoWriter.videoWriter import (
-    ResultHelper,
-    RTSPFrameRecorder,
-)
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.version import __version__
