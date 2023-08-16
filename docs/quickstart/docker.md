@@ -69,7 +69,7 @@ Server in a container.
 
     === "arm64 CPU"
         ```
-        docker run --net=host \
+        docker run -p 9001:9001 \
         roboflow/roboflow-inference-server-arm-cpu:latest
         ```
 
