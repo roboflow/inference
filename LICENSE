@@ -1,1 +1,3 @@
-LICENSE.core (Apache 2.0) applies to all files in this repository, except for files in or under any directory that contains a superseding license file.
+LICENSE.core (Apache 2.0) applies to all files in this repository
+except for files in or under any directory that contains a superseding
+license file (such as the models located in `inference/models/`).
