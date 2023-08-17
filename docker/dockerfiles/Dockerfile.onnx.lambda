@@ -42,5 +42,6 @@ COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 ENV LAMBDA=True
 ENV CORE_MODEL_SAM_ENABLED=False
 ENV ALLOW_NUMPY_INPUT=False
+WORKDIR ${LAMBDA_TASK_ROOT}
 
 CMD [ "lambda.handler" ]
