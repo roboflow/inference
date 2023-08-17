@@ -10,7 +10,6 @@ jobs:
     strategy:
       matrix:
         python-version: [3.8]
-        package-id: ["", "cpu", "gpu", "core"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v3
@@ -23,6 +22,9 @@ jobs:
           ln -s .release/pypi/inference.core.setup.py setup.py
           python -m pip install --upgrade pip
           pip install ".[dev]"
+      - name: 🛞 Create Wheels to PyPi
+        run: |
+          make create_wheels
       - name: 🚀 Publish to PyPi
         run: |
-          echo "Publishing to PyPi ${{ matrix.package-id }}"
+          make upload_wheels
