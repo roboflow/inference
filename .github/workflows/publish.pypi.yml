@@ -21,8 +21,8 @@ jobs:
         run: |
           ln -s .release/pypi/inference.core.setup.py setup.py
           python -m pip install --upgrade pip
-          pip install ".[dev]"
-      - name: 🛞 Create Wheels to PyPi
+          pip install ".[dev]" wheel
+      - name: 🛞 Create Wheels
         run: |
           make create_wheels
       - name: 🚀 Publish to PyPi
