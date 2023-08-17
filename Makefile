@@ -19,3 +19,13 @@ start_test_docker:
 	docker build -t roboflow/$(INFERENCE_SERVER_REPO) -f docker/dockerfiles/$(DOCKERFILE) .
 	docker rm -f $(INFERENCE_SERVER_REPO)
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) --name $(INFERENCE_SERVER_REPO) roboflow/$(INFERENCE_SERVER_REPO)
+
+create_wheels:
+	rm -f dist/*
+	python .release/pypi/inference.core.setup.py bdist_wheel
+	python .release/pypi/inference.cpu.setup.py bdist_wheel
+	python .release/pypi/inference.gpu.setup.py bdist_wheel
+	python .release/pypi/inference.setup.py bdist_wheel
+
+upload_wheels:
+	twine upload dist/*.whl
