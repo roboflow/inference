@@ -23,9 +23,12 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.waf.txt \
-    --upgrade
+    --upgrade \
+    && rm -rf ~/.cache/pip
 
-RUN pip uninstall pillow -y && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd
+RUN pip uninstall pillow -y \
+    && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd \
+    && rm -rf ~/.cache/pip
 
 RUN conda install -c anaconda libstdcxx-ng
 

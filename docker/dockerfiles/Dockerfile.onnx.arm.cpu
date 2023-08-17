@@ -32,7 +32,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.cpu.txt \
-    --upgrade
+    --upgrade \
+    && rm -rf ~/.cache/pip
 
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py

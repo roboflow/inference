@@ -29,9 +29,12 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
     -r requirements.waf.txt \
-    --upgrade
+    --upgrade \
+    && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall pillow -y && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd
+RUN pip3 uninstall pillow -y \
+    && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd \
+    && rm -rf ~/.cache/pip
 
 
 COPY inference inference
