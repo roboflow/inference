@@ -1,4 +1,4 @@
-![Roboflow Inference banner](banner.png)
+![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
 ## 👋 hello
 
