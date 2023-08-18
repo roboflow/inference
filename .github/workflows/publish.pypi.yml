@@ -1,8 +1,11 @@
-name: Publish WorkFlow
+name: Publish Wheels to PyPi
 
 on:
   release:
     types: [created]
+  push:
+    branches:
+      - fix/actions-fix
 
 jobs:
   build:
@@ -26,5 +29,4 @@ jobs:
         run: |
           make create_wheels
       - name: 🚀 Publish to PyPi
-        run: |
-          make upload_wheels
+        uses: pypa/gh-action-pypi-publish@release/v1

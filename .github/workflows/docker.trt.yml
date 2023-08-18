@@ -3,6 +3,9 @@ name: Build and Push TRT Container
 on:
   release:
     types: [created]
+  push:
+    branches:
+      - fix/actions-fix
 
 env:
   VERSION: '0.0.0' # Default version, will be overwritten
@@ -11,6 +14,10 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
+      - name: Remove unnecessary files
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v2
