@@ -1,4 +1,4 @@
-name: Build and Push CPU Container
+name: Build and Push Jetson 5.X Container
 
 on:
   release:
@@ -34,8 +34,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache,mode=max
-          platforms: linux/amd64,linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.cpu
+          tags: roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest,roboflow/roboflow-inference-server-trt-jetson-5.1.1:${{ env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson-5.1.1:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson-5.1.1:cache,mode=max
+          platforms: linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1

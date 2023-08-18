@@ -26,8 +26,6 @@ jobs:
       - 
         name: 🛎️ Checkout
         uses: actions/checkout@v3
-        with:
-          ref: "d12a872e11d1c24d9b3de27c4494724c0e702790"
       -
         name: Read version from file
         run: echo "VERSION=$(python ./inference/core/version.py)" >> $GITHUB_ENV
