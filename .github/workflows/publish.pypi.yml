@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - fix/actions-fix
+      
+permissions:
+  id-token: write
 
 jobs:
   build:
