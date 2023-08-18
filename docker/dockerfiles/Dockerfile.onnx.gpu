@@ -2,7 +2,7 @@ FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
 
 WORKDIR /app
 
-RUN apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ffmpeg \
     libxext6 \
     libopencv-dev \

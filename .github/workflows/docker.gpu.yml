@@ -1,4 +1,4 @@
-name: Build and Push CPU Container
+name: Build and Push GPU Container
 
 on:
   release:
@@ -36,8 +36,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache,mode=max
-          platforms: linux/amd64,linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.cpu
+          tags: roboflow/roboflow-inference-server-gpu:latest,roboflow/roboflow-inference-server-gpu:${{ env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache,mode=max
+          platforms: linux/amd64
+          file: ./docker/dockerfiles/Dockerfile.onnx.gpu
