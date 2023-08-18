@@ -19,6 +19,7 @@ RUN yum update -y && yum install -y \
 COPY requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
+    requirements/requirements.hosted.txt \
     requirements/_requirements.txt \
     ./
 
@@ -30,6 +31,7 @@ RUN pip3 install \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
+    -r requirements.hosted.txt \
     mangum \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
@@ -46,5 +48,6 @@ COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 ENV LAMBDA=True
 ENV CORE_MODEL_SAM_ENABLED=False
 ENV ALLOW_NUMPY_INPUT=False
+WORKDIR ${LAMBDA_TASK_ROOT}
 
 CMD [ "lambda.handler" ]
