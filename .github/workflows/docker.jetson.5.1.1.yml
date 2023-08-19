@@ -3,9 +3,6 @@ name: Build and Push Jetson 5.X Container
 on:
   release:
     types: [created]
-  push:
-    branches:
-      - fix/actions-fix
 
 env:
   VERSION: '0.0.0' # Default version, will be overwritten

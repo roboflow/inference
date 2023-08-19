@@ -3,9 +3,6 @@ name: Publish Wheels to PyPi
 on:
   release:
     types: [created]
-  push:
-    branches:
-      - fix/actions-fix
       
 permissions:
   id-token: write
