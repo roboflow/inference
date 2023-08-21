@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.env import CLIP_VERSION_ID, SAM_VERSION_ID
+from inference.core.env import CLIP_VERSION_ID, SAM_VERSION_ID, GAZE_VERSION_ID
 
 # This file defines the pydantic data models used internally throughout the inference server API. Descriptions are included in many cases for the purpose of auto generated docs.
 
@@ -374,6 +374,20 @@ class Point(BaseModel):
     y: float = Field(description="The y-axis pixel coordinate of the point")
 
 
+class Point3D(BaseModel):
+    """Point coordinates.
+
+    Attributes:
+        x (float): The x-axis pixel coordinate of the point.
+        y (float): The y-axis pixel coordinate of the point.
+        z (float): The z-axis pixel coordinate of the point.
+    """
+
+    x: float = Field(description="The x-axis pixel coordinate of the point")
+    y: float = Field(description="The y-axis pixel coordinate of the point")
+    z: float = Field(description="The z-axis pixel coordinate of the point")
+
+
 class InstanceSegmentationPrediction(BaseModel):
     """Instance Segmentation prediction.
 
@@ -699,3 +713,92 @@ class SamSegmentationResponse(BaseModel):
     time: float = Field(
         description="The time in seconds it took to produce the segmentation including preprocessing"
     )
+
+
+class FaceDetectionPrediction(BaseModel):
+    """Face Detection prediction.
+
+    Attributes:
+        x (float): The center x-axis pixel coordinate of the prediction.
+        y (float): The center y-axis pixel coordinate of the prediction.
+        width (float): The width of the prediction bounding box in number of pixels.
+        height (float): The height of the prediction bounding box in number of pixels.
+        confidence (float): The detection confidence as a fraction between 0 and 1.
+        class_name (str): fixed value "face".
+        landmarks (Union[List[Point], List[Point3D]]): The detected face landmarks.
+    """
+
+    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
+    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
+    width: float = Field(
+        description="The width of the prediction bounding box in number of pixels"
+    )
+    height: float = Field(
+        description="The height of the prediction bounding box in number of pixels"
+    )
+    confidence: float = Field(
+        description="The detection confidence as a fraction between 0 and 1"
+    )
+    class_name: str = Field(alias="class", default="face", description="The predicted class label")
+
+    landmarks: Union[List[Point], List[Point3D]]
+
+
+class GazeDetectionPrediction(BaseModel):
+    """Gaze Detection prediction.
+
+    Attributes:
+        face (FaceDetectionPrediction): The face prediction.
+        pitch (float): Pitch (degree) of the detected face.
+        yaw (float): Yaw (degree) of the detected face.
+    """
+
+    face: FaceDetectionPrediction
+
+    pitch: float = Field(description="Pitch (degree) of the detected face")
+    yaw: float = Field(description="Yaw (degree) of the detected face")
+
+
+class GazeDetectionInferenceRequest(BaseModel):
+    """Request for gaze detection inference.
+
+    Attributes:
+        api_key (Optional[str]): Roboflow API Key.
+        gaze_version_id (Optional[str]): The version ID of Gaze to be used for this request.
+        is_cropped_face_image (Optional[bool]): If false, face detection will be applied; if true, face detection will be ignored and the whole input image will be used for gaze detection.
+        image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
+    """
+
+    api_key: Optional[str] = ApiKey
+    gaze_version_id: Optional[str] = Field(
+        default=GAZE_VERSION_ID,
+        example="l2cs",
+        description="The version ID of Gaze to be used for this request. Must be one of l2cs.",
+    )
+
+    is_cropped_face_image: Optional[bool] = Field(
+        default=False,
+        example=False,
+        description="If false, face detection will be applied; if true, face detection will be ignored and the whole input image will be used for gaze detection",
+    )
+
+    image: Union[List[InferenceRequestImage], InferenceRequestImage]
+
+
+class GazeDetectionInferenceResponse(BaseModel):
+    """Response for gaze detection inference.
+
+    Attributes:
+        predictions (List[GazeDetectionPrediction]): List of gaze detection predictions.
+        time_total (float): The total processing time (second).
+        time_load_img (float): The processing time for loading image (second).
+        time_face_det (float): The processing time for face detection (second).
+        time_gaze_det (float): The processing time for gaze detection (second).
+    """
+
+    predictions: List[GazeDetectionPrediction]
+
+    time_total: float = Field(description="The total processing time (second)")
+    time_load_img: float = Field(description="The processing time for loading image (second)")
+    time_face_det: float = Field(description="The processing time for face detection (second)")
+    time_gaze_det: float = Field(description="The processing time for gaze detection (second)")

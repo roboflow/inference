@@ -81,6 +81,15 @@ CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 # CLIP model ID
 CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
+# Gaze version ID, default is "L2CS"
+GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
+
+# Gaze model ID
+GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+
+# Maximum batch size for GAZE, default is 8
+GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
+
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 
@@ -98,6 +107,9 @@ CORE_MODEL_CLIP_ENABLED = bool_env(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
+
+# Flag to enable GAZE core model, default is True
+CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
 # Device ID, default is "sample-device-id"
 DEVICE_ID = os.getenv("DEVICE_ID", "sample-device-id")

@@ -14,6 +14,7 @@ from inference.core.env import (
     CLIP_MODEL_ID,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_GAZE_ENABLED,
     CORE_MODELS_ENABLED,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -278,6 +279,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The SAM model ID.
+        """
+
+        load_gaze_model = partial(load_core_model, core_model="gaze")
+        """Loads the GAZE model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The GAZE model ID.
         """
 
         @app.get(
@@ -650,6 +662,45 @@ class HttpInterface(BaseInterface):
                             headers={"Content-Type": "application/octet-stream"},
                         )
                     return model_response
+
+                if CORE_MODEL_GAZE_ENABLED:
+
+                    @app.post(
+                        "/gaze/gaze_detection",
+                        response_model=List[M.GazeDetectionInferenceResponse],
+                        summary="Gaze Detection",
+                        description="Run the gaze detection model to detect gaze.",
+                    )
+                    @with_route_exceptions
+                    async def gaze_detection(
+                            inference_request: M.GazeDetectionInferenceRequest,
+                            api_key: Optional[str] = Query(
+                                None,
+                                description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                            ),
+                            request: Request = Body(),
+                    ):
+                        """
+                        Detect gaze using the gaze detection model.
+
+                        Args:
+                            inference_request (M.GazeDetectionRequest): The request containing the image to be detected.
+                            api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                            request (Request, default Body()): The HTTP request.
+
+                        Returns:
+                            M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
+                        """
+                        gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
+                        response = self.model_manager.infer(
+                            gaze_model_id, inference_request
+                        )
+                        if LAMBDA:
+                            actor = request.scope["aws.event"]["requestContext"][
+                                "authorizer"
+                            ]["lambda"]["actor"]
+                            trackUsage(gaze_model_id, actor)
+                        return response
 
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatability
