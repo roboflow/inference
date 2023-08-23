@@ -4,19 +4,34 @@
 
 [Roboflow](https://roboflow.com) Inference is an opinionated tool for running inference on state-of-the-art computer vision models. With no prior knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments.
 
-Inference provides a Python library and Docker interface. Using the Docker interface, you can scale up your inference as needed.
-
-
-### 📌 Install pip vs Docker:
-
-- **pip**: Installs `inference` into your Python environment. Lightweight, good for Python-centric projects.
-- **Docker**: Packages `inference` with its environment. Ensures consistency across setups; ideal for scalable deployments.
-
 ## 🎥  Inference in action
 
 Check out Inference running on a video of a football game:
 
 https://github.com/roboflow/inference/assets/37276661/05512458-8424-4ddd-b214-57204b278528
+
+## 💻 Why Inference?
+
+Inference provides a scalable method through which you can manage inferences for your vision projects.
+
+Inference is backed by:
+
+* A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
+
+* Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
+
+* Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
+
+* A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
+
+* Data management integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
+
+And more!
+
+### 📌 Install pip vs Docker:
+
+- **pip**: Installs `inference` into your Python environment. Lightweight, good for Python-centric projects.
+- **Docker**: Packages `inference` with its environment. Ensures consistency across setups; ideal for scalable deployments.
 
 ## 💻 install
 
@@ -53,7 +68,6 @@ Example install with http dependancies:
 ```bash
 pip install inference[http]
 ```
-
 
 ## 🐋 docker
 
