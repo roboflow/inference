@@ -12,6 +12,11 @@ Inference provides a Python library and Docker interface. Using the Docker inter
 - **pip**: Installs `inference` into your Python environment. Lightweight, good for Python-centric projects.
 - **Docker**: Packages `inference` with its environment. Ensures consistency across setups; ideal for scalable deployments.
 
+## 🎥  Inference in action
+
+Check out Inference running on a video of a football game:
+
+https://github.com/roboflow/inference/assets/37276661/05512458-8424-4ddd-b214-57204b278528
 
 ## 💻 install
 
