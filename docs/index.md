@@ -79,21 +79,21 @@ You can also run any model hosted on Roboflow using the Inference.
 
 ### Classification
 
-- [ViT](https://inference.roboflow.com/models/classification/vit)
-- [YOLOv8](https://inference.roboflow.com/models/classification/yolov8)
-- [CLIP](https://inference.roboflow.com/models/classification/clip)
+- [ViT](https://inference.roboflow.com/library/models/vit_classification)
+- [YOLOv8](https://inference.roboflow.com/library/models/yolov8_classification/)
+- [CLIP](https://inference.roboflow.com/library/models/clip/)
 
 ### Object Detection
 
-- [YOLOv5](https://inference.roboflow.com/models/object-detection/yolov5)
-- [YOLOv8](https://inference.roboflow.com/models/object-detection/yolov8)
+- [YOLOv5](https://inference.roboflow.com/library/models/yolov5/)
+- [YOLOv8](https://inference.roboflow.com/library/models/yolov8/)
 
 ### Segmentation
 
-- [YOLOv7](https://inference.roboflow.com/models/segmentation/yolov7)
+- [YOLOv7](https://inference.roboflow.com/library/models/yolov7_instance_segmentation/)
 - [YOLOv8](https://inference.roboflow.com/models/segmentation/yolov8)
 - [YOLOACT](https://inference.roboflow.com/models/segmentation/yoloact)
-- [Segment Anything](https://inference.roboflow.com/models/segmentation/segment-anything)
+- [Segment Anything](https://inference.roboflow.com/library/models/segment_anything/)
 
 ## Environment Variable Control 🌐
 
