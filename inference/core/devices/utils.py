@@ -1,102 +1,82 @@
-import logging
-import subprocess
+import socket
+import platform
+import os
 
-logging.basicConfig(level=logging.WARNING)
-
-
-class CommandExecutionError(Exception):
-    """Raised when there's a failure in command execution."""
-
-    pass
+from inference.core.env import DEVICE_ID
 
 
-class SerialNumberNotFoundError(Exception):
-    """Raised when the Serial Number is not found."""
-
-    pass
+def is_running_in_docker():
+    return os.path.exists("/.dockerenv")
 
 
-def get_trt_device_id():
-    """Return the TRT device ID for the current host device by trying several methods.
-
-    Tries different methods to get the TRT device ID.
-
-    Returns:
-        str: The TRT device ID.
-    """
+def get_gpu_id():
     try:
-        return get_tegra_serial()
-    except SerialNumberNotFoundError as e:
-        logging.warning(f"Failed to retrieve Tegra serial number: {e}")
+        import GPUtil
 
-    try:
-        return get_gpu_serial_num()
-    except SerialNumberNotFoundError as e:
-        logging.warning(f"Failed to retrieve GPU serial number: {e}")
-
-    return get_gpu_serial_num_uid()
-
-
-def run_command(cmd):
-    """Executes a shell command and returns the output.
-
-    Args:
-        cmd (list): A command to execute.
-
-    Returns:
-        str: Output of the command execution.
-
-    Raises:
-        CommandExecutionError: If the command execution fails.
-    """
-    try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
-        return result.stdout.decode("utf-8")
+        GPUs = GPUtil.getGPUs()
+        if GPUs:
+            return GPUs[0].id
+    except ImportError:
+        return None
     except Exception as e:
-        raise CommandExecutionError(f"Failed to execute command {cmd}: {e}")
+        return None
 
 
-def parse_output(stdout, keyword):
-    """Parses the output for a specific keyword.
+def get_cpu_id():
+    try:
+        if platform.system() == "Windows":
+            return os.popen("wmic cpu get ProcessorId").read().strip()
+        elif platform.system() == "Linux":
+            return (
+                open("/proc/cpuinfo").read().split("processor")[0].split(":")[1].strip()
+            )
+        elif platform.system() == "Darwin":
+            import subprocess
 
-    Args:
-        stdout (str): The output to parse.
-        keyword (str): The keyword to search for.
-
-    Returns:
-        str: The value following the keyword.
-
-    Raises:
-        SerialNumberNotFoundError: If the keyword is not found in the output.
-    """
-    for line in stdout.split("\n"):
-        if keyword in line:
-            return line.split(": ")[1]
-    raise SerialNumberNotFoundError(f"'{keyword}' not found in command output.")
-
-
-def get_gpu_serial_num():
-    """Gets the GPU serial number for the first GPU of the current host.
-
-    Returns:
-        str: The GPU serial number.
-    """
-    return parse_output(run_command(["nvidia-smi", "-q"]), "Serial Number")
+            return (
+                subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+                .strip()
+                .decode()
+            )
+    except Exception as e:
+        return None
 
 
-def get_gpu_serial_num_uid():
-    """Returns the GPU UUID for the first GPU of the current host.
+def get_jetson_id():
+    try:
+        # Fetch the device's serial number
+        serial_number = os.popen("cat /proc/device-tree/serial-number").read().strip()
+        return serial_number
+    except Exception as e:
+        return None
 
-    Returns:
-        str: The GPU UUID.
-    """
-    return parse_output(run_command(["nvidia-smi", "-q"]), "GPU UUID")
 
+def get_device_id():
+    try:
+        if DEVICE_ID is not None:
+            return DEVICE_ID
+        id = get_gpu_id()
+        if id is not None:
+            return f"GPU-{id}"
 
-def get_tegra_serial():
-    """Returns the Tegra serial number for the first GPU of the current host.
+        id = get_cpu_id()
+        if id is not None:
+            return f"CPU-{id}"
 
-    Returns:
-        str: The Tegra serial number.
-    """
-    return parse_output(run_command(["lshw"]), "serial:")
+        # Fallback to hostname
+        hostname = socket.gethostname()
+
+        if is_running_in_docker():
+            # Append Docker container ID to the hostname
+            container_id = (
+                os.popen(
+                    "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
+                )
+                .read()
+                .strip()
+            )
+            hostname = f"{hostname}-DOCKER-{container_id}"
+
+        return hostname
+    except Exception as e:
+        return "UNKNOWN"

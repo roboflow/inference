@@ -1,3 +1,3 @@
 # Segment Anything
 
-:::inference.models.sam.segment_anything.SegmentAnythingRoboflowCoreModel
+:::inference.models.sam.segment_anything.SegmentAnything

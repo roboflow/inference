@@ -1,11 +1,10 @@
 from time import perf_counter
-from typing import List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 
 from inference.core.data_models import (
     InferenceResponseImage,
-    InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
@@ -20,7 +19,6 @@ from inference.core.utils.postprocess import (
     process_mask_accurate,
     process_mask_fast,
     process_mask_tradeoff,
-    scale_boxes,
     scale_polys,
 )
 
@@ -35,10 +33,20 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
     """
 
     def infer(
-        self, request: InstanceSegmentationInferenceRequest
+        self,
+        image: Any,
+        class_agnostic_nms: bool = False,
+        confidence: float = 0.5,
+        iou_threshold: float = 0.5,
+        mask_decode_mode: str = "accurate",
+        max_candidates: int = 3000,
+        max_detections: int = 300,
+        return_image_dims: bool = False,
+        tradeoff_factor: float = 0.5,
+        *args,
+        **kwargs,
     ) -> Union[
-        List[InstanceSegmentationInferenceResponse],
-        InstanceSegmentationInferenceResponse,
+        List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]
     ]:
         """Takes an instance segmentation inference request, preprocesses all images, runs inference on all images, and returns the postprocessed detections in the form of inference response objects.
 
@@ -50,13 +58,13 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         """
         t1 = perf_counter()
 
-        if isinstance(request.image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in request.image]
+        if isinstance(image, list):
+            imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
             unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(request.image)
+            img_in, img_dims = self.preproc_image(image)
             img_dims = [img_dims]
             unwrap = True
 
@@ -64,11 +72,11 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         predictions, protos = self.infer_onnx(img_in)
         predictions = w_np_non_max_suppression(
             predictions,
-            conf_thresh=request.confidence,
-            iou_thresh=request.iou_threshold,
-            class_agnostic=request.class_agnostic_nms,
-            max_detections=request.max_detections,
-            max_candidate_detections=request.max_candidates,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
+            class_agnostic=class_agnostic_nms,
+            max_detections=max_detections,
+            max_candidate_detections=max_candidates,
             num_masks=32,
         )
         infer_shape = (self.img_size_w, self.img_size_h)
@@ -78,32 +86,32 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
             for i, (pred, proto, img_dim) in enumerate(
                 zip(predictions, protos, img_dims)
             ):
-                if request.mask_decode_mode == "accurate":
+                if mask_decode_mode == "accurate":
                     batch_masks = process_mask_accurate(
                         proto, pred[:, 7:], pred[:, :4], img_in.shape[2:]
                     )
                     output_mask_shape = img_in.shape[2:]
-                elif request.mask_decode_mode == "tradeoff":
-                    if not 0 <= request.tradeoff_factor <= 1:
+                elif mask_decode_mode == "tradeoff":
+                    if not 0 <= tradeoff_factor <= 1:
                         raise InvalidMaskDecodeArgument(
-                            f"Invalid tradeoff_factor: {request.tradeoff_factor}. Must be in [0.0, 1.0]"
+                            f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
                         )
                     batch_masks = process_mask_tradeoff(
                         proto,
                         pred[:, 7:],
                         pred[:, :4],
                         img_in.shape[2:],
-                        request.tradeoff_factor,
+                        tradeoff_factor,
                     )
                     output_mask_shape = batch_masks.shape[1:]
-                elif request.mask_decode_mode == "fast":
+                elif mask_decode_mode == "fast":
                     batch_masks = process_mask_fast(
                         proto, pred[:, 7:], pred[:, :4], img_in.shape[2:]
                     )
                     output_mask_shape = batch_masks.shape[1:]
                 else:
                     raise InvalidMaskDecodeArgument(
-                        f"Invalid mask_decode_mode: {request.mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
+                        f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                     )
                 polys = mask2poly(batch_masks)
                 pred[:, :4] = postprocess_predictions(
@@ -123,6 +131,21 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                 masks.append(polys)
         else:
             masks.append([])
+        if return_image_dims:
+            return predictions, masks, img_dims
+        else:
+            return predictions, masks
+
+    def make_response(
+        self,
+        predictions: List[List[List[float]]],
+        masks: List[List[List[float]]],
+        img_dims: List[Tuple[int, int]],
+        class_filter: List[str] = [],
+    ) -> Union[
+        InstanceSegmentationInferenceResponse,
+        List[InstanceSegmentationInferenceResponse],
+    ]:
         responses = [
             InstanceSegmentationInferenceResponse(
                 predictions=[
@@ -139,10 +162,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                         }
                     )
                     for pred, mask in zip(batch_predictions, batch_masks)
-                    if not request.class_filter
-                    or self.class_names[int(pred[6])] in request.class_filter
+                    if not class_filter
+                    or self.class_names[int(pred[6])] in class_filter
                 ],
-                time=perf_counter() - t1,
                 image=InferenceResponseImage(
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
@@ -151,11 +173,6 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                 zip(predictions, masks)
             )
         ]
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self.draw_predictions(request, response)
-        if unwrap:
-            responses = responses[0]
         return responses
 
     def infer_onnx(self, img_in: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

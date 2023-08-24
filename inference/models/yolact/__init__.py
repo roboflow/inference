@@ -1,0 +1,1 @@
+from inference.models.yolact.yolact_instance_segmentation import YOLACT

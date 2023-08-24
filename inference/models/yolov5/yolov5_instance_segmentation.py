@@ -7,9 +7,7 @@ from inference.core.models.instance_segmentation_base import (
 )
 
 
-class YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel(
-    InstanceSegmentationBaseOnnxRoboflowInferenceModel
-):
+class YOLOv5InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceModel):
     """YOLOv5 Instance Segmentation ONNX Inference Model.
 
     This class is responsible for performing instance segmentation using the YOLOv5 model

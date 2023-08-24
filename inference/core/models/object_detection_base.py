@@ -1,11 +1,10 @@
 from time import perf_counter
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
 from inference.core.data_models import (
     InferenceResponseImage,
-    ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
@@ -22,7 +21,17 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
     def infer(
-        self, request: ObjectDetectionInferenceRequest
+        self,
+        image: Any,
+        class_agnostic_nms: bool = False,
+        confidence: float = 0.5,
+        iou_threshold: float = 0.5,
+        fix_batch_size: bool = False,
+        max_candidates: int = 3000,
+        max_detections: int = 300,
+        return_image_dims: bool = False,
+        *args,
+        **kwargs,
     ) -> Union[
         List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
     ]:
@@ -38,28 +47,27 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
             ValueError: If batching is not enabled for the model and more than one image is passed in the request.
         """
         t1 = perf_counter()
-        batch_size = len(request.image) if isinstance(request.image, list) else 1
+        batch_size = len(image) if isinstance(image, list) else 1
         if not self.batching_enabled and batch_size > 1:
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
-        img_in, img_dims = self.preprocess(request)
+        img_in, img_dims = self.preprocess(image, fix_batch_size=fix_batch_size)
         predictions = self.predict(img_in)
         predictions = predictions[:batch_size]
-        request_dict = request.dict()
-        predictions = self.postprocess(predictions, img_dims, **request_dict)
-        responses = self.make_response(predictions, img_dims, **request_dict)
-        for response in responses:
-            response.time = perf_counter() - t1
-
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self.draw_predictions(request, response)
-
-        if self.unwrap:
-            responses = responses[0]
-
-        return responses
+        predictions = self.postprocess(
+            predictions,
+            img_dims,
+            class_agnostic_nms=class_agnostic_nms,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_candidates=max_candidates,
+            max_detections=max_detections,
+        )
+        if return_image_dims:
+            return predictions, img_dims
+        else:
+            return predictions
 
     def make_response(
         self,
@@ -118,7 +126,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         max_detections: int = 300,
         *args,
         **kwargs,
-    ) -> List[List[float]]:
+    ) -> List[List[List[float]]]:
         """Postprocesses the object detection predictions.
 
         Args:
@@ -163,7 +171,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         raise NotImplementedError
 
     def preprocess(
-        self, request: ObjectDetectionInferenceRequest
+        self, image: Any, fix_batch_size: bool = False, *args, **kwargs
     ) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
         """Preprocesses an object detection inference request.
 
@@ -173,22 +181,20 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             Tuple[np.ndarray, List[Tuple[int, int]]]: Preprocessed image inputs and corresponding dimensions.
         """
-        if isinstance(request.image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in request.image]
+        if isinstance(image, list):
+            imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
-            self.unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(request.image)
+            img_in, img_dims = self.preproc_image(image)
             img_dims = [img_dims]
-            self.unwrap = True
 
         img_in /= 255.0
 
         if self.batching_enabled:
             batch_padding = (
                 MAX_BATCH_SIZE - img_in.shape[0]
-                if FIX_BATCH_SIZE or request.fix_batch_size
+                if FIX_BATCH_SIZE or fix_batch_size
                 else 0
             )
             width_padding = 32 - (img_in.shape[2] % 32)

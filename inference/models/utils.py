@@ -1,137 +1,134 @@
-from inference.models.vit.vit_classification import (
-    VitClassificationOnnxRoboflowInferenceModel,
+from inference.core.registries.roboflow import get_model_type
+from inference.models.vit import (
+    VitClassification,
 )
-from inference.models.yolact.yolact_instance_segmentation import (
-    YOLACTInstanceSegmentationOnnxRoboflowInferenceModel,
+from inference.models.yolact import (
+    YOLACT,
 )
-from inference.models.yolov5.yolov5_instance_segmentation import (
-    YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
+from inference.models.yolov7 import (
+    YOLOv7InstanceSegmentation,
 )
-from inference.models.yolov5.yolov5_object_detection import (
-    YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-)
-from inference.models.yolov7.yolov7_instance_segmentation import (
-    YOLOv7InstanceSegmentationOnnxRoboflowInferenceModel,
-)
-from inference.models.yolov8.yolov8_classification import (
-    YOLOv8ClassificationOnnxRoboflowInferenceModel,
-)
-from inference.models.yolov8.yolov8_instance_segmentation import (
-    YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
-)
-from inference.models.yolov8.yolov8_object_detection import (
-    YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
+from inference.models.yolov8 import (
+    YOLOv8Classification,
+    YOLOv8InstanceSegmentation,
+    YOLOv8ObjectDetection,
 )
 
 ROBOFLOW_MODEL_TYPES = {
-    ("classification", "vit"): VitClassificationOnnxRoboflowInferenceModel,
-    ("classification", "yolov8n"): YOLOv8ClassificationOnnxRoboflowInferenceModel,
-    ("classification", "yolov8s"): YOLOv8ClassificationOnnxRoboflowInferenceModel,
-    ("classification", "yolov8m"): YOLOv8ClassificationOnnxRoboflowInferenceModel,
-    ("classification", "yolov8l"): YOLOv8ClassificationOnnxRoboflowInferenceModel,
-    ("classification", "yolov8x"): YOLOv8ClassificationOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v2s"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v6n"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v6s"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v6m"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v6l"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov5v6x"): YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8s"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8n"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8s"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8m"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8l"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
-    ("object-detection", "yolov8x"): YOLOv8ObjectDetectionOnnxRoboflowInferenceModel,
+    ("classification", "vit"): VitClassification,
+    ("classification", "yolov8n"): YOLOv8Classification,
+    ("classification", "yolov8s"): YOLOv8Classification,
+    ("classification", "yolov8m"): YOLOv8Classification,
+    ("classification", "yolov8l"): YOLOv8Classification,
+    ("classification", "yolov8x"): YOLOv8Classification,
+    ("object-detection", "yolov5"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v2s"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v6n"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v6s"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v6m"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v6l"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov5v6x"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov8"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8s"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8n"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8s"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8m"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
+    ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
     (
         "instance-segmentation",
         "yolov5-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov5n-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov5s-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov5m-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov5l-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov5x-seg",
-    ): YOLOv5InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv5InstanceSegmentation,
     (
         "instance-segmentation",
         "yolact",
-    ): YOLACTInstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLACT,
     (
         "instance-segmentation",
         "yolov7-seg",
-    ): YOLOv7InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv7InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8n",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8s",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8m",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8l",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8x",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8n-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8s-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8m-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8l-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8x-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
         "yolov8-seg",
-    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    ): YOLOv8InstanceSegmentation,
 }
 
 try:
-    from models.sam.segment_anything import SegmentAnythingRoboflowCoreModel
+    from models.sam import SegmentAnything
 
-    ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnythingRoboflowCoreModel
+    ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     pass
 
 try:
-    from inference.models.clip.clip import ClipOnnxRoboflowCoreModel
+    from inference.models.clip import Clip
 
-    ROBOFLOW_MODEL_TYPES[("embed", "clip")] = ClipOnnxRoboflowCoreModel
+    ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
 except:
     pass
+
+
+def get_roboflow_model(model_id, api_key=None, **kwargs):
+    task, model = get_model_type(model_id, api_key=api_key)
+    return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

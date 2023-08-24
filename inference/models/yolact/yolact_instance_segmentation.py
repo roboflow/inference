@@ -22,9 +22,7 @@ from inference.core.utils.postprocess import (
 )
 
 
-class YOLACTInstanceSegmentationOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, InstanceSegmentationMixin
-):
+class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method)"""
 
     @property

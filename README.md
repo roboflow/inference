@@ -149,10 +149,10 @@ After installing via pip, you can run a simple inference using:
 ```python
 from inference.core.data_models import ObjectDetectionInferenceRequest
 from inference.models.yolov5.yolov5_object_detection import (
-    YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
+    YOLOv5ObjectDetection,
 )
 
-model = YOLOv5ObjectDetectionOnnxRoboflowInferenceModel(
+model = YOLOv5ObjectDetection(
     model_id="soccer-players-5fuqs/1", device_id="my-pc", 
     #Replace ROBOFLOW_API_KEY with your Roboflow API Key
     api_key="ROBOFLOW_API_KEY"
@@ -167,7 +167,7 @@ request = ObjectDetectionInferenceRequest(
     iou_threshold=0.5,
 )
 
-results = model.infer(request)
+results = model.infer_with_request(request)
 
 print(results)
 

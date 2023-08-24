@@ -5,7 +5,7 @@ import traceback
 import urllib
 from io import BytesIO
 from time import perf_counter, sleep
-from typing import List, Tuple
+from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -18,6 +18,7 @@ from inference.core.data_models import (
     InferenceRequestImage,
     InferenceResponse,
 )
+from inference.core.devices.utils import get_device_id
 from inference.core.env import (
     API_BASE_URL,
     API_KEY,
@@ -36,7 +37,8 @@ from inference.core.exceptions import (
     OnnxProviderNotAvailable,
     TensorrtRoboflowAPIError,
 )
-from inference.core.models.base import CvModel
+from inference.core.models.base import Model
+from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 
@@ -76,16 +78,12 @@ def get_api_data(api_url):
     return api_data
 
 
-class RoboflowInferenceModel(CvModel):
-    """Base Roboflow inference model.
-
-    Inherits from CvModel since all Roboflow models are CV models currently.
-    """
+class RoboflowInferenceModel(Model):
+    """Base Roboflow inference model."""
 
     def __init__(
         self,
         model_id: str,
-        device_id: str,
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
     ):
@@ -94,7 +92,6 @@ class RoboflowInferenceModel(CvModel):
 
         Args:
             model_id (str): The unique identifier for the model.
-            device_id (str): The device identifier on which the model is deployed.
             cache_dir_root (str, optional): The root directory for the cache. Defaults to MODEL_CACHE_DIR.
             api_key (str, optional): API key for authentication. Defaults to None.
         """
@@ -108,7 +105,7 @@ class RoboflowInferenceModel(CvModel):
 
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
-        self.device_id = device_id
+        self.device_id = get_device_id()
 
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -143,9 +140,7 @@ class RoboflowInferenceModel(CvModel):
         Returns:
             str: A base64 encoded image string
         """
-        image = self.load_image(
-            type=inference_request.image.type, value=inference_request.image.value
-        )
+        image = load_image(inference_request.image)
         image = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB)
 
         for box in inference_response.predictions:
@@ -458,7 +453,7 @@ class RoboflowInferenceModel(CvModel):
         Returns:
             Image.Image: The loaded and preprocessed PIL image.
         """
-        pil_image = self.load_image(image.type, image.value)
+        pil_image = load_image(image)
         return self.preprocess_image(pil_image)
 
     def open_cache(self, f: str, mode: str, encoding: str = None):
@@ -475,7 +470,7 @@ class RoboflowInferenceModel(CvModel):
         return open(self.cache_file(f), mode, encoding=encoding)
 
     def preproc_image(
-        self, image: InferenceRequestImage
+        self, image: Union[Any, InferenceRequestImage]
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
         """Preproccess an inference request image by loading it, then applying any preprocs specified by the Roboflow platform, then scaling it to the inference input dimensions
 
@@ -485,7 +480,7 @@ class RoboflowInferenceModel(CvModel):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing an numpy array of the preprocessed image pixel data and a tuple of the images original size
         """
-        pil_image = self.load_image(image.type, image.value)
+        pil_image = load_image(image)
         preprocessed_image, img_dims = self.preprocess_image(pil_image)
 
         if self.resize_method == "Stretch to":
@@ -536,17 +531,15 @@ class RoboflowCoreModel(RoboflowInferenceModel):
     def __init__(
         self,
         model_id: str,
-        device_id: str,
         api_key=None,
     ):
         """Initializes the RoboflowCoreModel instance.
 
         Args:
             model_id (str): The identifier for the specific model.
-            device_id (str): The device identifier where the model is deployed.
             api_key ([type], optional): The API key for authentication. Defaults to None.
         """
-        super().__init__(model_id, device_id, api_key=api_key)
+        super().__init__(model_id, api_key=api_key)
         self.download_weights()
 
     def download_weights(self) -> None:
@@ -660,7 +653,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def __init__(
         self,
         model_id: str,
-        device_id: str,
         onnxruntime_execution_providers: List[
             str
         ] = get_onnxruntime_execution_providers(ONNXRUNTIME_EXECUTION_PROVIDERS),
@@ -671,11 +663,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
         Args:
             model_id (str): The identifier for the specific ONNX model.
-            device_id (str): The device identifier where the model is deployed.
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        super().__init__(model_id, device_id, *args, **kwargs)
+        super().__init__(model_id, *args, **kwargs)
         self.onnxruntime_execution_providers = onnxruntime_execution_providers
         for ep in self.onnxruntime_execution_providers:
             if ep == "TensorrtExecutionProvider":

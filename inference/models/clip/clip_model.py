@@ -3,8 +3,8 @@ from typing import List
 
 import numpy as np
 import onnxruntime
-from clip import tokenize
-from clip.clip import _transform
+from inference.models.clip.clip_model import tokenize
+from inference.models.clip.clip_model import _transform
 
 from inference.core.data_models import (
     ClipCompareRequest,
@@ -22,10 +22,11 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
+from inference.core.utils.image_utils import load_image
 from inference.core.utils.postprocess import cosine_similarity
 
 
-class ClipOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
+class Clip(OnnxRoboflowCoreModel):
     """Roboflow ONNX Clip model.
 
     This class is responsible for handling the ONNX Clip model, including
@@ -39,7 +40,7 @@ class ClipOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
     """
 
     def __init__(self, *args, **kwargs):
-        """Initializes the ClipOnnxRoboflowCoreModel with the given arguments and keyword arguments."""
+        """Initializes the Clip with the given arguments and keyword arguments."""
 
         t1 = perf_counter()
         super().__init__(*args, **kwargs)
@@ -248,7 +249,7 @@ class ClipOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         Returns:
             np.ndarray: A numpy array of the preprocessed image pixel data.
         """
-        pil_image = self.load_image(image.type, image.value)
+        pil_image = load_image(image)
         preprocessed_image = self.clip_preprocess(pil_image)
 
         img_in = np.expand_dims(preprocessed_image, axis=0)

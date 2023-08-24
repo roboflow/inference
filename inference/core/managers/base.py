@@ -47,7 +47,9 @@ class ModelManager:
         if model_id not in self:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
 
-    def infer(self, model_id: str, request: InferenceRequest) -> InferenceResponse:
+    def infer_with_request(
+        self, model_id: str, request: InferenceRequest
+    ) -> InferenceResponse:
         """Runs inference on the specified model with the given request.
 
         Args:
@@ -60,7 +62,7 @@ class ModelManager:
         self.check_for_model(model_id)
         self._models[model_id].metrics["num_inferences"] += 1
         tic = time.perf_counter()
-        rtn_val = self._models[model_id].infer(request)
+        rtn_val = self._models[model_id].infer_with_request(request)
         toc = time.perf_counter()
         self._models[model_id].metrics["avg_inference_time"] += toc - tic
         return rtn_val

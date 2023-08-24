@@ -1,6 +1,6 @@
 from io import BytesIO
 from time import perf_counter
-from typing import List, Union
+from typing import Any, List, Union
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -8,11 +8,13 @@ from PIL import Image, ImageDraw, ImageFont
 from inference.core.data_models import (
     ClassificationInferenceRequest,
     ClassificationInferenceResponse,
+    InferenceResponse,
     InferenceResponseImage,
     MultiLabelClassificationInferenceResponse,
 )
 from inference.core.models.mixins import ClassificationMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.utils.image_utils import load_image
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(
@@ -35,122 +37,6 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         super().__init__(*args, **kwargs)
         self.multiclass = self.environment.get("MULTICLASS", False)
 
-    def get_infer_bucket_file_list(self) -> list:
-        """Get the list of required files for inference.
-
-        Returns:
-            list: A list of required files for inference, e.g., ["environment.json"].
-        """
-        return ["environment.json"]
-
-    @staticmethod
-    def softmax(x):
-        """Compute softmax values for each set of scores in x.
-
-        Args:
-            x (np.array): The input array containing the scores.
-
-        Returns:
-            np.array: The softmax values for each set of scores.
-        """
-        e_x = np.exp(x - np.max(x))
-        return e_x / e_x.sum()
-
-    def infer(
-        self, request: ClassificationInferenceRequest
-    ) -> Union[
-        List[
-            Union[
-                ClassificationInferenceResponse,
-                MultiLabelClassificationInferenceResponse,
-            ]
-        ],
-        Union[
-            ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse
-        ],
-    ]:
-        """Perform inference on a given request and return the response.
-
-        Args:
-            request (ClassificationInferenceRequest): The request object containing the image(s) and parameters for inference.
-
-        Returns:
-            Union[List[Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]], Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]]: The response object containing predictions, visualization, and other details.
-        """
-        t1 = perf_counter()
-
-        if isinstance(request.image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in request.image]
-            imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
-            unwrap = False
-        else:
-            img_in, img_dims = self.preproc_image(request.image)
-            img_dims = [img_dims]
-            unwrap = True
-
-        img_in /= 255.0
-
-        mean = (0.5, 0.5, 0.5)
-        std = (0.5, 0.5, 0.5)
-
-        img_in = img_in.astype(np.float32)
-
-        img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
-        img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
-        img_in[:, 2, :, :] = (img_in[:, 2, :, :] - mean[2]) / std[2]
-
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
-        responses = []
-        confidence_threshold = float(request.confidence)
-        for ind, prediction in enumerate(predictions):
-            if self.multiclass:
-                preds = prediction[0]
-                results = dict()
-                predicted_classes = []
-                for i, o in enumerate(preds):
-                    cls_name = self.class_names[i]
-                    score = float(o)
-                    results[cls_name] = {"confidence": score}
-                    if score > confidence_threshold:
-                        predicted_classes.append(cls_name)
-                response = MultiLabelClassificationInferenceResponse(
-                    image=InferenceResponseImage(
-                        width=img_dims[ind][0], height=img_dims[ind][1]
-                    ),
-                    predicted_classes=predicted_classes,
-                    predictions=results,
-                    time=perf_counter() - t1,
-                )
-            else:
-                preds = prediction[0]
-                preds = self.softmax(preds)
-                results = []
-                for i, cls_name in enumerate(self.class_names):
-                    score = float(preds[i])
-                    pred = {"class": cls_name, "confidence": round(score, 4)}
-                    results.append(pred)
-                results = sorted(results, key=lambda x: x["confidence"], reverse=True)
-
-                response = ClassificationInferenceResponse(
-                    image=InferenceResponseImage(
-                        width=img_dims[ind][1], height=img_dims[ind][0]
-                    ),
-                    predictions=results,
-                    time=perf_counter() - t1,
-                    top=results[0]["class"],
-                    confidence=results[0]["confidence"],
-                )
-            responses.append(response)
-
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self.draw_predictions(request, response)
-
-        if unwrap:
-            responses = responses[0]
-        return responses
-
     def draw_predictions(self, inference_request, inference_response):
         """Draw prediction visuals on an image.
 
@@ -163,9 +49,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         Returns:
             bytes: The bytes of the visualized image in JPEG format.
         """
-        image = self.load_image(
-            type=inference_request.image.type, value=inference_request.image.value
-        )
+        image = load_image(inference_request.image)
         draw = ImageDraw.Draw(image)
         font = ImageFont.load_default()
         if isinstance(inference_response.predictions, list):
@@ -224,3 +108,140 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         image = image.convert("RGB")
         image.save(buffered, format="JPEG")
         return buffered.getvalue()
+
+    def get_infer_bucket_file_list(self) -> list:
+        """Get the list of required files for inference.
+
+        Returns:
+            list: A list of required files for inference, e.g., ["environment.json"].
+        """
+        return ["environment.json"]
+
+    def infer(
+        self,
+        image: Any,
+        return_image_dims: bool = False,
+        **kwargs,
+    ):
+        """Perform inference on a given request and return the response.
+
+        Args:
+            request (ClassificationInferenceRequest): The request object containing the image(s) and parameters for inference.
+
+        Returns:
+            Union[List[Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]], Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]]: The response object containing predictions, visualization, and other details.
+        """
+        t1 = perf_counter()
+
+        if isinstance(image, list):
+            imgs_with_dims = [self.preproc_image(i) for i in image]
+            imgs, img_dims = zip(*imgs_with_dims)
+            img_in = np.concatenate(imgs, axis=0)
+            unwrap = False
+        else:
+            img_in, img_dims = self.preproc_image(image)
+            img_dims = [img_dims]
+            unwrap = True
+
+        img_in /= 255.0
+
+        mean = (0.5, 0.5, 0.5)
+        std = (0.5, 0.5, 0.5)
+
+        img_in = img_in.astype(np.float32)
+
+        img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
+        img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
+        img_in[:, 2, :, :] = (img_in[:, 2, :, :] - mean[2]) / std[2]
+
+        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+
+        if return_image_dims:
+            return predictions, img_dims
+        else:
+            return predictions
+
+    def infer_from_request(
+        self,
+        request: ClassificationInferenceRequest,
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
+        t1 = perf_counter()
+        predictions_data = self.infer(**request.dict(), return_image_dims=True)
+        responses = self.make_response(
+            *predictions_data,
+            confidence=request.confidence,
+            class_filter=request.class_filter,
+        )
+        for response in responses:
+            response.time = perf_counter() - t1
+
+        if request.visualize_predictions:
+            for response in responses:
+                response.visualization = self.draw_predictions(request, response)
+
+        if not isinstance(request.image, list):
+            responses = responses[0]
+
+        return responses
+
+    def make_response(
+        self,
+        predictions,
+        img_dims,
+        confidence: float = 0.5,
+        **kwargs,
+    ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
+        responses = []
+        confidence_threshold = float(confidence)
+        for ind, prediction in enumerate(predictions):
+            if self.multiclass:
+                preds = prediction[0]
+                results = dict()
+                predicted_classes = []
+                for i, o in enumerate(preds):
+                    cls_name = self.class_names[i]
+                    score = float(o)
+                    results[cls_name] = {"confidence": score}
+                    if score > confidence_threshold:
+                        predicted_classes.append(cls_name)
+                response = MultiLabelClassificationInferenceResponse(
+                    image=InferenceResponseImage(
+                        width=img_dims[ind][0], height=img_dims[ind][1]
+                    ),
+                    predicted_classes=predicted_classes,
+                    predictions=results,
+                )
+            else:
+                preds = prediction[0]
+                preds = self.softmax(preds)
+                results = []
+                for i, cls_name in enumerate(self.class_names):
+                    score = float(preds[i])
+                    pred = {"class": cls_name, "confidence": round(score, 4)}
+                    results.append(pred)
+                results = sorted(results, key=lambda x: x["confidence"], reverse=True)
+
+                response = ClassificationInferenceResponse(
+                    image=InferenceResponseImage(
+                        width=img_dims[ind][1], height=img_dims[ind][0]
+                    ),
+                    predictions=results,
+                    top=results[0]["class"],
+                    confidence=results[0]["confidence"],
+                )
+            responses.append(response)
+
+        return responses
+
+    @staticmethod
+    def softmax(x):
+        """Compute softmax values for each set of scores in x.
+
+        Args:
+            x (np.array): The input array containing the scores.
+
+        Returns:
+            np.array: The softmax values for each set of scores.
+        """
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum()

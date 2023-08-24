@@ -20,11 +20,12 @@ from inference.core.data_models import (
 )
 from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.utils.image_utils import load_image
 from inference.core.utils.postprocess import mask2poly
 
 
-class SegmentAnythingRoboflowCoreModel(RoboflowCoreModel):
-    """SegmentAnythingRoboflowCoreModel class for handling segmentation tasks.
+class SegmentAnything(RoboflowCoreModel):
+    """SegmentAnything class for handling segmentation tasks.
 
     Attributes:
         sam: The segmentation model.
@@ -38,7 +39,7 @@ class SegmentAnythingRoboflowCoreModel(RoboflowCoreModel):
     """
 
     def __init__(self, *args, **kwargs):
-        """Initializes the SegmentAnythingRoboflowCoreModel.
+        """Initializes the SegmentAnything.
 
         Args:
             *args: Variable length argument list.
@@ -146,7 +147,7 @@ class SegmentAnythingRoboflowCoreModel(RoboflowCoreModel):
         Returns:
             np.array: The preprocessed image.
         """
-        pil_image = self.load_image(image.type, image.value).convert("RGB")
+        pil_image = load_image(image)
         return np.array(pil_image)
 
     def segment_image(self, request: SamSegmentationRequest):

@@ -4,7 +4,7 @@ from inference.core.models.classification_base import (
 from inference.core.models.mixins import ClassificationMixin
 
 
-class YOLOv8ClassificationOnnxRoboflowInferenceModel(
+class YOLOv8Classification(
     ClassificationBaseOnnxRoboflowInferenceModel, ClassificationMixin
 ):
     def __init__(self, *args, **kwargs):
