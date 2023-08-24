@@ -45,7 +45,7 @@ def load_image(value: Any) -> Image.Image:
         elif type == "multipart":
             pil_image = load_image_multipart(value)
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
-            pil_image = load_image_numpy(value)
+            pil_image = load_image_numpy_str(value)
         elif type == "pil":
             pil_image = value
         elif type == "url":
