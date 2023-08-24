@@ -1,6 +1,6 @@
-import socket
-import platform
 import os
+import platform
+import socket
 
 from inference.core.env import DEVICE_ID
 

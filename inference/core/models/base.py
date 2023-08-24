@@ -1,10 +1,7 @@
 from time import perf_counter
 from typing import List, Union
 
-from inference.core.data_models import (
-    InferenceRequest,
-    InferenceResponse,
-)
+from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.models.mixins import InferenceMixin
 
 

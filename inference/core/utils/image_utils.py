@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 import numpy as np
 import requests
-
 from PIL import Image
 
 from inference.core.data_models import InferenceRequestImage

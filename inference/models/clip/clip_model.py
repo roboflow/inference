@@ -3,8 +3,6 @@ from typing import List
 
 import numpy as np
 import onnxruntime
-from inference.models.clip.clip_model import tokenize
-from inference.models.clip.clip_model import _transform
 
 from inference.core.data_models import (
     ClipCompareRequest,
@@ -24,6 +22,7 @@ from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.postprocess import cosine_similarity
+from inference.models.clip.clip_model import _transform, tokenize
 
 
 class Clip(OnnxRoboflowCoreModel):

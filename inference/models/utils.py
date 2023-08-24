@@ -1,14 +1,8 @@
 from inference.core.registries.roboflow import get_model_type
-from inference.models.vit import (
-    VitClassification,
-)
-from inference.models.yolact import (
-    YOLACT,
-)
+from inference.models.vit import VitClassification
+from inference.models.yolact import YOLACT
 from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
-from inference.models.yolov7 import (
-    YOLOv7InstanceSegmentation,
-)
+from inference.models.yolov7 import YOLOv7InstanceSegmentation
 from inference.models.yolov8 import (
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
