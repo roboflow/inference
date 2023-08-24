@@ -91,8 +91,8 @@ You can also run any model hosted on Roboflow using the Inference.
 ### Segmentation
 
 - [YOLOv7](https://inference.roboflow.com/library/models/yolov7_instance_segmentation/)
-- [YOLOv8](https://inference.roboflow.com/models/segmentation/yolov8)
-- [YOLOACT](https://inference.roboflow.com/models/segmentation/yoloact)
+- [YOLOv8](https://inference.roboflow.com/library/models/yolov8_segmentation/)
+- [YOLOACT](https://inference.roboflow.com/library/models/yoloact_segmentation/)
 - [Segment Anything](https://inference.roboflow.com/library/models/segment_anything/)
 
 ## Environment Variable Control 🌐
