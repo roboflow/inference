@@ -63,17 +63,15 @@ class L2C2Wrapper(L2CS):
 
     def forward(self, x):
         idx_tensor = torch.stack([self._gaze_idx_tensor for i in range(x.shape[0])], dim=0)
-        gaze_pitch, gaze_yaw = super().forward(x)
-
-        pitch_predicted = self._gaze_softmax(gaze_pitch)
-        pitch_predicted = torch.sum(pitch_predicted * idx_tensor, dim=1) * 4 - 180
-        pitch_degree = pitch_predicted * np.pi / 180.0
+        gaze_yaw, gaze_pitch = super().forward(x)
 
         yaw_predicted = self._gaze_softmax(gaze_yaw)
-        yaw_predicted = torch.sum(yaw_predicted * idx_tensor, dim=1) * 4 - 180
-        yaw_degree = yaw_predicted * np.pi / 180.0
+        yaw_radian = (torch.sum(yaw_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
 
-        return pitch_degree, yaw_degree
+        pitch_predicted = self._gaze_softmax(gaze_pitch)
+        pitch_radian = (torch.sum(pitch_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
+
+        return yaw_radian, pitch_radian
 
 
 class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
@@ -171,7 +169,7 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
 
         Args:
             faces (List[Detection]): The detected faces.
-            gazes (List[tuple(float, float)]): The detected gazes.
+            gazes (List[tuple(float, float)]): The detected gazes (yaw, pitch).
             imgW (int): The width (px) of original image.
             imgH (int): The height (px) of original image.
             time_load_img (float): The processing time for loading image.
@@ -199,7 +197,7 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
             prediction = GazeDetectionPrediction(
                 face=FaceDetectionPrediction(x=x_center, y=y_center, width=bbox.width, height=bbox.height,
                                              confidence=score, class_name="face", landmarks=landmarks),
-                pitch=gaze[0], yaw=gaze[1])
+                yaw=gaze[0], pitch=gaze[1])
             predictions.append(prediction)
 
         response = GazeDetectionInferenceResponse(predictions=predictions,
@@ -215,7 +213,7 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
             pil_imgs (List[Image.Image]): The PIL image list, each image is a cropped facial image.
 
         Returns:
-            List[Tuple[float, float]]: Pitch (degree) and Yaw (degree).
+            List[Tuple[float, float]]: Yaw (radian) and Pitch (radian).
         """
         ret = []
         for i in range(0, len(pil_imgs), GAZE_MAX_BATCH_SIZE):
@@ -227,10 +225,10 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
 
             img_batch = np.concatenate(img_batch, axis=0)
             onnx_input_image = {self.gaze_onnx_session.get_inputs()[0].name: img_batch}
-            pitch, yaw = self.gaze_onnx_session.run(None, onnx_input_image)
+            yaw, pitch = self.gaze_onnx_session.run(None, onnx_input_image)
 
             for j in range(len(img_batch)):
-                ret.append((pitch[j], yaw[j]))
+                ret.append((yaw[j], pitch[j]))
 
         return ret
 

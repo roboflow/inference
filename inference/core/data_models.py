@@ -749,14 +749,14 @@ class GazeDetectionPrediction(BaseModel):
 
     Attributes:
         face (FaceDetectionPrediction): The face prediction.
-        pitch (float): Pitch (degree) of the detected face.
-        yaw (float): Yaw (degree) of the detected face.
+        yaw (float): Yaw (radian) of the detected face.
+        pitch (float): Pitch (radian) of the detected face.
     """
 
     face: FaceDetectionPrediction
 
-    pitch: float = Field(description="Pitch (degree) of the detected face")
-    yaw: float = Field(description="Yaw (degree) of the detected face")
+    yaw: float = Field(description="Yaw (radian) of the detected face")
+    pitch: float = Field(description="Pitch (radian) of the detected face")
 
 
 class GazeDetectionInferenceRequest(BaseModel):
