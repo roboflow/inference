@@ -173,6 +173,32 @@ print(results)
 
 ```
 
+**Pip quickstart using CLIP:**
+```python
+from inference.core.data_models import (
+    ClipCompareRequest,
+    InferenceRequestImage
+)
+from inference.models.clip.clip import ClipOnnxRoboflowCoreModel
+
+model = ClipOnnxRoboflowCoreModel(
+    model_id="demo-kwgoi/1", device_id="my-pc", 
+    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
+    api_key="ROBOFLOW_API_KEY"
+)
+
+request = ClipCompareRequest(
+    subject = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg",
+    subject_type = "image",
+    prompt = "a horse",
+    prompt_type = "text",
+)
+
+results = model.infer(request)
+
+print(results)
+```
+
 ## 🏗️ inference process 
 
 To standardize the inference process throughout all our models, Roboflow Inference has a structure for processing inference requests. The specifics can be found on each model's respective page, but overall it works like this for most models:
