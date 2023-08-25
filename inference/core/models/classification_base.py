@@ -170,7 +170,6 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         responses = self.make_response(
             *predictions_data,
             confidence=request.confidence,
-            class_filter=request.class_filter,
         )
         for response in responses:
             response.time = perf_counter() - t1

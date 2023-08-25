@@ -162,7 +162,7 @@ class ClipEmbeddingResponse(BaseModel):
         example="[[0.12, 0.23, 0.34, ..., 0.43]]",
         description="A list of embeddings, each embedding is a list of floats",
     )
-    time: float = Field(
+    time: Optional[float] = Field(
         description="The time in seconds it took to produce the embeddings including preprocessing"
     )
 
@@ -176,7 +176,7 @@ class ClipCompareResponse(BaseModel):
     """
 
     similarity: Union[List[float], Dict[str, float]]
-    time: float = Field(
+    time: Optional[float] = Field(
         description="The time in seconds it took to produce the similarity scores including preprocessing"
     )
 

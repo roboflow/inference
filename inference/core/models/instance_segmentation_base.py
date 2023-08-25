@@ -43,7 +43,6 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         max_detections: int = 300,
         return_image_dims: bool = False,
         tradeoff_factor: float = 0.5,
-        *args,
         **kwargs,
     ) -> Union[
         List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]

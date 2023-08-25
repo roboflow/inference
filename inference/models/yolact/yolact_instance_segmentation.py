@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import List, Union
+from typing import Any, List, Union
 
 import cv2
 import numpy as np
@@ -35,11 +35,16 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         return "weights.onnx"
 
     def infer(
-        self, request: InstanceSegmentationInferenceRequest
-    ) -> Union[
-        List[InstanceSegmentationInferenceResponse],
-        InstanceSegmentationInferenceResponse,
-    ]:
+        self,
+        image: Any,
+        class_agnostic_nms: bool = False,
+        confidence: float = 0.5,
+        iou_threshold: float = 0.5,
+        max_candidates: int = 3000,
+        max_detections: int = 300,
+        return_image_dims: bool = False,
+        **kwargs,
+    ) -> List[List[dict]]:
         """Takes an instance segmentation inference request, preprocesses all images, runs inference on all images, and returns the postprocessed detections in the form of inference response objects.
 
         Args:
@@ -50,13 +55,13 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         """
         t1 = perf_counter()
 
-        if isinstance(request.image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in request.image]
+        if isinstance(image, list):
+            imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
             unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(request.image)
+            img_in, img_dims = self.preproc_image(image)
             img_dims = [img_dims]
             unwrap = True
 
@@ -105,11 +110,11 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
 
         predictions = w_np_non_max_suppression(
             predictions,
-            conf_thresh=request.confidence,
-            iou_thresh=request.iou_threshold,
-            class_agnostic=request.class_agnostic_nms,
-            max_detections=request.max_detections,
-            max_candidate_detections=request.max_candidates,
+            conf_thresh=confidence,
+            iou_thresh=iou_threshold,
+            class_agnostic=class_agnostic_nms,
+            max_detections=max_detections,
+            max_candidate_detections=max_candidates,
             num_masks=32,
             box_format="xyxy",
         )
@@ -151,27 +156,33 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
                     "confidence": round(confidence, 3),
                     "points": points,
                 }
-                if not request.class_filter or class_name in request.class_filter:
-                    preds.append(pred)
+                preds.append(pred)
             batch_preds.append(preds)
 
+        if return_image_dims:
+            return batch_preds, img_dims
+        else:
+            return batch_preds
+
+    def make_response(
+        self,
+        predictions,
+        img_dims,
+        class_filter: List[str] = None,
+    ):
         responses = [
             InstanceSegmentationInferenceResponse(
-                predictions=[InstanceSegmentationPrediction(**p) for p in batch_pred],
-                time=perf_counter() - t1,
+                predictions=[
+                    InstanceSegmentationPrediction(**p)
+                    for p in batch_pred
+                    if not class_filter or p["class_name"] in class_filter
+                ],
                 image=InferenceResponseImage(
                     width=img_dims[i][1], height=img_dims[i][0]
                 ),
             )
-            for i, batch_pred in enumerate(batch_preds)
+            for i, batch_pred in enumerate(predictions)
         ]
-
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self.draw_predictions(request, response)
-
-        if unwrap:
-            responses = responses[0]
         return responses
 
     def decode_masks(self, boxes, masks, proto, img_dim):

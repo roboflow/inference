@@ -223,7 +223,7 @@ class HttpInterface(BaseInterface):
                     api_key=inference_request.api_key,
                 )
                 self.model_manager.add_model(inference_request.model_id, model)
-            return self.model_manager.infer_with_request(
+            return self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request
             )
 
@@ -481,7 +481,7 @@ class HttpInterface(BaseInterface):
                         M.ClipEmbeddingResponse: The response containing the embedded image.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_with_request(
+                    response = self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -518,7 +518,7 @@ class HttpInterface(BaseInterface):
                         M.ClipEmbeddingResponse: The response containing the embedded text.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_with_request(
+                    response = self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -555,7 +555,7 @@ class HttpInterface(BaseInterface):
                         M.ClipCompareResponse: The response containing the similarity scores.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_with_request(
+                    response = self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -594,7 +594,7 @@ class HttpInterface(BaseInterface):
                         M.SamEmbeddingResponse or Response: The response containing the embedded image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_with_request(
+                    model_response = self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -636,7 +636,7 @@ class HttpInterface(BaseInterface):
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_with_request(
+                    model_response = self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -666,7 +666,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
-            async def legacy_infer_with_request(
+            async def legacy_infer_from_request(
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference"
                 ),
@@ -829,7 +829,7 @@ class HttpInterface(BaseInterface):
                     **args,
                 )
 
-                inference_response = self.model_manager.infer_with_request(
+                inference_response = self.model_manager.infer_from_request(
                     inference_request.model_id, inference_request
                 )
 

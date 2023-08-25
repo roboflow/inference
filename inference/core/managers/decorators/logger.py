@@ -20,7 +20,7 @@ class WithLogger(ModelManagerDecorator):
         logger.info(f"🤖 {model_id} added.")
         return super().add_model(model_id, model)
 
-    def infer_with_request(
+    def infer_from_request(
         self, model_id: str, request: InferenceRequest
     ) -> InferenceResponse:
         """Processes a complete inference request and logs both the request and response.
@@ -33,7 +33,7 @@ class WithLogger(ModelManagerDecorator):
             InferenceResponse: The response from the inference.
         """
         logger.info(f"📥 [{model_id}] request={request}.")
-        res = super().infer_with_request(model_id, request)
+        res = super().infer_from_request(model_id, request)
         logger.info(f"📥 [{model_id}] res={res}.")
         return res
 

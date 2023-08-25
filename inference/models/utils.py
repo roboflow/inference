@@ -116,7 +116,7 @@ except:
     pass
 
 try:
-    from inference.models.clip import Clip
+    from inference.models.clip.clip_model import Clip
 
     ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
 except:
