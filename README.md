@@ -173,6 +173,12 @@ print(results)
 
 ```
 
+## 🏗️ inference process 
+
+To standardize the inference process throughout all our models, Roboflow Inference has a structure for processing inference requests. The specifics can be found on each model's respective page, but overall it works like this for most models:
+
+<img width="900" alt="inference structure" src="https://github.com/stellasphere/inference/assets/29011058/abf69717-f852-4655-9e6e-dae19fc263dc">
+
 
 ## 📝 license
 
