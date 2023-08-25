@@ -41,8 +41,8 @@ nav:
       - YOLOv8 Object Detection: library/models/yolov8.md
       - YOLOv8 Classification: library/models/yolov8_classification.md
       - YOLOv7 Instance Segmentation: library/models/yolov7_instance_segmentation.md
-      - YOLOv8 Instance Segmentation: library/models/yolov8_instance_segmentation.md
-      - YOLO-ACT Instance Segmentation: library/models/yoloact_instance_segmentation.md
+      - YOLOv8 Instance Segmentation: library/models/yolov8_segmentation.md
+      - YOLO-ACT Instance Segmentation: library/models/yoloact_segmentation.md
     - Model Managers:
       - Base Manager: library/model_managers/base.md
       - Pingback Manager: library/model_managers/pingback.md
