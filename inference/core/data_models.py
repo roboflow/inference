@@ -360,6 +360,7 @@ class ObjectDetectionPrediction(BaseModel):
     class_confidence: Union[float, None] = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )
+    class_id: int = Field(description="The class id of the prediction")
 
 
 class Point(BaseModel):
