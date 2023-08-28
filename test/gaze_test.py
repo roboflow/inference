@@ -7,7 +7,7 @@ import pytest
 import time
 
 api_key = os.environ.get("API_KEY")
-port = os.environ.get("PORT", 8000)
+port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 TESTS = [
