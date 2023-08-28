@@ -1,28 +1,25 @@
+import math
 from time import perf_counter
 from typing import List, Optional, Tuple, Union
 
+import mediapipe as mp
 import numpy as np
-import math
 import onnxruntime
-from PIL import Image
-
 import torch
 import torch.nn as nn
-from torchvision import transforms
 import torchvision
-
-import mediapipe as mp
-from mediapipe.tasks.python.components.containers.detections import Detection
 from mediapipe.tasks.python.components.containers.bounding_box import BoundingBox
 from mediapipe.tasks.python.components.containers.category import Category
-from inference.models.gaze.l2cs import L2CS
+from mediapipe.tasks.python.components.containers.detections import Detection
+from PIL import Image
+from torchvision import transforms
 
 from inference.core.data_models import (
+    FaceDetectionPrediction,
     GazeDetectionInferenceRequest,
     GazeDetectionInferenceResponse,
+    GazeDetectionPrediction,
     Point,
-    FaceDetectionPrediction,
-    GazeDetectionPrediction
 )
 from inference.core.env import (
     GAZE_MAX_BATCH_SIZE,
@@ -31,6 +28,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
+from inference.models.gaze.l2cs import L2CS
 
 
 class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
@@ -79,20 +77,23 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         # init face detector
         self.face_detector = mp.tasks.vision.FaceDetector.create_from_options(
             mp.tasks.vision.FaceDetectorOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=self.cache_file("mediapipe_face_detector.tflite")),
-                running_mode=mp.tasks.vision.RunningMode.IMAGE
+                base_options=mp.tasks.BaseOptions(
+                    model_asset_path=self.cache_file("mediapipe_face_detector.tflite")
+                ),
+                running_mode=mp.tasks.vision.RunningMode.IMAGE,
             )
         )
 
         # additional settings for gaze detection
-        self._gaze_transformations = transforms.Compose([
-            transforms.Resize(448),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            )
-        ])
+        self._gaze_transformations = transforms.Compose(
+            [
+                transforms.Resize(448),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
 
         self.log(f"GAZE model loaded in {perf_counter() - t1:.2f} seconds")
 
@@ -142,8 +143,16 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
 
         return ret
 
-    def _make_response(self, faces: List[Detection], gazes: List[Tuple[float, float]], imgW: int, imgH: int,
-                       time_total: float, time_face_det: float = None, time_gaze_det: float = None) -> GazeDetectionInferenceResponse:
+    def _make_response(
+        self,
+        faces: List[Detection],
+        gazes: List[Tuple[float, float]],
+        imgW: int,
+        imgH: int,
+        time_total: float,
+        time_face_det: float = None,
+        time_gaze_det: float = None,
+    ) -> GazeDetectionInferenceResponse:
         """Prepare response object from detected faces and corresponding gazes.
 
         Args:
@@ -172,12 +181,26 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
             score = face.categories[0].score
 
             prediction = GazeDetectionPrediction(
-                face=FaceDetectionPrediction(x=x_center, y=y_center, width=bbox.width, height=bbox.height,
-                                             confidence=score, class_name="face", landmarks=landmarks),
-                yaw=gaze[0], pitch=gaze[1])
+                face=FaceDetectionPrediction(
+                    x=x_center,
+                    y=y_center,
+                    width=bbox.width,
+                    height=bbox.height,
+                    confidence=score,
+                    class_name="face",
+                    landmarks=landmarks,
+                ),
+                yaw=gaze[0],
+                pitch=gaze[1],
+            )
             predictions.append(prediction)
 
-        response = GazeDetectionInferenceResponse(predictions=predictions, time=time_total, time_face_det=time_face_det, time_gaze_det=time_gaze_det)
+        response = GazeDetectionInferenceResponse(
+            predictions=predictions,
+            time=time_total,
+            time_face_det=time_face_det,
+            time_gaze_det=time_gaze_det,
+        )
         return response
 
     def get_infer_bucket_file_list(self) -> List[str]:
@@ -186,9 +209,14 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         Returns:
             List[str]: The list of file names.
         """
-        return ["mediapipe_face_detector.tflite", "L2CSNet_gaze360_resnet50_90bins.onnx"]
+        return [
+            "mediapipe_face_detector.tflite",
+            "L2CSNet_gaze360_resnet50_90bins.onnx",
+        ]
 
-    def infer(self, request: GazeDetectionInferenceRequest) -> List[GazeDetectionInferenceResponse]:
+    def infer(
+        self, request: GazeDetectionInferenceRequest
+    ) -> List[GazeDetectionInferenceResponse]:
         """Detect faces and gazes in image(s).
 
         Args:
@@ -200,7 +228,7 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         if isinstance(request.image, list):
             if len(request.image) > GAZE_MAX_BATCH_SIZE:
                 raise ValueError(
-                    f"The maximum number of images that can be embedded at once is {GAZE_MAX_BATCH_SIZE}"
+                    f"The maximum number of images that can be inferred with gaze detection at one time is {GAZE_MAX_BATCH_SIZE}"
                 )
             imgs = request.image
         else:
@@ -218,13 +246,23 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         faces = []
         for pil_img in pil_imgs:
             if request.do_run_face_detection:
-                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(pil_img))
+                mp_img = mp.Image(
+                    image_format=mp.ImageFormat.SRGB, data=np.asarray(pil_img)
+                )
                 faces_per_img = self.face_detector.detect(mp_img).detections
             else:
                 faces_per_img = [
                     Detection(
-                        bounding_box=BoundingBox(origin_x=0, origin_y=0, width=pil_img.size[0], height=pil_img.size[1]),
-                        categories=[Category(score=1.0, category_name="face")], keypoints=[])]
+                        bounding_box=BoundingBox(
+                            origin_x=0,
+                            origin_y=0,
+                            width=pil_img.size[0],
+                            height=pil_img.size[1],
+                        ),
+                        categories=[Category(score=1.0, category_name="face")],
+                        keypoints=[],
+                    )
+                ]
             faces.append(faces_per_img)
         time_face_det = (perf_counter() - time_face_det) / num_img
 
@@ -233,7 +271,9 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         face_imgs = []
         for i, pil_img in enumerate(pil_imgs):
             if request.do_run_face_detection:
-                face_imgs.extend([self._crop_face_img(pil_img, face) for face in faces[i]])
+                face_imgs.extend(
+                    [self._crop_face_img(pil_img, face) for face in faces[i]]
+                )
             else:
                 face_imgs.append(pil_img.resize((224, 224)))
         gazes = self._detect_gaze(face_imgs)
@@ -247,11 +287,15 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
         for i in range(len(pil_imgs)):
             imgW, imgH = pil_imgs[i].size
             faces_per_img = faces[i]
-            gazes_per_img = gazes[idx_gaze:idx_gaze + len(faces_per_img)]
+            gazes_per_img = gazes[idx_gaze : idx_gaze + len(faces_per_img)]
             response.append(
-                self._make_response(faces_per_img, gazes_per_img, imgW, imgH, time_total))
+                self._make_response(
+                    faces_per_img, gazes_per_img, imgW, imgH, time_total
+                )
+            )
 
         return response
+
 
 class L2C2Wrapper(L2CS):
     """Roboflow L2CS Gaze detection model.
@@ -265,31 +309,55 @@ class L2C2Wrapper(L2CS):
     """
 
     def __init__(self):
-        self.device = torch.device('cpu')
+        self.device = torch.device("cpu")
         self.num_bins = 90
-        super().__init__(torchvision.models.resnet.Bottleneck, [3, 4, 6, 3], self.num_bins)
+        super().__init__(
+            torchvision.models.resnet.Bottleneck, [3, 4, 6, 3], self.num_bins
+        )
         self._gaze_softmax = nn.Softmax(dim=1)
-        self._gaze_idx_tensor = torch.FloatTensor([i for i in range(90)]).to(self.device)
+        self._gaze_idx_tensor = torch.FloatTensor([i for i in range(90)]).to(
+            self.device
+        )
 
     def forward(self, x):
-        idx_tensor = torch.stack([self._gaze_idx_tensor for i in range(x.shape[0])], dim=0)
+        idx_tensor = torch.stack(
+            [self._gaze_idx_tensor for i in range(x.shape[0])], dim=0
+        )
         gaze_yaw, gaze_pitch = super().forward(x)
 
         yaw_predicted = self._gaze_softmax(gaze_yaw)
-        yaw_radian = (torch.sum(yaw_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
+        yaw_radian = (
+            (torch.sum(yaw_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
+        )
 
         pitch_predicted = self._gaze_softmax(gaze_pitch)
-        pitch_radian = (torch.sum(pitch_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
+        pitch_radian = (
+            (torch.sum(pitch_predicted * idx_tensor, dim=1) * 4 - 180) * np.pi / 180
+        )
 
         return yaw_radian, pitch_radian
 
-    def load_L2CS_model(self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.pkl"):
+    def load_L2CS_model(
+        self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.pkl"
+    ):
         super().load_state_dict(torch.load(file_path, map_location=self.device))
         super().to(self.device)
 
-    def saveas_ONNX_model(self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.onnx"):
+    def saveas_ONNX_model(
+        self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.onnx"
+    ):
         dummy_input = torch.randn(1, 3, 448, 448)
-        dynamic_axes = {'input': {0: 'batch_size'}, 'output_yaw': {0: 'batch_size'}, 'output_pitch': {0: 'batch_size'}}
-        torch.onnx.export(self, dummy_input, file_path, input_names=["input"],
-                          output_names=['output_yaw', 'output_pitch'],
-                          dynamic_axes=dynamic_axes, verbose=False)
+        dynamic_axes = {
+            "input": {0: "batch_size"},
+            "output_yaw": {0: "batch_size"},
+            "output_pitch": {0: "batch_size"},
+        }
+        torch.onnx.export(
+            self,
+            dummy_input,
+            file_path,
+            input_names=["input"],
+            output_names=["output_yaw", "output_pitch"],
+            dynamic_axes=dynamic_axes,
+            verbose=False,
+        )

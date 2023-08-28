@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.env import CLIP_VERSION_ID, SAM_VERSION_ID, GAZE_VERSION_ID
+from inference.core.env import CLIP_VERSION_ID, GAZE_VERSION_ID, SAM_VERSION_ID
 
 # This file defines the pydantic data models used internally throughout the inference server API. Descriptions are included in many cases for the purpose of auto generated docs.
 
@@ -719,7 +719,9 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
         landmarks (Union[List[Point], List[Point3D]]): The detected face landmarks.
     """
 
-    class_name: str = Field(alias="class", default="face", description="The predicted class label")
+    class_name: str = Field(
+        alias="class", default="face", description="The predicted class label"
+    )
     landmarks: Union[List[Point], List[Point3D]]
 
 
@@ -775,5 +777,9 @@ class GazeDetectionInferenceResponse(BaseModel):
     predictions: List[GazeDetectionPrediction]
 
     time: float = Field(description="The processing time (second)")
-    time_face_det: Optional[float] = Field(description="The face detection time (second)")
-    time_gaze_det: Optional[float] = Field(description="The gaze detection time (second)")
+    time_face_det: Optional[float] = Field(
+        description="The face detection time (second)"
+    )
+    time_gaze_det: Optional[float] = Field(
+        description="The gaze detection time (second)"
+    )

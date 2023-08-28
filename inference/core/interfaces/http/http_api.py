@@ -13,8 +13,8 @@ from inference.core.env import (
     ALLOW_ORIGINS,
     CLIP_MODEL_ID,
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
+    CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -673,12 +673,12 @@ class HttpInterface(BaseInterface):
                     )
                     @with_route_exceptions
                     async def gaze_detection(
-                            inference_request: M.GazeDetectionInferenceRequest,
-                            api_key: Optional[str] = Query(
-                                None,
-                                description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                            ),
-                            request: Request = Body(),
+                        inference_request: M.GazeDetectionInferenceRequest,
+                        api_key: Optional[str] = Query(
+                            None,
+                            description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                        ),
+                        request: Request = Body(),
                     ):
                         """
                         Detect gaze using the gaze detection model.
@@ -691,7 +691,9 @@ class HttpInterface(BaseInterface):
                         Returns:
                             M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
                         """
-                        gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
+                        gaze_model_id = load_gaze_model(
+                            inference_request, api_key=api_key
+                        )
                         response = self.model_manager.infer(
                             gaze_model_id, inference_request
                         )
