@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.env import CLIP_VERSION_ID, SAM_VERSION_ID
+from inference.core.env import CLIP_VERSION_ID, GAZE_VERSION_ID, SAM_VERSION_ID
 
 # This file defines the pydantic data models used internally throughout the inference server API. Descriptions are included in many cases for the purpose of auto generated docs.
 
@@ -374,6 +374,16 @@ class Point(BaseModel):
     y: float = Field(description="The y-axis pixel coordinate of the point")
 
 
+class Point3D(Point):
+    """3D Point coordinates.
+
+    Attributes:
+        z (float): The z-axis pixel coordinate of the point.
+    """
+
+    z: float = Field(description="The z-axis pixel coordinate of the point")
+
+
 class InstanceSegmentationPrediction(BaseModel):
     """Instance Segmentation prediction.
 
@@ -698,4 +708,78 @@ class SamSegmentationResponse(BaseModel):
     )
     time: float = Field(
         description="The time in seconds it took to produce the segmentation including preprocessing"
+    )
+
+
+class FaceDetectionPrediction(ObjectDetectionPrediction):
+    """Face Detection prediction.
+
+    Attributes:
+        class_name (str): fixed value "face".
+        landmarks (Union[List[Point], List[Point3D]]): The detected face landmarks.
+    """
+
+    class_name: str = Field(
+        alias="class", default="face", description="The predicted class label"
+    )
+    landmarks: Union[List[Point], List[Point3D]]
+
+
+class GazeDetectionPrediction(BaseModel):
+    """Gaze Detection prediction.
+
+    Attributes:
+        face (FaceDetectionPrediction): The face prediction.
+        yaw (float): Yaw (radian) of the detected face.
+        pitch (float): Pitch (radian) of the detected face.
+    """
+
+    face: FaceDetectionPrediction
+
+    yaw: float = Field(description="Yaw (radian) of the detected face")
+    pitch: float = Field(description="Pitch (radian) of the detected face")
+
+
+class GazeDetectionInferenceRequest(BaseModel):
+    """Request for gaze detection inference.
+
+    Attributes:
+        api_key (Optional[str]): Roboflow API Key.
+        gaze_version_id (Optional[str]): The version ID of Gaze to be used for this request.
+        do_run_face_detection (Optional[bool]): If true, face detection will be applied; if false, face detection will be ignored and the whole input image will be used for gaze detection.
+        image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
+    """
+
+    api_key: Optional[str] = ApiKey
+    gaze_version_id: Optional[str] = Field(
+        default=GAZE_VERSION_ID,
+        example="l2cs",
+        description="The version ID of Gaze to be used for this request. Must be one of l2cs.",
+    )
+
+    do_run_face_detection: Optional[bool] = Field(
+        default=True,
+        example=False,
+        description="If true, face detection will be applied; if false, face detection will be ignored and the whole input image will be used for gaze detection",
+    )
+
+    image: Union[List[InferenceRequestImage], InferenceRequestImage]
+
+
+class GazeDetectionInferenceResponse(BaseModel):
+    """Response for gaze detection inference.
+
+    Attributes:
+        predictions (List[GazeDetectionPrediction]): List of gaze detection predictions.
+        time (float): The processing time (second).
+    """
+
+    predictions: List[GazeDetectionPrediction]
+
+    time: float = Field(description="The processing time (second)")
+    time_face_det: Optional[float] = Field(
+        description="The face detection time (second)"
+    )
+    time_gaze_det: Optional[float] = Field(
+        description="The gaze detection time (second)"
     )

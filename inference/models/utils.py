@@ -135,3 +135,10 @@ try:
     ROBOFLOW_MODEL_TYPES[("embed", "clip")] = ClipOnnxRoboflowCoreModel
 except:
     pass
+
+try:
+    from inference.models.gaze.gaze import GazeOnnxRoboflowCoreModel
+
+    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = GazeOnnxRoboflowCoreModel
+except:
+    pass

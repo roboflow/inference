@@ -41,6 +41,7 @@ setuptools.setup(
         "hosted": read_requirements("requirements/requirements.hosted.txt"),
         "http": read_requirements("requirements/requirements.http.txt"),
         "waf": read_requirements("requirements/requirements.waf.txt"),
+        "gaze": read_requirements("requirements/requirements.gaze.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
