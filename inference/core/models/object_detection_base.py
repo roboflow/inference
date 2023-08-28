@@ -104,7 +104,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
                 image=InferenceResponseImage(
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
-
             )
             for ind, batch_predictions in enumerate(predictions)
         ]
