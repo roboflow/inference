@@ -374,17 +374,13 @@ class Point(BaseModel):
     y: float = Field(description="The y-axis pixel coordinate of the point")
 
 
-class Point3D(BaseModel):
-    """Point coordinates.
+class Point3D(Point):
+    """3D Point coordinates.
 
     Attributes:
-        x (float): The x-axis pixel coordinate of the point.
-        y (float): The y-axis pixel coordinate of the point.
         z (float): The z-axis pixel coordinate of the point.
     """
 
-    x: float = Field(description="The x-axis pixel coordinate of the point")
-    y: float = Field(description="The y-axis pixel coordinate of the point")
     z: float = Field(description="The z-axis pixel coordinate of the point")
 
 
@@ -715,32 +711,15 @@ class SamSegmentationResponse(BaseModel):
     )
 
 
-class FaceDetectionPrediction(BaseModel):
+class FaceDetectionPrediction(ObjectDetectionPrediction):
     """Face Detection prediction.
 
     Attributes:
-        x (float): The center x-axis pixel coordinate of the prediction.
-        y (float): The center y-axis pixel coordinate of the prediction.
-        width (float): The width of the prediction bounding box in number of pixels.
-        height (float): The height of the prediction bounding box in number of pixels.
-        confidence (float): The detection confidence as a fraction between 0 and 1.
         class_name (str): fixed value "face".
         landmarks (Union[List[Point], List[Point3D]]): The detected face landmarks.
     """
 
-    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
-    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
-    width: float = Field(
-        description="The width of the prediction bounding box in number of pixels"
-    )
-    height: float = Field(
-        description="The height of the prediction bounding box in number of pixels"
-    )
-    confidence: float = Field(
-        description="The detection confidence as a fraction between 0 and 1"
-    )
     class_name: str = Field(alias="class", default="face", description="The predicted class label")
-
     landmarks: Union[List[Point], List[Point3D]]
 
 
@@ -765,7 +744,7 @@ class GazeDetectionInferenceRequest(BaseModel):
     Attributes:
         api_key (Optional[str]): Roboflow API Key.
         gaze_version_id (Optional[str]): The version ID of Gaze to be used for this request.
-        is_cropped_face_image (Optional[bool]): If false, face detection will be applied; if true, face detection will be ignored and the whole input image will be used for gaze detection.
+        do_run_face_detection (Optional[bool]): If true, face detection will be applied; if false, face detection will be ignored and the whole input image will be used for gaze detection.
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
     """
 
@@ -776,10 +755,10 @@ class GazeDetectionInferenceRequest(BaseModel):
         description="The version ID of Gaze to be used for this request. Must be one of l2cs.",
     )
 
-    is_cropped_face_image: Optional[bool] = Field(
-        default=False,
+    do_run_face_detection: Optional[bool] = Field(
+        default=True,
         example=False,
-        description="If false, face detection will be applied; if true, face detection will be ignored and the whole input image will be used for gaze detection",
+        description="If true, face detection will be applied; if false, face detection will be ignored and the whole input image will be used for gaze detection",
     )
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
@@ -790,15 +769,11 @@ class GazeDetectionInferenceResponse(BaseModel):
 
     Attributes:
         predictions (List[GazeDetectionPrediction]): List of gaze detection predictions.
-        time_total (float): The total processing time (second).
-        time_load_img (float): The processing time for loading image (second).
-        time_face_det (float): The processing time for face detection (second).
-        time_gaze_det (float): The processing time for gaze detection (second).
+        time (float): The processing time (second).
     """
 
     predictions: List[GazeDetectionPrediction]
 
-    time_total: float = Field(description="The total processing time (second)")
-    time_load_img: float = Field(description="The processing time for loading image (second)")
-    time_face_det: float = Field(description="The processing time for face detection (second)")
-    time_gaze_det: float = Field(description="The processing time for gaze detection (second)")
+    time: float = Field(description="The processing time (second)")
+    time_face_det: Optional[float] = Field(description="The face detection time (second)")
+    time_gaze_det: Optional[float] = Field(description="The gaze detection time (second)")
