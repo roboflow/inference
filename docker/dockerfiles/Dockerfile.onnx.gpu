@@ -16,6 +16,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.waf.txt \
+    requirements/requirements.gaze.txt \
     requirements/_requirements.txt \
     ./
 
@@ -26,6 +27,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.waf.txt \
+    -r requirements.gaze.txt \
     --upgrade
 
 RUN pip3 uninstall pillow -y && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd
