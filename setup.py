@@ -1,1 +1,0 @@
-.release/pypi/inference.core.setup.py

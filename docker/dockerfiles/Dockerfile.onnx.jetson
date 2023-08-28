@@ -17,7 +17,8 @@ RUN apt-get update -y && apt-get install -y \
     wget \
     python3-shapely \
     gdal-bin \
-    libgdal-dev
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
@@ -25,18 +26,21 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
-RUN pip3 install --ignore-installed PyYAML
+RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
-    --upgrade
+    --upgrade \
+    && rm -rf ~/.cache/pip
 
 RUN pip3 uninstall --yes onnxruntime
 RUN wget https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.whl -O onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
-RUN pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
+RUN pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl \
+    && rm -rf ~/.cache/pip \
+    && rm onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
 
 WORKDIR /app/
 COPY inference inference

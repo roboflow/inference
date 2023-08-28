@@ -96,6 +96,30 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov8x",
     ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8n-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8s-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8m-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8l-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8x-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
+    (
+        "instance-segmentation",
+        "yolov8-seg",
+    ): YOLOv8InstanceSegmentationOnnxRoboflowInferenceModel,
 }
 
 try:

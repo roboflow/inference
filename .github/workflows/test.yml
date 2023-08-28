@@ -6,6 +6,7 @@ on:
 
 jobs:
   build:
+    if: ${{ !github.event.act }}
     runs-on: [self-hosted, trt]
 
     steps:

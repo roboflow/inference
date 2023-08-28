@@ -1,0 +1,32 @@
+name: Publish Wheels to PyPi
+
+on:
+  release:
+    types: [created]
+      
+permissions:
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8]
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v3
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: 🦾 Install dependencies
+        run: |
+          ln -s .release/pypi/inference.core.setup.py setup.py
+          python -m pip install --upgrade pip
+          pip install ".[dev]" wheel twine
+      - name: 🛞 Create Wheels
+        run: |
+          make create_wheels
+      - name: 🚀 Publish to PyPi
+        uses: pypa/gh-action-pypi-publish@release/v1
