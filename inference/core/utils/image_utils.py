@@ -63,7 +63,7 @@ def load_image_inferred(value: Any) -> Image.Image:
         return value
     elif isinstance(value, (np.ndarray, np.generic)):
         return Image.fromarray(value)
-    elif isinstance(value, str) and ("http" in value):
+    elif isinstance(value, str) and (value.startswith("http")):
         return load_image_url(value)
     elif isinstance(value, str) and os.path.exists(value):
         return Image.open(value)

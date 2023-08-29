@@ -109,7 +109,7 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from models.sam import SegmentAnything
+    from inference.models.sam import SegmentAnything
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:

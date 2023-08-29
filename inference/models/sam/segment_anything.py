@@ -124,7 +124,7 @@ class SegmentAnything(RoboflowCoreModel):
                 embeddings=binary_vector.getvalue(), time=inference_time
             )
 
-    def infer(self, request: SamInferenceRequest):
+    def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
 
         Args:
@@ -253,9 +253,9 @@ class SegmentAnything(RoboflowCoreModel):
 
         if request.format == "json":
             masks = masks > self.predictor.model.mask_threshold
-            masks = mask2poly(masks, False)
+            masks = mask2poly(masks)
             low_res_masks = low_res_masks > self.predictor.model.mask_threshold
-            low_res_masks = mask2poly(low_res_masks, False)
+            low_res_masks = mask2poly(low_res_masks)
         elif request.format == "binary":
             binary_vector = BytesIO()
             np.savez_compressed(binary_vector, masks=masks, low_res_masks=low_res_masks)
@@ -265,9 +265,12 @@ class SegmentAnything(RoboflowCoreModel):
         else:
             raise ValueError(f"Invalid format {request.format}")
 
+        print("MAKS", type(masks[0]))
+        print("LOW RES MASKS", type(low_res_masks[0]))
+
         response = SamSegmentationResponse(
-            masks=masks,
-            low_res_masks=low_res_masks,
+            masks=[m.tolist() for m in masks],
+            low_res_masks=[m.tolist() for m in low_res_masks],
             time=perf_counter() - t1,
         )
         return response
