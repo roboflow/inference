@@ -361,8 +361,7 @@ class ObjectDetectionPrediction(BaseModel):
     class_confidence: Union[float, None] = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )
-    class_id: int = Field(description="The class id of the prediction"
-    )
+    class_id: int = Field(description="The class id of the prediction")
 
 
 class Point(BaseModel):
@@ -411,8 +410,7 @@ class InstanceSegmentationPrediction(BaseModel):
     points: List[Point] = Field(
         description="The list of points that make up the instance polygon"
     )
-    class_id: int = Field(description="The class id of the prediction"
-    )
+    class_id: int = Field(description="The class id of the prediction")
 
 
 class ClassificationPrediction(BaseModel):

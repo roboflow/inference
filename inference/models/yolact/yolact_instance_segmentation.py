@@ -151,7 +151,7 @@ class YOLACTInstanceSegmentationOnnxRoboflowInferenceModel(
                     "class": class_name,
                     "confidence": round(confidence, 3),
                     "points": points,
-                    "class_id" : int(cls),
+                    "class_id": int(cls),
                 }
                 if not request.class_filter or class_name in request.class_filter:
                     preds.append(pred)

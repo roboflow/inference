@@ -128,7 +128,11 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
                 results = []
                 for i, cls_name in enumerate(self.class_names):
                     score = float(preds[i])
-                    pred = {"class_id": i, "class": cls_name, "confidence": round(score, 4)}
+                    pred = {
+                        "class_id": i,
+                        "class": cls_name,
+                        "confidence": round(score, 4),
+                    }
                     results.append(pred)
                 results = sorted(results, key=lambda x: x["confidence"], reverse=True)
 
