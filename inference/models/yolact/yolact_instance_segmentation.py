@@ -116,7 +116,6 @@ class YOLACTInstanceSegmentationOnnxRoboflowInferenceModel(
             box_format="xyxy",
         )
         predictions = np.array(predictions)
-
         batch_preds = []
         for batch_idx, img_dim in zip(range(batch_size), img_dims):
             boxes = predictions[batch_idx, :, :4]
@@ -152,6 +151,7 @@ class YOLACTInstanceSegmentationOnnxRoboflowInferenceModel(
                     "class": class_name,
                     "confidence": round(confidence, 3),
                     "points": points,
+                    "class_id" : int(cls),
                 }
                 if not request.class_filter or class_name in request.class_filter:
                     preds.append(pred)

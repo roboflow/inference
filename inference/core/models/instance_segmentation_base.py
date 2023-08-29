@@ -136,6 +136,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                             "points": [Point(x=point[0], y=point[1]) for point in mask],
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
+                            "class_id": int(pred[6]),
                         }
                     )
                     for pred, mask in zip(batch_predictions, batch_masks)

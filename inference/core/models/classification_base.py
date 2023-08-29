@@ -111,7 +111,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
                 for i, o in enumerate(preds):
                     cls_name = self.class_names[i]
                     score = float(o)
-                    results[cls_name] = {"confidence": score}
+                    results[cls_name] = {"confidence": score, "class_id": i}
                     if score > confidence_threshold:
                         predicted_classes.append(cls_name)
                 response = MultiLabelClassificationInferenceResponse(
@@ -128,7 +128,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
                 results = []
                 for i, cls_name in enumerate(self.class_names):
                     score = float(preds[i])
-                    pred = {"class": cls_name, "confidence": round(score, 4)}
+                    pred = {"class_id": i, "class": cls_name, "confidence": round(score, 4)}
                     results.append(pred)
                 results = sorted(results, key=lambda x: x["confidence"], reverse=True)
 
@@ -176,7 +176,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
                 outline=color,
                 width=inference_request.visualization_stroke_width,
             )
-            text = f"{prediction.class_name} {prediction.confidence:.2f}"
+            text = f"{prediction.class_id} - {prediction.class_name} {prediction.confidence:.2f}"
             text_size = font.getbbox(text)
 
             # set button size + 10px margins
@@ -206,7 +206,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
             )
             for i, (cls_name, pred) in enumerate(predictions):
                 color = self.colors.get(cls_name, "#4892EA")
-                text = f"{cls_name} {pred.confidence:.2f}"
+                text = f"{i} - {cls_name} {pred.confidence:.2f}"
                 text_size = font.getbbox(text)
 
                 # set button size + 10px margins
