@@ -9,7 +9,7 @@ knowledge of machine learning or device-specific deployment, you can deploy a co
 
 Check out Inference running on a video of a football game:
 
-https://github.com/roboflow/inference/assets/37276661/05512458-8424-4ddd-b214-57204b278528
+https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
 
 ## 💻 Why Inference?
 
@@ -224,9 +224,20 @@ Visit our [documentation](https://roboflow.github.io/inference) for usage exampl
 
 We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
 
+## 💻 explore more Roboflow open source projects
+
+|Project | Description|
+|:---|:---|
+|[supervision](https://roboflow.com/supervision) | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.
+|[Autodistill](https://github.com/autodistill/autodistill) | Automatically label images for use in training computer vision models. |
+|[Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models.
+|[Notebooks](https://roboflow.com/notebooks) | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.
+|[Collect](https://github.com/roboflow/roboflow-collect) | Automated, intelligent data collection powered by CLIP.
+
 <br>
 
 <div align="center">
+
   <div align="center">
       <a href="https://youtube.com/roboflow">
           <img
@@ -269,4 +280,7 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
           />
       </a>
       </a>
+  </div>
+
+</div>
   </div>

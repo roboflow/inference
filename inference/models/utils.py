@@ -122,6 +122,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models.gaze.gaze import GazeOnnxRoboflowCoreModel
+
+    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = GazeOnnxRoboflowCoreModel
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=None, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
