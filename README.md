@@ -74,6 +74,7 @@ Some functionality requires extra dependancies. These can be installed by specif
 | extra | description |
 |:-------|:-------------------------------------------------|
 | `http` | Ability to run the http interface |
+| `gaze` | Ability to use the core `Gaze` model |
 
 Example install with http dependancies:
 
@@ -159,27 +160,15 @@ print(res.json())
 After installing via pip, you can run a simple inference using:
 
 ```python
-from inference.core.data_models import ObjectDetectionInferenceRequest
-from inference.models.yolov5.yolov5_object_detection import (
-    YOLOv5ObjectDetection,
-)
+from inference.models.utils import get_roboflow_model
 
-model = YOLOv5ObjectDetection(
-    model_id="soccer-players-5fuqs/1", device_id="my-pc",
+model = get_roboflow_model(
+    model_id="soccer-players-5fuqs/1", 
     #Replace ROBOFLOW_API_KEY with your Roboflow API Key
     api_key="ROBOFLOW_API_KEY"
 )
 
-request = ObjectDetectionInferenceRequest(
-    image={
-        "type": "url",
-        "value": "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg",
-    },
-    confidence=0.5,
-    iou_threshold=0.5,
-)
-
-results = model.infer_from_request(request)
+results = model.infer(image="https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg", confidence=0.5, iou_threshold=0.5)
 
 print(results)
 
@@ -198,6 +187,7 @@ The Roboflow Inference code is distributed under an [Apache 2.0 license](https:/
 | model                     |                                        license                                        |
 | :------------------------ | :-----------------------------------------------------------------------------------: |
 | `inference/models/clip`   |                [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                |
+|`inference/models/gaze` | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
 | `inference/models/sam`    | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)  |
 | `inference/models/vit`    | [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE) |
 | `inference/models/yolact` |             [MIT](https://github.com/dbolya/yolact/blob/master/README.md)             |
