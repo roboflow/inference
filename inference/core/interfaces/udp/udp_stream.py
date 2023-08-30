@@ -3,7 +3,6 @@ import socket
 import sys
 import threading
 import time
-
 from typing import Union
 
 from PIL import Image
