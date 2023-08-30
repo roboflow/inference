@@ -18,15 +18,14 @@ def load_image(value: Any) -> Image.Image:
     """Loads an image based on the specified type and value.
 
     Args:
-        type (str): The type of image to load. Supported types are 'base64', 'url', 'multipart', 'pil', and 'numpy'.
-        value (Union[bytes, str]): The value containing the image data, depending on the type.
+        value (Any): Image value which could be an instance of InferenceRequestImage,
+            a dict with 'type' and 'value' keys, or inferred based on the value's content.
 
     Returns:
         Image.Image: The loaded PIL image, converted to RGB.
 
     Raises:
         NotImplementedError: If the specified image type is not supported.
-        InputMethodNotAllowed: If the numpy input method is used but not allowed.
         InvalidNumpyInput: If the numpy input method is used and the input data is invalid.
     """
     type = None
@@ -59,6 +58,17 @@ def load_image(value: Any) -> Image.Image:
 
 
 def load_image_inferred(value: Any) -> Image.Image:
+    """Tries to infer the image type from the value and loads it.
+
+    Args:
+        value (Any): Image value to infer and load.
+
+    Returns:
+        Image.Image: The loaded PIL image.
+
+    Raises:
+        NotImplementedError: If the image type could not be inferred.
+    """
     if isinstance(value, Image.Image):
         return value
     elif isinstance(value, (np.ndarray, np.generic)):
@@ -86,6 +96,14 @@ def load_image_inferred(value: Any) -> Image.Image:
 
 
 def load_image_base64(value):
+    """Loads an image from a base64 encoded string.
+
+    Args:
+        value (str): Base64 encoded string representing the image.
+
+    Returns:
+        Image.Image: The loaded PIL image.
+    """
     # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
     if not isinstance(value, str):
         value = value.decode("utf-8")
@@ -96,10 +114,29 @@ def load_image_base64(value):
 
 
 def load_image_multipart(value):
+    """Loads an image from a multipart-encoded input.
+
+    Args:
+        value (Any): Multipart-encoded input representing the image.
+
+    Returns:
+        Image.Image: The loaded PIL image.
+    """
     return Image.open(value)
 
 
 def load_image_numpy_str(value):
+    """Loads an image from a numpy array string.
+
+    Args:
+        value (str): String representing the numpy array of the image.
+
+    Returns:
+        Image.Image: The loaded PIL image.
+
+    Raises:
+        InvalidNumpyInput: If the numpy data is invalid.
+    """
     data = pickle.loads(value)
     try:
         return Image.fromarray(data)
@@ -119,4 +156,12 @@ def load_image_numpy_str(value):
 
 
 def load_image_url(value):
+    """Loads an image from a given URL.
+
+    Args:
+        value (str): URL of the image.
+
+    Returns:
+        Image.Image: The loaded PIL image.
+    """
     return Image.open(requests.get(value, stream=True).raw)

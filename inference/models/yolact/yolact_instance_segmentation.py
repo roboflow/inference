@@ -45,13 +45,36 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         return_image_dims: bool = False,
         **kwargs,
     ) -> List[List[dict]]:
-        """Takes an instance segmentation inference request, preprocesses all images, runs inference on all images, and returns the postprocessed detections in the form of inference response objects.
+        """
+        Performs instance segmentation inference on a given image, post-processes the results,
+        and returns the segmented instances as dictionaries containing their properties.
 
         Args:
-            request (InstanceSegmentationInferenceRequest): A request containing 1 to N inference image objects and other inference parameters (confidence, iou threshold, etc.)
+            image (Any): The image or list of images to segment. Can be in various formats (e.g., raw array, PIL image).
+            class_agnostic_nms (bool, optional): Whether to perform class-agnostic non-max suppression. Defaults to False.
+            confidence (float, optional): Confidence threshold for filtering weak detections. Defaults to 0.5.
+            iou_threshold (float, optional): Intersection-over-union threshold for non-max suppression. Defaults to 0.5.
+            max_candidates (int, optional): Maximum number of candidate detections to consider. Defaults to 3000.
+            max_detections (int, optional): Maximum number of detections to return after non-max suppression. Defaults to 300.
+            return_image_dims (bool, optional): Whether to return the dimensions of the input image(s). Defaults to False.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            Union[List[InstanceSegmentationInferenceResponse], InstanceSegmentationInferenceResponse]: One to N inference response objects based on the number of inference request images in the inference request object, each inference response object contains a list of predictions.
+            List[List[dict]]: Each list contains dictionaries of segmented instances for a given image. Each dictionary contains:
+                - x, y: Center coordinates of the instance.
+                - width, height: Width and height of the bounding box around the instance.
+                - class: Name of the detected class.
+                - confidence: Confidence score of the detection.
+                - points: List of points describing the segmented mask's boundary.
+                - class_id: ID corresponding to the detected class.
+            If `return_image_dims` is True, the function returns a tuple where the first element is the list of detections and the
+            second element is the list of image dimensions.
+
+        Notes:
+            - The function supports processing multiple images in a batch.
+            - If an input list of images is provided, the function returns a list of lists,
+              where each inner list corresponds to the detections for a specific image.
+            - The function internally uses an ONNX model for inference.
         """
         t1 = perf_counter()
 
@@ -170,6 +193,29 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         img_dims,
         class_filter: List[str] = None,
     ):
+        """
+        Constructs a list of InstanceSegmentationInferenceResponse objects based on the provided predictions
+        and image dimensions, optionally filtering by class name.
+
+        Args:
+            predictions (List[List[dict]]): A list containing batch predictions, where each inner list contains
+                dictionaries of segmented instances for a given image.
+            img_dims (List[Tuple[int, int]]): List of tuples specifying the dimensions of each image in the format
+                (height, width).
+            class_filter (List[str], optional): A list of class names to filter the predictions by. If not provided,
+                all predictions are included.
+
+        Returns:
+            List[InstanceSegmentationInferenceResponse]: A list of response objects, each containing the filtered
+            predictions and corresponding image dimensions for a given image.
+
+        Examples:
+            >>> predictions = [[{"class_name": "cat", ...}, {"class_name": "dog", ...}], ...]
+            >>> img_dims = [(300, 400), ...]
+            >>> responses = make_response(predictions, img_dims, class_filter=["cat"])
+            >>> len(responses[0].predictions)  # Only predictions with "cat" class are included
+            1
+        """
         responses = [
             InstanceSegmentationInferenceResponse(
                 predictions=[

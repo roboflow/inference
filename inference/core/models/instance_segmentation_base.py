@@ -47,13 +47,31 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
     ) -> Union[
         List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]
     ]:
-        """Takes an instance segmentation inference request, preprocesses all images, runs inference on all images, and returns the postprocessed detections in the form of inference response objects.
+        """
+        Process an image or list of images for instance segmentation.
 
         Args:
-            request (InstanceSegmentationInferenceRequest): A request containing 1 to N inference image objects and other inference parameters (confidence, iou threshold, etc.).
+            image (Any): An image or a list of images for processing.
+            class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
+            confidence (float, optional): Confidence threshold for predictions. Defaults to 0.5.
+            iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.5.
+            mask_decode_mode (str, optional): Decoding mode for masks. Choices are "accurate", "tradeoff", and "fast". Defaults to "accurate".
+            max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
+            max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
+            return_image_dims (bool, optional): Whether to return the dimensions of the processed images. Defaults to False.
+            tradeoff_factor (float, optional): Tradeoff factor used when `mask_decode_mode` is set to "tradeoff". Must be in [0.0, 1.0]. Defaults to 0.5.
 
         Returns:
-            Union[List[InstanceSegmentationInferenceResponse], InstanceSegmentationInferenceResponse]: One to N inference response objects based on the number of inference request images in the inference request object. Each inference response object contains a list of predictions.
+            Union[List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]]: The list of predictions, with each prediction being a list of lists. Optionally, also returns the dimensions of the processed images.
+
+        Raises:
+            InvalidMaskDecodeArgument: If an invalid `mask_decode_mode` is provided or if the `tradeoff_factor` is outside the allowed range.
+
+        Notes:
+            - Processes input images and normalizes them.
+            - Makes predictions using the ONNX runtime.
+            - Applies non-maximum suppression to the predictions.
+            - Decodes the masks according to the specified mode.
         """
         t1 = perf_counter()
 
@@ -145,6 +163,22 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
     ]:
+        """
+        Create instance segmentation inference response objects for the provided predictions and masks.
+
+        Args:
+            predictions (List[List[List[float]]]): List of prediction data, one for each image.
+            masks (List[List[List[float]]]): List of masks corresponding to the predictions.
+            img_dims (List[Tuple[int, int]]): List of image dimensions corresponding to the processed images.
+            class_filter (List[str], optional): List of class names to filter predictions by. Defaults to an empty list (no filtering).
+
+        Returns:
+            Union[InstanceSegmentationInferenceResponse, List[InstanceSegmentationInferenceResponse]]: A single instance segmentation response or a list of instance segmentation responses based on the number of processed images.
+
+        Notes:
+            - For each image, constructs an `InstanceSegmentationInferenceResponse` object.
+            - Each response contains a list of `InstanceSegmentationPrediction` objects.
+        """
         responses = [
             InstanceSegmentationInferenceResponse(
                 predictions=[

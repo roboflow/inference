@@ -35,16 +35,24 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
     ) -> Union[
         List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
     ]:
-        """Runs object detection inference on given images and returns the detections.
+        """
+        Runs object detection inference on one or multiple images and returns the detections.
 
         Args:
-            request (ObjectDetectionInferenceRequest): A request containing 1 to N inference image objects and other inference parameters (confidence, iou threshold, etc.)
+            image (Any): The input image or a list of images to process.
+            class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
+            confidence (float, optional): Confidence threshold for predictions. Defaults to 0.5.
+            iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.5.
+            fix_batch_size (bool, optional): If True, fix the batch size for predictions. Useful when the model requires a fixed batch size. Defaults to False.
+            max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
+            max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
+            return_image_dims (bool, optional): Whether to return the dimensions of the processed images along with the predictions. Defaults to False.
 
         Returns:
-            Union[List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse]: One to N inference response objects based on the number of inference request images in the request object, each response contains a list of predictions.
+            Union[List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse]: One or multiple object detection inference responses based on the number of processed images. Each response contains a list of predictions. If `return_image_dims` is True, it will return a tuple with predictions and image dimensions.
 
         Raises:
-            ValueError: If batching is not enabled for the model and more than one image is passed in the request.
+            ValueError: If batching is not enabled for the model and more than one image is passed for processing.
         """
         t1 = perf_counter()
         batch_size = len(image) if isinstance(image, list) else 1

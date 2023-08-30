@@ -35,6 +35,7 @@ nav:
   - Library Reference:
     - Models:
       - CLIP: library/models/clip.md
+      - Gaze: library/models/gaze.md
       - Segment Anything: library/models/segment_anything.md
       - ViT Classification: library/models/vit_classification.md
       - YOLOv5 Object Detection: library/models/yolov5.md

@@ -123,13 +123,24 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         return_image_dims: bool = False,
         **kwargs,
     ):
-        """Perform inference on a given request and return the response.
+        """
+        Perform inference on the provided image(s) and return the predictions.
 
         Args:
-            request (ClassificationInferenceRequest): The request object containing the image(s) and parameters for inference.
+            image (Any): The image or list of images to be processed.
+            return_image_dims (bool, optional): If set to True, the function will also return the dimensions of the image. Defaults to False.
+            **kwargs: Additional parameters to customize the inference process.
 
         Returns:
-            Union[List[Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]], Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]]: The response object containing predictions, visualization, and other details.
+            Union[List[np.array], np.array, Tuple[List[np.array], List[Tuple[int, int]]], Tuple[np.array, Tuple[int, int]]]:
+            If `return_image_dims` is True and a list of images is provided, a tuple containing a list of prediction arrays and a list of image dimensions (width, height) is returned.
+            If `return_image_dims` is True and a single image is provided, a tuple containing the prediction array and image dimensions (width, height) is returned.
+            If `return_image_dims` is False and a list of images is provided, only the list of prediction arrays is returned.
+            If `return_image_dims` is False and a single image is provided, only the prediction array is returned.
+
+        Notes:
+            - The input image(s) will be preprocessed (normalized and reshaped) before inference.
+            - This function uses an ONNX session to perform inference on the input image(s).
         """
         t1 = perf_counter()
 
@@ -165,6 +176,22 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         self,
         request: ClassificationInferenceRequest,
     ) -> Union[List[InferenceResponse], InferenceResponse]:
+        """
+        Handle an inference request to produce an appropriate response.
+
+        Args:
+            request (ClassificationInferenceRequest): The request object encapsulating the image(s) and relevant parameters.
+
+        Returns:
+            Union[List[InferenceResponse], InferenceResponse]: The response object(s) containing the predictions, visualization, and other pertinent details. If a list of images was provided, a list of responses is returned. Otherwise, a single response is returned.
+
+        Notes:
+            - Starts a timer at the beginning to calculate inference time.
+            - Processes the image(s) through the `infer` method.
+            - Generates the appropriate response object(s) using `make_response`.
+            - Calculates and sets the time taken for inference.
+            - If visualization is requested, the predictions are drawn on the image.
+        """
         t1 = perf_counter()
         predictions_data = self.infer(**request.dict(), return_image_dims=True)
         responses = self.make_response(
@@ -190,6 +217,23 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         confidence: float = 0.5,
         **kwargs,
     ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
+        """
+        Create response objects for the given predictions and image dimensions.
+
+        Args:
+            predictions (list): List of prediction arrays from the inference process.
+            img_dims (list): List of tuples indicating the dimensions (width, height) of each image.
+            confidence (float, optional): Confidence threshold for filtering predictions. Defaults to 0.5.
+            **kwargs: Additional parameters to influence the response creation process.
+
+        Returns:
+            Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]: A response object or a list of response objects encapsulating the prediction details.
+
+        Notes:
+            - If the model is multiclass, a `MultiLabelClassificationInferenceResponse` is generated for each image.
+            - If the model is not multiclass, a `ClassificationInferenceResponse` is generated for each image.
+            - Predictions below the confidence threshold are filtered out.
+        """
         responses = []
         confidence_threshold = float(confidence)
         for ind, prediction in enumerate(predictions):

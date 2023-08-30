@@ -96,13 +96,22 @@ class Clip(OnnxRoboflowCoreModel):
         prompt_type: Union[str, List[str], Dict[str, Any]] = "text",
         **kwargs,
     ) -> Union[List[float], Dict[str, float]]:
-        """Compares the subject with the prompt using the Clip model.
+        """
+        Compares the subject with the prompt to calculate similarity scores.
 
         Args:
-            request (ClipCompareRequest): The request object containing the subject and prompt.
+            subject (Any): The subject data to be compared. Can be either an image or text.
+            prompt (Any): The prompt data to be compared against the subject. Can be a single value (image/text), list of values, or dictionary of values.
+            subject_type (str, optional): Specifies the type of the subject data. Must be either "image" or "text". Defaults to "image".
+            prompt_type (Union[str, List[str], Dict[str, Any]], optional): Specifies the type of the prompt data. Can be "image", "text", list of these types, or a dictionary containing these types. Defaults to "text".
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            ClipCompareResponse: The response object containing the similarity score.
+            Union[List[float], Dict[str, float]]: A list or dictionary containing cosine similarity scores between the subject and prompt(s). If prompt is a dictionary, returns a dictionary with keys corresponding to the original prompt dictionary's keys.
+
+        Raises:
+            ValueError: If subject_type or prompt_type is neither "image" nor "text".
+            ValueError: If the number of prompts exceeds the maximum batch size.
         """
 
         if subject_type == "image":
@@ -150,6 +159,21 @@ class Clip(OnnxRoboflowCoreModel):
     def make_compare_response(
         self, similarities: Union[List[float], Dict[str, float]]
     ) -> ClipCompareResponse:
+        """
+        Creates a ClipCompareResponse object from the provided similarity data.
+
+        Args:
+            similarities (Union[List[float], Dict[str, float]]): A list or dictionary containing similarity scores.
+
+        Returns:
+            ClipCompareResponse: An instance of the ClipCompareResponse with the given similarity scores.
+
+        Example:
+            Assuming `ClipCompareResponse` expects a dictionary of string-float pairs:
+
+            >>> make_compare_response({"image1": 0.98, "image2": 0.76})
+            ClipCompareResponse(similarity={"image1": 0.98, "image2": 0.76})
+        """
         response = ClipCompareResponse(similarity=similarities)
         return response
 
@@ -158,13 +182,21 @@ class Clip(OnnxRoboflowCoreModel):
         image: Any,
         **kwargs,
     ) -> np.ndarray:
-        """Embeds an image using the Clip model.
+        """
+        Embeds an image or a list of images using the Clip model.
 
         Args:
-            request (ClipImageEmbeddingRequest): The request object containing the image.
+            image (Any): The image or list of images to be embedded. Image can be in any format that is acceptable by the preproc_image method.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            ClipEmbeddingResponse: The response object containing the embeddings.
+            np.ndarray: The embeddings of the image(s) as a numpy array.
+
+        Raises:
+            ValueError: If the number of images in the list exceeds the maximum batch size.
+
+        Notes:
+            The function measures performance using perf_counter and also has support for ONNX session to get embeddings.
         """
         t1 = perf_counter()
 
@@ -186,6 +218,20 @@ class Clip(OnnxRoboflowCoreModel):
     def make_embed_image_response(
         self, embeddings: np.ndarray
     ) -> ClipEmbeddingResponse:
+        """
+        Converts the given embeddings into a ClipEmbeddingResponse object.
+
+        Args:
+            embeddings (np.ndarray): A numpy array containing the embeddings for an image or images.
+
+        Returns:
+            ClipEmbeddingResponse: An instance of the ClipEmbeddingResponse with the provided embeddings converted to a list.
+
+        Example:
+            >>> embeddings_array = np.array([[0.5, 0.3, 0.2], [0.1, 0.9, 0.0]])
+            >>> make_embed_image_response(embeddings_array)
+            ClipEmbeddingResponse(embeddings=[[0.5, 0.3, 0.2], [0.1, 0.9, 0.0]])
+        """
         response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
 
         return response
@@ -195,13 +241,21 @@ class Clip(OnnxRoboflowCoreModel):
         text: Union[str, List[str]],
         **kwargs,
     ) -> np.ndarray:
-        """Embeds a text using the Clip model.
+        """
+        Embeds a text or a list of texts using the Clip model.
 
         Args:
-            request (ClipTextEmbeddingRequest): The request object containing the text.
+            text (Union[str, List[str]]): The text string or list of text strings to be embedded.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            ClipEmbeddingResponse: The response object containing the embeddings.
+            np.ndarray: The embeddings of the text or texts as a numpy array.
+
+        Raises:
+            ValueError: If the number of text strings in the list exceeds the maximum batch size.
+
+        Notes:
+            The function utilizes an ONNX session to compute embeddings and measures the embedding time with perf_counter.
         """
         t1 = perf_counter()
 
@@ -223,6 +277,20 @@ class Clip(OnnxRoboflowCoreModel):
         return embeddings
 
     def make_embed_text_response(self, embeddings: np.ndarray) -> ClipEmbeddingResponse:
+        """
+        Converts the given text embeddings into a ClipEmbeddingResponse object.
+
+        Args:
+            embeddings (np.ndarray): A numpy array containing the embeddings for a text or texts.
+
+        Returns:
+            ClipEmbeddingResponse: An instance of the ClipEmbeddingResponse with the provided embeddings converted to a list.
+
+        Example:
+            >>> embeddings_array = np.array([[0.8, 0.1, 0.1], [0.4, 0.5, 0.1]])
+            >>> make_embed_text_response(embeddings_array)
+            ClipEmbeddingResponse(embeddings=[[0.8, 0.1, 0.1], [0.4, 0.5, 0.1]])
+        """
         response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 

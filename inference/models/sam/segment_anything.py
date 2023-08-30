@@ -74,13 +74,29 @@ class SegmentAnything(RoboflowCoreModel):
         return ["encoder.pth", "decoder.onnx"]
 
     def embed_image(self, image: Any, image_id: Optional[str] = None, **kwargs):
-        """Embeds an image.
+        """
+        Embeds an image and caches the result if an image_id is provided. If the image has been embedded before and cached,
+        the cached result will be returned.
 
         Args:
-            request (SamEmbeddingRequest): The embedding request.
+            image (Any): The image to be embedded. The format should be compatible with the preproc_image method.
+            image_id (Optional[str]): An identifier for the image. If provided, the embedding result will be cached
+                                      with this ID. Defaults to None.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            Tuple: The embedding and the shape of the image.
+            Tuple[np.ndarray, Tuple[int, int]]: A tuple where the first element is the embedding of the image
+                                               and the second element is the shape (height, width) of the processed image.
+
+        Notes:
+            - Embeddings and image sizes are cached to improve performance on repeated requests for the same image.
+            - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
+              the oldest entries are removed.
+
+        Example:
+            >>> img_array = ... # some image array
+            >>> embed_image(img_array, image_id="sample123")
+            (array([...]), (224, 224))
         """
         if image_id and image_id in self.embedding_cache:
             return (
@@ -176,13 +192,37 @@ class SegmentAnything(RoboflowCoreModel):
         use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
-        """Segments an image.
+        """
+        Segments an image based on provided embeddings, points, masks, or cached results.
+        If embeddings are not directly provided, the function can derive them from the input image or cache.
 
         Args:
-            request (SamSegmentationRequest): The segmentation request.
+            image (Any): The image to be segmented.
+            embeddings (Optional[Union[np.ndarray, List[List[float]]]]): The embeddings of the image.
+                Defaults to None, in which case the image is used to compute embeddings.
+            embeddings_format (Optional[str]): Format of the provided embeddings; either 'json' or 'binary'. Defaults to 'json'.
+            has_mask_input (Optional[bool]): Specifies whether mask input is provided. Defaults to False.
+            image_id (Optional[str]): A cached identifier for the image. Useful for accessing cached embeddings or masks.
+            mask_input (Optional[Union[np.ndarray, List[List[List[float]]]]]): Input mask for the image.
+            mask_input_format (Optional[str]): Format of the provided mask input; either 'json' or 'binary'. Defaults to 'json'.
+            orig_im_size (Optional[List[int]]): Original size of the image when providing embeddings directly.
+            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to an empty list.
+            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to an empty list.
+            use_mask_input_cache (Optional[bool]): Flag to determine if cached mask input should be used. Defaults to True.
+            **kwargs: Additional keyword arguments.
 
         Returns:
-            SamSegmentationResponse: The segmentation response.
+            Tuple[np.ndarray, np.ndarray]: A tuple where the first element is the segmentation masks of the image
+                                          and the second element is the low resolution segmentation masks.
+
+        Raises:
+            ValueError: If necessary inputs are missing or inconsistent.
+
+        Notes:
+            - Embeddings, segmentations, and low-resolution logits can be cached to improve performance
+              on repeated requests for the same image.
+            - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
+              the oldest entries are removed.
         """
         if not embeddings:
             if not image and not image_id:
