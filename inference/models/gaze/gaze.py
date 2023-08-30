@@ -32,7 +32,7 @@ from inference.core.utils.image_utils import load_image
 from inference.models.gaze.l2cs import L2CS
 
 
-class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
+class Gaze(OnnxRoboflowCoreModel):
     """Roboflow ONNX Gaze model.
 
     This class is responsible for handling the ONNX Gaze model, including
@@ -43,7 +43,7 @@ class GazeOnnxRoboflowCoreModel(OnnxRoboflowCoreModel):
     """
 
     def __init__(self, *args, **kwargs):
-        """Initializes the GazeOnnxRoboflowCoreModel with the given arguments and keyword arguments."""
+        """Initializes the Gaze with the given arguments and keyword arguments."""
 
         t1 = perf_counter()
         super().__init__(*args, **kwargs)

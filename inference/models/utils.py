@@ -1,9 +1,9 @@
 from inference.core.registries.roboflow import get_model_type
-from inference.models.vit import VitClassification
-from inference.models.yolact import YOLACT
-from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
-from inference.models.yolov7 import YOLOv7InstanceSegmentation
-from inference.models.yolov8 import (
+from inference.models import VitClassification
+from inference.models import YOLACT
+from inference.models import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
+from inference.models import YOLOv7InstanceSegmentation
+from inference.models import (
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
@@ -109,23 +109,23 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models.sam import SegmentAnything
+    from inference.models import SegmentAnything
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     pass
 
 try:
-    from inference.models.clip.clip_model import Clip
+    from inference.models import Clip
 
     ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
 except:
     pass
 
 try:
-    from inference.models.gaze.gaze import GazeOnnxRoboflowCoreModel
+    from inference.models import Gaze
 
-    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = GazeOnnxRoboflowCoreModel
+    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
 except:
     pass
 
