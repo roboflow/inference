@@ -119,7 +119,6 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
             box_format="xyxy",
         )
         predictions = np.array(predictions)
-
         batch_preds = []
         for batch_idx, img_dim in zip(range(batch_size), img_dims):
             boxes = predictions[batch_idx, :, :4]
@@ -155,6 +154,7 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
                     "class": class_name,
                     "confidence": round(confidence, 3),
                     "points": points,
+                    "class_id": int(cls),
                 }
                 preds.append(pred)
             batch_preds.append(preds)

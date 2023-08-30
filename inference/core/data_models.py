@@ -342,6 +342,7 @@ class ObjectDetectionPrediction(BaseModel):
         confidence (float): The detection confidence as a fraction between 0 and 1.
         class_name (str): The predicted class label.
         class_confidence (Union[float, None]): The class label confidence as a fraction between 0 and 1.
+        class_id (int): The class id of the prediction
     """
 
     x: float = Field(description="The center x-axis pixel coordinate of the prediction")
@@ -360,6 +361,7 @@ class ObjectDetectionPrediction(BaseModel):
     class_confidence: Union[float, None] = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )
+    class_id: int = Field(description="The class id of the prediction")
 
 
 class Point(BaseModel):
@@ -396,6 +398,7 @@ class InstanceSegmentationPrediction(BaseModel):
         class_name (str): The predicted class label.
         class_confidence (Union[float, None]): The class label confidence as a fraction between 0 and 1.
         points (List[Point]): The list of points that make up the instance polygon.
+        class_id: int = Field(description="The class id of the prediction")
     """
 
     x: float = Field(description="The center x-axis pixel coordinate of the prediction")
@@ -417,6 +420,7 @@ class InstanceSegmentationPrediction(BaseModel):
     points: List[Point] = Field(
         description="The list of points that make up the instance polygon"
     )
+    class_id: int = Field(description="The class id of the prediction")
 
 
 class ClassificationPrediction(BaseModel):
@@ -424,10 +428,12 @@ class ClassificationPrediction(BaseModel):
 
     Attributes:
         class_name (str): The predicted class label.
+        class_id (int): Numeric ID associated with the class label.
         confidence (float): The class label confidence as a fraction between 0 and 1.
     """
 
     class_name: str = Field(alias="class", description="The predicted class label")
+    class_id: int = Field(description="Numeric ID associated with the class label")
     confidence: float = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )

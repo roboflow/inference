@@ -89,6 +89,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
         """
+
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
@@ -101,6 +102,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
                             "height": pred[3] - pred[1],
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
+                            "class_id": int(pred[6]),
                         }
                     )
                     for pred in batch_predictions
