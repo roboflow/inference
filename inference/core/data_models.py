@@ -725,6 +725,9 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
         landmarks (Union[List[Point], List[Point3D]]): The detected face landmarks.
     """
 
+    class_id: Optional[int] = Field(
+        description="The class id of the prediction", default=0
+    )
     class_name: str = Field(
         alias="class", default="face", description="The predicted class label"
     )
