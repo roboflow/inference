@@ -1,4 +1,5 @@
 # 🤖 Video Inference Dashboard Example 
+
 Roboflow's inference server to analyze video streams. This project extracts insights from video frames at defined intervals and generates informative visualizations and CSV outputs.
 
 ##  📦 Use Case: Smart Inventory Monitoring
