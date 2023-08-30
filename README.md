@@ -11,7 +11,9 @@ Check out Inference running on a video of a football game:
 
 https://github.com/roboflow/inference/assets/37276661/05512458-8424-4ddd-b214-57204b278528
 
-[View more example projects built with Inference](./examples/).
+## 👩‍🏫 Examples
+
+The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
 
 ## 💻 Why Inference?
 
