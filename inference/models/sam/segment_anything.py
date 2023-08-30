@@ -1,7 +1,7 @@
 import base64
 from io import BytesIO
 from time import perf_counter
-from typing import List
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import onnxruntime
@@ -73,7 +73,7 @@ class SegmentAnything(RoboflowCoreModel):
         """
         return ["encoder.pth", "decoder.onnx"]
 
-    def embed_image_(self, request: SamEmbeddingRequest):
+    def embed_image(self, image: Any, image_id: Optional[str] = None, **kwargs):
         """Embeds an image.
 
         Args:
@@ -82,47 +82,23 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             Tuple: The embedding and the shape of the image.
         """
-        if request.image_id and request.image_id in self.embedding_cache:
+        if image_id and image_id in self.embedding_cache:
             return (
-                self.embedding_cache[request.image_id],
-                self.image_size_cache[request.image_id],
+                self.embedding_cache[image_id],
+                self.image_size_cache[image_id],
             )
-        img_in = self.preproc_image(request.image)
+        img_in = self.preproc_image(image)
         self.predictor.set_image(img_in)
         embedding = self.predictor.get_image_embedding().cpu().numpy()
-        if request.image_id:
-            self.embedding_cache[request.image_id] = embedding
-            self.image_size_cache[request.image_id] = img_in.shape[:2]
-            self.embedding_cache_keys.append(request.image_id)
+        if image_id:
+            self.embedding_cache[image_id] = embedding
+            self.image_size_cache[image_id] = img_in.shape[:2]
+            self.embedding_cache_keys.append(image_id)
             if len(self.embedding_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.embedding_cache_keys.pop(0)
                 del self.embedding_cache[cache_key]
                 del self.image_size_cache[cache_key]
         return (embedding, img_in.shape[:2])
-
-    def embed_image(self, request: SamEmbeddingRequest):
-        """Embeds an image and returns the response.
-
-        Args:
-            request (SamEmbeddingRequest): The embedding request.
-
-        Returns:
-            SamEmbeddingResponse: The embedding response.
-        """
-        t1 = perf_counter()
-        embedding, _ = self.embed_image_(request)
-        inference_time = perf_counter() - t1
-        if request.format == "json":
-            return SamEmbeddingResponse(
-                embeddings=embedding.tolist(), time=inference_time
-            )
-        elif request.format == "binary":
-            binary_vector = BytesIO()
-            np.save(binary_vector, embedding)
-            binary_vector.seek(0)
-            return SamEmbeddingResponse(
-                embeddings=binary_vector.getvalue(), time=inference_time
-            )
 
     def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
@@ -133,10 +109,45 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):
-            return self.embed_image(request)
+            embedding, _ = self.embed_image(**request.dict())
+            inference_time = perf_counter() - t1
+            if request.format == "json":
+                return SamEmbeddingResponse(
+                    embeddings=embedding.tolist(), time=inference_time
+                )
+            elif request.format == "binary":
+                binary_vector = BytesIO()
+                np.save(binary_vector, embedding)
+                binary_vector.seek(0)
+                return SamEmbeddingResponse(
+                    embeddings=binary_vector.getvalue(), time=inference_time
+                )
         elif isinstance(request, SamSegmentationRequest):
-            return self.segment_image(request)
+            masks, low_res_masks = self.segment_image(**request.dict())
+            if request.format == "json":
+                masks = masks > self.predictor.model.mask_threshold
+                masks = mask2poly(masks)
+                low_res_masks = low_res_masks > self.predictor.model.mask_threshold
+                low_res_masks = mask2poly(low_res_masks)
+            elif request.format == "binary":
+                binary_vector = BytesIO()
+                np.savez_compressed(
+                    binary_vector, masks=masks, low_res_masks=low_res_masks
+                )
+                binary_vector.seek(0)
+                binary_data = binary_vector.getvalue()
+                return binary_data
+            else:
+                raise ValueError(f"Invalid format {request.format}")
+
+            response = SamSegmentationResponse(
+                masks=[m.tolist() for m in masks],
+                low_res_masks=[m.tolist() for m in low_res_masks],
+                time=perf_counter() - t1,
+            )
+            return response
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.
@@ -150,7 +161,21 @@ class SegmentAnything(RoboflowCoreModel):
         pil_image = load_image(image)
         return np.array(pil_image)
 
-    def segment_image(self, request: SamSegmentationRequest):
+    def segment_image(
+        self,
+        image: Any,
+        embeddings: Optional[Union[np.ndarray, List[List[float]]]] = None,
+        embeddings_format: Optional[str] = "json",
+        has_mask_input: Optional[bool] = False,
+        image_id: Optional[str] = None,
+        mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
+        mask_input_format: Optional[str] = "json",
+        orig_im_size: Optional[List[int]] = None,
+        point_coords: Optional[List[List[float]]] = [],
+        point_labels: Optional[List[int]] = [],
+        use_mask_input_cache: Optional[bool] = True,
+        **kwargs,
+    ):
         """Segments an image.
 
         Args:
@@ -159,36 +184,30 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             SamSegmentationResponse: The segmentation response.
         """
-        t1 = perf_counter()
-        if not request.embeddings:
-            if not request.image and not request.image_id:
+        if not embeddings:
+            if not image and not image_id:
                 raise ValueError(
                     "Must provide either image, cached image_id, or embeddings"
                 )
-            elif (
-                request.image_id
-                and not request.image
-                and request.image_id not in self.embedding_cache
-            ):
+            elif image_id and not image and image_id not in self.embedding_cache:
                 raise ValueError(
-                    f"Image ID {request.image_id} not in embedding cache, must provide the image or embeddings"
+                    f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
                 )
-            embedding_request = SamEmbeddingRequest(
-                image=request.image, image_id=request.image_id
+            embedding, original_image_size = self.embed_image(
+                image=image, image_id=image_id
             )
-            embedding, original_image_size = self.embed_image_(embedding_request)
         else:
-            if not request.orig_im_size:
+            if not orig_im_size:
                 raise ValueError(
                     "Must provide original image size if providing embeddings"
                 )
-            original_image_size = request.orig_im_size
-            if request.embeddings_format == "json":
-                embedding = np.array(request.embeddings)
-            elif request.embeddings_format == "binary":
-                embedding = np.load(BytesIO(request.embeddings))
+            original_image_size = orig_im_size
+            if embeddings_format == "json":
+                embedding = np.array(embeddings)
+            elif embeddings_format == "binary":
+                embedding = np.load(BytesIO(embeddings))
 
-        point_coords = request.point_coords
+        point_coords = point_coords
         point_coords.append([0, 0])
         point_coords = np.array(point_coords, dtype=np.float32)
         point_coords = np.expand_dims(point_coords, axis=0)
@@ -197,26 +216,25 @@ class SegmentAnything(RoboflowCoreModel):
             original_image_size,
         )
 
-        point_labels = request.point_labels
+        point_labels = point_labels
         point_labels.append(-1)
         point_labels = np.array(point_labels, dtype=np.float32)
         point_labels = np.expand_dims(point_labels, axis=0)
 
-        if request.has_mask_input:
+        if has_mask_input:
             if (
-                request.image_id
-                and request.image_id in self.low_res_logits_cache
-                and request.use_mask_input_cache
+                image_id
+                and image_id in self.low_res_logits_cache
+                and use_mask_input_cache
             ):
-                mask_input = self.low_res_logits_cache[request.image_id]
-            elif not request.mask_input and (
-                not request.image_id
-                or request.image_id not in self.low_res_logits_cache
+                mask_input = self.low_res_logits_cache[image_id]
+            elif not mask_input and (
+                not image_id or image_id not in self.low_res_logits_cache
             ):
                 raise ValueError("Must provide either mask_input or cached image_id")
             else:
-                if request.mask_input_format == "json":
-                    polys = request.mask_input
+                if mask_input_format == "json":
+                    polys = mask_input
                     mask_input = np.zeros((1, len(polys), 256, 256), dtype=np.uint8)
                     for i, poly in enumerate(polys):
                         poly = ShapelyPolygon(poly)
@@ -224,8 +242,8 @@ class SegmentAnything(RoboflowCoreModel):
                             [poly], out_shape=(256, 256)
                         )
                         mask_input[0, i, :, :] = raster
-                elif request.mask_input_format == "binary":
-                    binary_data = base64.b64decode(request.mask_input)
+                elif mask_input_format == "binary":
+                    binary_data = base64.b64decode(mask_input)
                     mask_input = np.load(BytesIO(binary_data))
         else:
             mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
@@ -236,41 +254,19 @@ class SegmentAnything(RoboflowCoreModel):
             "point_labels": point_labels,
             "mask_input": mask_input.astype(np.float32),
             "has_mask_input": np.zeros(1, dtype=np.float32)
-            if not request.has_mask_input
+            if not has_mask_input
             else np.ones(1, dtype=np.float32),
             "orig_im_size": np.array(original_image_size, dtype=np.float32),
         }
         masks, _, low_res_logits = self.ort_session.run(None, ort_inputs)
-        if request.image_id:
-            self.low_res_logits_cache[request.image_id] = low_res_logits
-            if request.image_id not in self.segmentation_cache_keys:
-                self.segmentation_cache_keys.append(request.image_id)
+        if image_id:
+            self.low_res_logits_cache[image_id] = low_res_logits
+            if image_id not in self.segmentation_cache_keys:
+                self.segmentation_cache_keys.append(image_id)
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.segmentation_cache_keys.pop(0)
                 del self.low_res_logits_cache[cache_key]
         masks = masks[0]
         low_res_masks = low_res_logits[0]
 
-        if request.format == "json":
-            masks = masks > self.predictor.model.mask_threshold
-            masks = mask2poly(masks)
-            low_res_masks = low_res_masks > self.predictor.model.mask_threshold
-            low_res_masks = mask2poly(low_res_masks)
-        elif request.format == "binary":
-            binary_vector = BytesIO()
-            np.savez_compressed(binary_vector, masks=masks, low_res_masks=low_res_masks)
-            binary_vector.seek(0)
-            binary_data = binary_vector.getvalue()
-            return binary_data
-        else:
-            raise ValueError(f"Invalid format {request.format}")
-
-        print("MAKS", type(masks[0]))
-        print("LOW RES MASKS", type(low_res_masks[0]))
-
-        response = SamSegmentationResponse(
-            masks=[m.tolist() for m in masks],
-            low_res_masks=[m.tolist() for m in low_res_masks],
-            time=perf_counter() - t1,
-        )
-        return response
+        return masks, low_res_masks

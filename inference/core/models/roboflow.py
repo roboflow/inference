@@ -561,11 +561,21 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     attempts = 0
                     while not success and attempts < NUM_S3_RETRY:
                         try:
+                            local_file_path = self.cache_file(f)
                             s3.download_file(
                                 CORE_MODEL_BUCKET,
                                 f"{self.endpoint}/{f}",
-                                self.cache_file(f),
+                                local_file_path,
                             )
+
+                            # Check file size
+                            if (
+                                os.path.getsize(local_file_path) <= 4096
+                                and attempts < 2
+                            ):
+                                attempts += 1
+                                continue
+
                             success = True
                         except Exception as e:
                             attempts += 1
@@ -600,12 +610,28 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         )
                     else:
                         weights_url = api_data["weights"][weights_url_key]
-
                     t1 = perf_counter()
-                    r = requests.get(weights_url)
-                    filename = weights_url.split("?")[0].split("/")[-1]
-                    with self.open_cache(f"{filename}", "wb") as f:
-                        f.write(r.content)
+                    attempts = 0
+                    success = False
+                    while attempts < 3 and not success:
+                        r = requests.get(weights_url)
+                        filename = weights_url.split("?")[0].split("/")[-1]
+                        file_path = self.open_cache(f"{filename}", "wb")
+                        with file_path as f:
+                            f.write(r.content)
+
+                        # Check file size
+                        if os.path.getsize(file_path.name) <= 4096:
+                            if attempts < 2:
+                                attempts += 1
+                                continue
+                            else:
+                                raise Exception(
+                                    f"Failed to download model artifacts from API after 2 attempts."
+                                )
+                        else:
+                            success = True
+
                     if perf_counter() - t1 > 120:
                         self.log(
                             "Weights download took longer than 120 seconds, refreshing API request"
