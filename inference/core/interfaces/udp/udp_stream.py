@@ -4,6 +4,8 @@ import sys
 import threading
 import time
 
+from typing import Union
+
 from PIL import Image
 
 from inference.core import data_models as M
@@ -66,7 +68,7 @@ class UdpStream(BaseInterface):
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
-        stream_id: str = STREAM_ID,
+        stream_id: Union[int, str] = STREAM_ID,
     ):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.

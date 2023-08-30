@@ -211,6 +211,10 @@ SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")
+try:
+    STREAM_ID = int(STREAM_ID)
+except (TypeError, ValueError):
+    pass
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)
