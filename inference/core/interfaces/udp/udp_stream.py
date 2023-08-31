@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Union
 
+import supervision as sv
 from PIL import Image
 
 from inference.core import data_models as M
@@ -45,6 +46,7 @@ class UdpStream(BaseInterface):
         max_detections (float): The maximum number of detections.
         model_id (str): The ID of the model to be used.
         stream_id (str): The ID of the stream to be used.
+        use_bytetrack (bool): Flag to use bytetrack,
 
     Methods:
         init_infer: Initialize the inference with a test frame.
@@ -67,6 +69,7 @@ class UdpStream(BaseInterface):
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
         stream_id: Union[int, str] = STREAM_ID,
+        use_bytetrack: bool = False,
     ):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -74,6 +77,8 @@ class UdpStream(BaseInterface):
         print("Initializing server")
 
         self.frame_count = 0
+        self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
+        self.use_bytetrack = use_bytetrack
 
         self.stream_id = stream_id
         if self.stream_id is None:
@@ -193,6 +198,11 @@ class UdpStream(BaseInterface):
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
                 )
+                if self.use_bytetrack:
+                    detections = sv.Detections.from_ultralytics(predictions)
+                    detections = self.byte_tracker.update_with_detections(detections)
+                    for pred, detect in zip(predictions, detections):
+                        pred["tracker_id"] = detect["tracker_id"]
                 if self.json_response:
                     predictions = self.model.make_response(
                         predictions,
