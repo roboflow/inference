@@ -3,6 +3,7 @@ import socket
 import sys
 import threading
 import time
+import supervision as sv
 
 from PIL import Image
 
@@ -67,6 +68,7 @@ class UdpStream(BaseInterface):
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
         stream_id: str = STREAM_ID,
+        use_bytetrack: bool = False,
     ):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -76,6 +78,8 @@ class UdpStream(BaseInterface):
         self.model_manager = model_manager
         self.model_registry = model_registry
         self.frame_count = 0
+        self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
+        self.use_bytetrack = use_bytetrack
 
         self.stream_id = stream_id
         if self.stream_id is None:
@@ -219,6 +223,7 @@ class UdpStream(BaseInterface):
                     self.inference_request_obj.model_id,
                     self.img_in,
                 )
+
                 predictions = self.model_manager.postprocess(
                     self.inference_request_obj.model_id,
                     predictions,
@@ -229,6 +234,11 @@ class UdpStream(BaseInterface):
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
                 )
+                if self.use_bytetrack:
+                    detections = sv.Detections.from_ultralytics(predictions)
+                    detections = self.byte_tracker.update_with_detections(detections)
+                    for pred, detect in zip(predictions, detections):
+                        pred['tracker_id'] = detect['tracker_id']
                 if self.json_response:
                     predictions = self.model_manager.make_response(
                         self.inference_request_obj.model_id,
