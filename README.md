@@ -11,6 +11,10 @@ Check out Inference running on a video of a football game:
 
 https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
 
+## 👩‍🏫 Examples
+
+The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
+
 ## 💻 Why Inference?
 
 Inference provides a scalable method through which you can manage inferences for your vision projects.

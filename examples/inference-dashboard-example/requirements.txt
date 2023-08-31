@@ -1,0 +1,4 @@
+matplotlib==3.7.1
+opencv_python==4.7.0.72
+pandas==2.0.2
+Requests==2.31.0
