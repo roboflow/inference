@@ -1,1 +1,1 @@
-mediapipe==0.10.0
+mediapipe>=0.9,<0.11
