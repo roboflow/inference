@@ -92,7 +92,7 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 docker run --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
 
-- Run on Nvidia GPU:
+- Run on NVIDIA GPU:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
@@ -107,19 +107,19 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
 
-- Run on Nvidia GPU with TensorRT Runtime:
+- Run on NVIDIA GPU with TensorRT Runtime:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
 ```
 
-- Run on Nvidia Jetson with JetPack `4.x`:
+- Run on NVIDIA Jetson with JetPack `4.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson:latest
 ```
 
-- Run on Nvidia Jetson with JetPack `5.x`:
+- Run on NVIDIA Jetson with JetPack `5.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest
@@ -155,7 +155,7 @@ res = requests.post(url, params=params)
 print(res.json())
 ```
 
-**Pip Quickstart**:
+**pip Quickstart**:
 
 After installing via pip, you can run a simple inference using:
 
