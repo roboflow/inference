@@ -238,7 +238,7 @@ class UdpStream(BaseInterface):
                     detections = sv.Detections.from_ultralytics(predictions)
                     detections = self.byte_tracker.update_with_detections(detections)
                     for pred, detect in zip(predictions, detections):
-                        pred['tracker_id'] = detect['tracker_id']
+                        pred["tracker_id"] = detect["tracker_id"]
                 if self.json_response:
                     predictions = self.model_manager.make_response(
                         self.inference_request_obj.model_id,
