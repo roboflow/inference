@@ -5,10 +5,10 @@ from inference.core.models.classification_base import (
 from inference.core.models.mixins import ClassificationMixin
 
 
-class VitClassificationOnnxRoboflowInferenceModel(
+class VitClassification(
     ClassificationBaseOnnxRoboflowInferenceModel, ClassificationMixin
 ):
-    """VitClassificationOnnxRoboflowInferenceModel handles classification inference
+    """VitClassification handles classification inference
     for Vision Transformer (ViT) models using ONNX.
 
     Inherits:
@@ -20,7 +20,7 @@ class VitClassificationOnnxRoboflowInferenceModel(
     """
 
     def __init__(self, *args, **kwargs):
-        """Initializes the VitClassificationOnnxRoboflowInferenceModel instance.
+        """Initializes the VitClassification instance.
 
         Args:
             *args: Variable length argument list.

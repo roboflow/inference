@@ -55,7 +55,6 @@ def test_clip(test):
 
 @pytest.fixture(scope="session", autouse=True)
 def setup():
-
     try:
         res = requests.get(f"{base_url}:{port}")
         res.raise_for_status()

@@ -1,102 +1,118 @@
-import logging
-import subprocess
+import os
+import platform
+import socket
 
-logging.basicConfig(level=logging.WARNING)
-
-
-class CommandExecutionError(Exception):
-    """Raised when there's a failure in command execution."""
-
-    pass
+from inference.core.env import DEVICE_ID
 
 
-class SerialNumberNotFoundError(Exception):
-    """Raised when the Serial Number is not found."""
-
-    pass
-
-
-def get_trt_device_id():
-    """Return the TRT device ID for the current host device by trying several methods.
-
-    Tries different methods to get the TRT device ID.
+def is_running_in_docker():
+    """Checks if the current process is running inside a Docker container.
 
     Returns:
-        str: The TRT device ID.
+        bool: True if running inside a Docker container, False otherwise.
     """
-    try:
-        return get_tegra_serial()
-    except SerialNumberNotFoundError as e:
-        logging.warning(f"Failed to retrieve Tegra serial number: {e}")
-
-    try:
-        return get_gpu_serial_num()
-    except SerialNumberNotFoundError as e:
-        logging.warning(f"Failed to retrieve GPU serial number: {e}")
-
-    return get_gpu_serial_num_uid()
+    return os.path.exists("/.dockerenv")
 
 
-def run_command(cmd):
-    """Executes a shell command and returns the output.
+def get_gpu_id():
+    """Fetches the GPU ID if a GPU is present.
 
-    Args:
-        cmd (list): A command to execute.
+    Tries to import and use the `GPUtil` module to retrieve the GPU information.
 
     Returns:
-        str: Output of the command execution.
-
-    Raises:
-        CommandExecutionError: If the command execution fails.
+        Optional[int]: GPU ID if available, None otherwise.
     """
     try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
-        return result.stdout.decode("utf-8")
+        import GPUtil
+
+        GPUs = GPUtil.getGPUs()
+        if GPUs:
+            return GPUs[0].id
+    except ImportError:
+        return None
     except Exception as e:
-        raise CommandExecutionError(f"Failed to execute command {cmd}: {e}")
+        return None
 
 
-def parse_output(stdout, keyword):
-    """Parses the output for a specific keyword.
+def get_cpu_id():
+    """Fetches the CPU ID based on the operating system.
 
-    Args:
-        stdout (str): The output to parse.
-        keyword (str): The keyword to search for.
-
-    Returns:
-        str: The value following the keyword.
-
-    Raises:
-        SerialNumberNotFoundError: If the keyword is not found in the output.
-    """
-    for line in stdout.split("\n"):
-        if keyword in line:
-            return line.split(": ")[1]
-    raise SerialNumberNotFoundError(f"'{keyword}' not found in command output.")
-
-
-def get_gpu_serial_num():
-    """Gets the GPU serial number for the first GPU of the current host.
+    Attempts to get the CPU ID for Windows, Linux, and MacOS.
+    In case of any error or an unsupported OS, returns None.
 
     Returns:
-        str: The GPU serial number.
+        Optional[str]: CPU ID string if available, None otherwise.
     """
-    return parse_output(run_command(["nvidia-smi", "-q"]), "Serial Number")
+    try:
+        if platform.system() == "Windows":
+            return os.popen("wmic cpu get ProcessorId").read().strip()
+        elif platform.system() == "Linux":
+            return (
+                open("/proc/cpuinfo").read().split("processor")[0].split(":")[1].strip()
+            )
+        elif platform.system() == "Darwin":
+            import subprocess
+
+            return (
+                subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+                .strip()
+                .decode()
+            )
+    except Exception as e:
+        return None
 
 
-def get_gpu_serial_num_uid():
-    """Returns the GPU UUID for the first GPU of the current host.
+def get_jetson_id():
+    """Fetches the Jetson device's serial number.
+
+    Attempts to read the serial number from the device tree.
+    In case of any error, returns None.
 
     Returns:
-        str: The GPU UUID.
+        Optional[str]: Jetson device serial number if available, None otherwise.
     """
-    return parse_output(run_command(["nvidia-smi", "-q"]), "GPU UUID")
+    try:
+        # Fetch the device's serial number
+        serial_number = os.popen("cat /proc/device-tree/serial-number").read().strip()
+        return serial_number
+    except Exception as e:
+        return None
 
 
-def get_tegra_serial():
-    """Returns the Tegra serial number for the first GPU of the current host.
+def get_device_id():
+    """Fetches a unique device ID.
+
+    Tries to get the GPU ID first, then falls back to CPU ID.
+    If the application is running inside Docker, the Docker container ID is appended to the hostname.
 
     Returns:
-        str: The Tegra serial number.
+        str: A unique string representing the device. If unable to determine, returns "UNKNOWN".
     """
-    return parse_output(run_command(["lshw"]), "serial:")
+    try:
+        if DEVICE_ID is not None:
+            return DEVICE_ID
+        id = get_gpu_id()
+        if id is not None:
+            return f"GPU-{id}"
+
+        id = get_cpu_id()
+        if id is not None:
+            return f"CPU-{id}"
+
+        # Fallback to hostname
+        hostname = socket.gethostname()
+
+        if is_running_in_docker():
+            # Append Docker container ID to the hostname
+            container_id = (
+                os.popen(
+                    "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
+                )
+                .read()
+                .strip()
+            )
+            hostname = f"{hostname}-DOCKER-{container_id}"
+
+        return hostname
+    except Exception as e:
+        return "UNKNOWN"

@@ -6,7 +6,7 @@ from inference.core.models.object_detection_base import (
 )
 
 
-class YOLOv8ObjectDetectionOnnxRoboflowInferenceModel(
+class YOLOv8ObjectDetection(
     ObjectDetectionBaseOnnxRoboflowInferenceModel, ObjectDetectionMixin
 ):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).

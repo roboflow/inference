@@ -112,7 +112,7 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
 # Device ID, default is "sample-device-id"
-DEVICE_ID = os.getenv("DEVICE_ID", "sample-device-id")
+DEVICE_ID = os.getenv("DEVICE_ID", None)
 
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
@@ -133,6 +133,9 @@ ELASTICACHE_ENDPOINT = os.environ.get(
     if PROJECT == "roboflow-platform"
     else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
 )
+
+# Flag to enforce FPS, default is False
+ENFORCE_FPS = bool_env(os.getenv("ENFORCE_FPS", False))
 
 # Flag to fix batch size, default is False
 FIX_BATCH_SIZE = bool_env(os.getenv("FIX_BATCH_SIZE", False))
@@ -211,6 +214,10 @@ SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")
+try:
+    STREAM_ID = int(STREAM_ID)
+except (TypeError, ValueError):
+    pass
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)

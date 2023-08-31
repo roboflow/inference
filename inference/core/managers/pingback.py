@@ -9,9 +9,9 @@ import uuid
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from inference.core.devices.utils import get_device_id
 from inference.core.env import (
     API_KEY,
-    DEVICE_ID,
     PINGBACK_ENABLED,
     PINGBACK_INTERVAL_SECONDS,
     PINGBACK_URL,
@@ -124,8 +124,8 @@ class PingbackInfo:
                 "models": [],
                 "window_start_timestamp": self.window_start_timestamp,
                 "device": {
-                    "id": DEVICE_ID,
-                    "name": DEVICE_ID,
+                    "id": get_device_id(),
+                    "name": get_device_id(),
                     "type": "inference_server",
                     "tags": [],
                     "system_info": self.system_info,

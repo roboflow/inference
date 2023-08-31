@@ -1,1 +1,2 @@
 onnxruntime<=1.14.1
+GPUtil==1.4.0

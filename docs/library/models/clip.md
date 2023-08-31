@@ -1,3 +1,3 @@
 # CLIP
 
-:::inference.models.clip.clip.ClipOnnxRoboflowCoreModel
+:::inference.models.clip.clip_model.Clip
