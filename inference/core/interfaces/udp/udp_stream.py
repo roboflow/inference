@@ -12,6 +12,7 @@ from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
+    ENFORCE_FPS,
     IOU_THRESHOLD,
     IP_BROADCAST_ADDR,
     IP_BROADCAST_PORT,
@@ -23,9 +24,8 @@ from inference.core.env import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
-from inference.core.managers.base import ModelManager
-from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.version import __version__
+from inference.models.utils import get_roboflow_model
 
 
 class UdpStream(BaseInterface):
@@ -55,11 +55,10 @@ class UdpStream(BaseInterface):
 
     def __init__(
         self,
-        model_manager: ModelManager,
-        model_registry: RoboflowModelRegistry,
         api_key: str = API_KEY,
         class_agnostic_nms: bool = CLASS_AGNOSTIC_NMS,
         confidence: float = CONFIDENCE,
+        enforce_fps: bool = ENFORCE_FPS,
         ip_broadcast_addr: str = IP_BROADCAST_ADDR,
         ip_broadcast_port: int = IP_BROADCAST_PORT,
         iou_threshold: float = IOU_THRESHOLD,
@@ -74,8 +73,6 @@ class UdpStream(BaseInterface):
         """
         print("Initializing server")
 
-        self.model_manager = model_manager
-        self.model_registry = model_registry
         self.frame_count = 0
 
         self.stream_id = stream_id
@@ -88,11 +85,7 @@ class UdpStream(BaseInterface):
         if not self.api_key:
             raise ValueError("API_KEY is not defined")
 
-        model = self.model_registry.get_model(self.model_id, self.api_key)(
-            model_id=self.model_id,
-            api_key=self.api_key,
-        )
-        self.model_manager.add_model(self.model_id, model)
+        self.model = get_roboflow_model(self.model_id, self.api_key)
 
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
@@ -113,7 +106,9 @@ class UdpStream(BaseInterface):
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1)
 
-        self.webcam_stream = WebcamStream(stream_id=self.stream_id)
+        self.webcam_stream = WebcamStream(
+            stream_id=self.stream_id, enforce_fps=enforce_fps
+        )
         print(
             f"Streaming from device with resolution: {self.webcam_stream.width} x {self.webcam_stream.height}"
         )
@@ -143,29 +138,8 @@ class UdpStream(BaseInterface):
         Creates a test frame and runs it through the entire inference process to ensure everything is working.
         """
         frame = Image.new("RGB", (640, 640), color="black")
-        request_image = M.InferenceRequestImage(type="pil", value=frame)
-        inference_request_obj = self.inference_request_type(
-            model_id=self.model_id,
-            image=request_image,
-            api_key=self.api_key,
-        )
-        preproc_result = self.model_manager.preprocess(
-            inference_request_obj.model_id, inference_request_obj
-        )
-        img_in, img_dims = preproc_result
-        predictions = self.model_manager.predict(
-            inference_request_obj.model_id,
-            img_in,
-        )
-        predictions = self.model_manager.postprocess(
-            inference_request_obj.model_id,
-            predictions,
-            img_dims,
-            class_agnostic_nms=self.class_agnostic_nms,
-            confidence=self.confidence,
-            iou_threshold=self.iou_threshold,
-            max_candidates=self.max_candidates,
-            max_detections=self.max_detections,
+        self.model.infer(
+            frame, confidence=self.confidence, iou_threshold=self.iou_threshold
         )
 
     def preprocess_thread(self):
@@ -185,18 +159,7 @@ class UdpStream(BaseInterface):
                     self.frame, self.frame_cv, frame_id = webcam_stream.read()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
-                        request_image = M.InferenceRequestImage(
-                            type="pil", value=self.frame
-                        )
-                        self.inference_request_obj = self.inference_request_type(
-                            model_id=self.model_id,
-                            image=request_image,
-                            api_key=self.api_key,
-                        )
-                        self.preproc_result = self.model_manager.preprocess(
-                            self.inference_request_obj.model_id,
-                            self.inference_request_obj,
-                        )
+                        self.preproc_result = self.model.preprocess(self.frame)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
 
@@ -209,19 +172,19 @@ class UdpStream(BaseInterface):
         Processes preprocessed frames for inference, post-processes the predictions, and sends the results
         as a UDP broadcast.
         """
-        start_time = time.time()
+        last_print = time.perf_counter()
+        print_ind = 0
+        print_chars = ["|", "/", "-", "\\"]
         while True:
             if self.stop:
                 break
             if self.queue_control:
                 self.queue_control = False
                 frame_id = self.frame_id
-                predictions = self.model_manager.predict(
-                    self.inference_request_obj.model_id,
+                predictions = self.model.predict(
                     self.img_in,
                 )
-                predictions = self.model_manager.postprocess(
-                    self.inference_request_obj.model_id,
+                predictions = self.model.postprocess(
                     predictions,
                     self.img_dims,
                     class_agnostic_nms=self.class_agnostic_nms,
@@ -231,8 +194,7 @@ class UdpStream(BaseInterface):
                     max_detections=self.max_detections,
                 )
                 if self.json_response:
-                    predictions = self.model_manager.make_response(
-                        self.inference_request_obj.model_id,
+                    predictions = self.model.make_response(
                         predictions,
                         self.img_dims,
                     )[0]
@@ -252,6 +214,10 @@ class UdpStream(BaseInterface):
                         self.ip_broadcast_port,
                     ),
                 )
+                if time.perf_counter() - last_print > 1:
+                    print(f"Streaming {print_chars[print_ind]}", end="\r")
+                    print_ind = (print_ind + 1) % 4
+                    last_print = time.perf_counter()
 
     def run_thread(self):
         """Run the preprocessing and inference threads.

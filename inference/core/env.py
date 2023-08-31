@@ -134,6 +134,9 @@ ELASTICACHE_ENDPOINT = os.environ.get(
     else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
 )
 
+# Flag to enforce FPS, default is False
+ENFORCE_FPS = bool_env(os.getenv("ENFORCE_FPS", False))
+
 # Flag to fix batch size, default is False
 FIX_BATCH_SIZE = bool_env(os.getenv("FIX_BATCH_SIZE", False))
 
