@@ -3,24 +3,16 @@ import socket
 import sys
 import threading
 import time
-import supervision as sv
 
+import supervision as sv
 from PIL import Image
 
 from inference.core import data_models as M
-from inference.core.env import (
-    API_KEY,
-    CLASS_AGNOSTIC_NMS,
-    CONFIDENCE,
-    IOU_THRESHOLD,
-    IP_BROADCAST_ADDR,
-    IP_BROADCAST_PORT,
-    JSON_RESPONSE,
-    MAX_CANDIDATES,
-    MAX_DETECTIONS,
-    MODEL_ID,
-    STREAM_ID,
-)
+from inference.core.env import (API_KEY, CLASS_AGNOSTIC_NMS, CONFIDENCE,
+                                IOU_THRESHOLD, IP_BROADCAST_ADDR,
+                                IP_BROADCAST_PORT, JSON_RESPONSE,
+                                MAX_CANDIDATES, MAX_DETECTIONS, MODEL_ID,
+                                STREAM_ID)
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.managers.base import ModelManager
