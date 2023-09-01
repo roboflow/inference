@@ -1,3 +1,4 @@
+import time
 from threading import Thread
 
 import cv2
@@ -21,13 +22,14 @@ class WebcamStream:
         t (Thread): The thread used to update the stream.
     """
 
-    def __init__(self, stream_id=0):
+    def __init__(self, stream_id=0, enforce_fps=False):
         """Initialize the webcam stream.
 
         Args:
             stream_id (int, optional): The ID of the webcam stream. Defaults to 0.
         """
         self.stream_id = stream_id
+        self.enforce_fps = enforce_fps
         self.frame_id = 0
         self.vcap = cv2.VideoCapture(self.stream_id)
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -54,6 +56,7 @@ class WebcamStream:
     def update(self):
         """Update the frame by reading from the webcam."""
         while True:
+            t1 = time.perf_counter()
             if self.stopped is True:
                 break
             self.grabbed, self.frame = self.vcap.read()
@@ -67,6 +70,9 @@ class WebcamStream:
                 print("[Exiting] No more frames to read")
                 self.stopped = True
                 break
+            if self.enforce_fps:
+                t2 = time.perf_counter()
+                time.sleep(max(0, 1 / self.fps_input_stream - (t2 - t1)))
         self.vcap.release()
 
     def read(self):

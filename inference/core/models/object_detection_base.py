@@ -1,11 +1,10 @@
 from time import perf_counter
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
 from inference.core.data_models import (
     InferenceResponseImage,
-    ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
@@ -22,44 +21,61 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
     def infer(
-        self, request: ObjectDetectionInferenceRequest
+        self,
+        image: Any,
+        class_agnostic_nms: bool = False,
+        confidence: float = 0.5,
+        iou_threshold: float = 0.5,
+        fix_batch_size: bool = False,
+        max_candidates: int = 3000,
+        max_detections: int = 300,
+        return_image_dims: bool = False,
+        *args,
+        **kwargs,
     ) -> Union[
         List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
     ]:
-        """Runs object detection inference on given images and returns the detections.
+        """
+        Runs object detection inference on one or multiple images and returns the detections.
 
         Args:
-            request (ObjectDetectionInferenceRequest): A request containing 1 to N inference image objects and other inference parameters (confidence, iou threshold, etc.)
+            image (Any): The input image or a list of images to process.
+            class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
+            confidence (float, optional): Confidence threshold for predictions. Defaults to 0.5.
+            iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.5.
+            fix_batch_size (bool, optional): If True, fix the batch size for predictions. Useful when the model requires a fixed batch size. Defaults to False.
+            max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
+            max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
+            return_image_dims (bool, optional): Whether to return the dimensions of the processed images along with the predictions. Defaults to False.
 
         Returns:
-            Union[List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse]: One to N inference response objects based on the number of inference request images in the request object, each response contains a list of predictions.
+            Union[List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse]: One or multiple object detection inference responses based on the number of processed images. Each response contains a list of predictions. If `return_image_dims` is True, it will return a tuple with predictions and image dimensions.
 
         Raises:
-            ValueError: If batching is not enabled for the model and more than one image is passed in the request.
+            ValueError: If batching is not enabled for the model and more than one image is passed for processing.
         """
         t1 = perf_counter()
-        batch_size = len(request.image) if isinstance(request.image, list) else 1
+        batch_size = len(image) if isinstance(image, list) else 1
         if not self.batching_enabled and batch_size > 1:
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
-        img_in, img_dims = self.preprocess(request)
+        img_in, img_dims = self.preprocess(image, fix_batch_size=fix_batch_size)
         predictions = self.predict(img_in)
         predictions = predictions[:batch_size]
-        request_dict = request.dict()
-        predictions = self.postprocess(predictions, img_dims, **request_dict)
-        responses = self.make_response(predictions, img_dims, **request_dict)
-        for response in responses:
-            response.time = perf_counter() - t1
-
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self.draw_predictions(request, response)
-
-        if self.unwrap:
-            responses = responses[0]
-
-        return responses
+        predictions = self.postprocess(
+            predictions,
+            img_dims,
+            class_agnostic_nms=class_agnostic_nms,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_candidates=max_candidates,
+            max_detections=max_detections,
+        )
+        if return_image_dims:
+            return predictions, img_dims
+        else:
+            return predictions
 
     def make_response(
         self,
@@ -81,6 +97,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
         """
+
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
@@ -93,6 +110,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
                             "height": pred[3] - pred[1],
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
+                            "class_id": int(pred[6]),
                         }
                     )
                     for pred in batch_predictions
@@ -118,7 +136,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         max_detections: int = 300,
         *args,
         **kwargs,
-    ) -> List[List[float]]:
+    ) -> List[List[List[float]]]:
         """Postprocesses the object detection predictions.
 
         Args:
@@ -163,7 +181,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         raise NotImplementedError
 
     def preprocess(
-        self, request: ObjectDetectionInferenceRequest
+        self, image: Any, fix_batch_size: bool = False, *args, **kwargs
     ) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
         """Preprocesses an object detection inference request.
 
@@ -173,22 +191,20 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             Tuple[np.ndarray, List[Tuple[int, int]]]: Preprocessed image inputs and corresponding dimensions.
         """
-        if isinstance(request.image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in request.image]
+        if isinstance(image, list):
+            imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
-            self.unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(request.image)
+            img_in, img_dims = self.preproc_image(image)
             img_dims = [img_dims]
-            self.unwrap = True
 
         img_in /= 255.0
 
         if self.batching_enabled:
             batch_padding = (
                 MAX_BATCH_SIZE - img_in.shape[0]
-                if FIX_BATCH_SIZE or request.fix_batch_size
+                if FIX_BATCH_SIZE or fix_batch_size
                 else 0
             )
             width_padding = 32 - (img_in.shape[2] % 32)

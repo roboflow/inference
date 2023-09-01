@@ -1,3 +1,3 @@
 # ViT Classification
 
-:::inference.models.vit.vit_classification.VitClassificationOnnxRoboflowInferenceModel
+:::inference.models.vit.vit_classification.VitClassification

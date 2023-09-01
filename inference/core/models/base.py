@@ -1,15 +1,7 @@
-import base64
-import pickle
-import re
-from io import BytesIO
 from time import perf_counter
-from typing import Union
+from typing import List, Union
 
-import requests
-from PIL import Image
-
-from inference.core.env import ALLOW_NUMPY_INPUT
-from inference.core.exceptions import InputMethodNotAllowed, InvalidNumpyInput
+from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.models.mixins import InferenceMixin
 
 
@@ -35,70 +27,63 @@ class Model(InferenceMixin):
         """Clears any cache if necessary. This method should be implemented in derived classes as needed."""
         pass
 
-
-class CvModel(Model):
-    """Base CV Model (Defines a method for loading imagery)
-
-    This class extends the base Model class and provides a method for loading images in various formats.
-
-    Methods:
-        load_image(type: str, value: Union[bytes, str]) -> Image.Image: Loads an image based on the specified type and value.
-    """
-
-    @staticmethod
-    def load_image(type: str, value: Union[bytes, str]) -> Image.Image:
-        """Loads an image based on the specified type and value.
+    def infer_from_request(
+        self,
+        request: InferenceRequest,
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
+        """
+        Perform inference based on the details provided in the request, and return the associated responses.
+        The function can handle both single and multiple image inference requests. Optionally, it also provides
+        a visualization of the predictions if requested.
 
         Args:
-            type (str): The type of image to load. Supported types are 'base64', 'url', 'multipart', 'pil', and 'numpy'.
-            value (Union[bytes, str]): The value containing the image data, depending on the type.
+            request (InferenceRequest): The request object containing details for inference, such as the image or
+                images to process, any classes to filter by, and whether or not to visualize the predictions.
 
         Returns:
-            Image.Image: The loaded PIL image, converted to RGB.
+            Union[List[InferenceResponse], InferenceResponse]: A list of response objects if the request contains
+            multiple images, or a single response object if the request contains one image. Each response object
+            contains details about the segmented instances, the time taken for inference, and optionally, a visualization.
 
-        Raises:
-            NotImplementedError: If the specified image type is not supported.
-            InputMethodNotAllowed: If the numpy input method is used but not allowed.
-            InvalidNumpyInput: If the numpy input method is used and the input data is invalid.
+        Examples:
+            >>> request = InferenceRequest(image=my_image, visualize_predictions=True)
+            >>> response = infer_from_request(request)
+            >>> print(response.time)  # Prints the time taken for inference
+            0.125
+            >>> print(response.visualization)  # Accesses the visualization of the prediction if available
+
+        Notes:
+            - The processing time for each response is included within the response itself.
+            - If `visualize_predictions` is set to True in the request, a visualization of the prediction
+              is also included in the response.
         """
-        if type == "base64":
-            # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
-            if not isinstance(value, str):
-                value = value.decode("utf-8")
-            # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
-            value = re.sub(r"^data:image\/[a-z]+;base64,", "", value)
-            value = base64.b64decode(value)
-            pil_image = Image.open(BytesIO(value))
-        elif type == "url":
-            pil_image = Image.open(requests.get(value, stream=True).raw)
-        elif type == "multipart":
-            pil_image = Image.open(value)
-        elif type == "pil":
-            pil_image = value
-        elif type == "numpy":
-            if ALLOW_NUMPY_INPUT:
-                data = pickle.loads(value)
-                try:
-                    pil_image = Image.fromarray(data)
-                except Exception as e:
-                    if len(data.shape) != 3:
-                        raise InvalidNumpyInput(
-                            f"Expected 3 dimensions, got {len(data.shape)} dimensions."
-                        )
-                    elif data.shape[-1] != 3:
-                        raise InvalidNumpyInput(
-                            f"Expected 3 channels, got {data.shape[-1]} channels."
-                        )
-                    elif max(data) > 255 or min(data) < 0:
-                        raise InvalidNumpyInput(
-                            f"Expected values between 0 and 255, got values between {min(data)} and {max(data)}."
-                        )
+        t1 = perf_counter()
+        predictions_data = self.infer(**request.dict(), return_image_dims=True)
+        responses = self.make_response(
+            *predictions_data, class_filter=request.class_filter
+        )
+        for response in responses:
+            response.time = perf_counter() - t1
 
-            else:
-                raise InputMethodNotAllowed(
-                    "Numpy input is not allowed for this server."
-                )
-        else:
-            raise NotImplementedError(f"Image type '{type}' is not supported.")
+        if request.visualize_predictions:
+            for response in responses:
+                response.visualization = self.draw_predictions(request, response)
 
-        return pil_image.convert("RGB")
+        if not isinstance(request.image, list):
+            responses = responses[0]
+
+        return responses
+
+    def make_response(
+        self, *args, **kwargs
+    ) -> Union[InferenceResponse, List[InferenceResponse]]:
+        """Makes an inference response from the given arguments.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            InferenceResponse: The inference response.
+        """
+        raise NotImplementedError(self.__class__.__name__ + ".make_response")

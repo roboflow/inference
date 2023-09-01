@@ -2,14 +2,18 @@
 
 ## 👋 hello
 
-[Roboflow](https://roboflow.com) Inference is an opinionated tool for running inference on state-of-the-art computer vision models. With no prior 
+[Roboflow](https://roboflow.com) Inference is an opinionated tool for running inference on state-of-the-art computer vision models. With no prior
 knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
 
-## 🎥  Inference in action
+## 🎥 Inference in action
 
 Check out Inference running on a video of a football game:
 
-https://github.com/roboflow/inference/assets/37276661/05512458-8424-4ddd-b214-57204b278528
+https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
+
+## 👩‍🏫 Examples
+
+The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
 
 ## 💻 Why Inference?
 
@@ -17,15 +21,15 @@ Inference provides a scalable method through which you can manage inferences for
 
 Inference is backed by:
 
-* A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
+- A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
 
-* Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
+- Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
 
-* Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
+- Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
 
-* A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
+- A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
 
-* Data management integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
+- Data management integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
 
 And more!
 
@@ -37,35 +41,47 @@ And more!
 ## 💻 install
 
 ### With ONNX CPU Runtime:
+
 For CPU powered inference:
+
 ```bash
 pip install inference
 ```
+
 or
+
 ```bash
 pip install inference-cpu
 ```
 
 ### With ONNX GPU Runtime:
+
 If you have an NVIDIA GPU, you can accelerate your inference with:
+
 ```bash
 pip install inference-gpu
 ```
 
 ### Without ONNX Runtime:
+
 Roboflow Inference uses Onnxruntime as its core inference engine. Onnxruntime provides an array of different [execution providers](https://onnxruntime.ai/docs/execution-providers/) that can optimize inference on differnt target devices. If you decide to install onnxruntime on your own, install inference with:
+
 ```bash
 pip install inference-core
 ```
+
 Alternatively, you can take advantage of some advanced execution providers using one of our published docker images.
 
 ### Extras:
+
 Some functionality requires extra dependancies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
-| extra  | description                                      |
+| extra | description |
 |:-------|:-------------------------------------------------|
-| `http` | Ability to run the http interface                |
+| `http` | Ability to run the http interface |
+| `gaze` | Ability to use the core `Gaze` model |
 
 Example install with http dependancies:
+
 ```bash
 pip install inference[http]
 ```
@@ -79,13 +95,13 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 ```bash
 docker run --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
-  
-- Run on Nvidia GPU:
+
+- Run on NVIDIA GPU:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
-  
+
 <details close>
 <summary>👉 more docker run options</summary>
 
@@ -94,20 +110,20 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 ```bash
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
-  
-- Run on Nvidia GPU with TensorRT Runtime:
+
+- Run on NVIDIA GPU with TensorRT Runtime:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
 ```
-  
-- Run on Nvidia Jetson with JetPack `4.x`:
+
+- Run on NVIDIA Jetson with JetPack `4.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson:latest
 ```
-  
-- Run on Nvidia Jetson with JetPack `5.x`:
+
+- Run on NVIDIA Jetson with JetPack `5.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest
@@ -142,32 +158,21 @@ params = {
 res = requests.post(url, params=params)
 print(res.json())
 ```
-**Pip Quickstart**:
+
+**pip Quickstart**:
 
 After installing via pip, you can run a simple inference using:
 
 ```python
-from inference.core.data_models import ObjectDetectionInferenceRequest
-from inference.models.yolov5.yolov5_object_detection import (
-    YOLOv5ObjectDetectionOnnxRoboflowInferenceModel,
-)
+from inference.models.utils import get_roboflow_model
 
-model = YOLOv5ObjectDetectionOnnxRoboflowInferenceModel(
-    model_id="soccer-players-5fuqs/1", device_id="my-pc", 
+model = get_roboflow_model(
+    model_id="soccer-players-5fuqs/1", 
     #Replace ROBOFLOW_API_KEY with your Roboflow API Key
     api_key="ROBOFLOW_API_KEY"
 )
 
-request = ObjectDetectionInferenceRequest(
-    image={
-        "type": "url",
-        "value": "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg",
-    },
-    confidence=0.5,
-    iou_threshold=0.5,
-)
-
-results = model.infer(request)
+results = model.infer(image="https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg", confidence=0.5, iou_threshold=0.5)
 
 print(results)
 
@@ -207,20 +212,20 @@ To standardize the inference process throughout all our models, Roboflow Inferen
 
 <img width="900" alt="inference structure" src="https://github.com/stellasphere/inference/assets/29011058/abf69717-f852-4655-9e6e-dae19fc263dc">
 
-
 ## 📝 license
 
 The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.md). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
 
-| model                     |                                       license                                        |
-|:--------------------------|:------------------------------------------------------------------------------------:|
-| `inference/models/clip`   |               [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                |
-| `inference/models/sam`    | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE) |
-| `inference/models/vit`    | [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE)|
-| `inference/models/yolact` |            [MIT](https://github.com/dbolya/yolact/blob/master/README.md)             |
-| `inference/models/yolov5` |        [AGPL-3.0](https://github.com/ultralytics/yolov5/blob/master/LICENSE)         |
-| `inference/models/yolov7` |         [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)          |
-| `inference/models/yolov8` |     [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)       |
+| model                     |                                        license                                        |
+| :------------------------ | :-----------------------------------------------------------------------------------: |
+| `inference/models/clip`   |                [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                |
+|`inference/models/gaze` | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
+| `inference/models/sam`    | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)  |
+| `inference/models/vit`    | [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE) |
+| `inference/models/yolact` |             [MIT](https://github.com/dbolya/yolact/blob/master/README.md)             |
+| `inference/models/yolov5` |         [AGPL-3.0](https://github.com/ultralytics/yolov5/blob/master/LICENSE)         |
+| `inference/models/yolov7` |          [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)          |
+| `inference/models/yolov8` |      [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)       |
 
 ## 🚀 enterprise
 
@@ -241,9 +246,20 @@ Visit our [documentation](https://roboflow.github.io/inference) for usage exampl
 
 We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
 
+## 💻 explore more Roboflow open source projects
+
+|Project | Description|
+|:---|:---|
+|[supervision](https://roboflow.com/supervision) | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.
+|[Autodistill](https://github.com/autodistill/autodistill) | Automatically label images for use in training computer vision models. |
+|[Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models.
+|[Notebooks](https://roboflow.com/notebooks) | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.
+|[Collect](https://github.com/roboflow/roboflow-collect) | Automated, intelligent data collection powered by CLIP.
+
 <br>
 
 <div align="center">
+
   <div align="center">
       <a href="https://youtube.com/roboflow">
           <img
@@ -286,4 +302,7 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
           />
       </a>
       </a>
+  </div>
+
+</div>
   </div>

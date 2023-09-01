@@ -81,6 +81,15 @@ CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 # CLIP model ID
 CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
+# Gaze version ID, default is "L2CS"
+GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
+
+# Gaze model ID
+GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+
+# Maximum batch size for GAZE, default is 8
+GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
+
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 
@@ -99,8 +108,11 @@ CORE_MODEL_CLIP_ENABLED = bool_env(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 
+# Flag to enable GAZE core model, default is True
+CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+
 # Device ID, default is "sample-device-id"
-DEVICE_ID = os.getenv("DEVICE_ID", "sample-device-id")
+DEVICE_ID = os.getenv("DEVICE_ID", None)
 
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
@@ -121,6 +133,9 @@ ELASTICACHE_ENDPOINT = os.environ.get(
     if PROJECT == "roboflow-platform"
     else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
 )
+
+# Flag to enforce FPS, default is False
+ENFORCE_FPS = bool_env(os.getenv("ENFORCE_FPS", False))
 
 # Flag to fix batch size, default is False
 FIX_BATCH_SIZE = bool_env(os.getenv("FIX_BATCH_SIZE", False))
@@ -199,6 +214,10 @@ SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")
+try:
+    STREAM_ID = int(STREAM_ID)
+except (TypeError, ValueError):
+    pass
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)

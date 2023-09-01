@@ -19,7 +19,7 @@ class InferenceMixin:
     This mixin provides a basic interface for inference tasks.
     """
 
-    def infer(self, request: InferenceRequest) -> InferenceResponse:
+    def infer_from_request(self, request: InferenceRequest) -> InferenceResponse:
         """Runs inference on a given request.
 
         Args:
@@ -28,9 +28,11 @@ class InferenceMixin:
         Returns:
             InferenceResponse: The response object.
 
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
         """
+        raise NotImplementedError
+
+    def infer(self, *args, **kwargs) -> Any:
+        """Runs inference on given data."""
         raise NotImplementedError
 
 
@@ -41,6 +43,32 @@ class ObjectDetectionMixin:
     """
 
     task_type = "object-detection"
+
+    def infer(self, *args, **kwargs) -> Any:
+        """Runs inference on given data.
+
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
+        """
+        raise NotImplementedError
+
+    def infer_from_request(
+        self, request: ObjectDetectionInferenceRequest
+    ) -> Union[
+        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+    ]:
+        """Runs inference on an object detection request.
+
+        Args:
+            request (ObjectDetectionInferenceRequest): The request object.
+
+        Returns:
+            Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response object(s).
+
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
+        """
+        raise NotImplementedError
 
     def make_response(
         self, *args, **kwargs
@@ -62,17 +90,6 @@ class ObjectDetectionMixin:
         """
         raise NotImplementedError
 
-    def preprocess(self, request: ObjectDetectionInferenceRequest) -> Any:
-        """Preprocesses an object detection inference request.
-
-        Args:
-            request (ObjectDetectionInferenceRequest): The request object.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
-
     def predict(self, *args, **kwargs) -> Any:
         """Runs the prediction for object detection.
 
@@ -81,18 +98,11 @@ class ObjectDetectionMixin:
         """
         raise NotImplementedError
 
-    def infer(
-        self, request: ObjectDetectionInferenceRequest
-    ) -> Union[
-        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
-    ]:
-        """Runs inference on an object detection request.
+    def preprocess(self, request: ObjectDetectionInferenceRequest) -> Any:
+        """Preprocesses an object detection inference request.
 
         Args:
             request (ObjectDetectionInferenceRequest): The request object.
-
-        Returns:
-            Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response object(s).
 
         Raises:
             NotImplementedError: This method must be implemented by a subclass.
