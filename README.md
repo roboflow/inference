@@ -203,6 +203,35 @@ request = ClipCompareRequest(
 
 results = model.infer(request)
 
+**SAM Quickstart**:
+
+You can also run inference on Meta's Segment Anything model using:
+
+```python
+from inference.core.data_models import (
+    SamSegmentationRequest,
+    InferenceRequestImage
+)
+
+from inference.models.sam import SegmentAnything
+
+model = SegmentAnything(
+    model_id = "sam/vit_h",
+    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
+    api_key = "ROBOFLOW_API_KEY"
+)
+
+image = InferenceRequestImage(
+    type = "url",
+    value = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
+)
+
+request = SamSegmentationRequest(
+    image = image,
+)
+
+results = model.infer_from_request(request)
+
 print(results)
 ```
 
