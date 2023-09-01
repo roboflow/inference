@@ -174,6 +174,8 @@ print(results)
 ```
 
 **Pip quickstart using CLIP:**
+
+You can also use Roboflow Inference to infer on foundation models like CLIP:
 ```python
 from inference.core.data_models import (
     ClipCompareRequest,
