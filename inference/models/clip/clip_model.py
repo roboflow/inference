@@ -16,6 +16,7 @@ from inference.core.data_models import (
 )
 from inference.core.env import (
     CLIP_MAX_BATCH_SIZE,
+    CLIP_MODEL_ID,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
 )
@@ -42,7 +43,7 @@ class Clip(OnnxRoboflowCoreModel):
         """Initializes the Clip with the given arguments and keyword arguments."""
 
         t1 = perf_counter()
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, model_id=CLIP_MODEL_ID, **kwargs)
         # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
         self.log("Creating inference sessions")
         self.visual_onnx_session = onnxruntime.InferenceSession(

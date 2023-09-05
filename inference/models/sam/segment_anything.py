@@ -18,7 +18,7 @@ from inference.core.data_models import (
     SamSegmentationRequest,
     SamSegmentationResponse,
 )
-from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE
+from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.postprocess import mask2poly
@@ -45,7 +45,7 @@ class SegmentAnything(RoboflowCoreModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, model_id=f"sam/{SAM_VERSION_ID}", **kwargs)
         self.sam = sam_model_registry[self.version_id](
             checkpoint=self.cache_file("encoder.pth")
         )

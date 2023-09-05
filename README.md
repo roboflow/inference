@@ -77,8 +77,12 @@ Alternatively, you can take advantage of some advanced execution providers using
 Some functionality requires extra dependancies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
 | extra | description |
 |:-------|:-------------------------------------------------|
-| `http` | Ability to run the http interface |
+| `clip` | Ability to use the core `CLIP` model (by OpenAI) |
 | `gaze` | Ability to use the core `Gaze` model |
+| `http` | Ability to run the http interface |
+| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
+
+**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependancies however pytorch installs can be highly environment dependant. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
 
 Example install with http dependancies:
 
@@ -178,36 +182,42 @@ print(results)
 
 ```
 
-**SAM Quickstart**:
+**CLIP Quickstart**:
 
-You can also run inference on Meta's Segment Anything model using:
+You can run inference with OpenAI's CLIP model using:
 
 ```python
-from inference.core.data_models import (
-    SamSegmentationRequest,
-    InferenceRequestImage
-)
+from inference.models import Clip
 
-from inference.models.sam import SegmentAnything
-
-model = SegmentAnything(
-    model_id = "sam/vit_h",
+model = Clip(
     #Replace ROBOFLOW_API_KEY with your Roboflow API Key
     api_key = "ROBOFLOW_API_KEY"
 )
 
-image = InferenceRequestImage(
-    type = "url",
-    value = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
+image_url = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
+
+embeddings = model.embed_image(image_url)
+
+print(embeddings)
+```
+
+**SAM Quickstart**:
+
+You can run inference with Meta's Segment Anything model using:
+
+```python
+from inference.models import SegmentAnything
+
+model = SegmentAnything(
+    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
+    api_key = "ROBOFLOW_API_KEY"
 )
 
-request = SamSegmentationRequest(
-    image = image,
-)
+image_url = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
 
-results = model.infer_from_request(request)
+embeddings = model.embed_image(image_url)
 
-print(results)
+print(embeddings)
 ```
 
 ## 🏗️ inference process
