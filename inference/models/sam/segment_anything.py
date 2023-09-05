@@ -38,14 +38,14 @@ class SegmentAnything(RoboflowCoreModel):
         segmentation_cache_keys: Keys for the segmentation cache.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, model_id: str = f"sam/{SAM_VERSION_ID}", **kwargs):
         """Initializes the SegmentAnything.
 
         Args:
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        super().__init__(*args, model_id=f"sam/{SAM_VERSION_ID}", **kwargs)
+        super().__init__(*args, model_id=model_id, **kwargs)
         self.sam = sam_model_registry[self.version_id](
             checkpoint=self.cache_file("encoder.pth")
         )
