@@ -141,18 +141,20 @@ def load_image_numpy_str(value):
     try:
         return Image.fromarray(data)
     except Exception as e:
-        if len(data.shape) != 3:
+        if len(data.shape) != 3 and len(data.shape) != 2:
             raise InvalidNumpyInput(
-                f"Expected 3 dimensions, got {len(data.shape)} dimensions."
+                f"Expected 2 or 3 dimensions, got {len(data.shape)} dimensions."
             )
-        elif data.shape[-1] != 3:
+        elif data.shape[-1] != 3 and data.shape[-1] != 1:
             raise InvalidNumpyInput(
-                f"Expected 3 channels, got {data.shape[-1]} channels."
+                f"Expected 1 or 3 channels, got {data.shape[-1]} channels."
             )
         elif max(data) > 255 or min(data) < 0:
             raise InvalidNumpyInput(
                 f"Expected values between 0 and 255, got values between {min(data)} and {max(data)}."
             )
+        else:
+            raise e
 
 
 def load_image_url(value):

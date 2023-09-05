@@ -1,4 +1,4 @@
-segment_anything @ git+https://github.com/facebookresearch/segment-anything.git@6fdee8f2727f4506cfbbe553e23b895e27956588
+rf-segment-anything==1.0
 torch<=2.0.1
 torchvision<=0.15.2
 rasterio<=1.2.10
