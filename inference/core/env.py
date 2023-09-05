@@ -134,6 +134,9 @@ ELASTICACHE_ENDPOINT = os.environ.get(
     else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
 )
 
+# Flag to enable byte track, default is False
+ENABLE_BYTE_TRACK = bool_env(os.getenv("ENABLE_BYTE_TRACK", False))
+
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = bool_env(os.getenv("ENFORCE_FPS", False))
 

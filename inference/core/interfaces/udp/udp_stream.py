@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Union
 
+import supervision as sv
 from PIL import Image
 
 from inference.core import data_models as M
@@ -12,6 +13,7 @@ from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
+    ENABLE_BYTE_TRACK,
     ENFORCE_FPS,
     IOU_THRESHOLD,
     IP_BROADCAST_ADDR,
@@ -45,6 +47,7 @@ class UdpStream(BaseInterface):
         max_detections (float): The maximum number of detections.
         model_id (str): The ID of the model to be used.
         stream_id (str): The ID of the stream to be used.
+        use_bytetrack (bool): Flag to use bytetrack,
 
     Methods:
         init_infer: Initialize the inference with a test frame.
@@ -67,6 +70,7 @@ class UdpStream(BaseInterface):
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
         stream_id: Union[int, str] = STREAM_ID,
+        use_bytetrack: bool = ENABLE_BYTE_TRACK,
     ):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -74,6 +78,8 @@ class UdpStream(BaseInterface):
         print("Initializing server")
 
         self.frame_count = 0
+        self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
+        self.use_bytetrack = use_bytetrack
 
         self.stream_id = stream_id
         if self.stream_id is None:
@@ -198,8 +204,17 @@ class UdpStream(BaseInterface):
                         predictions,
                         self.img_dims,
                     )[0]
+                    if self.use_bytetrack:
+                        detections = sv.Detections.from_roboflow(
+                            predictions.dict(by_alias=True), self.model.class_names
+                        )
+                        detections = self.byte_tracker.update_with_detections(
+                            detections
+                        )
+                        for pred, detect in zip(predictions.predictions, detections):
+                            pred.tracker_id = int(detect[4])
                     predictions.frame_id = frame_id
-                    predictions = predictions.json(exclude_none=True)
+                    predictions = predictions.json(exclude_none=True, by_alias=True)
                 else:
                     predictions = json.dumps(predictions)
 
