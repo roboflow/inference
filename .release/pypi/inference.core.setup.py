@@ -36,12 +36,14 @@ setuptools.setup(
     ),
     install_requires=read_requirements("requirements/_requirements.txt"),
     extras_require={
+        "clip": read_requirements("requirements/requirements.clip.txt"),
         "cpu": read_requirements("requirements/requirements.cpu.txt"),
+        "gaze": read_requirements("requirements/requirements.gaze.txt"),
         "gpu": read_requirements("requirements/requirements.gpu.txt"),
         "hosted": read_requirements("requirements/requirements.hosted.txt"),
         "http": read_requirements("requirements/requirements.http.txt"),
+        "sam": read_requirements("requirements/requirements.sam.txt"),
         "waf": read_requirements("requirements/requirements.waf.txt"),
-        "gaze": read_requirements("requirements/requirements.gaze.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
