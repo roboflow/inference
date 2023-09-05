@@ -11,6 +11,10 @@ Check out Inference running on a video of a football game:
 
 https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
 
+## 👩‍🏫 Examples
+
+The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
+
 ## 💻 Why Inference?
 
 Inference provides a scalable method through which you can manage inferences for your vision projects.
@@ -92,7 +96,7 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 docker run --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
 
-- Run on Nvidia GPU:
+- Run on NVIDIA GPU:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
@@ -107,19 +111,19 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
 
-- Run on Nvidia GPU with TensorRT Runtime:
+- Run on NVIDIA GPU with TensorRT Runtime:
 
 ```bash
 docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
 ```
 
-- Run on Nvidia Jetson with JetPack `4.x`:
+- Run on NVIDIA Jetson with JetPack `4.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson:latest
 ```
 
-- Run on Nvidia Jetson with JetPack `5.x`:
+- Run on NVIDIA Jetson with JetPack `5.x`:
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest
@@ -155,7 +159,7 @@ res = requests.post(url, params=params)
 print(res.json())
 ```
 
-**Pip Quickstart**:
+**pip Quickstart**:
 
 After installing via pip, you can run a simple inference using:
 
@@ -172,6 +176,38 @@ results = model.infer(image="https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u4
 
 print(results)
 
+```
+
+**SAM Quickstart**:
+
+You can also run inference on Meta's Segment Anything model using:
+
+```python
+from inference.core.data_models import (
+    SamSegmentationRequest,
+    InferenceRequestImage
+)
+
+from inference.models.sam import SegmentAnything
+
+model = SegmentAnything(
+    model_id = "sam/vit_h",
+    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
+    api_key = "ROBOFLOW_API_KEY"
+)
+
+image = InferenceRequestImage(
+    type = "url",
+    value = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
+)
+
+request = SamSegmentationRequest(
+    image = image,
+)
+
+results = model.infer_from_request(request)
+
+print(results)
 ```
 
 ## 🏗️ inference process
