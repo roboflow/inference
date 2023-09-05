@@ -362,6 +362,10 @@ class ObjectDetectionPrediction(BaseModel):
         description="The class label confidence as a fraction between 0 and 1"
     )
     class_id: int = Field(description="The class id of the prediction")
+    tracker_id: Optional[int] = Field(
+        description="The tracker id of the prediction if tracking is enabled",
+        default=None,
+    )
 
 
 class Point(BaseModel):

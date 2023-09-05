@@ -13,6 +13,7 @@ from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
+    ENABLE_BYTE_TRACK,
     ENFORCE_FPS,
     IOU_THRESHOLD,
     IP_BROADCAST_ADDR,
@@ -69,7 +70,7 @@ class UdpStream(BaseInterface):
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
         stream_id: Union[int, str] = STREAM_ID,
-        use_bytetrack: bool = False,
+        use_bytetrack: bool = ENABLE_BYTE_TRACK,
     ):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -198,18 +199,22 @@ class UdpStream(BaseInterface):
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
                 )
-                if self.use_bytetrack:
-                    detections = sv.Detections.from_ultralytics(predictions)
-                    detections = self.byte_tracker.update_with_detections(detections)
-                    for pred, detect in zip(predictions, detections):
-                        pred["tracker_id"] = detect["tracker_id"]
                 if self.json_response:
                     predictions = self.model.make_response(
                         predictions,
                         self.img_dims,
                     )[0]
+                    if self.use_bytetrack:
+                        detections = sv.Detections.from_roboflow(
+                            predictions.dict(by_alias=True), self.model.class_names
+                        )
+                        detections = self.byte_tracker.update_with_detections(
+                            detections
+                        )
+                        for pred, detect in zip(predictions.predictions, detections):
+                            pred.tracker_id = int(detect[4])
                     predictions.frame_id = frame_id
-                    predictions = predictions.json(exclude_none=True)
+                    predictions = predictions.json(exclude_none=True, by_alias=True)
                 else:
                     predictions = json.dumps(predictions)
 
