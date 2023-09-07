@@ -38,8 +38,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest,roboflow/roboflow-inference-server-trt-jetson-5.1.1:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson-5.1.1:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson-5.1.1:cache,mode=max
+          tags: roboflow/roboflow-inference-server-jetson-5.1.1:latest,roboflow/roboflow-inference-server-jetson-5.1.1:${{ env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-5.1.1:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-5.1.1:cache,mode=max
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1

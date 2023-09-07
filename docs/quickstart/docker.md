@@ -40,18 +40,25 @@ hardware configurations.
         docker pull roboflow/roboflow-inference-server-trt
         ```
 
-    === "Jetson 4.x"
-        Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.x Targets.
+    === "Jetson 4.5.x"
+        Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.5.x Targets.
 
         ```
-        docker pull roboflow/roboflow-inference-server-trt-jetson
+        docker pull roboflow/roboflow-inference-server-jetson-4.5.0
+        ```
+
+    === "Jetson 4.6.x"
+        Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.6.x Targets.
+
+        ```
+        docker pull roboflow/roboflow-inference-server-jetson-4.6.1
         ```
 
     === "Jetson 5.x"
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 5.x Targets.
 
         ```
-        docker pull roboflow/roboflow-inference-server-trt-jetson-5.1.1
+        docker pull roboflow/roboflow-inference-server-jetson-5.1.1
         ```
 
 ## Run
@@ -85,17 +92,25 @@ Server in a container.
         roboflow/roboflow-inference-server-trt:latest
         ```
 
-    === "Jetson 4.x"
+    === "Jetson 4.5.x"
         ```
         docker run --privileged --net=host --runtime=nvidia \
-        roboflow/roboflow-inference-server-trt-jetson:latest
+        roboflow/roboflow-inference-server-jetson-4.5.0:latest
+        ```
+
+    === "Jetson 4.6.x"
+        ```
+        docker run --privileged --net=host --runtime=nvidia \
+        roboflow/roboflow-inference-server-jetson-4.6.1:latest
         ```
 
     === "Jetson 5.x"
         ```
         docker run --privileged --net=host --runtime=nvidia \
-        roboflow/roboflow-inference-server-trt-jetson-5.1.1:latest
+        roboflow/roboflow-inference-server-jetson-5.1.1:latest
         ```
+
+    **_Note:_** The Jetson images come with TensorRT dependancies. To use TensorRT acceleration with your model, pass an additional environment variable at runtime `-e ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider`. This can improve inference speed, however, this also incurs a costly startup expense when the model is loaded.
 
 ## Build
 
@@ -137,16 +152,23 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
         roboflow/roboflow-inference-server-trt .
         ```
 
-    === "Jetson 4.x"
+    === "Jetson 4.5.x"
         ```
         docker build \
         -f dockerfiles/Dockerfile.onnx.jetson \
-        -t roboflow/roboflow-inference-server-trt-jetson .
+        -t roboflow/roboflow-inference-server-jetson-4.5.0 .
+        ```
+
+    === "Jetson 4.6.x"
+        ```
+        docker build \
+        -f dockerfiles/Dockerfile.onnx.jetson \
+        -t roboflow/roboflow-inference-server-jetson-4.6.1 .
         ```
 
     === "Jetson 5.x"
         ```
         docker build \
         -f dockerfiles/Dockerfile.onnx.jetson.5.1.1 \
-        -t roboflow/roboflow-inference-server-trt-jetson-5.1.1 .
+        -t roboflow/roboflow-inference-server-jetson-5.1.1 .
         ```

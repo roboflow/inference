@@ -27,7 +27,7 @@ sudo docker run -it --rm -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu
 ### TRT
 
 ```bash
-sudo docker run --privileged --net=host --runtime=nvidia --mount source=roboflow,target=/cache -e NUM_WORKERS=1 roboflow/roboflow-inference-server-trt-jetson:latest
+sudo docker run --privileged --net=host --runtime=nvidia --mount source=roboflow,target=/cache -e NUM_WORKERS=1 roboflow/roboflow-inference-server-jetson:latest
 ```
 
 ### GPU

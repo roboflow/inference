@@ -1,1 +1,1 @@
-docker/publish/deploy_docker_image.sh roboflow/roboflow-inference-server-trt-jetson-5.1.1 docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1
+docker/publish/deploy_docker_image.sh roboflow/roboflow-inference-server-jetson-5.1.1 docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1

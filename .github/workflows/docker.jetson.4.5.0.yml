@@ -1,4 +1,4 @@
-name: Build and Push Jetson 4.5.1 Container
+name: Build and Push Jetson 4.5.0 Container
 
 on:
   release:
@@ -38,8 +38,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-trt-jetson:latest,roboflow/roboflow-inference-server-trt-jetson:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt-jetson:cache,mode=max
+          tags: roboflow/roboflow-inference-server-jetson-4.5.0:latest,roboflow/roboflow-inference-server-jetson-4.5.0:${{ env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:cache,mode=max
           platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.5.0
