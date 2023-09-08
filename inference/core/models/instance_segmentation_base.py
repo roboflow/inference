@@ -160,7 +160,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                     infer_shape,
                     [img_dim],
                     self.preproc,
-                    self.resize_method,
+                    resize_method=self.resize_method,
                     disable_preproc_static_crop=disable_preproc_static_crop,
                 )[0]
                 polys = scale_polys(
