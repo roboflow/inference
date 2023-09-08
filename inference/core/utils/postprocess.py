@@ -109,12 +109,18 @@ def mask2poly(masks):
     return segments
 
 
-def generate_transform_from_proc(orig_shape, preproc):
-    """Generates a transformation based on preprocessing configuration.
+def generate_transform_from_proc(
+    orig_shape,
+    preproc,
+    disable_preproc_static_crop: bool = False,
+):
+    """
+    Generates a transformation based on preprocessing configuration.
 
     Args:
         orig_shape (tuple): The original shape of the object (e.g., image).
         preproc (dict): Preprocessing configuration dictionary, containing information such as static cropping.
+        disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
     Returns:
         tuple: A tuple containing the shift in the x and y directions, and the updated original shape after cropping.
@@ -122,6 +128,7 @@ def generate_transform_from_proc(orig_shape, preproc):
     if (
         "static-crop" in preproc.keys()
         and not DISABLE_PREPROC_STATIC_CROP
+        and not disable_preproc_static_crop
         and preproc["static-crop"]["enabled"] == True
     ):
         x_min = preproc["static-crop"]["x_min"] / 100
@@ -151,19 +158,22 @@ def postprocess_predictions(
     infer_shape: Tuple[int, int],
     img_dims: List[Tuple[int, int]],
     preproc: dict,
+    disable_preproc_static_crop: bool = False,
     resize_method: str = "Stretch to",
 ) -> List[List[List[float]]]:
-    """Postprocesses each patch of detections by scaling them to the original image coordinates and by shifting them based on a static crop preproc (if applied).
+    """
+    Postprocesses each patch of detections by scaling them to the original image coordinates and by shifting them based on a static crop preproc (if applied).
 
     Args:
-        predictions (List[List[List[float]]]): The predictions output from NMS, indices are: batch x prediction x [x1, y1, x2, y2, ...]
+        predictions (List[List[List[float]]]): The predictions output from NMS, indices are: batch x prediction x [x1, y1, x2, y2, ...].
         infer_shape (Tuple[int, int]): The shape of the inference image.
-        img_dims (List[Tuple[int, int]]): The dimensions of the original image for each batch, indices are: batch x [ width, height ]
+        img_dims (List[Tuple[int, int]]): The dimensions of the original image for each batch, indices are: batch x [ width, height ].
         preproc (dict): Preprocessing configuration dictionary.
+        disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
         resize_method (str, optional): Resize method for image. Defaults to "Stretch to".
 
     Returns:
-        List[List[List[float]]]: The scaled and shifted predictions, indices are: batch x prediction x [x1, y1, x2, y2, ...]
+        List[List[List[float]]]: The scaled and shifted predictions, indices are: batch x prediction x [x1, y1, x2, y2, ...].
     """
 
     # Get static crop params
@@ -181,7 +191,7 @@ def postprocess_predictions(
         orig_shape = img_dims[i][-1::-1]
         # Adjust shape and get shift pased on static crop preproc
         (crop_shift_x, crop_shift_y), orig_shape = generate_transform_from_proc(
-            orig_shape, preproc
+            orig_shape, preproc, disable_preproc_static_crop=disable_preproc_static_crop
         )
         if resize_method == "Stretch to":
             scale_height = orig_shape[1] / infer_shape[1]

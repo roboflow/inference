@@ -186,9 +186,29 @@ class CVInferenceRequest(InferenceRequest):
 
     Attributes:
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
+        disable_preproc_auto_orient (Optional[bool]): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+        disable_preproc_contrast (Optional[bool]): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
+        disable_preproc_grayscale (Optional[bool]): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+        disable_preproc_static_crop (Optional[bool]): If true, the static crop preprocessing step is disabled for this call. Default is False.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
+    disable_preproc_auto_orient: Optional[bool] = Field(
+        default=False,
+        description="If true, the auto orient preprocessing step is disabled for this call.",
+    )
+    disable_preproc_contrast: Optional[bool] = Field(
+        default=False,
+        description="If true, the auto contrast preprocessing step is disabled for this call.",
+    )
+    disable_preproc_grayscale: Optional[bool] = Field(
+        default=False,
+        description="If true, the grayscale preprocessing step is disabled for this call.",
+    )
+    disable_preproc_static_crop: Optional[bool] = Field(
+        default=False,
+        description="If true, the static crop preprocessing step is disabled for this call.",
+    )
 
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):

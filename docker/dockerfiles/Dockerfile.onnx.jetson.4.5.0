@@ -3,7 +3,9 @@ FROM nvcr.io/nvidia/l4t-ml:r32.5.0-py3
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG en_US.UTF-8 
 
-RUN apt-get update -y && apt-get install -y \
+RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
+    python3.8 \
+    python3.8-dev \
     lshw \
     git \
     python3-pip \
@@ -18,6 +20,7 @@ RUN apt-get update -y && apt-get install -y \
     python3-shapely \
     gdal-bin \
     libgdal-dev \
+    python3-setuptools \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
@@ -26,9 +29,9 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
-RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
+RUN python3.8 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -36,11 +39,11 @@ RUN pip3 install --upgrade pip  && pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall --yes onnxruntime
-RUN wget https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.whl -O onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
-RUN pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl \
+RUN python3.8 -m pip uninstall --yes onnxruntime
+RUN wget https://nvidia.box.com/shared/static/2sv2fv1wseihaw8ym0d4srz41dzljwxh.whl -O onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl
+RUN python3.8 -m pip install onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl \
     && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
+    && rm onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl
 
 WORKDIR /app/
 COPY inference inference

@@ -470,18 +470,34 @@ class RoboflowInferenceModel(Model):
         return open(self.cache_file(f), mode, encoding=encoding)
 
     def preproc_image(
-        self, image: Union[Any, InferenceRequestImage]
+        self,
+        image: Union[Any, InferenceRequestImage],
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
-        """Preproccess an inference request image by loading it, then applying any preprocs specified by the Roboflow platform, then scaling it to the inference input dimensions
+        """
+        Preprocesses an inference request image by loading it, then applying any pre-processing specified by the Roboflow platform, then scaling it to the inference input dimensions.
 
         Args:
-            image (InferenceRequestImage): An object containing information necessary to load the image for inference
+            image (Union[Any, InferenceRequestImage]): An object containing information necessary to load the image for inference.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
         Returns:
-            Tuple[np.ndarray, Tuple[int, int]]: A tuple containing an numpy array of the preprocessed image pixel data and a tuple of the images original size
+            Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
         pil_image = load_image(image)
-        preprocessed_image, img_dims = self.preprocess_image(pil_image)
+        preprocessed_image, img_dims = self.preprocess_image(
+            pil_image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
         if self.resize_method == "Stretch to":
             resized = preprocessed_image.resize(
@@ -501,16 +517,35 @@ class RoboflowInferenceModel(Model):
 
         return img_in, img_dims
 
-    def preprocess_image(self, image: Image.Image) -> Image.Image:
-        """Preprocesses the given image using specified preprocessing steps.
+    def preprocess_image(
+        self,
+        image: Image.Image,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+    ) -> Image.Image:
+        """
+        Preprocesses the given image using specified preprocessing steps.
 
         Args:
             image (Image.Image): The PIL image to preprocess.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
         Returns:
             Image.Image: The preprocessed PIL image.
         """
-        return prepare(image, self.preproc)
+        return prepare(
+            image,
+            self.preproc,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
     @property
     def weights_file(self) -> str:
