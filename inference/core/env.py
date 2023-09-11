@@ -179,6 +179,9 @@ MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
 # Maximum number of detections, default is 300
 MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
 
+# Default interval for metrics aggregation, default is 60
+METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
+
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 

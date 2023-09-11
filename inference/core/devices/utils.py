@@ -116,3 +116,6 @@ def get_device_id():
         return hostname
     except Exception as e:
         return "UNKNOWN"
+
+
+GLOBAL_DEVICE_ID = get_device_id()

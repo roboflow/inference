@@ -4,8 +4,10 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
-from inference.core.env import ROBOFLOW_SERVER_UUID
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
@@ -65,6 +67,17 @@ class ModelManager:
         rtn_val = self._models[model_id].infer_from_request(request)
         toc = time.perf_counter()
         self._models[model_id].metrics["avg_inference_time"] += toc - tic
+        finish_time = time.time()
+        base_key = f"{GLOBAL_DEVICE_ID}:{model_id}"
+        cache.set(
+            f"inference:{base_key}:{finish_time}",
+            rtn_val.dict(),
+            ex=METRICS_INTERVAL * 2,
+        )
+
+        cache.set(
+            f"inference-keys:{base_key}",
+        )
         return rtn_val
 
     def make_response(
