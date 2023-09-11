@@ -53,7 +53,7 @@ Roboflow Inference uses mkdocs and mike to offer versioned documentation. The pr
 To build the Inference documentation, first install the project development dependencies:
 
 ```bash
-pip install -r dev-requirements.txt
+pip install -r requirements/requirements.docs.txt
 ```
 
 To run the latest version of the documentation, run:
