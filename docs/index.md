@@ -34,7 +34,7 @@ pip install inference[trt]
 
 ### Install Using Docker
 
-[See the docker quickstart](quickstart/docker.md).
+See the [docker quickstart](docs/quickstart/docker.md).
 
 ## Quickstart 🚀
 

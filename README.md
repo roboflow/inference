@@ -74,7 +74,7 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 ### Extras:
 
-Some functionality requires extra dependancies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
+Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
 | extra | description |
 |:-------|:-------------------------------------------------|
 | `clip` | Ability to use the core `CLIP` model (by OpenAI) |
@@ -82,9 +82,9 @@ Some functionality requires extra dependancies. These can be installed by specif
 | `http` | Ability to run the http interface |
 | `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
 
-**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependancies however pytorch installs can be highly environment dependant. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
+**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependencies however pytorch installs can be highly environment dependent. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
 
-Example install with http dependancies:
+Example install with http dependencies:
 
 ```bash
 pip install inference[http]
@@ -103,7 +103,6 @@ docker run --net=host roboflow/roboflow-inference-server-cpu:latest
 - Run on NVIDIA GPU:
 
 ```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 <details close>
