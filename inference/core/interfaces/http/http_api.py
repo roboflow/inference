@@ -780,10 +780,19 @@ class HttpInterface(BaseInterface):
                     description="Shared secret used to authenticate requests to the inference server from internal services (e.g. to allow disabling inference usage tracking via the `countinference` query parameter)",
                     include_in_schema=False,
                 ),
-                disable_preproc_auto_orient: Optional[bool] = False,
-                disable_preproc_contrast: Optional[bool] = False,
-                disable_preproc_grayscale: Optional[bool] = False,
-                disable_preproc_static_crop: Optional[bool] = False,
+                disable_preproc_auto_orient: Optional[bool] = Query(
+                    False, description="If true, disables automatic image orientation"
+                ),
+                disable_preproc_contrast: Optional[bool] = Query(
+                    False, description="If true, disables automatic contrast adjustment"
+                ),
+                disable_preproc_grayscale: Optional[bool] = Query(
+                    False,
+                    description="If true, disables automatic grayscale conversion",
+                ),
+                disable_preproc_static_crop: Optional[bool] = Query(
+                    False, description="If true, disables automatic static crop"
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
