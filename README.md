@@ -103,6 +103,7 @@ docker run --net=host roboflow/roboflow-inference-server-cpu:latest
 - Run on NVIDIA GPU:
 
 ```bash
+docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 <details close>
