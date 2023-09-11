@@ -37,6 +37,10 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         image: Any,
         class_agnostic_nms: bool = False,
         confidence: float = 0.5,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
         iou_threshold: float = 0.5,
         mask_decode_mode: str = "accurate",
         max_candidates: int = 3000,
@@ -60,6 +64,11 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
             max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
             return_image_dims (bool, optional): Whether to return the dimensions of the processed images. Defaults to False.
             tradeoff_factor (float, optional): Tradeoff factor used when `mask_decode_mode` is set to "tradeoff". Must be in [0.0, 1.0]. Defaults to 0.5.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
+            **kwargs: Additional parameters to customize the inference process.
 
         Returns:
             Union[List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]]: The list of predictions, with each prediction being a list of lists. Optionally, also returns the dimensions of the processed images.
@@ -76,12 +85,27 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         t1 = perf_counter()
 
         if isinstance(image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in image]
+            imgs_with_dims = [
+                self.preproc_image(
+                    i,
+                    disable_preproc_auto_orient=disable_preproc_auto_orient,
+                    disable_preproc_contrast=disable_preproc_contrast,
+                    disable_preproc_grayscale=disable_preproc_grayscale,
+                    disable_preproc_static_crop=disable_preproc_static_crop,
+                )
+                for i in image
+            ]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
             unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(image)
+            img_in, img_dims = self.preproc_image(
+                image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
             img_dims = [img_dims]
             unwrap = True
 
@@ -136,7 +160,8 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                     infer_shape,
                     [img_dim],
                     self.preproc,
-                    self.resize_method,
+                    resize_method=self.resize_method,
+                    disable_preproc_static_crop=disable_preproc_static_crop,
                 )[0]
                 polys = scale_polys(
                     output_mask_shape,

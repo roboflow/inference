@@ -63,7 +63,14 @@ def auto_orient(image):
     return image
 
 
-def prepare(image, preproc):
+def prepare(
+    image,
+    preproc,
+    disable_preproc_auto_orient: bool = False,
+    disable_preproc_contrast: bool = False,
+    disable_preproc_grayscale: bool = False,
+    disable_preproc_static_crop: bool = False,
+):
     """
     Prepares an image by applying a series of preprocessing steps defined in the `preproc` dictionary.
 
@@ -77,6 +84,10 @@ def prepare(image, preproc):
                 "grayscale": {"enabled": true},
                 "contrast": {"enabled": true, "type": "Adaptive Equalization"}
             }
+        disable_preproc_auto_orient (bool, optional): If true, the auto-orient preprocessing step is disabled for this call. Default is False.
+        disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
+        disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+        disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
     Returns:
         PIL.Image.Image: The preprocessed image object.
@@ -86,13 +97,21 @@ def prepare(image, preproc):
         The function uses global flags like `DISABLE_PREPROC_AUTO_ORIENT`, `DISABLE_PREPROC_STATIC_CROP`, etc.
         to conditionally enable or disable certain preprocessing steps.
     """
-    if "auto-orient" in preproc.keys() and not DISABLE_PREPROC_AUTO_ORIENT:
+    if (
+        "auto-orient" in preproc.keys()
+        and not DISABLE_PREPROC_AUTO_ORIENT
+        and not disable_preproc_auto_orient
+    ):
         if preproc["auto-orient"]["enabled"] == True:
             # perform auto-orient logic
             image = auto_orient(image)
     img_dims = image.size[-1::-1]
     # # static crop
-    if "static-crop" in preproc.keys() and not DISABLE_PREPROC_STATIC_CROP:
+    if (
+        "static-crop" in preproc.keys()
+        and not DISABLE_PREPROC_STATIC_CROP
+        and not disable_preproc_static_crop
+    ):
         if preproc["static-crop"]["enabled"] == True:
             w, h = image.size
 
@@ -104,7 +123,11 @@ def prepare(image, preproc):
             crop_area = (int(x_min * w), int(y_min * h), int(x_max * w), int(y_max * h))
             image = image.crop(crop_area)
     # contrast
-    if "contrast" in preproc.keys() and not DISABLE_PREPROC_CONTRAST:
+    if (
+        "contrast" in preproc.keys()
+        and not DISABLE_PREPROC_CONTRAST
+        and not disable_preproc_contrast
+    ):
         if preproc["contrast"]["enabled"] == True:
             how = preproc["contrast"]["type"]
 
@@ -131,7 +154,11 @@ def prepare(image, preproc):
                 image_adapteq = equalize_adapthist(image_np, clip_limit=0.03)
                 image = Image.fromarray((image_adapteq * 255).astype(np.uint8))
     # grayscale
-    if "grayscale" in preproc.keys() and not DISABLE_PREPROC_GRAYSCALE:
+    if (
+        "grayscale" in preproc.keys()
+        and not DISABLE_PREPROC_GRAYSCALE
+        and not disable_preproc_grayscale
+    ):
         if preproc["grayscale"]["enabled"] == True:
             image_np = np.asarray(image).astype(np.float64) / 255
             if image_np.ndim < 3:
