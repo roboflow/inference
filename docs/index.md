@@ -27,6 +27,8 @@ For all installation options, you will need a [free Roboflow account](https://ap
 To install the Inference using pip, run one of the following commands, depending on the device on which you want to run the Inference:
 
 ```bash
+pip install inference
+pip install inference[gpu]
 pip install inference[arm]
 pip install inference[jetson]
 pip install inference[trt]
@@ -34,38 +36,7 @@ pip install inference[trt]
 
 ### Install Using Docker
 
-To install the Inference, first clone this repository:
-
-```bash
-git clone https://github.com/roboflow/inference
-```
-
-Then, choose a Dockerfile from the options below, depending on the environment in which you want to run the Inference:
-
-- `Dockerfile.onnx.arm.cpu`: ARM CPU
-- `Dockerfile.onnx.cpu`: CPU
-- `Dockerfile.onnx.gpu`: GPU
-- `Dockerfile.onnx.jetson`: NVIDIA Jetson
-- `Dockerfile.onnx.jetson.4.4.1`: NVIDIA Jetson 4.4.1
-- `Dockerfile.onnx.jetson.5.1.1`: NVIDIA Jetson 5.1.1
-- `Dockerfile.onnx.lambda`: AWS Lambda
-- `Dockerfile.onnx.trt`: TensorRT
-
-To install the server, first download and build the container:
-
-```bash
-docker build -f dockerfiles/[FILE_NAME] -t inference-server .
-```
-
-Replace `[FILE_NAME]` with the name of the Dockerfile that applies to the environment in which you want to run the Inference.
-
-Then, run the container:
-
-```bash
-docker run --gpus all --network=host -e PORT=9000 -e API_KEY=<YOUR API KEY> -v $(pwd)/cache:/cache inference-server
-```
-
-Substitute the API_KEY variable with your Roboflow API key. Learn how to retrieve your [Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+See the [docker quickstart](quickstart/docker.md).
 
 ## Quickstart 🚀
 
@@ -150,17 +121,17 @@ Roboflow Inference uses `mkdocs` and `mike` to offer versioned documentation. Th
 To build the Inference documentation, first install the project development dependencies:
 
 ```bash
-pip install -r dev-requirements.txt
+pip install -r requirements/requirements.docs.txt
 ```
 
 To run the latest version of the documentation, run:
 
 ```bash
-mike serve
+mkdocs serve
 ```
 
 Before a new release is published, a new version of the documentation should be built. To create a new version, run:
 
 ```bash
-mike deploy <version-number>
+mkdocs gh-deploy
 ```

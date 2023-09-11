@@ -10,6 +10,8 @@ Let's begin!
 
 First, we need to install Roboflow Inference. The command to install Roboflow Inference depends on the device on whihc you are running inference. Here are the available packages:
 
+- `inference`: x86 CPU
+- `inference[gpu]`: NVIDIA GPU devices
 - `inference[arm]`: ARM CPU
 - `inference[jetson]`: NVIDIA Jetson
 - `inference[trt]`: TensorRT devices

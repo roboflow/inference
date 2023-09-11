@@ -16,27 +16,9 @@ To run inference with the server, we will:
 
 The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
 
-Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using. Here are the available Docker containers:
+Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 
-### ARM CPU
-
-```bash
-sudo docker run -it --rm -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu
-```
-
-### TRT
-
-```bash
-sudo docker run --privileged --net=host --runtime=nvidia --mount source=roboflow,target=/cache -e NUM_WORKERS=1 roboflow/roboflow-inference-server-jetson:latest
-```
-
-### GPU
-
-```bash
-[]
-```
-
-Run the relevant command for your device. After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
+[Run the relevant command for your device](docker.md#run). After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
 
 Now we are ready to run inference!
 
