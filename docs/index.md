@@ -127,11 +127,11 @@ pip install -r requirements/requirements.docs.txt
 To run the latest version of the documentation, run:
 
 ```bash
-mike serve
+mkdocs serve
 ```
 
 Before a new release is published, a new version of the documentation should be built. To create a new version, run:
 
 ```bash
-mike deploy <version-number>
+mkdocs gh-deploy
 ```
