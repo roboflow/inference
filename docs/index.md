@@ -27,6 +27,8 @@ For all installation options, you will need a [free Roboflow account](https://ap
 To install the Inference using pip, run one of the following commands, depending on the device on which you want to run the Inference:
 
 ```bash
+pip install inference
+pip install inference[gpu]
 pip install inference[arm]
 pip install inference[jetson]
 pip install inference[trt]
@@ -34,7 +36,7 @@ pip install inference[trt]
 
 ### Install Using Docker
 
-See the [docker quickstart](docs/quickstart/docker.md).
+See the [docker quickstart](quickstart/docker.md).
 
 ## Quickstart 🚀
 
