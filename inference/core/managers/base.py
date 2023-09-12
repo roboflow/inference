@@ -61,24 +61,31 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self.check_for_model(model_id)
-        self._models[model_id].metrics["num_inferences"] += 1
-        tic = time.perf_counter()
-        rtn_val = self._models[model_id].infer_from_request(request)
-        toc = time.perf_counter()
-        self._models[model_id].metrics["avg_inference_time"] += toc - tic
-        finish_time = time.time()
-        base_key = f"{GLOBAL_DEVICE_ID}:{model_id}"
-        cache.set(
-            f"inference:{base_key}:{finish_time}",
-            rtn_val.dict(),
-            ex=METRICS_INTERVAL * 2,
-        )
+        try:
+            self.check_for_model(model_id)
+            self._models[model_id].metrics["num_inferences"] += 1
+            tic = time.perf_counter()
+            rtn_val = self._models[model_id].infer_from_request(request)
+            toc = time.perf_counter()
+            self._models[model_id].metrics["avg_inference_time"] += toc - tic
+            finish_time = time.time()
+            cache.zadd(
+                f"inference:{GLOBAL_DEVICE_ID}:{model_id}",
+                value={"request": request, "response": rtn_val.dict()},
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
 
-        cache.set(
-            f"inference-keys:{base_key}",
-        )
-        return rtn_val
+            return rtn_val
+        except Exception as e:
+            finish_time = time.time()
+            cache.zadd(
+                f"error:{GLOBAL_DEVICE_ID}:{model_id}",
+                value={"request": request, "error": e},
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            raise
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs

@@ -9,14 +9,17 @@ import uuid
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from inference.core.devices.utils import get_device_id
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_KEY,
     PINGBACK_ENABLED,
     PINGBACK_INTERVAL_SECONDS,
     PINGBACK_URL,
+    TAGS,
 )
 from inference.core.logger import logger
+from inference.core.managers.metrics import get_model_metrics
+from inference.core.version import __version__
 
 
 def getSystemInfo():
@@ -116,45 +119,41 @@ class PingbackInfo:
         all_data = {}
         try:
             all_data = {
-                "api_key": API_KEY or "no_model_used",
-                "container": {
-                    "startup_time": self.process_startup_time,
-                    "uuid": self.model_manager.uuid,
-                },
-                "models": [],
+                "api_key": API_KEY,
                 "window_start_timestamp": self.window_start_timestamp,
                 "device": {
-                    "id": get_device_id(),
-                    "name": get_device_id(),
-                    "type": "inference_server",
-                    "tags": [],
+                    "id": GLOBAL_DEVICE_ID,
+                    "name": GLOBAL_DEVICE_ID,
+                    "type": f"roboflow-inference-server=={__version__}",
+                    "tags": TAGS,
                     "system_info": self.system_info,
+                    "containers": [
+                        {
+                            "startup_time": self.process_startup_time,
+                            "uuid": self.model_manager.uuid,
+                            "models": [],
+                            "num_errors": self.model_manager.num_errors,
+                        }
+                    ],
                 },
-                "num_errors": self.model_manager.num_errors,
             }
+            now = time.time()
+            start = now - PINGBACK_INTERVAL_SECONDS
             for key in model_manager._models:
                 post_data = {}
                 model = model_manager._models[key]
-                all_data["api_key"] = model.api_key
+                if all_data["api_key"] is None and model.api_key is not None:
+                    all_data["api_key"] = model.api_key
                 post_data["model"] = {
                     "api_key": model.api_key,
                     "dataset_id": model.dataset_id,
                     "version": model.version_id,
                 }
                 post_data["data"] = {}
-                post_data["data"]["metrics"] = {
-                    "num_inferences": model.metrics["num_inferences"],
-                    "avg_inference_time": model.metrics["avg_inference_time"]
-                    / model.metrics["num_inferences"]
-                    if model.metrics["num_inferences"] > 0
-                    else 0,
-                    "num_errors": self.model_manager.num_errors,  # This is not really per model, its per container; kept this for v1
-                }
+                post_data["data"]["metrics"] = get_model_metrics(
+                    GLOBAL_DEVICE_ID, key, start=start
+                )
                 all_data["models"].append(post_data)
-                # Reset metrics
-                model.metrics["num_inferences"] = 0
-                model.metrics["avg_inference_time"] = 0
-                self.model_manager.num_errors = 0
 
             timestamp = str(int(time.time()))
             all_data["timestamp"] = timestamp

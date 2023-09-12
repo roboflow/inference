@@ -179,6 +179,9 @@ MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
 # Maximum number of detections, default is 300
 MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
 
+# Loop interval for expiration of memory cache, default is 5
+MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
+
 # Default interval for metrics aggregation, default is 60
 METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 
@@ -224,6 +227,10 @@ try:
     STREAM_ID = int(STREAM_ID)
 except (TypeError, ValueError):
     pass
+
+# Tags used for device management
+TAGS = os.getenv("TAGS", "")
+TAGS = [t for t in TAGS.split(",") if t]
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)
