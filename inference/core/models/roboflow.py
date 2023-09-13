@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import json
 import os
 import shutil
@@ -742,6 +744,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     },
                 )
         self.initialize_model()
+        self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
 
     def get_infer_bucket_file_list(self) -> list:
         """Returns the list of files to be downloaded from the inference bucket for ONNX model.
@@ -791,6 +794,36 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         else:
             self.batching_enabled = False
             self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
+
+    def load_image(
+        self,
+        image: Any,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+    ) -> Tuple[np.ndarray, Tuple[int, int]]:
+        if isinstance(image, list):
+            preproc_image = partial(
+                self.preproc_image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
+            imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
+            imgs, img_dims = zip(*imgs_with_dims)
+            img_in = np.concatenate(imgs, axis=0)
+        else:
+            img_in, img_dims = self.preproc_image(
+                image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
+            img_dims = [img_dims]
+        return img_in, img_dims
 
     @property
     def weights_file(self) -> str:
