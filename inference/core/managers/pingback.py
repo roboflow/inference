@@ -12,9 +12,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_KEY,
-    PINGBACK_ENABLED,
-    PINGBACK_INTERVAL_SECONDS,
-    PINGBACK_URL,
+    METRICS_ENABLED,
+    METRICS_INTERVAL,
+    METRICS_URL,
     TAGS,
 )
 from inference.core.logger import logger
@@ -55,7 +55,7 @@ class PingbackInfo:
         scheduler (BackgroundScheduler): A scheduler for running jobs in the background.
         model_manager (ModelManager): Reference to the model manager object.
         process_startup_time (str): Unix timestamp indicating when the process started.
-        pingback_url (str): URL to send the pingback data to.
+        METRICS_URL (str): URL to send the pingback data to.
         system_info (dict): Information about the system.
         window_start_timestamp (str): Unix timestamp indicating the start of the current window.
     """
@@ -73,7 +73,7 @@ class PingbackInfo:
             logger.info(
                 "UUID: " + self.model_manager.uuid
             )  # To correlate with UI container view
-            self.pingback_url = PINGBACK_URL  # Test URL
+            self.METRICS_URL = METRICS_URL  # Test URL
 
             self.system_info = getSystemInfo()
             self.window_start_timestamp = str(int(time.time()))
@@ -86,18 +86,18 @@ class PingbackInfo:
     def start(self):
         """Starts the scheduler to periodically post data to Roboflow.
 
-        If PINGBACK_ENABLED is False, a warning is logged, and the method returns without starting the scheduler.
+        If METRICS_ENABLED is False, a warning is logged, and the method returns without starting the scheduler.
         """
-        if PINGBACK_ENABLED == False:
+        if METRICS_ENABLED == False:
             logger.warn(
-                "Pingback to Roboflow is disabled; not sending back stats to Roboflow."
+                "Metrics reporting to Roboflow is disabled; not sending back stats to Roboflow."
             )
             return
         try:
             self.scheduler.add_job(
                 self.post_data,
                 "interval",
-                seconds=PINGBACK_INTERVAL_SECONDS,
+                seconds=METRICS_INTERVAL,
                 args=[self.model_manager],
             )
             self.scheduler.start()
@@ -120,7 +120,7 @@ class PingbackInfo:
         try:
             all_data = {
                 "api_key": API_KEY,
-                "window_start_timestamp": self.window_start_timestamp,
+                "timestamp": self.window_start_timestamp,
                 "device": {
                     "id": GLOBAL_DEVICE_ID,
                     "name": GLOBAL_DEVICE_ID,
@@ -132,41 +132,39 @@ class PingbackInfo:
                             "startup_time": self.process_startup_time,
                             "uuid": self.model_manager.uuid,
                             "models": [],
-                            "num_errors": self.model_manager.num_errors,
                         }
                     ],
                 },
             }
             now = time.time()
-            start = now - PINGBACK_INTERVAL_SECONDS
+            start = now - METRICS_INTERVAL
             for key in model_manager._models:
-                post_data = {}
                 model = model_manager._models[key]
                 if all_data["api_key"] is None and model.api_key is not None:
                     all_data["api_key"] = model.api_key
-                post_data["model"] = {
+                model_data = {
                     "api_key": model.api_key,
                     "dataset_id": model.dataset_id,
                     "version": model.version_id,
+                    "metrics": get_model_metrics(GLOBAL_DEVICE_ID, key, start=start),
                 }
-                post_data["data"] = {}
-                post_data["data"]["metrics"] = get_model_metrics(
-                    GLOBAL_DEVICE_ID, key, start=start
-                )
-                all_data["models"].append(post_data)
+                all_data["device"]["containers"][0]["models"].append(model_data)
 
             timestamp = str(int(time.time()))
             all_data["timestamp"] = timestamp
             self.window_start_timestamp = timestamp
-            requests.post(PINGBACK_URL, json=all_data)
-            logger.info(
-                "Sent pingback to Roboflow {} at {}.".format(
-                    PINGBACK_URL, str(all_data)
-                )
+            res = requests.post(METRICS_URL, json=all_data)
+            res.raise_for_status()
+            logger.debug(
+                "Sent metrics to Roboflow {} at {}.".format(METRICS_URL, str(all_data))
             )
 
         except Exception as e:
-            logger.error(
-                "Error sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
-                + str(e)
-            )
+            try:
+                logger.error(
+                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {all_data}"
+                )
+            except Exception as e2:
+                logger.error(
+                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}."
+                )

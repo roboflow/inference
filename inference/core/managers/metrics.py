@@ -30,11 +30,11 @@ def get_model_metrics(
     for t, inference in inferences_with_times:
         response = inference["response"]
         if isinstance(response, list):
-            times = [r.time for r in response if hasattr(r, "time")]
+            times = [r["time"] for r in response if "time" in r]
             inference_times.extend(times)
         else:
-            if hasattr(response, "time"):
-                inference_times.append(response.time)
+            if "time" in response:
+                inference_times.append(response["time"])
     avg_inference_time = (
         sum(inference_times) / len(inference_times) if len(inference_times) > 0 else 0
     )

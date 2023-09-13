@@ -101,9 +101,9 @@ Use these environment variables to control pingback and to Roboflow as well as o
 
 | ENV Variable    | Description |
 | -------- | ------- |
-|   PINGBACK_ENABLED  | Default is true; if set to the string "false", pingback messages are not sent back to Roboflow.   |
-|   PINGBACK_URL  | Default is `https://api.roboflow.com/pingback`   |
-| PINGBACK_INTERVAL_SECONDS | Frequency of sending pingback messages, default is 3600 seconds |
+|   METRICS_ENABLED  | Default is true; if set to the string "false", pingback messages are not sent back to Roboflow.   |
+|   METRICS_URL  | Default is `https://api.roboflow.com/device-stats`   |
+| METRICS_INTERVAL | Frequency of sending pingback messages, default is 3600 seconds |
 | ROBOFLOW_SERVER_UUID  | If this is set, the ID of the process reported back to Roboflow's UI is the value of this environment variable. Omitting this causes the process (docker container) to generate a new UUID.    |
 | ENABLE_PROMETHEUS | if set to any value, this will cause a /metrics endpoint to be created with some FastAPI metrics for Prometheus to scrape; not applicable to the lambda inference server     |
 

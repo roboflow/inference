@@ -19,7 +19,7 @@ from inference.core.env import (
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
-    PINGBACK_ENABLED,
+    METRICS_ENABLED,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
 )
@@ -183,7 +183,7 @@ class HttpInterface(BaseInterface):
                 sort_by="cumulative",
             )
 
-        if PINGBACK_ENABLED:
+        if METRICS_ENABLED:
 
             @app.middleware("http")
             async def count_errors(request: Request, call_next):

@@ -167,6 +167,9 @@ LEGACY_ROUTE_ENABLED = bool_env(os.getenv("LEGACY_ROUTE_ENABLED", True))
 # License server, default is None
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
+# Log level, default is "INFO"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
@@ -182,8 +185,16 @@ MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
 # Loop interval for expiration of memory cache, default is 5
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
-# Default interval for metrics aggregation, default is 60
+# Metrics enabled flag, default is True
+METRICS_ENABLED = bool_env(os.getenv("METRICS_ENABLED", True))
+if LAMBDA:
+    METRICS_ENABLED = False
+
+# Interval for metrics aggregation, default is 60
 METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
+
+# URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/device-stats"
+METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/device-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
@@ -234,17 +245,6 @@ TAGS = [t for t in TAGS.split(",") if t]
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)
-
-# Pingback enabled flag, default is True
-PINGBACK_ENABLED = bool_env(os.getenv("PINGBACK_ENABLED", True))
-if LAMBDA:
-    PINGBACK_ENABLED = False
-
-# Pingback URL
-PINGBACK_URL = os.getenv("PINGBACK_URL", "https://api.roboflow.com/pingback")
-
-# Pingback interval in seconds, default is 3600
-PINGBACK_INTERVAL_SECONDS = int(os.getenv("PINGBACK_INTERVAL_SECONDS", 3600))
 
 # Set TensorRT cache path
 os.environ["ORT_TENSORRT_CACHE_PATH"] = TENSORRT_CACHE_PATH
