@@ -27,10 +27,10 @@ Now we are ready to run inference!
 To run inference on a model, we will make a HTTP request to:
 
 ```url
-http://localhost:9001/{workspace_id}/{model_id}
+http://localhost:9001/{project_id}/{model_version}
 ```
 
-To find your workspace and model IDs, refer to the Roboflow documentation.
+To find your project ID and model version number, refer to the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
 This route works for all supported task types: object detection, classification, and segmentation.
 
@@ -39,8 +39,8 @@ To run inference, make a HTTP request to the route:
 ```python
 import requests
 
-workspace_id = ""
-model_id = ""
+project_id = ""
+model_version = ""
 image_url = ""
 confidence = 0.75
 api_key = ""
@@ -55,7 +55,7 @@ infer_payload = {
     "api_key": api_key,
 }
 res = requests.post(
-    f"http://localhost:9001/{workspace_id}/{model_id}",
+    f"http://localhost:9001/{project_id}/{model_version}",
     json=infer_object_detection_payload,
 )
 
@@ -64,7 +64,7 @@ predictions = res.json()
 
 This code will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.
 
-Above, set your workspace and model ID. Also configure your confidence and IoU threshold values as needed. If you are using classification, you can omit the IoU threshold value. You will also need to set your Roboflow API key. To learn how to retrieve your Roboflow API key, refer to the Roboflow API documentation.
+Above, set your project ID and model version number. Also configure your confidence and IoU threshold values as needed. If you are using classification, you can omit the IoU threshold value. You will also need to set your Roboflow API key. To learn how to retrieve your Roboflow API key, refer to the Roboflow API documentation, [Authentication - Retrieve an API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
 You can post either a URL, a base64-encoded image, or a pickled NumPy array to the server.
 
