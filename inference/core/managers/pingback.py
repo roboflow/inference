@@ -11,10 +11,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from inference.core.devices.utils import get_device_id
 from inference.core.env import (
+    API_BASE_URL,
     API_KEY,
     PINGBACK_ENABLED,
     PINGBACK_INTERVAL_SECONDS,
-    API_BASE_URL,
 )
 from inference.core.logger import logger
 
