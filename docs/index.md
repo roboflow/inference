@@ -70,13 +70,12 @@ You can also run any model hosted on Roboflow using the Inference.
 
 Use these environment variables to control pingback and to Roboflow as well as other features; if you are running a Docker container, [pass these](https://docs.docker.com/engine/reference/commandline/run/#env) into the docker run command.
 
-| ENV Variable    | Description |
-| -------- | ------- |
-|   PINGBACK_ENABLED  | Default is true; if set to the string "false", pingback messages are not sent back to Roboflow.   |
-|   PINGBACK_URL  | Default is `https://api.roboflow.com/pingback`   |
-| PINGBACK_INTERVAL_SECONDS | Frequency of sending pingback messages, default is 3600 seconds |
-| ROBOFLOW_SERVER_UUID  | If this is set, the ID of the process reported back to Roboflow's UI is the value of this environment variable. Omitting this causes the process (docker container) to generate a new UUID.    |
-| ENABLE_PROMETHEUS | if set to any value, this will cause a /metrics endpoint to be created with some FastAPI metrics for Prometheus to scrape; not applicable to the lambda inference server     |
+| ENV Variable              | Description                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PINGBACK_ENABLED          | Default is true; if set to the string "false", pingback messages are not sent back to Roboflow.                                                                                             |
+| PINGBACK_INTERVAL_SECONDS | Frequency of sending pingback messages, default is 3600 seconds                                                                                                                             |
+| ROBOFLOW_SERVER_UUID      | If this is set, the ID of the process reported back to Roboflow's UI is the value of this environment variable. Omitting this causes the process (docker container) to generate a new UUID. |
+| ENABLE_PROMETHEUS         | if set to any value, this will cause a /metrics endpoint to be created with some FastAPI metrics for Prometheus to scrape; not applicable to the lambda inference server                    |
 
 ## Community Resources 📚
 

@@ -230,9 +230,6 @@ PINGBACK_ENABLED = bool_env(os.getenv("PINGBACK_ENABLED", True))
 if LAMBDA:
     PINGBACK_ENABLED = False
 
-# Pingback URL
-PINGBACK_URL = os.getenv("PINGBACK_URL", "https://api.roboflow.com/pingback")
-
 # Pingback interval in seconds, default is 3600
 PINGBACK_INTERVAL_SECONDS = int(os.getenv("PINGBACK_INTERVAL_SECONDS", 3600))
 

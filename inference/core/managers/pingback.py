@@ -14,7 +14,7 @@ from inference.core.env import (
     API_KEY,
     PINGBACK_ENABLED,
     PINGBACK_INTERVAL_SECONDS,
-    PINGBACK_URL,
+    API_BASE_URL,
 )
 from inference.core.logger import logger
 
@@ -52,7 +52,6 @@ class PingbackInfo:
         scheduler (BackgroundScheduler): A scheduler for running jobs in the background.
         model_manager (ModelManager): Reference to the model manager object.
         process_startup_time (str): Unix timestamp indicating when the process started.
-        pingback_url (str): URL to send the pingback data to.
         system_info (dict): Information about the system.
         window_start_timestamp (str): Unix timestamp indicating the start of the current window.
     """
@@ -70,7 +69,6 @@ class PingbackInfo:
             logger.info(
                 "UUID: " + self.model_manager.uuid
             )  # To correlate with UI container view
-            self.pingback_url = PINGBACK_URL  # Test URL
 
             self.system_info = getSystemInfo()
             self.window_start_timestamp = str(int(time.time()))
@@ -159,10 +157,11 @@ class PingbackInfo:
             timestamp = str(int(time.time()))
             all_data["timestamp"] = timestamp
             self.window_start_timestamp = timestamp
-            requests.post(PINGBACK_URL, json=all_data)
+            pingback_url = f"{API_BASE_URL}/device-health"
+            requests.post(pingback_url, json=all_data)
             logger.info(
                 "Sent pingback to Roboflow {} at {}.".format(
-                    PINGBACK_URL, str(all_data)
+                    pingback_url, str(all_data)
                 )
             )
 
