@@ -63,15 +63,13 @@ class ModelManager:
         """
         try:
             self.check_for_model(model_id)
-            self._models[model_id].metrics["num_inferences"] += 1
-            tic = time.perf_counter()
+
             rtn_val = self._models[model_id].infer_from_request(request)
-            toc = time.perf_counter()
-            self._models[model_id].metrics["avg_inference_time"] += toc - tic
+
             finish_time = time.time()
             cache.zadd(
                 f"inference:{GLOBAL_DEVICE_ID}:{model_id}",
-                value={"request": request, "response": rtn_val.dict()},
+                value={"request": request.dict(), "response": rtn_val.dict()},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )

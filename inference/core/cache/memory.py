@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from typing import Optional
@@ -44,7 +45,7 @@ class MemoryCache(BaseCache):
                     del self.cache[k[0]][k[1]]
                     del self.zexpires[k]
             while time.time() - now < MEMORY_CACHE_EXPIRE_INTERVAL:
-                time.sleep(0.01)
+                asyncio.sleep(0.01)
 
     def get(self, key: str):
         """
