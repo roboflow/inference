@@ -1,10 +1,10 @@
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 import json
 import os
 import shutil
 import traceback
 import urllib
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from io import BytesIO
 from time import perf_counter, sleep
 from typing import Any, List, Tuple, Union
