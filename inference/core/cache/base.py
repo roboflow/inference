@@ -47,11 +47,11 @@ class BaseCache:
         """
         raise NotImplementedError()
 
-    def zrange(
+    def zrangebyscore(
         self,
         key: str,
-        start: Optional[int] = -1,
-        stop: Optional[int] = float("inf"),
+        min: Optional[float] = -1,
+        max: Optional[float] = float("inf"),
         withscores: bool = False,
     ):
         """

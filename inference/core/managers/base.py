@@ -79,7 +79,7 @@ class ModelManager:
             finish_time = time.time()
             cache.zadd(
                 f"error:{GLOBAL_DEVICE_ID}:{model_id}",
-                value={"request": request, "error": e},
+                value={"request": request.dict(), "error": e},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )

@@ -4,6 +4,7 @@ import platform
 import re
 import socket
 import time
+import traceback
 import uuid
 
 import requests
@@ -146,7 +147,7 @@ class PingbackInfo:
                     "api_key": model.api_key,
                     "dataset_id": model.dataset_id,
                     "version": model.version_id,
-                    "metrics": get_model_metrics(GLOBAL_DEVICE_ID, key, start=start),
+                    "metrics": get_model_metrics(GLOBAL_DEVICE_ID, key, min=start),
                 }
                 all_data["device"]["containers"][0]["models"].append(model_data)
 
@@ -164,6 +165,8 @@ class PingbackInfo:
                 logger.error(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {all_data}"
                 )
+                traceback.print_exc()
+
             except Exception as e2:
                 logger.error(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}."

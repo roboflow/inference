@@ -215,6 +215,12 @@ PORT = int(os.getenv("PORT", 9001))
 # Profile flag, default is False
 PROFILE = bool_env(os.getenv("PROFILE", False))
 
+# Redis host, default is None
+REDIS_HOST = os.getenv("REDIS_HOST", None)
+
+# Redis port, default is 6379
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
 # Required ONNX providers, default is None
 REQUIRED_ONNX_PROVIDERS = required_providers_env(
     os.getenv("REQUIRED_ONNX_PROVIDERS", None)

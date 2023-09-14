@@ -1,13 +1,16 @@
 import asyncio
+import json
 import threading
 import time
 from typing import Optional
+
+import redis
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
 
 
-class MemoryCache(BaseCache):
+class RedisCache(BaseCache):
     """
     MemoryCache is an in-memory cache that implements the BaseCache interface.
 
@@ -18,12 +21,12 @@ class MemoryCache(BaseCache):
         _expire_thread (threading.Thread): A thread that runs the _expire method.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0) -> None:
         """
         Initializes a new instance of the MemoryCache class.
         """
-        self.cache = dict()
-        self.expires = dict()
+        self.client = redis.Redis(host=host, port=port, db=db)
+
         self.zexpires = dict()
 
         self._expire_thread = threading.Thread(target=self._expire)
@@ -36,10 +39,6 @@ class MemoryCache(BaseCache):
         """
         while True:
             now = time.time()
-            for k, v in self.expires.items():
-                if v < now:
-                    del self.cache[k]
-                    del self.expires[k]
             for k, v in self.zexpires.items():
                 if v < now:
                     del self.cache[k[0]][k[1]]
@@ -57,12 +56,7 @@ class MemoryCache(BaseCache):
         Returns:
             str: The value associated with the key, or None if the key does not exist or is expired.
         """
-        if key in self.expires:
-            if self.expires[key] < time.time():
-                del self.cache[key]
-                del self.expires[key]
-                return None
-        return self.cache.get(key)
+        return json.loads(self.client.get(key))
 
     def set(self, key: str, value: str, expire: float = None):
         """
@@ -73,9 +67,7 @@ class MemoryCache(BaseCache):
             value (str): The value to store.
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
-        self.cache[key] = value
-        if expire:
-            self.expires[key] = expire + time.time()
+        self.client.set(key, json.dumps(value), ex=expire)
 
     def zadd(self, key: str, value: str, score: float, expire: float = None):
         """
@@ -87,9 +79,7 @@ class MemoryCache(BaseCache):
             score (float): The score associated with the value.
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
-        if not key in self.cache:
-            self.cache[key] = dict()
-        self.cache[key][score] = value
+        self.client.zadd(key, {json.dumps(value): score})
         if expire:
             self.zexpires[(key, score)] = expire + time.time()
 
@@ -112,13 +102,11 @@ class MemoryCache(BaseCache):
         Returns:
             list: A list of values (or value-score pairs if withscores is True) in the specified score range.
         """
-        if not key in self.cache:
-            return []
-        keys = sorted([k for k in self.cache[key].keys() if min <= k <= max])
+        res = self.client.zrangebyscore(key, min, max, withscores=withscores)
         if withscores:
-            return [(self.cache[key][k], k) for k in keys]
+            return [(json.loads(x), y) for x, y in res]
         else:
-            return [self.cache[key][k] for k in keys]
+            return [json.loads(x) for x in res]
 
     def zremrangebyscore(
         self,
@@ -137,8 +125,4 @@ class MemoryCache(BaseCache):
         Returns:
             int: The number of members removed from the sorted set.
         """
-        res = self.zrangebyscore(key, min=min, max=max, withscores=True)
-        keys_to_delete = [k[1] for k in res]
-        for k in keys_to_delete:
-            del self.cache[key][k]
-        return len(keys_to_delete)
+        return self.client.zremrangebyscore(key, min, max)
