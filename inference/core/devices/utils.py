@@ -1,8 +1,9 @@
 import os
 import platform
 import socket
+import uuid
 
-from inference.core.env import DEVICE_ID
+from inference.core.env import SERVER_NAME
 
 
 def is_running_in_docker():
@@ -79,6 +80,19 @@ def get_jetson_id():
         return None
 
 
+def get_container_id():
+    if is_running_in_docker():
+        return (
+            os.popen(
+                "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
+            )
+            .read()
+            .strip()
+        )
+    else:
+        return str(uuid.uuid4())
+
+
 def get_device_id():
     """Fetches a unique device ID.
 
@@ -89,8 +103,8 @@ def get_device_id():
         str: A unique string representing the device. If unable to determine, returns "UNKNOWN".
     """
     try:
-        if DEVICE_ID is not None:
-            return DEVICE_ID
+        if SERVER_NAME is not None:
+            return SERVER_NAME
         id = get_gpu_id()
         if id is not None:
             return f"GPU-{id}"
@@ -104,13 +118,7 @@ def get_device_id():
 
         if is_running_in_docker():
             # Append Docker container ID to the hostname
-            container_id = (
-                os.popen(
-                    "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
-                )
-                .read()
-                .strip()
-            )
+            container_id = get_container_id()
             hostname = f"{hostname}-DOCKER-{container_id}"
 
         return hostname
@@ -118,4 +126,5 @@ def get_device_id():
         return "UNKNOWN"
 
 
+GLOBAL_CONTAINER_ID = get_container_id()
 GLOBAL_DEVICE_ID = get_device_id()

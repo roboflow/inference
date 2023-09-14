@@ -10,7 +10,7 @@ import uuid
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.devices.utils import GLOBAL_CONTAINER_ID, GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_KEY,
     METRICS_ENABLED,
@@ -131,7 +131,7 @@ class PingbackInfo:
                     "containers": [
                         {
                             "startup_time": self.process_startup_time,
-                            "uuid": self.model_manager.uuid,
+                            "uuid": GLOBAL_CONTAINER_ID,
                             "models": [],
                         }
                     ],

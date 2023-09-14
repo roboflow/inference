@@ -41,7 +41,7 @@ class RedisCache(BaseCache):
             now = time.time()
             for k, v in self.zexpires.items():
                 if v < now:
-                    del self.cache[k[0]][k[1]]
+                    self.zremrangebyscore(k[0], k[1], k[1])
                     del self.zexpires[k]
             while time.time() - now < MEMORY_CACHE_EXPIRE_INTERVAL:
                 asyncio.sleep(0.01)

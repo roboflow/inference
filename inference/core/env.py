@@ -111,9 +111,6 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
-# Device ID, default is "sample-device-id"
-DEVICE_ID = os.getenv("DEVICE_ID", None)
-
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
 
@@ -194,7 +191,7 @@ if LAMBDA:
 METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 
 # URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/device-stats"
-METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/device-stats")
+METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/device-healthcheck")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
@@ -237,6 +234,9 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
+
+# Device ID, default is "sample-device-id"
+SERVER_NAME = os.getenv("SERVER_NAME", None)
 
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")
