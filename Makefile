@@ -16,9 +16,7 @@ check_code_quality:
 	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics
 
 start_test_docker:
-	docker build -t roboflow/$(INFERENCE_SERVER_REPO) -f docker/dockerfiles/$(DOCKERFILE) .
-	docker rm -f $(INFERENCE_SERVER_REPO)
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) --name $(INFERENCE_SERVER_REPO) roboflow/$(INFERENCE_SERVER_REPO)
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) --name inference-test roboflow/roboflow-inference-server-cpu:test
 
 create_wheels:
 	rm -f dist/*
