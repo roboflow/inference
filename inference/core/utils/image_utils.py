@@ -95,6 +95,9 @@ def load_image_inferred(value: Any) -> Image.Image:
     )
 
 
+pattern = re.compile(r"^data:image\/[a-z]+;base64,")
+
+
 def load_image_base64(value):
     """Loads an image from a base64 encoded string.
 
@@ -107,10 +110,14 @@ def load_image_base64(value):
     # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
     if not isinstance(value, str):
         value = value.decode("utf-8")
-    # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
-    value = re.sub(r"^data:image\/[a-z]+;base64,", "", value)
-    value = base64.b64decode(value)
-    return Image.open(BytesIO(value))
+    try:
+        value = base64.b64decode(value)
+        return Image.open(BytesIO(value))
+    except Exception:
+        # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
+        value = pattern.sub("", value)
+        value = base64.b64decode(value)
+        return Image.open(BytesIO(value))
 
 
 def load_image_multipart(value):
