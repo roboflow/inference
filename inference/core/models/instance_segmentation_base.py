@@ -84,30 +84,13 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         """
         t1 = perf_counter()
 
-        if isinstance(image, list):
-            imgs_with_dims = [
-                self.preproc_image(
-                    i,
-                    disable_preproc_auto_orient=disable_preproc_auto_orient,
-                    disable_preproc_contrast=disable_preproc_contrast,
-                    disable_preproc_grayscale=disable_preproc_grayscale,
-                    disable_preproc_static_crop=disable_preproc_static_crop,
-                )
-                for i in image
-            ]
-            imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
-            unwrap = False
-        else:
-            img_in, img_dims = self.preproc_image(
-                image,
-                disable_preproc_auto_orient=disable_preproc_auto_orient,
-                disable_preproc_contrast=disable_preproc_contrast,
-                disable_preproc_grayscale=disable_preproc_grayscale,
-                disable_preproc_static_crop=disable_preproc_static_crop,
-            )
-            img_dims = [img_dims]
-            unwrap = True
+        img_in, img_dims = self.load_image(
+            image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
         img_in /= 255.0
         predictions, protos = self.infer_onnx(img_in)
