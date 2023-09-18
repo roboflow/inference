@@ -6,7 +6,7 @@ import numpy as np
 
 from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
-from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers.pingback import PingbackInfo
@@ -68,7 +68,13 @@ class ModelManager:
 
             finish_time = time.time()
             cache.zadd(
-                f"inference:{GLOBAL_DEVICE_ID}:{model_id}",
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                 value={"request": request.dict(), "response": rtn_val.dict()},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
@@ -78,7 +84,13 @@ class ModelManager:
         except Exception as e:
             finish_time = time.time()
             cache.zadd(
-                f"error:{GLOBAL_DEVICE_ID}:{model_id}",
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                 value={"request": request.dict(), "error": e},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,

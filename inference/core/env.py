@@ -111,6 +111,9 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
+# ID of host device, default is None
+DEVICE_ID = os.getenv("DEVICE_ID", None)
+
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
 
@@ -236,7 +239,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
 # Device ID, default is "sample-device-id"
-SERVER_NAME = os.getenv("SERVER_NAME", None)
+INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
 
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")

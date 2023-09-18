@@ -1,9 +1,10 @@
 import os
 import platform
-import socket
+import random
+import string
 import uuid
 
-from inference.core.env import SERVER_NAME
+from inference.core.env import DEVICE_ID, INFERENCE_SERVER_ID
 
 
 def is_running_in_docker():
@@ -93,7 +94,12 @@ def get_container_id():
         return str(uuid.uuid4())
 
 
-def get_device_id():
+def random_string(length):
+    letters = string.ascii_letters + string.digits
+    return "".join(random.choice(letters) for i in range(length))
+
+
+def get_inference_server_id():
     """Fetches a unique device ID.
 
     Tries to get the GPU ID first, then falls back to CPU ID.
@@ -103,28 +109,24 @@ def get_device_id():
         str: A unique string representing the device. If unable to determine, returns "UNKNOWN".
     """
     try:
-        if SERVER_NAME is not None:
-            return SERVER_NAME
-        id = get_gpu_id()
-        if id is not None:
-            return f"GPU-{id}"
+        if INFERENCE_SERVER_ID is not None:
+            return INFERENCE_SERVER_ID
+        id = random_string(6)
+        gpu_id = get_gpu_id()
+        if gpu_id is not None:
+            id = f"{id}-GPU-{gpu_id}"
+        else:
+            cpu_id = get_cpu_id()
+            if cpu_id is not None:
+                id = f"{id}-CPU-{cpu_id}"
+        jetson_id = get_jetson_id()
+        if jetson_id is not None:
+            id = f"{id}-JETSON-{jetson_id}"
 
-        id = get_cpu_id()
-        if id is not None:
-            return f"CPU-{id}"
-
-        # Fallback to hostname
-        hostname = socket.gethostname()
-
-        if is_running_in_docker():
-            # Append Docker container ID to the hostname
-            container_id = get_container_id()
-            hostname = f"{hostname}-DOCKER-{container_id}"
-
-        return hostname
+        return id
     except Exception as e:
         return "UNKNOWN"
 
 
-GLOBAL_CONTAINER_ID = get_container_id()
-GLOBAL_DEVICE_ID = get_device_id()
+GLOBAL_INFERENCE_SERVER_ID = get_inference_server_id()
+GLOBAL_DEVICE_ID = DEVICE_ID if DEVICE_ID is not None else GLOBAL_INFERENCE_SERVER_ID

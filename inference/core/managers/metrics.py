@@ -4,7 +4,7 @@ from inference.core.cache import cache
 
 
 def get_model_metrics(
-    device_id: str, model_id: str, min: float = -1, max: float = float("inf")
+    inverence_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
 ) -> dict:
     """
     Gets the metrics for a given model between a specified time range.
@@ -23,7 +23,7 @@ def get_model_metrics(
     """
     now = time.time()
     inferences_with_times = cache.zrangebyscore(
-        f"inference:{device_id}:{model_id}", min=min, max=max, withscores=True
+        f"inference:{inverence_server_id}:{model_id}", min=min, max=max, withscores=True
     )
     num_inferences = len(inferences_with_times)
     inference_times = []
@@ -39,7 +39,7 @@ def get_model_metrics(
         sum(inference_times) / len(inference_times) if len(inference_times) > 0 else 0
     )
     errors_with_times = cache.zrangebyscore(
-        f"error:{device_id}:{model_id}", min=min, max=max, withscores=True
+        f"error:{inverence_server_id}:{model_id}", min=min, max=max, withscores=True
     )
     num_errors = len(errors_with_times)
     return {
