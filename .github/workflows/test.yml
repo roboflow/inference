@@ -36,8 +36,8 @@ jobs:
         with:
           push: false
           tags: roboflow/roboflow-inference-server-cpu:test
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:test
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:test,mode=max
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache,mode=max
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu
           outputs: type=docker
