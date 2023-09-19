@@ -55,6 +55,7 @@ def get_model_metrics(
         "num_errors": num_errors,
     }
 
+
 def get_system_info():
     """Collects system information such as platform, architecture, hostname, IP address, MAC address, and processor details.
 

@@ -102,6 +102,7 @@ def random_string(length):
     letters = string.ascii_letters + string.digits
     return "".join(random.choice(letters) for i in range(length))
 
+
 def get_device_hostname():
     """Fetches the device's hostname.
 
@@ -109,6 +110,7 @@ def get_device_hostname():
         str: The device's hostname.
     """
     return platform.node()
+
 
 def get_inference_server_id():
     """Fetches a unique device ID.

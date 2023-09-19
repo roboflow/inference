@@ -16,6 +16,7 @@ from inference.core.logger import logger
 from inference.core.managers.metrics import get_system_info, get_model_metrics
 from inference.core.version import __version__
 
+
 class PingbackInfo:
     """Class responsible for managing pingback information for Roboflow.
 

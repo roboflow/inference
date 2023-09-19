@@ -14,8 +14,8 @@ from inference.core.env import (
     TAGS,
 )
 
-class MetricsService():
 
+class MetricsService:
     def __init__(self):
         self.container_service = ContainerService()
 
@@ -37,7 +37,9 @@ class MetricsService():
         model_ids = self.get_model_ids_by_server_id().get(container_id, [])
         models = []
         for model_id in model_ids:
-            model_metrics = get_model_metrics(container_id, model_id, min=start, max=now)
+            model_metrics = get_model_metrics(
+                container_id, model_id, min=start, max=now
+            )
             models.append(model_metrics)
         return models
 
@@ -72,7 +74,9 @@ class MetricsService():
 
     def report_metrics(self):
         all_data = self.aggregate_device_stats()
-        logger.info("Sending metrics to Roboflow {} {}.".format(METRICS_URL, str(all_data)))
+        logger.info(
+            "Sending metrics to Roboflow {} {}.".format(METRICS_URL, str(all_data))
+        )
         res = requests.post(METRICS_URL, json=all_data)
         res.raise_for_status()
         logger.debug(
