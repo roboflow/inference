@@ -60,8 +60,8 @@ nav:
 
 theme:
   name: 'material'
-  logo: https://media.roboflow.com/laptop-lenny.png
-  favicon: https://media.roboflow.com/laptop-lenny.png
+  logo: https://media.roboflow.com/inference-icon.png
+  favicon: https://media.roboflow.com/nference-icon.png
   font:
     text: Roboto
     code: Roboto Mono
