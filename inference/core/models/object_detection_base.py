@@ -25,12 +25,15 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         image: Any,
         class_agnostic_nms: bool = False,
         confidence: float = 0.5,
-        iou_threshold: float = 0.5,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
         fix_batch_size: bool = False,
+        iou_threshold: float = 0.5,
         max_candidates: int = 3000,
         max_detections: int = 300,
         return_image_dims: bool = False,
-        *args,
         **kwargs,
     ) -> Union[
         List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
@@ -47,6 +50,12 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
             max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
             max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
             return_image_dims (bool, optional): Whether to return the dimensions of the processed images along with the predictions. Defaults to False.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
 
         Returns:
             Union[List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse]: One or multiple object detection inference responses based on the number of processed images. Each response contains a list of predictions. If `return_image_dims` is True, it will return a tuple with predictions and image dimensions.
@@ -60,7 +69,14 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
-        img_in, img_dims = self.preprocess(image, fix_batch_size=fix_batch_size)
+        img_in, img_dims = self.preprocess(
+            image,
+            fix_batch_size=fix_batch_size,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
         predictions = self.predict(img_in)
         predictions = predictions[:batch_size]
         predictions = self.postprocess(
@@ -71,6 +87,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
             iou_threshold=iou_threshold,
             max_candidates=max_candidates,
             max_detections=max_detections,
+            disable_preproc_static_crop=disable_preproc_static_crop,
         )
         if return_image_dims:
             return predictions, img_dims
@@ -131,10 +148,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         img_dims: List[Tuple[int, int]],
         class_agnostic_nms: bool = False,
         confidence: float = 0.5,
+        disable_preproc_static_crop: bool = False,
         iou_threshold: float = 0.5,
         max_candidates: int = 3000,
         max_detections: int = 300,
-        *args,
         **kwargs,
     ) -> List[List[List[float]]]:
         """Postprocesses the object detection predictions.
@@ -162,7 +179,12 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
 
         infer_shape = (self.img_size_w, self.img_size_h)
         predictions = postprocess_predictions(
-            predictions, infer_shape, img_dims, self.preproc, self.resize_method
+            predictions,
+            infer_shape,
+            img_dims,
+            self.preproc,
+            resize_method=self.resize_method,
+            disable_preproc_static_crop=disable_preproc_static_crop,
         )
         return predictions
 
@@ -181,7 +203,14 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         raise NotImplementedError
 
     def preprocess(
-        self, image: Any, fix_batch_size: bool = False, *args, **kwargs
+        self,
+        image: Any,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+        fix_batch_size: bool = False,
+        **kwargs,
     ) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
         """Preprocesses an object detection inference request.
 
@@ -191,13 +220,13 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             Tuple[np.ndarray, List[Tuple[int, int]]]: Preprocessed image inputs and corresponding dimensions.
         """
-        if isinstance(image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in image]
-            imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
-        else:
-            img_in, img_dims = self.preproc_image(image)
-            img_dims = [img_dims]
+        img_in, img_dims = self.load_image(
+            image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
         img_in /= 255.0
 

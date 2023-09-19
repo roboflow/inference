@@ -23,7 +23,7 @@ hardware configurations.
         Official Roboflow Inference Server Docker Image for ARM CPU Targets.
     
         ```
-        docker pull roboflow/roboflow-inference-server-arm-cpu
+        docker pull roboflow/roboflow-inference-server-cpu
         ```
     
     === "GPU"
@@ -77,7 +77,7 @@ Server in a container.
     === "arm64 CPU"
         ```
         docker run -p 9001:9001 \
-        roboflow/roboflow-inference-server-arm-cpu:latest
+        roboflow/roboflow-inference-server-cpu:latest
         ```
 
     === "GPU"
@@ -110,14 +110,18 @@ Server in a container.
         roboflow/roboflow-inference-server-jetson-5.1.1:latest
         ```
 
-    **_Note:_** The Jetson images come with TensorRT dependancies. To use TensorRT acceleration with your model, pass an additional environment variable at runtime `-e ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider`. This can improve inference speed, however, this also incurs a costly startup expense when the model is loaded.
+    **_Note:_** The Jetson images come with TensorRT dependencies. To use TensorRT acceleration with your model, pass an additional environment variable at runtime `-e ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider`. This can improve inference speed, however, this also incurs a costly startup expense when the model is loaded.
+
+You may add the flag `-e API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your [Roboflow API key here](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+
+You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/cache`.
 
 ## Build
 
 To build a Docker image locally, first clone the Inference Server repository.
 
 ```bash
-git clone git clone https://github.com/roboflow/inference
+git clone https://github.com/roboflow/inference
 ```
 
 Choose a Dockerfile from the following options, depending on the hardware you want to run Inference Server on.
@@ -134,8 +138,8 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
     === "arm64 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.arm.cpu \
-        -t roboflow/roboflow-inference-server-arm-cpu .
+        -f dockerfiles/Dockerfile.onnx.cpu \
+        -t roboflow/roboflow-inference-server-cpu .
         ```
     
     === "GPU"

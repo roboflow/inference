@@ -120,6 +120,10 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
     def infer(
         self,
         image: Any,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
         return_image_dims: bool = False,
         **kwargs,
     ):
@@ -128,6 +132,10 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
 
         Args:
             image (Any): The image or list of images to be processed.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
             return_image_dims (bool, optional): If set to True, the function will also return the dimensions of the image. Defaults to False.
             **kwargs: Additional parameters to customize the inference process.
 
@@ -145,12 +153,27 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         t1 = perf_counter()
 
         if isinstance(image, list):
-            imgs_with_dims = [self.preproc_image(i) for i in image]
+            imgs_with_dims = [
+                self.preproc_image(
+                    i,
+                    disable_preproc_auto_orient=disable_preproc_auto_orient,
+                    disable_preproc_contrast=disable_preproc_contrast,
+                    disable_preproc_grayscale=disable_preproc_grayscale,
+                    disable_preproc_static_crop=disable_preproc_static_crop,
+                )
+                for i in image
+            ]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
             unwrap = False
         else:
-            img_in, img_dims = self.preproc_image(image)
+            img_in, img_dims = self.preproc_image(
+                image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
             img_dims = [img_dims]
             unwrap = True
 

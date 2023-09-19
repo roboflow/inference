@@ -3,6 +3,8 @@ import os
 import shutil
 import traceback
 import urllib
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from io import BytesIO
 from time import perf_counter, sleep
 from typing import Any, List, Tuple, Union
@@ -26,7 +28,6 @@ from inference.core.env import (
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
     INFER_BUCKET,
-    LICENSE_SERVER,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
@@ -41,6 +42,7 @@ from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
+from inference.core.utils.url_utils import ApiUrl
 
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     import boto3
@@ -335,12 +337,9 @@ class RoboflowInferenceModel(Model):
             else:
                 self.log("Downloading model artifacts from Roboflow API")
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = f"{API_BASE_URL}/ort/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true&dynamic=true"
-                if LICENSE_SERVER:
-                    self.api_url = (
-                        f"http://{LICENSE_SERVER}/proxy?url="
-                        + urllib.parse.quote(self.api_url, safe="~()*!'")
-                    )
+                self.api_url = ApiUrl(
+                    f"{API_BASE_URL}/ort/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true&dynamic=true"
+                )
                 api_data = get_api_data(self.api_url)
                 if "ort" not in api_data.keys():
                     raise TensorrtRoboflowAPIError(
@@ -357,24 +356,8 @@ class RoboflowInferenceModel(Model):
                 if "colors" in api_data:
                     self.colors = api_data["colors"]
 
-                if LICENSE_SERVER:
-                    license_server_base_url = f"http://{LICENSE_SERVER}/proxy?url="
-                    weights_url = license_server_base_url + urllib.parse.quote(
-                        api_data["model"], safe="~()*!'"
-                    )
-
-                    def get_env_url(api_data):
-                        return license_server_base_url + urllib.parse.quote(
-                            api_data["environment"], safe="~()*!'"
-                        )
-
-                else:
-                    weights_url = api_data["model"]
-
-                    def get_env_url(api_data):
-                        return api_data["environment"]
-
                 t1 = perf_counter()
+                weights_url = ApiUrl(api_data["model"])
                 r = requests.get(weights_url)
                 with self.open_cache(self.weights_file, "wb") as f:
                     f.write(r.content)
@@ -383,7 +366,7 @@ class RoboflowInferenceModel(Model):
                         "Weights download took longer than 120 seconds, refreshing API request"
                     )
                     api_data = get_api_data(self.api_url)
-                env_url = get_env_url(api_data)
+                env_url = ApiUrl(api_data["environment"])
                 self.environment = requests.get(env_url).json()
                 with open(self.cache_file("environment.json"), "w") as f:
                     json.dump(self.environment, f)
@@ -470,18 +453,34 @@ class RoboflowInferenceModel(Model):
         return open(self.cache_file(f), mode, encoding=encoding)
 
     def preproc_image(
-        self, image: Union[Any, InferenceRequestImage]
+        self,
+        image: Union[Any, InferenceRequestImage],
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
-        """Preproccess an inference request image by loading it, then applying any preprocs specified by the Roboflow platform, then scaling it to the inference input dimensions
+        """
+        Preprocesses an inference request image by loading it, then applying any pre-processing specified by the Roboflow platform, then scaling it to the inference input dimensions.
 
         Args:
-            image (InferenceRequestImage): An object containing information necessary to load the image for inference
+            image (Union[Any, InferenceRequestImage]): An object containing information necessary to load the image for inference.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
         Returns:
-            Tuple[np.ndarray, Tuple[int, int]]: A tuple containing an numpy array of the preprocessed image pixel data and a tuple of the images original size
+            Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
         pil_image = load_image(image)
-        preprocessed_image, img_dims = self.preprocess_image(pil_image)
+        preprocessed_image, img_dims = self.preprocess_image(
+            pil_image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
         if self.resize_method == "Stretch to":
             resized = preprocessed_image.resize(
@@ -501,16 +500,35 @@ class RoboflowInferenceModel(Model):
 
         return img_in, img_dims
 
-    def preprocess_image(self, image: Image.Image) -> Image.Image:
-        """Preprocesses the given image using specified preprocessing steps.
+    def preprocess_image(
+        self,
+        image: Image.Image,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+    ) -> Image.Image:
+        """
+        Preprocesses the given image using specified preprocessing steps.
 
         Args:
             image (Image.Image): The PIL image to preprocess.
+            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
+            disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
+            disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
+            disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
         Returns:
             Image.Image: The preprocessed PIL image.
         """
-        return prepare(image, self.preproc)
+        return prepare(
+            image,
+            self.preproc,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        )
 
     @property
     def weights_file(self) -> str:
@@ -588,12 +606,9 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         raise Exception(f"Failed to download model artifacts.")
             else:
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
-                if LICENSE_SERVER:
-                    self.api_url = (
-                        f"http://{LICENSE_SERVER}/proxy?url="
-                        + urllib.parse.quote(self.api_url, safe="~()*!'")
-                    )
+                self.api_url = ApiUrl(
+                    f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
+                )
                 api_data = get_api_data(self.api_url)
                 if "weights" not in api_data.keys():
                     raise TensorrtRoboflowAPIError(
@@ -603,13 +618,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 weights_url_keys = api_data["weights"].keys()
 
                 for weights_url_key in weights_url_keys:
-                    if LICENSE_SERVER:
-                        license_server_base_url = f"http://{LICENSE_SERVER}/proxy?url="
-                        weights_url = license_server_base_url + urllib.parse.quote(
-                            api_data["weights"][weights_url_key], safe="~()*!'"
-                        )
-                    else:
-                        weights_url = api_data["weights"][weights_url_key]
+                    weights_url = ApiUrl(api_data["weights"][weights_url_key])
                     t1 = perf_counter()
                     attempts = 0
                     success = False
@@ -707,6 +716,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     },
                 )
         self.initialize_model()
+        self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
 
     def get_infer_bucket_file_list(self) -> list:
         """Returns the list of files to be downloaded from the inference bucket for ONNX model.
@@ -756,6 +766,36 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         else:
             self.batching_enabled = False
             self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
+
+    def load_image(
+        self,
+        image: Any,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+    ) -> Tuple[np.ndarray, Tuple[int, int]]:
+        if isinstance(image, list):
+            preproc_image = partial(
+                self.preproc_image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
+            imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
+            imgs, img_dims = zip(*imgs_with_dims)
+            img_in = np.concatenate(imgs, axis=0)
+        else:
+            img_in, img_dims = self.preproc_image(
+                image,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+                disable_preproc_contrast=disable_preproc_contrast,
+                disable_preproc_grayscale=disable_preproc_grayscale,
+                disable_preproc_static_crop=disable_preproc_static_crop,
+            )
+            img_dims = [img_dims]
+        return img_in, img_dims
 
     @property
     def weights_file(self) -> str:

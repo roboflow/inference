@@ -1,4 +1,4 @@
-name: Test WorkFlow
+name: Code Quality & Regression Tests
 
 on:
   pull_request:
@@ -7,21 +7,41 @@ on:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    runs-on: [self-hosted, trt]
+    runs-on: ubuntu-latest
 
     steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 🛎️ Checkout
         uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref }}
+      
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest requests pillow requests_toolbelt
+          pip install pytest requests pillow requests_toolbelt black isort flake8
       - name: 🧹 Lint with flake8
         run: |
           make check_code_quality
-      - name: Start Test Docker
+      - name: 🔨 Build and Push Test Docker
+        uses: docker/build-push-action@v4
+        with:
+          push: false
+          tags: roboflow/roboflow-inference-server-cpu:test
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache,mode=max
+          platforms: linux/amd64
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu
+          outputs: type=docker
+      - name: 🔋 Start Test Docker
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu DOCKERFILE=Dockerfile.onnx.cpu make start_test_docker
       - name: 🧪 Regression Tests

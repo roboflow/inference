@@ -2,7 +2,7 @@
 
 The Roboflow Inference Server provides a standard API through which to run inference on computer vision models.
 
-In this guide, we walk through how to run inference on object detection, classification, and segmentation models using the Inference Server.
+In this guide, we show how to run inference on object detection, classification, and segmentation models using the Inference Server.
 
 Currently, the server is compatible with models trained on Roboflow, but stay tuned as we actively develop support for bringing your own models.
 
@@ -16,27 +16,9 @@ To run inference with the server, we will:
 
 The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
 
-Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using. Here are the available Docker containers:
+Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 
-### ARM CPU
-
-```bash
-sudo docker run -it --rm -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu
-```
-
-### TRT
-
-```bash
-sudo docker run --privileged --net=host --runtime=nvidia --mount source=roboflow,target=/cache -e NUM_WORKERS=1 roboflow/roboflow-inference-server-jetson:latest
-```
-
-### GPU
-
-```bash
-[]
-```
-
-Run the relevant command for your device. After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
+[Run the relevant command for your device](docker.md#run). After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
 
 Now we are ready to run inference!
 
@@ -45,10 +27,10 @@ Now we are ready to run inference!
 To run inference on a model, we will make a HTTP request to:
 
 ```url
-http://localhost:9001/{workspace_id}/{model_id}
+http://localhost:9001/{project_id}/{model_version}
 ```
 
-To find your workspace and model IDs, refer to the Roboflow documentation.
+To find your project ID and model version number, refer to the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
 This route works for all supported task types: object detection, classification, and segmentation.
 
@@ -57,8 +39,8 @@ To run inference, make a HTTP request to the route:
 ```python
 import requests
 
-workspace_id = ""
-model_id = ""
+project_id = ""
+model_version = ""
 image_url = ""
 confidence = 0.75
 api_key = ""
@@ -73,7 +55,7 @@ infer_payload = {
     "api_key": api_key,
 }
 res = requests.post(
-    f"http://localhost:9001/{workspace_id}/{model_id}",
+    f"http://localhost:9001/{project_id}/{model_version}",
     json=infer_object_detection_payload,
 )
 
@@ -82,7 +64,7 @@ predictions = res.json()
 
 This code will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.
 
-Above, set your workspace and model ID. Also configure your confidence and IoU threshold values as needed. If you are using classification, you can omit the IoU threshold value. You will also need to set your Roboflow API key. To learn how to retrieve your Roboflow API key, refer to the Roboflow API documentation.
+Above, set your project ID and model version number. Also configure your confidence and IoU threshold values as needed. If you are using classification, you can omit the IoU threshold value. You will also need to set your Roboflow API key. To learn how to retrieve your Roboflow API key, refer to the Roboflow API documentation, [Authentication - Retrieve an API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
 You can post either a URL, a base64-encoded image, or a pickled NumPy array to the server.
 
