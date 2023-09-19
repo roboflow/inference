@@ -121,7 +121,7 @@ You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your h
 To build a Docker image locally, first clone the Inference Server repository.
 
 ```bash
-git clone git clone https://github.com/roboflow/inference
+git clone https://github.com/roboflow/inference
 ```
 
 Choose a Dockerfile from the following options, depending on the hardware you want to run Inference Server on.
