@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import time
-from typing import Optional
+from typing import Optional, Any
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
@@ -77,7 +77,7 @@ class MemoryCache(BaseCache):
         if expire:
             self.expires[key] = expire + time.time()
 
-    def zadd(self, key: str, value: str, score: float, expire: float = None):
+    def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
         Adds a member with the specified score to the sorted set stored at key.
 

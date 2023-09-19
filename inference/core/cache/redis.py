@@ -2,9 +2,11 @@ import asyncio
 import json
 import threading
 import time
-from typing import Optional
+import inspect
+from typing import Optional, Any
 
 import redis
+from inference.core.data_models import InferenceResponseImage
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
@@ -56,7 +58,9 @@ class RedisCache(BaseCache):
         Returns:
             str: The value associated with the key, or None if the key does not exist or is expired.
         """
-        return json.loads(self.client.get(key))
+        item = self.client.get(key)
+        if item is not None:
+            return json.loads(item)
 
     def set(self, key: str, value: str, expire: float = None):
         """
@@ -69,7 +73,7 @@ class RedisCache(BaseCache):
         """
         self.client.set(key, json.dumps(value), ex=expire)
 
-    def zadd(self, key: str, value: str, score: float, expire: float = None):
+    def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
         Adds a member with the specified score to the sorted set stored at key.
 
@@ -79,6 +83,7 @@ class RedisCache(BaseCache):
             score (float): The score associated with the value.
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
+        # serializable_value = self.ensure_serializable(value)
         self.client.zadd(key, {json.dumps(value): score})
         if expire:
             self.zexpires[(key, score)] = expire + time.time()
@@ -126,3 +131,12 @@ class RedisCache(BaseCache):
             int: The number of members removed from the sorted set.
         """
         return self.client.zremrangebyscore(key, min, max)
+
+    def ensure_serializable(self, value: Any):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, Exception):
+                    value[k] = str(v)
+                elif inspect.isclass(v) and isinstance(v, InferenceResponseImage):
+                    value[k] = v.dict()
+        return value

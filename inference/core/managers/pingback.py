@@ -1,11 +1,5 @@
-import json
-import logging
-import platform
-import re
-import socket
 import time
 import traceback
-import uuid
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,32 +13,8 @@ from inference.core.env import (
     TAGS,
 )
 from inference.core.logger import logger
-from inference.core.managers.metrics import get_model_metrics
+from inference.core.managers.metrics import get_system_info, get_model_metrics
 from inference.core.version import __version__
-
-
-def getSystemInfo():
-    """Collects system information such as platform, architecture, hostname, IP address, MAC address, and processor details.
-
-    Returns:
-        dict: A dictionary containing detailed system information.
-    """
-    info = {}
-    try:
-        info["platform"] = platform.system()
-        info["platform_release"] = platform.release()
-        info["platform_version"] = platform.version()
-        info["architecture"] = platform.machine()
-        info["hostname"] = socket.gethostname()
-        info["ip_address"] = socket.gethostbyname(socket.gethostname())
-        info["mac_address"] = ":".join(re.findall("..", "%012x" % uuid.getnode()))
-        info["processor"] = platform.processor()
-        return json.dumps(info)
-    except Exception as e:
-        logging.exception(e)
-    finally:
-        return info
-
 
 class PingbackInfo:
     """Class responsible for managing pingback information for Roboflow.
@@ -76,7 +46,7 @@ class PingbackInfo:
             )  # To correlate with UI container view
             self.METRICS_URL = METRICS_URL  # Test URL
 
-            self.system_info = getSystemInfo()
+            self.system_info = get_system_info()
             self.window_start_timestamp = str(int(time.time()))
         except Exception as e:
             logger.error(

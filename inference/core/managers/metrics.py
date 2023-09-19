@@ -1,6 +1,13 @@
 import time
+import platform
+import json
+import socket
+import re
+import uuid
 
 from inference.core.cache import cache
+from inference.core.logger import logger
+from inference.core.version import __version__
 
 
 def get_model_metrics(
@@ -47,3 +54,25 @@ def get_model_metrics(
         "avg_inference_time": avg_inference_time,
         "num_errors": num_errors,
     }
+
+def get_system_info():
+    """Collects system information such as platform, architecture, hostname, IP address, MAC address, and processor details.
+
+    Returns:
+        dict: A dictionary containing detailed system information.
+    """
+    info = {}
+    try:
+        info["platform"] = platform.system()
+        info["platform_release"] = platform.release()
+        info["platform_version"] = platform.version()
+        info["architecture"] = platform.machine()
+        info["hostname"] = socket.gethostname()
+        info["ip_address"] = socket.gethostbyname(socket.gethostname())
+        info["mac_address"] = ":".join(re.findall("..", "%012x" % uuid.getnode()))
+        info["processor"] = platform.processor()
+        return json.dumps(info)
+    except Exception as e:
+        logger.exception(e)
+    finally:
+        return info

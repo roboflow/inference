@@ -18,7 +18,7 @@ from inference.core.data_models import (
     InferenceRequestImage,
     InferenceResponse,
 )
-from inference.core.devices.utils import get_device_id
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_BASE_URL,
     API_KEY,
@@ -105,7 +105,7 @@ class RoboflowInferenceModel(Model):
 
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
-        self.device_id = get_device_id()
+        self.device_id = GLOBAL_DEVICE_ID
 
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
         os.makedirs(self.cache_dir, exist_ok=True)

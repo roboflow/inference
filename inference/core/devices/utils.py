@@ -75,7 +75,11 @@ def get_jetson_id():
     """
     try:
         # Fetch the device's serial number
+        if not os.path.exists("/proc/device-tree/serial-number"):
+            return None
         serial_number = os.popen("cat /proc/device-tree/serial-number").read().strip()
+        if serial_number == "":
+            return None
         return serial_number
     except Exception as e:
         return None
@@ -98,6 +102,13 @@ def random_string(length):
     letters = string.ascii_letters + string.digits
     return "".join(random.choice(letters) for i in range(length))
 
+def get_device_hostname():
+    """Fetches the device's hostname.
+
+    Returns:
+        str: The device's hostname.
+    """
+    return platform.node()
 
 def get_inference_server_id():
     """Fetches a unique device ID.
@@ -114,19 +125,14 @@ def get_inference_server_id():
         id = random_string(6)
         gpu_id = get_gpu_id()
         if gpu_id is not None:
-            id = f"{id}-GPU-{gpu_id}"
-        else:
-            cpu_id = get_cpu_id()
-            if cpu_id is not None:
-                id = f"{id}-CPU-{cpu_id}"
+            return f"{id}-GPU-{gpu_id}"
         jetson_id = get_jetson_id()
         if jetson_id is not None:
-            id = f"{id}-JETSON-{jetson_id}"
-
+            return f"{id}-JETSON-{jetson_id}"
         return id
     except Exception as e:
         return "UNKNOWN"
 
 
 GLOBAL_INFERENCE_SERVER_ID = get_inference_server_id()
-GLOBAL_DEVICE_ID = DEVICE_ID if DEVICE_ID is not None else GLOBAL_INFERENCE_SERVER_ID
+GLOBAL_DEVICE_ID = DEVICE_ID if DEVICE_ID is not None else get_device_hostname()

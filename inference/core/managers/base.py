@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import numpy as np
+from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
@@ -75,7 +76,7 @@ class ModelManager:
             )
             cache.zadd(
                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                value={"request": request.dict(), "response": rtn_val.dict()},
+                value={"request": request.dict(), "response": jsonable_encoder(rtn_val)},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )
