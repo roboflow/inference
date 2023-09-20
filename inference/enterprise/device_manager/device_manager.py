@@ -1,17 +1,20 @@
 from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from inference.core.env import METRICS_INTERVAL
+from inference.enterprise.device_manager.version import __version__
 from inference.enterprise.device_manager.command_handler import (
-    RemoteCommandHandler,
+    fetch_commands,
+    handle_command,
     Command,
 )
-from inference.enterprise.device_manager.metrics_service import MetricsService
+from inference.enterprise.device_manager.metrics_service import report_metrics
 
 
 app = FastAPI(
     title="Roboflow Device Manager",
     description="The device manager enables remote control and monitoring of Roboflow inference server containers",
-    version="0.1.0",
+    version=__version__,
     terms_of_service="https://roboflow.com/terms",
     contact={
         "name": "Roboflow Inc.",
@@ -25,15 +28,12 @@ app = FastAPI(
     root_path="/",
 )
 
-metrics_service = MetricsService()
-remote_commands_handler = RemoteCommandHandler()
-
 
 @app.get("/")
 def root():
     return {
         "name": "Roboflow Device Manager",
-        "version": "0.1.0",
+        "version": __version__,
         "terms_of_service": "https://roboflow.com/terms",
         "contact": {
             "name": "Roboflow Inc.",
@@ -48,12 +48,12 @@ def root():
 
 
 @app.post("/exec_command")
-def exec_command(command: Command):
-    remote_commands_handler.handle_command(command)
-    return {"status": "ok"}
+async def exec_command(command: Command):
+    info = handle_command(command)
+    return {"status": "ok", "data": info}
 
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(remote_commands_handler.fetch_commands, "interval", seconds=5)
-scheduler.add_job(metrics_service.report_metrics, "interval", seconds=5)
+scheduler.add_job(fetch_commands, "interval", seconds=int(METRICS_INTERVAL * 0.33))
+scheduler.add_job(report_metrics, "interval", seconds=METRICS_INTERVAL)
 scheduler.start()

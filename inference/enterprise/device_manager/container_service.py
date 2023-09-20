@@ -1,6 +1,17 @@
+from datetime import datetime
+import time
+import base64
+
 import docker
 import requests
 from dataclasses import dataclass
+
+from inference.core.cache import cache
+from inference.core.logger import logger
+from inference.core.utils.image_utils import load_image
+from inference.core.env import METRICS_INTERVAL, API_BASE_URL
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.enterprise.device_manager.helpers import get_model_ids_by_server_id
 
 
 @dataclass
@@ -9,6 +20,7 @@ class InferServerContainer:
     id: str
     port: int
     host: str
+    startup_time: float
 
     def __init__(self, docker_container, details):
         self.container = docker_container
@@ -16,17 +28,79 @@ class InferServerContainer:
         self.id = details.get("uuid")
         self.port = details.get("port")
         self.host = details.get("host")
+        t = details.get("startup_time_ts").split(".")[0]
+        self.startup_time = (
+            datetime.strptime(t, "%Y-%m-%dT%H:%M:%S").timestamp()
+            if t is not None
+            else datetime.now().timestamp()
+        )
 
     def restart(self):
-        self.container.restart()
+        try:
+            self.container.restart()
+            return True, None
+        except Exception as e:
+            logger.error(e)
+            return False, None
 
     def stop(self):
-        if self.status == "running":
+        try:
             self.container.stop()
+            return True, None
+        except Exception as e:
+            logger.error(e)
+            return False, None
 
-    def ping(self):
-        info = requests.get(f"http://{self.host}:{self.port}/info").json()
-        return info
+    def inspect(self):
+        try:
+            info = requests.get(f"http://{self.host}:{self.port}/info").json()
+            return True, info
+        except Exception as e:
+            logger.error(e)
+            return False, None
+
+    def snapshot(self):
+        try:
+            snapshot = self.get_latest_inferred_images()
+            snapshot.update({"container_id": self.id})
+            return True, snapshot
+        except Exception as e:
+            logger.error(e)
+            return False, None
+
+    def get_latest_inferred_images(self, max=3):
+        now = time.time()
+        start = now - METRICS_INTERVAL
+        model_ids_by_server_id = get_model_ids_by_server_id()
+        model_ids = model_ids_by_server_id.get(self.id, [])
+        num_images = 0
+        latest_inferred_images = dict()
+        for model_id in model_ids:
+            if num_images >= max:
+                break
+            latest_reqs = cache.zrangebyscore(
+                f"inference:{self.id}:{model_id}", min=start, max=now
+            )
+            for req in latest_reqs:
+                images = req["request"]["image"]
+                if images is None or len(images) == 0:
+                    continue
+                if type(images) is not list:
+                    images = [images]
+                for image in images:
+                    value = None
+                    if image["type"] == "base64":
+                        value = image["value"]
+                    else:
+                        loaded_image = load_image(image)
+                        image_bytes = loaded_image.tobytes()
+                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                        value = image_base64
+                    if latest_inferred_images.get(model_id) is None:
+                        latest_inferred_images[model_id] = []
+                    latest_inferred_images[model_id].append(value)
+                    num_images += 1
+        return latest_inferred_images
 
 
 class ContainerService:
@@ -51,7 +125,7 @@ class ContainerService:
         Returns:
             boolean: True if the container is an inference server container, False otherwise
         """
-        image_tags = container.get("image", {}).get("tags", [])
+        image_tags = container.image.tags
         for t in image_tags:
             if t.startswith("roboflow/roboflow-inference-server"):
                 return True
@@ -71,7 +145,6 @@ class ContainerService:
                     f"http://{details['host']}:{details['port']}/info"
                 ).json()
                 details.update(info)
-                print(f"Found inference container: {details}")
                 infer_container = InferServerContainer(c, details)
                 self.inference_containers.append(infer_container)
 
@@ -101,6 +174,9 @@ class ContainerService:
         container_name = c.attrs.get("Name")
         if container_name:
             info["container_name_on_host"] = container_name
+        startup_time = c.attrs.get("State", {}).get("StartedAt")
+        if startup_time:
+            info["startup_time_ts"] = startup_time
         return info
 
     def get_container_by_id(self, id):
@@ -128,3 +204,6 @@ class ContainerService:
         """
         self.discover_containers()
         return [c.id for c in self.inference_containers]
+
+
+container_service = ContainerService()
