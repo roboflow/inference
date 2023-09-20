@@ -416,15 +416,17 @@ class RoboflowInferenceModel(Model):
         Returns:
             Image.Image: PIL image of dimensions `size` containing the original image plus any required padding
         """
-        iw, ih = image.size
-        w, h = size
+        ih, iw = image.shape[0:2]
+        h, w = size
         scale = min(w / iw, h / ih)
         nw = int(iw * scale)
         nh = int(ih * scale)
 
-        image = image.resize((nw, nh), Image.BICUBIC)
-        new_image = Image.new("RGB", size, (114, 114, 114))
-        new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
+        image = cv2.resize(image, (nh, nw), cv2.INTER_CUBIC)
+        new_image = np.ones((size,) + 3).fill(c)
+        dx = (w - nw) // 2
+        dy = (h - nh) // 2
+        new_image[dy : dy + nh, dx : dx + nw, :] = image
         return new_image
 
     def load_preprocessed_image(self, image: InferenceRequestImage) -> Image.Image:
@@ -473,9 +475,9 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
-        pil_image = load_image(image)
+        np_image = load_image(image)
         preprocessed_image, img_dims = self.preprocess_image(
-            pil_image,
+            np_image,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
@@ -483,31 +485,31 @@ class RoboflowInferenceModel(Model):
         )
 
         if self.resize_method == "Stretch to":
-            resized = preprocessed_image.resize(
-                (self.img_size_w, self.img_size_h), Image.BICUBIC
+            resized = cv2.resize(
+                preprocessed_image, (self.img_size_h, self.img_size_w), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h)
+                preprocessed_image, (self.img_size_h, self.img_size_w)
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h), c=255
+                preprocessed_image, (self.img_size_h, self.img_size_w), c=255
             )
 
-        img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)  # HWC -> CHW
+        img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)
         img_in = np.expand_dims(img_in, axis=0)
 
         return img_in, img_dims
 
     def preprocess_image(
         self,
-        image: Image.Image,
+        image: np.ndarray,
         disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-    ) -> Image.Image:
+    ) -> Tuple[np.ndarray, Tuple[int, int]]:
         """
         Preprocesses the given image using specified preprocessing steps.
 
