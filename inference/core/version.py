@@ -1,6 +1,8 @@
-import requests
-import time
 import threading
+import time
+
+import requests
+
 from inference.core.logger import logger
 
 __version__ = "0.8.5"
