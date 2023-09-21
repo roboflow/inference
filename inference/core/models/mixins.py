@@ -1,17 +1,15 @@
-from typing import Any, List, Union
+from typing import Any, List, Union, TYPE_CHECKING, Tuple, Dict
 
 from inference.core.data_models import (
-    ClassificationInferenceRequest,
-    ClassificationInferenceResponse,
     InferenceRequest,
     InferenceResponse,
-    InstanceSegmentationInferenceRequest,
-    InstanceSegmentationInferenceResponse,
-    MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceRequest,
     ObjectDetectionInferenceResponse,
 )
+from inference.core.models.types import PreprocessReturnMetadata
 
+if TYPE_CHECKING:
+    import numpy as np
 
 class InferenceMixin:
     """General inference mixin class.
@@ -19,38 +17,56 @@ class InferenceMixin:
     This mixin provides a basic interface for inference tasks.
     """
 
-    def infer_from_request(self, request: InferenceRequest) -> InferenceResponse:
-        """Runs inference on a given request.
+
+    def infer(self, image: Any, **kwargs) -> Any:
+        """Runs inference on given data."""
+        preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+        predicted_arrays = self.predict(preproc_image, **kwargs)
+        postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
+
+        return postprocessed
+
+    
+    def preprocess(self, image: Any, **kwargs) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        raise NotImplementedError
+
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
+        raise NotImplementedError
+
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs
+    ) -> Any:
+        raise NotImplementedError
+
+    def infer_from_request(
+        self, request: InferenceRequest
+    ) -> Union[
+        InferenceResponse, List[InferenceResponse]
+    ]:
+        """Runs inference on a request
 
         Args:
-            request (InferenceRequest): The inference request object.
+            request (CVInferenceRequest): The request object.
 
         Returns:
-            InferenceResponse: The response object.
+            Union[CVInferenceResponse, List[CVInferenceResponse]]: The response object(s).
 
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError
 
-    def infer(self, *args, **kwargs) -> Any:
-        """Runs inference on given data."""
-        raise NotImplementedError
-
-
-class ObjectDetectionMixin:
+class ObjectDetectionMixin(InferenceMixin):
     """Object detection inference mixin class.
 
     This mixin provides the interface for object detection inference tasks.
     """
 
     task_type = "object-detection"
-
-    def infer(self, *args, **kwargs) -> Any:
-        """Runs inference on given data.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
 
     def infer_from_request(
         self, request: ObjectDetectionInferenceRequest
@@ -82,35 +98,8 @@ class ObjectDetectionMixin:
         """
         raise NotImplementedError
 
-    def postprocess(self, *args, **kwargs) -> Any:
-        """Postprocesses the object detection inference results.
 
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
-
-    def predict(self, *args, **kwargs) -> Any:
-        """Runs the prediction for object detection.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
-
-    def preprocess(self, request: ObjectDetectionInferenceRequest) -> Any:
-        """Preprocesses an object detection inference request.
-
-        Args:
-            request (ObjectDetectionInferenceRequest): The request object.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
-
-
-class InstanceSegmentationMixin:
+class InstanceSegmentationMixin(InferenceMixin):
     """Instance segmentation inference mixin class.
 
     This mixin provides the interface for instance segmentation inference tasks.
@@ -118,45 +107,12 @@ class InstanceSegmentationMixin:
 
     task_type = "instance-segmentation"
 
-    def infer(
-        self, request: InstanceSegmentationInferenceRequest
-    ) -> InstanceSegmentationInferenceResponse:
-        """Runs inference on an instance segmentation request.
-
-        Args:
-            request (InstanceSegmentationInferenceRequest): The request object.
-
-        Returns:
-            InstanceSegmentationInferenceResponse: The response object.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
 
 
-class ClassificationMixin:
+class ClassificationMixin(InferenceMixin):
     """Classification inference mixin class.
 
     This mixin provides the interface for classification inference tasks.
     """
 
     task_type = "classification"
-
-    def infer(
-        self, request: ClassificationInferenceRequest
-    ) -> Union[
-        ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse
-    ]:
-        """Runs inference on a classification request.
-
-        Args:
-            request (ClassificationInferenceRequest): The request object.
-
-        Returns:
-            Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response object.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
