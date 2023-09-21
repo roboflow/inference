@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from inference.core.env import METRICS_INTERVAL
-from inference.enterprise.device_manager.version import __version__
+from inference.core.version import __version__
 from inference.enterprise.device_manager.command_handler import (
     fetch_commands,
     handle_command,
@@ -54,6 +54,6 @@ async def exec_command(command: Command):
 
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(fetch_commands, "interval", seconds=int(METRICS_INTERVAL * 0.33))
+scheduler.add_job(fetch_commands, "interval", seconds=4)
 scheduler.add_job(report_metrics, "interval", seconds=METRICS_INTERVAL)
 scheduler.start()

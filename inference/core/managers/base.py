@@ -70,7 +70,7 @@ class ModelManager:
             finish_time = time.time()
             cache.zadd(
                 f"models",
-                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )
@@ -89,13 +89,13 @@ class ModelManager:
             finish_time = time.time()
             cache.zadd(
                 f"models",
-                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )
             cache.zadd(
                 f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                value={"request": request.dict(), "error": e},
+                value={"request": request.dict(), "error": str(e)},
                 score=finish_time,
                 expire=METRICS_INTERVAL * 2,
             )

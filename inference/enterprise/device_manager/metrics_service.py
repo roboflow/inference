@@ -2,10 +2,9 @@ import time
 import requests
 
 from inference.core.logger import logger
-from inference.core.cache import cache
-from inference.enterprise.device_manager.version import __version__
+from inference.core.version import __version__
 from inference.core.managers.metrics import get_model_metrics, get_system_info
-from inference.enterprise.device_manager.helpers import get_model_ids_by_server_id
+from inference.enterprise.device_manager.helpers import get_cache_model_items
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.enterprise.device_manager.container_service import container_service
 from inference.core.env import (
@@ -17,25 +16,65 @@ from inference.core.env import (
 
 
 def aggregate_model_stats(container_id):
+    """
+    Aggregate statistics for models within a specified container.
+
+    This function retrieves and aggregates performance metrics for all models
+    associated with the given container within a specified time interval.
+
+    Args:
+        container_id (str): The unique identifier of the container for which
+            model statistics are to be aggregated.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a model's
+        statistics with the following keys:
+        - "dataset_id" (str): The ID of the dataset associated with the model.
+        - "version" (str): The version of the model.
+        - "api_key" (str): The API key that was used to make an inference against this model
+        - "metrics" (dict): A dictionary containing performance metrics for the model:
+            - "num_inferences" (int): Number of inferences made
+            - "num_errors" (int): Number of errors
+            - "avg_inference_time" (float): Average inference time in seconds
+
+    Notes:
+        - The function calculates statistics over a time interval defined by
+          the global constant METRICS_INTERVAL, passed in when starting up the container.
+    """
     now = time.time()
     start = now - METRICS_INTERVAL
-    model_ids = get_model_ids_by_server_id().get(container_id, [])
     models = []
-    for model_id in model_ids:
-        reqs = cache.zrangebyscore(
-            f"inference:{container_id}:{model_id}", min=start, max=now
-        )
-        model = {
-            "dataset_id": model_id.split("/")[0],
-            "version": model_id.split("/")[1],
-            "api_key": reqs[0]["request"]["api_key"],
-            "metrics": get_model_metrics(container_id, model_id, min=start, max=now),
-        }
-        models.append(model)
+    api_keys = get_cache_model_items().get(container_id, dict()).keys()
+    for api_key in api_keys:
+        model_ids = get_cache_model_items().get(container_id, dict()).get(api_key, [])
+        for model_id in model_ids:
+            model = {
+                "dataset_id": model_id.split("/")[0],
+                "version": model_id.split("/")[1],
+                "api_key": api_key,
+                "metrics": get_model_metrics(
+                    container_id, model_id, min=start, max=now
+                ),
+            }
+            models.append(model)
     return models
 
 
 def build_container_stats():
+    """
+    Build statistics for containers and their associated models.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents statistics
+        for a container and its associated models with the following keys:
+        - "uuid" (str): The unique identifier (UUID) of the container.
+        - "startup_time" (float): The timestamp representing the container's startup time.
+        - "models" (list): A list of dictionaries representing statistics for each
+          model associated with the container (see `aggregate_model_stats` for format).
+
+    Notes:
+        - This method relies on a singleton `container_service` for container information.
+    """
     containers = []
     for id in container_service.get_container_ids():
         container = container_service.get_container_by_id(id)
@@ -50,6 +89,9 @@ def build_container_stats():
 
 
 def aggregate_device_stats():
+    """
+    Aggregate statistics for the device.
+    """
     window_start_timestamp = str(int(time.time()))
     all_data = {
         "api_key": API_KEY,
@@ -67,6 +109,16 @@ def aggregate_device_stats():
 
 
 def report_metrics():
+    """
+    Report metrics to Roboflow.
+
+    This function aggregates statistics for the device and its containers and
+    sends them to Roboflow.
+
+    Notes:
+        - This function is called on a regular interval defined by the global
+          constant METRICS_INTERVAL, passed in when starting up the container.
+    """
     all_data = aggregate_device_stats()
     logger.info(f"Sending metrics to Roboflow {str(all_data)}.")
     res = requests.post(METRICS_URL, json=all_data)

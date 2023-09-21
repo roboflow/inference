@@ -1,11 +1,11 @@
 import requests
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 
 from inference.core.logger import logger
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.enterprise.device_manager.container_service import container_service
-from inference.core.env import API_BASE_URL
+from inference.core.env import API_BASE_URL, API_KEY
 
 
 class Command(BaseModel):
@@ -13,18 +13,20 @@ class Command(BaseModel):
     containerId: str
     command: Literal["restart", "stop", "ping", "snapshot"]
     deviceId: str
-    requested_on: int
+    requested_on: Optional[int] = None
 
 
 def fetch_commands():
-    resp = requests.get(f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands").json()
+    resp = requests.get(
+        f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands?api_key={API_KEY}"
+    ).json()
     for cmd in resp.get("data", []):
         handle_command(cmd)
 
 
 def handle_command(remote_command: Command):
     was_processed = False
-    cmd_payload = remote_command.dict()
+    cmd_payload = remote_command
     container_id = cmd_payload.get("containerId")
     container = container_service.get_container_by_id(container_id)
     if not container:
@@ -42,6 +44,8 @@ def handle_command(remote_command: Command):
             was_processed, data = container.ping()
         case "snapshot":
             was_processed, data = container.snapshot()
+        case "start":
+            was_processed, data = container.start()
         case _:
             logger.error("Unknown command: {}".format(cmd))
     return ack_command(cmd_payload.get("id"), was_processed, data=data)
@@ -49,6 +53,7 @@ def handle_command(remote_command: Command):
 
 def ack_command(command_id, was_processed, data=None):
     post_body = dict()
+    post_body["api_key"] = API_KEY
     post_body["commandId"] = command_id
     post_body["wasProcessed"] = was_processed
     if data:
