@@ -95,14 +95,6 @@ def prepare(
         The function uses global flags like `DISABLE_PREPROC_AUTO_ORIENT`, `DISABLE_PREPROC_STATIC_CROP`, etc.
         to conditionally enable or disable certain preprocessing steps.
     """
-    # if (
-    #     "auto-orient" in preproc.keys()
-    #     and not DISABLE_PREPROC_AUTO_ORIENT
-    #     and not disable_preproc_auto_orient
-    # ):
-    #     if preproc["auto-orient"]["enabled"] == True:
-    #         # perform auto-orient logic
-    #         image = auto_orient(image)
     h, w = image.shape[0:2]
     img_dims = (h, w)
     if (
