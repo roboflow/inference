@@ -210,6 +210,8 @@ class CVInferenceRequest(InferenceRequest):
         description="If true, the static crop preprocessing step is disabled for this call.",
     )
 
+class GroundingDINOInferenceRequest(CVInferenceRequest):
+    pass
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.
@@ -601,7 +603,6 @@ class SamInferenceRequest(BaseModel):
         description="The version ID of SAM to be used for this request. Must be one of vit_h, vit_l, or vit_b.",
     )
 
-
 class SamEmbeddingRequest(SamInferenceRequest):
     """SAM embedding request.
 
@@ -625,7 +626,6 @@ class SamEmbeddingRequest(SamInferenceRequest):
         example="json",
         description="The format of the response. Must be one of json or binary. If binary, embedding is returned as a binary numpy array.",
     )
-
 
 class SamSegmentationRequest(SamInferenceRequest):
     """SAM segmentation request.
@@ -740,6 +740,32 @@ class SamSegmentationResponse(BaseModel):
         description="The time in seconds it took to produce the segmentation including preprocessing"
     )
 
+class DoctrOCRInferenceRequest(BaseModel):
+    """
+    DocTR inference request.
+    
+    Attributes:
+        api_key (Optional[str]): Roboflow API Key.
+    """
+
+    api_key: Optional[str] = ApiKey
+    image: Union[List[InferenceRequestImage], InferenceRequestImage]
+
+class DoctrOCRInferenceResponse(BaseModel):
+    """
+    DocTR Inference response.
+    
+    Attributes:
+        result (str): The result from OCR.
+        time: The time in seconds it took to produce the segmentation including preprocessing.
+    """
+
+    result: str = Field(
+        description="The result from OCR."
+    )
+    time: float = Field(
+        description="The time in seconds it took to produce the segmentation including preprocessing."
+    )
 
 class FaceDetectionPrediction(ObjectDetectionPrediction):
     """Face Detection prediction.
