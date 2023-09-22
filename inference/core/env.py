@@ -126,6 +126,9 @@ DISABLE_PREPROC_GRAYSCALE = bool_env(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = bool_env(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
+# Flag to disable version check, default is False
+DISABLE_VERSION_CHECK = bool_env(os.getenv("DISABLE_VERSION_CHECK", False))
+
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
     "ELASTICACHE_ENDPOINT",

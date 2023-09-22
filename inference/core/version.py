@@ -1,4 +1,3 @@
-import threading
 import time
 
 import requests
@@ -38,8 +37,6 @@ def check_latest_release_against_current():
             )
         time.sleep(log_frequency)
 
-
-threading.Thread(target=check_latest_release_against_current).start()
 
 if __name__ == "__main__":
     print(__version__)
