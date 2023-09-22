@@ -1,4 +1,3 @@
-import base64
 import os
 import pickle
 import re
@@ -9,6 +8,7 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 import requests
+import pybase64
 from PIL import Image
 
 from inference.core.data_models import InferenceRequestImage
@@ -125,7 +125,7 @@ def load_image_base64(value: str) -> np.ndarray:
         value = value.decode("utf-8")
 
     try:
-        value = base64.b64decode(value)
+        value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
         return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
     except Exception as e:
@@ -134,7 +134,7 @@ def load_image_base64(value: str) -> np.ndarray:
         # print traceback
         traceback.print_exc()
         value = pattern.sub("", value)
-        value = base64.b64decode(value)
+        value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
         return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
 
