@@ -84,6 +84,14 @@ def build_container_stats():
             container_stats["uuid"] = container.id
             container_stats["startup_time"] = container.startup_time
             container_stats["models"] = models
+            if container.status == "running" or container.status == "restarting":
+                container_stats["status"] = "running"
+            elif container.status == "exited":
+                container_stats["status"] = "stopped"
+            elif container.status == "paused":
+                container_stats["status"] = "idle"
+            else:
+                container_stats["status"] = "processing"
             containers.append(container_stats)
     return containers
 
@@ -123,4 +131,3 @@ def report_metrics():
     logger.info(f"Sending metrics to Roboflow {str(all_data)}.")
     res = requests.post(METRICS_URL, json=all_data)
     res.raise_for_status()
-    logger.debug("Sent metrics to Roboflow")
