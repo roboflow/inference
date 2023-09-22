@@ -55,15 +55,14 @@ def load_image(value: Any) -> np.ndarray:
         else:
             raise NotImplementedError(f"Image type '{type}' is not supported.")
     else:
-        np_image = load_image_inferred(value)
+        np_image, is_bgr = load_image_inferred(value)
 
     if len(np_image.shape) == 2 or np_image.shape[2] == 1:
         np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
 
-    if not is_bgr:
+    if is_bgr:
         # Convert from BGR to RGB
         np_image = np_image[:, :, ::-1]
-
     return np_image
 
 
@@ -80,24 +79,24 @@ def load_image_inferred(value: Any) -> Image.Image:
         NotImplementedError: If the image type could not be inferred.
     """
     if isinstance(value, (np.ndarray, np.generic)):
-        return value
+        return value, True
     elif isinstance(value, Image.Image):
-        return np.asarray(value)
+        return np.asarray(value), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_url(value)
+        return load_image_url(value), True
     elif isinstance(value, str) and os.path.exists(value):
-        return cv2.imread(value)
+        return cv2.imread(value), True
     elif isinstance(value, str):
         try:
-            return load_image_base64(value)
+            return load_image_base64(value), True
         except Exception:
             pass
         try:
-            return load_image_multipart(value)
+            return load_image_multipart(value), True
         except Exception:
             pass
         try:
-            return load_image_numpy_str(value)
+            return load_image_numpy_str(value), True
         except Exception:
             pass
     raise NotImplementedError(

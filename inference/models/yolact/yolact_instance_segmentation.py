@@ -130,7 +130,6 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         predictions[:, :, 1] *= img_in.shape[3]
         predictions[:, :, 2] *= img_in.shape[2]
         predictions[:, :, 3] *= img_in.shape[3]
-
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=confidence,
@@ -182,6 +181,8 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
                     }
                     preds.append(pred)
                 batch_preds.append(preds)
+        else:
+            batch_preds.append([])
 
         if return_image_dims:
             return batch_preds, img_dims

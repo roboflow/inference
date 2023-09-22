@@ -247,7 +247,9 @@ class Gaze(OnnxRoboflowCoreModel):
         faces = []
         for np_img in np_imgs:
             if request.do_run_face_detection:
-                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=np_img)
+                mp_img = mp.Image(
+                    image_format=mp.ImageFormat.SRGB, data=np_img.astype(np.uint8)
+                )
                 faces_per_img = self.face_detector.detect(mp_img).detections
             else:
                 faces_per_img = [

@@ -261,6 +261,9 @@ TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)
 # Set TensorRT cache path
 os.environ["ORT_TENSORRT_CACHE_PATH"] = TENSORRT_CACHE_PATH
 
+# Version check mode, one of "once" or "continuous", default is "once"
+VERSION_CHECK_MODE = os.getenv("VERSION_CHECK_MODE", "once")
+
 # Metlo key, default is None
 METLO_KEY = os.getenv("METLO_KEY", None)
 
