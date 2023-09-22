@@ -403,31 +403,52 @@ class RoboflowInferenceModel(Model):
         raise NotImplementedError(self.__class__.__name__ + ".initialize_model")
 
     @staticmethod
-    def letterbox_image(
-        image: Image.Image, size: Tuple[int, int], c: int = 0
-    ) -> Image.Image:
-        """Resize image to fit within the size specified while maintaining aspect ratio by padding the image
+    def letterbox_image(img, desired_size, c=(0, 0, 0)):
+        """
+        Resize and pad image to fit the desired size, preserving its aspect ratio.
 
-        Args:
-            image (Image.Image): PIL image to be resized
-            size (Tuple[int, int]): Desired width and height in pixels of the output image
-            c (int, optional): Color to use for padding. Defaults to 0. Not using this as it seems to be less performant. This should be investigated.
+        Parameters:
+        - img: numpy array representing the image.
+        - desired_size: tuple (width, height) representing the target dimensions.
+        - color: tuple (B, G, R) representing the color to pad with.
 
         Returns:
-            Image.Image: PIL image of dimensions `size` containing the original image plus any required padding
+        - letterboxed image.
         """
-        ih, iw = image.shape[0:2]
-        h, w = size
-        scale = min(w / iw, h / ih)
-        nw = int(iw * scale)
-        nh = int(ih * scale)
+        # Calculate the ratio of the old dimensions compared to the new desired dimensions
+        img_ratio = img.shape[1] / img.shape[0]
+        desired_ratio = desired_size[0] / desired_size[1]
 
-        image = cv2.resize(image, (nh, nw), cv2.INTER_CUBIC)
-        new_image = np.ones((size,) + 3).fill(c)
-        dx = (w - nw) // 2
-        dy = (h - nh) // 2
-        new_image[dy : dy + nh, dx : dx + nw, :] = image
-        return new_image
+        # Determine the new dimensions
+        if img_ratio >= desired_ratio:
+            # Resize by width
+            new_width = desired_size[0]
+            new_height = int(desired_size[0] / img_ratio)
+        else:
+            # Resize by height
+            new_height = desired_size[1]
+            new_width = int(desired_size[1] * img_ratio)
+
+        # Resize the image to new dimensions
+        resized_img = cv2.resize(img, (new_width, new_height))
+
+        # Pad the image to fit the desired size
+        top_padding = (desired_size[1] - new_height) // 2
+        bottom_padding = desired_size[1] - new_height - top_padding
+        left_padding = (desired_size[0] - new_width) // 2
+        right_padding = desired_size[0] - new_width - left_padding
+
+        letterboxed_img = cv2.copyMakeBorder(
+            resized_img,
+            top_padding,
+            bottom_padding,
+            left_padding,
+            right_padding,
+            cv2.BORDER_CONSTANT,
+            value=c,
+        )
+
+        return letterboxed_img
 
     def load_preprocessed_image(self, image: InferenceRequestImage) -> Image.Image:
         """Loads and preprocesses an image for inference.
@@ -494,7 +515,9 @@ class RoboflowInferenceModel(Model):
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_h, self.img_size_w), c=255
+                preprocessed_image,
+                (self.img_size_h, self.img_size_w),
+                c=(255, 255, 255),
             )
 
         img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)

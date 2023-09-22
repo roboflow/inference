@@ -4,6 +4,7 @@ import pickle
 import re
 from io import BytesIO
 from typing import Any, Optional
+import traceback
 
 import cv2
 import numpy as np
@@ -54,6 +55,9 @@ def load_image(value: Any) -> np.ndarray:
             raise NotImplementedError(f"Image type '{type}' is not supported.")
     else:
         np_image = load_image_inferred(value)
+
+    if len(np_image.shape) == 2 or np_image.shape[2] == 1:
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2RGB)
 
     return np_image
 
@@ -116,9 +120,11 @@ def load_image_base64(value: str) -> np.ndarray:
         value = base64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
         return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
-    except Exception:
+    except Exception as e:
         # The variable "pattern" isn't defined in the original function. Assuming it exists somewhere in your code.
         # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
+        # print traceback
+        traceback.print_exc()
         value = pattern.sub("", value)
         value = base64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
@@ -134,8 +140,9 @@ def load_image_multipart(value) -> np.ndarray:
     Returns:
         Image.Image: The loaded PIL image.
     """
-    image_np = np.frombuffer(value, np.uint8)
-    return cv2.imdecode(image_np)
+    value.seek(0)
+    image_np = np.frombuffer(value.read(), np.uint8)
+    return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
 
 
 def load_image_numpy_str(value: str) -> np.ndarray:
@@ -154,7 +161,7 @@ def load_image_numpy_str(value: str) -> np.ndarray:
     assert isinstance(data, np.ndarray)
     assert len(data.shape) == 3 or len(data.shape) == 2
     assert data.shape[-1] == 3 or data.shape[-1] == 1
-    assert max(data) <= 255 and min(data) >= 0
+    assert data.max() <= 255 and data.min() >= 0
     try:
         return data
     except Exception as e:

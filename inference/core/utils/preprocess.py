@@ -116,7 +116,7 @@ def prepare(
             x_max = int(preproc["static-crop"]["x_max"] / 100 * w)
             y_max = int(preproc["static-crop"]["y_max"] / 100 * h)
 
-            image = image[y_min:y_max, x_min:x_max]
+            image = image[y_min:y_max, x_min:x_max, :]
     if (
         "contrast" in preproc.keys()
         and not DISABLE_PREPROC_CONTRAST

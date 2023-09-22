@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Union
 import clip
 import numpy as np
 import onnxruntime
+from PIL import Image
 
 from inference.core.data_models import (
     ClipCompareRequest,
@@ -342,7 +343,7 @@ class Clip(OnnxRoboflowCoreModel):
         Returns:
             np.ndarray: A numpy array of the preprocessed image pixel data.
         """
-        pil_image = load_image(image)
+        pil_image = Image.fromarray(load_image(image))
         preprocessed_image = self.clip_preprocess(pil_image)
 
         img_in = np.expand_dims(preprocessed_image, axis=0)

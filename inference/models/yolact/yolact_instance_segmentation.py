@@ -143,44 +143,45 @@ class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
         )
         predictions = np.array(predictions)
         batch_preds = []
-        for batch_idx, img_dim in zip(range(batch_size), img_dims):
-            boxes = predictions[batch_idx, :, :4]
-            scores = predictions[batch_idx, :, 4]
-            classes = predictions[batch_idx, :, 6]
-            masks = predictions[batch_idx, :, 7:]
-            proto = proto_data[batch_idx]
-            decoded_masks = self.decode_masks(boxes, masks, proto, img_in.shape[2:])
-            polys = mask2poly(decoded_masks)
-            infer_shape = (self.img_size_w, self.img_size_h)
-            boxes = postprocess_predictions(
-                [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
-            )[0]
-            polys = scale_polys(
-                img_in.shape[2:],
-                polys,
-                img_dim,
-                self.preproc,
-                resize_method=self.resize_method,
-            )
-            preds = []
-            for i, (box, poly, score, cls) in enumerate(
-                zip(boxes, polys, scores, classes)
-            ):
-                confidence = float(score)
-                class_name = self.class_names[int(cls)]
-                points = [{"x": round(x, 1), "y": round(y, 1)} for (x, y) in poly]
-                pred = {
-                    "x": round((box[2] + box[0]) / 2, 1),
-                    "y": round((box[3] + box[1]) / 2, 1),
-                    "width": int(box[2] - box[0]),
-                    "height": int(box[3] - box[1]),
-                    "class": class_name,
-                    "confidence": round(confidence, 3),
-                    "points": points,
-                    "class_id": int(cls),
-                }
-                preds.append(pred)
-            batch_preds.append(preds)
+        if predictions.shape != (1, 0):
+            for batch_idx, img_dim in zip(range(batch_size), img_dims):
+                boxes = predictions[batch_idx, :, :4]
+                scores = predictions[batch_idx, :, 4]
+                classes = predictions[batch_idx, :, 6]
+                masks = predictions[batch_idx, :, 7:]
+                proto = proto_data[batch_idx]
+                decoded_masks = self.decode_masks(boxes, masks, proto, img_in.shape[2:])
+                polys = mask2poly(decoded_masks)
+                infer_shape = (self.img_size_w, self.img_size_h)
+                boxes = postprocess_predictions(
+                    [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
+                )[0]
+                polys = scale_polys(
+                    img_in.shape[2:],
+                    polys,
+                    img_dim,
+                    self.preproc,
+                    resize_method=self.resize_method,
+                )
+                preds = []
+                for i, (box, poly, score, cls) in enumerate(
+                    zip(boxes, polys, scores, classes)
+                ):
+                    confidence = float(score)
+                    class_name = self.class_names[int(cls)]
+                    points = [{"x": round(x, 1), "y": round(y, 1)} for (x, y) in poly]
+                    pred = {
+                        "x": round((box[2] + box[0]) / 2, 1),
+                        "y": round((box[3] + box[1]) / 2, 1),
+                        "width": int(box[2] - box[0]),
+                        "height": int(box[3] - box[1]),
+                        "class": class_name,
+                        "confidence": round(confidence, 3),
+                        "points": points,
+                        "class_id": int(cls),
+                    }
+                    preds.append(pred)
+                batch_preds.append(preds)
 
         if return_image_dims:
             return batch_preds, img_dims
