@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_BASE_URL, API_KEY
 from inference.core.logger import logger
+from inference.core.utils.url_utils import ApiUrl
 from inference.enterprise.device_manager.container_service import container_service
 
 
@@ -18,9 +19,10 @@ class Command(BaseModel):
 
 
 def fetch_commands():
-    resp = requests.get(
+    url = ApiUrl(
         f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands?api_key={API_KEY}"
-    ).json()
+    )
+    resp = requests.get(url).json()
     for cmd in resp.get("data", []):
         handle_command(cmd)
 
@@ -59,6 +61,5 @@ def ack_command(command_id, was_processed, data=None):
     post_body["wasProcessed"] = was_processed
     if data:
         post_body["data"] = data
-    requests.post(
-        f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands/ack", json=post_body
-    )
+    url = ApiUrl(f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands/ack")
+    requests.post(url, json=post_body)

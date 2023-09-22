@@ -48,7 +48,7 @@ COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 ENV LAMBDA=True
 ENV CORE_MODEL_SAM_ENABLED=False
 ENV ALLOW_NUMPY_INPUT=False
-ENV SERVER_NAME=HostedInferenceLambda
+ENV INFERENCE_SERVER_ID=HostedInferenceLambda
 WORKDIR ${LAMBDA_TASK_ROOT}
 
 CMD [ "lambda.handler" ]
