@@ -37,7 +37,7 @@ def load_image(value: Any) -> np.ndarray:
     elif isinstance(value, dict):
         type = value.get("type")
         value = value.get("value")
-
+    is_bgr = True
     if type is not None:
         if type == "base64":
             np_image = load_image_base64(value)
@@ -49,6 +49,7 @@ def load_image(value: Any) -> np.ndarray:
             np_image = load_image_numpy_str(value)
         elif type == "pil":
             np_image = np.asarray(value)
+            is_bgr = False
         elif type == "url":
             np_image = load_image_url(value)
         else:
@@ -58,6 +59,10 @@ def load_image(value: Any) -> np.ndarray:
 
     if len(np_image.shape) == 2 or np_image.shape[2] == 1:
         np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
+
+    if not is_bgr:
+        # Convert from BGR to RGB
+        np_image = np_image[:, :, ::-1]
 
     return np_image
 
