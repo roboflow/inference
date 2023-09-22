@@ -57,7 +57,7 @@ def load_image(value: Any) -> np.ndarray:
         np_image = load_image_inferred(value)
 
     if len(np_image.shape) == 2 or np_image.shape[2] == 1:
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2RGB)
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
 
     return np_image
 
