@@ -39,7 +39,7 @@ from inference.core.exceptions import (
     TensorrtRoboflowAPIError,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import ApiUrl
@@ -142,7 +142,7 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: A base64 encoded image string
         """
-        image = load_image(inference_request.image)
+        image = load_image_rgb(inference_request.image)
         image = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB)
 
         for box in inference_response.predictions:
@@ -450,18 +450,6 @@ class RoboflowInferenceModel(Model):
 
         return letterboxed_img
 
-    def load_preprocessed_image(self, image: InferenceRequestImage) -> Image.Image:
-        """Loads and preprocesses an image for inference.
-
-        Args:
-            image (InferenceRequestImage): The image information to load and preprocess.
-
-        Returns:
-            Image.Image: The loaded and preprocessed PIL image.
-        """
-        pil_image = load_image(image)
-        return self.preprocess_image(pil_image)
-
     def open_cache(self, f: str, mode: str, encoding: str = None):
         """Opens a cache file with the given filename, mode, and encoding.
 
@@ -496,7 +484,7 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
-        np_image = load_image(image)
+        np_image, is_bgr = load_image(image)
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -520,6 +508,8 @@ class RoboflowInferenceModel(Model):
                 c=(255, 255, 255),
             )
 
+        if is_bgr:
+            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)
         img_in = np.expand_dims(img_in, axis=0)
 

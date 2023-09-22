@@ -60,9 +60,13 @@ def load_image(value: Any) -> np.ndarray:
     if len(np_image.shape) == 2 or np_image.shape[2] == 1:
         np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
 
+    return np_image, is_bgr
+
+
+def load_image_rgb(value: Any) -> np.ndarray:
+    np_image, is_bgr = load_image(value)
     if is_bgr:
-        # Convert from BGR to RGB
-        np_image = np_image[:, :, ::-1]
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
     return np_image
 
 

@@ -20,7 +20,7 @@ from inference.core.data_models import (
 )
 from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import mask2poly
 
 
@@ -174,8 +174,8 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             np.array: The preprocessed image.
         """
-        pil_image = load_image(image)
-        return np.array(pil_image)
+        np_image = load_image_rgb(image)
+        return np_image
 
     def segment_image(
         self,

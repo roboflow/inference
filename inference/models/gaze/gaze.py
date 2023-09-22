@@ -28,7 +28,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 from inference.models.gaze.l2cs import L2CS
 
 
@@ -239,7 +239,7 @@ class Gaze(OnnxRoboflowCoreModel):
 
         # load pil images
         num_img = len(imgs)
-        np_imgs = [load_image(img) for img in imgs]
+        np_imgs = [load_image_rgb(img) for img in imgs]
 
         # face detection
         # TODO: face detection for batch
