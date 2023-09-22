@@ -206,9 +206,6 @@ class ContainerService:
                 info["port"] = var.split("=")[1]
             elif var.startswith("HOST="):
                 info["host"] = var.split("=")[1]
-            elif var.startswith("METRICS_INTERVAL="):
-                if int(var.split("=")[1]) < self.pingback_interval:
-                    self.pingback_interval = int(var.split("=")[1])
         status = c.attrs.get("State", {}).get("Status")
         if status:
             info["status"] = status

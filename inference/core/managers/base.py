@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
-from inference.core.env import METRICS_ENABLED, METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
+from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
@@ -68,39 +68,37 @@ class ModelManager:
             rtn_val = self._models[model_id].infer_from_request(request)
 
             finish_time = time.time()
-            if METRICS_ENABLED:
-                cache.zadd(
-                    f"models",
-                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                    score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
-                )
-                cache.zadd(
-                    f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                    value={
-                        "request": request.dict(),
-                        "response": jsonable_encoder(rtn_val),
-                    },
-                    score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
-                )
+            cache.zadd(
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value={
+                    "request": request.dict(),
+                    "response": jsonable_encoder(rtn_val),
+                },
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
 
             return rtn_val
         except Exception as e:
-            if METRICS_ENABLED:
-                finish_time = time.time()
-                cache.zadd(
-                    f"models",
-                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                    score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
-                )
-                cache.zadd(
-                    f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                    value={"request": request.dict(), "error": str(e)},
-                    score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
-                )
+            finish_time = time.time()
+            cache.zadd(
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value={"request": request.dict(), "error": str(e)},
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
             raise
 
     def make_response(
