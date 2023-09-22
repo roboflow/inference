@@ -60,36 +60,11 @@ class InferenceMixin:
         """
         raise NotImplementedError
 
-class ObjectDetectionMixin(InferenceMixin):
-    """Object detection inference mixin class.
-
-    This mixin provides the interface for object detection inference tasks.
-    """
-
-    task_type = "object-detection"
-
-    def infer_from_request(
-        self, request: ObjectDetectionInferenceRequest
-    ) -> Union[
-        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
-    ]:
-        """Runs inference on an object detection request.
-
-        Args:
-            request (ObjectDetectionInferenceRequest): The request object.
-
-        Returns:
-            Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response object(s).
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
 
     def make_response(
         self, *args, **kwargs
     ) -> Union[
-        ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
+        InferenceResponse, List[InferenceResponse]
     ]:
         """Constructs an object detection response.
 
@@ -98,6 +73,14 @@ class ObjectDetectionMixin(InferenceMixin):
         """
         raise NotImplementedError
 
+
+class ObjectDetectionMixin(InferenceMixin):
+    """Object detection inference mixin class.
+
+    This mixin provides the interface for object detection inference tasks.
+    """
+
+    task_type = "object-detection"
 
 class InstanceSegmentationMixin(InferenceMixin):
     """Instance segmentation inference mixin class.
