@@ -1,0 +1,27 @@
+FROM python:3.10
+
+# Keeps Python from generating .pyc files in the container
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Turns off buffering for easier container logging
+ENV PYTHONUNBUFFERED=1
+
+RUN python3 -m pip install --upgrade pip
+COPY requirements/requirements.device_manager.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.device_manager.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+COPY inference inference
+COPY docker/config/device_manager.py device_manager.py
+
+ENV NUM_WORKERS=1
+ENV PORT=9101
+ENV HOST=0.0.0.0
+
+ENTRYPOINT uvicorn device_manager:app --workers $NUM_WORKERS --host $HOST --port $PORT

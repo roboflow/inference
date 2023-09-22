@@ -1,8 +1,10 @@
 import os
 import platform
-import socket
+import random
+import string
+import uuid
 
-from inference.core.env import DEVICE_ID
+from inference.core.env import DEVICE_ID, INFERENCE_SERVER_ID
 
 
 def is_running_in_docker():
@@ -73,13 +75,44 @@ def get_jetson_id():
     """
     try:
         # Fetch the device's serial number
+        if not os.path.exists("/proc/device-tree/serial-number"):
+            return None
         serial_number = os.popen("cat /proc/device-tree/serial-number").read().strip()
+        if serial_number == "":
+            return None
         return serial_number
     except Exception as e:
         return None
 
 
-def get_device_id():
+def get_container_id():
+    if is_running_in_docker():
+        return (
+            os.popen(
+                "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
+            )
+            .read()
+            .strip()
+        )
+    else:
+        return str(uuid.uuid4())
+
+
+def random_string(length):
+    letters = string.ascii_letters + string.digits
+    return "".join(random.choice(letters) for i in range(length))
+
+
+def get_device_hostname():
+    """Fetches the device's hostname.
+
+    Returns:
+        str: The device's hostname.
+    """
+    return platform.node()
+
+
+def get_inference_server_id():
     """Fetches a unique device ID.
 
     Tries to get the GPU ID first, then falls back to CPU ID.
@@ -89,30 +122,19 @@ def get_device_id():
         str: A unique string representing the device. If unable to determine, returns "UNKNOWN".
     """
     try:
-        if DEVICE_ID is not None:
-            return DEVICE_ID
-        id = get_gpu_id()
-        if id is not None:
-            return f"GPU-{id}"
-
-        id = get_cpu_id()
-        if id is not None:
-            return f"CPU-{id}"
-
-        # Fallback to hostname
-        hostname = socket.gethostname()
-
-        if is_running_in_docker():
-            # Append Docker container ID to the hostname
-            container_id = (
-                os.popen(
-                    "cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\///' | tail -n1"
-                )
-                .read()
-                .strip()
-            )
-            hostname = f"{hostname}-DOCKER-{container_id}"
-
-        return hostname
+        if INFERENCE_SERVER_ID is not None:
+            return INFERENCE_SERVER_ID
+        id = random_string(6)
+        gpu_id = get_gpu_id()
+        if gpu_id is not None:
+            return f"{id}-GPU-{gpu_id}"
+        jetson_id = get_jetson_id()
+        if jetson_id is not None:
+            return f"{id}-JETSON-{jetson_id}"
+        return id
     except Exception as e:
         return "UNKNOWN"
+
+
+GLOBAL_INFERENCE_SERVER_ID = get_inference_server_id()
+GLOBAL_DEVICE_ID = DEVICE_ID if DEVICE_ID is not None else get_device_hostname()
