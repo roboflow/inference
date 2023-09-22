@@ -2,9 +2,9 @@ import base64
 import os
 import pickle
 import re
+import traceback
 from io import BytesIO
 from typing import Any, Optional
-import traceback
 
 import cv2
 import numpy as np
