@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import time
-from typing import Optional, Any
+from typing import Any, Optional
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL

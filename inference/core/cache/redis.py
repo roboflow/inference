@@ -1,14 +1,14 @@
 import asyncio
+import inspect
 import json
 import threading
 import time
-import inspect
-from typing import Optional, Any
+from typing import Any, Optional
 
 import redis
-from inference.core.data_models import InferenceResponseImage
 
 from inference.core.cache.base import BaseCache
+from inference.core.data_models import InferenceResponseImage
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
 
 

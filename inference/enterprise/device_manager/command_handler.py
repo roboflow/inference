@@ -1,11 +1,12 @@
-import requests
-from pydantic import BaseModel
 from typing import Literal, Optional
 
-from inference.core.logger import logger
+import requests
+from pydantic import BaseModel
+
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.enterprise.device_manager.container_service import container_service
 from inference.core.env import API_BASE_URL, API_KEY
+from inference.core.logger import logger
+from inference.enterprise.device_manager.container_service import container_service
 
 
 class Command(BaseModel):

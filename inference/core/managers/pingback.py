@@ -13,7 +13,7 @@ from inference.core.env import (
     TAGS,
 )
 from inference.core.logger import logger
-from inference.core.managers.metrics import get_system_info, get_model_metrics
+from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.version import __version__
 
 

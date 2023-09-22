@@ -1,15 +1,14 @@
-from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import FastAPI
 
 from inference.core.env import METRICS_INTERVAL
 from inference.core.version import __version__
 from inference.enterprise.device_manager.command_handler import (
+    Command,
     fetch_commands,
     handle_command,
-    Command,
 )
 from inference.enterprise.device_manager.metrics_service import report_metrics
-
 
 app = FastAPI(
     title="Roboflow Device Manager",

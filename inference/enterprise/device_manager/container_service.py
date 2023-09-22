@@ -1,15 +1,15 @@
-from datetime import datetime
-import time
 import base64
+import time
+from dataclasses import dataclass
+from datetime import datetime
+
+import requests
 
 import docker
-import requests
-from dataclasses import dataclass
-
 from inference.core.cache import cache
+from inference.core.env import METRICS_INTERVAL
 from inference.core.logger import logger
 from inference.core.utils.image_utils import load_image
-from inference.core.env import METRICS_INTERVAL
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 
 
