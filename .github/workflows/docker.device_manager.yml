@@ -1,4 +1,4 @@
-name: Build and Push Jetson 5.X Container
+name: Build and Push Device Manager Container
 
 on:
   release:
@@ -11,10 +11,6 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Remove unnecessary files
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -38,8 +34,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-jetson-5.1.1:latest,roboflow/roboflow-inference-server-jetson-5.1.1:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-5.1.1:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-5.1.1:cache,mode=max
-          platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1
+          tags: roboflow/roboflow-device-manager:latest,roboflow/roboflow-device-manager:${{ env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-device-manager:cache
+          cache-to: type=registry,ref=roboflow/roboflow-device-manager:cache,mode=max
+          platforms: linux/amd64,linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.device_manager

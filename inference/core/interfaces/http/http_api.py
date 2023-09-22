@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
+from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import (
     ALLOW_ORIGINS,
     CLIP_MODEL_ID,
@@ -19,7 +20,7 @@ from inference.core.env import (
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
-    PINGBACK_ENABLED,
+    METRICS_ENABLED,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
 )
@@ -183,7 +184,7 @@ class HttpInterface(BaseInterface):
                 sort_by="cumulative",
             )
 
-        if PINGBACK_ENABLED:
+        if METRICS_ENABLED:
 
             @app.middleware("http")
             async def count_errors(request: Request, call_next):
@@ -307,7 +308,25 @@ class HttpInterface(BaseInterface):
             return M.ServerVersionInfo(
                 name="Roboflow Inference Server",
                 version=__version__,
-                uuid=model_manager.model_manager.uuid,
+                uuid=GLOBAL_INFERENCE_SERVER_ID,
+            )
+
+        @app.get(
+            "/info",
+            response_model=M.ServerVersionInfo,
+            summary="Info",
+            description="Get the server name and version number",
+        )
+        async def root():
+            """Endpoint to get the server name and version number.
+
+            Returns:
+                M.ServerVersionInfo: The server version information.
+            """
+            return M.ServerVersionInfo(
+                name="Roboflow Inference Server",
+                version=__version__,
+                uuid=GLOBAL_INFERENCE_SERVER_ID,
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
