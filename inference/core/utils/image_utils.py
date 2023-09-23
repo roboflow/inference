@@ -1,12 +1,14 @@
-import base64
 import os
 import pickle
 import re
+import traceback
 from io import BytesIO
 from typing import Any, Optional
 
+import cv2
 import numpy as np
 import requests
+import pybase64
 from PIL import Image
 
 from inference.core.data_models import InferenceRequestImage
@@ -14,7 +16,7 @@ from inference.core.env import ALLOW_NUMPY_INPUT
 from inference.core.exceptions import InvalidNumpyInput
 
 
-def load_image(value: Any) -> Image.Image:
+def load_image(value: Any) -> np.ndarray:
     """Loads an image based on the specified type and value.
 
     Args:
@@ -35,26 +37,37 @@ def load_image(value: Any) -> Image.Image:
     elif isinstance(value, dict):
         type = value.get("type")
         value = value.get("value")
-
+    is_bgr = True
     if type is not None:
         if type == "base64":
-            pil_image = load_image_base64(value)
+            np_image = load_image_base64(value)
         elif type == "file":
-            pil_image = Image.open(value)
+            np_image = cv2.imread(value)
         elif type == "multipart":
-            pil_image = load_image_multipart(value)
+            np_image = load_image_multipart(value)
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
-            pil_image = load_image_numpy_str(value)
+            np_image = load_image_numpy_str(value)
         elif type == "pil":
-            pil_image = value
+            np_image = np.asarray(value)
+            is_bgr = False
         elif type == "url":
-            pil_image = load_image_url(value)
+            np_image = load_image_url(value)
         else:
             raise NotImplementedError(f"Image type '{type}' is not supported.")
     else:
-        pil_image = load_image_inferred(value)
+        np_image, is_bgr = load_image_inferred(value)
 
-    return pil_image.convert("RGB")
+    if len(np_image.shape) == 2 or np_image.shape[2] == 1:
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
+
+    return np_image, is_bgr
+
+
+def load_image_rgb(value: Any) -> np.ndarray:
+    np_image, is_bgr = load_image(value)
+    if is_bgr:
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
+    return np_image
 
 
 def load_image_inferred(value: Any) -> Image.Image:
@@ -69,25 +82,25 @@ def load_image_inferred(value: Any) -> Image.Image:
     Raises:
         NotImplementedError: If the image type could not be inferred.
     """
-    if isinstance(value, Image.Image):
-        return value
-    elif isinstance(value, (np.ndarray, np.generic)):
-        return Image.fromarray(value)
+    if isinstance(value, (np.ndarray, np.generic)):
+        return value, True
+    elif isinstance(value, Image.Image):
+        return np.asarray(value), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_url(value)
+        return load_image_url(value), True
     elif isinstance(value, str) and os.path.exists(value):
-        return Image.open(value)
+        return cv2.imread(value), True
     elif isinstance(value, str):
         try:
-            return load_image_base64(value)
+            return load_image_base64(value), True
         except Exception:
             pass
         try:
-            return load_image_multipart(value)
+            return load_image_multipart(value), True
         except Exception:
             pass
         try:
-            return load_image_numpy_str(value)
+            return load_image_numpy_str(value), True
         except Exception:
             pass
     raise NotImplementedError(
@@ -98,29 +111,35 @@ def load_image_inferred(value: Any) -> Image.Image:
 pattern = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
-def load_image_base64(value):
-    """Loads an image from a base64 encoded string.
+def load_image_base64(value: str) -> np.ndarray:
+    """Loads an image from a base64 encoded string using OpenCV.
 
     Args:
         value (str): Base64 encoded string representing the image.
 
     Returns:
-        Image.Image: The loaded PIL image.
+        np.ndarray: The loaded image as a numpy array.
     """
     # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
     if not isinstance(value, str):
         value = value.decode("utf-8")
+
     try:
-        value = base64.b64decode(value)
-        return Image.open(BytesIO(value))
-    except Exception:
+        value = pybase64.b64decode(value)
+        image_np = np.frombuffer(value, np.uint8)
+        return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
+    except Exception as e:
+        # The variable "pattern" isn't defined in the original function. Assuming it exists somewhere in your code.
         # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
+        # print traceback
+        traceback.print_exc()
         value = pattern.sub("", value)
-        value = base64.b64decode(value)
-        return Image.open(BytesIO(value))
+        value = pybase64.b64decode(value)
+        image_np = np.frombuffer(value, np.uint8)
+        return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
 
 
-def load_image_multipart(value):
+def load_image_multipart(value) -> np.ndarray:
     """Loads an image from a multipart-encoded input.
 
     Args:
@@ -129,10 +148,12 @@ def load_image_multipart(value):
     Returns:
         Image.Image: The loaded PIL image.
     """
-    return Image.open(value)
+    value.seek(0)
+    image_np = np.frombuffer(value.read(), np.uint8)
+    return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
 
 
-def load_image_numpy_str(value):
+def load_image_numpy_str(value: str) -> np.ndarray:
     """Loads an image from a numpy array string.
 
     Args:
@@ -145,8 +166,12 @@ def load_image_numpy_str(value):
         InvalidNumpyInput: If the numpy data is invalid.
     """
     data = pickle.loads(value)
+    assert isinstance(data, np.ndarray)
+    assert len(data.shape) == 3 or len(data.shape) == 2
+    assert data.shape[-1] == 3 or data.shape[-1] == 1
+    assert data.max() <= 255 and data.min() >= 0
     try:
-        return Image.fromarray(data)
+        return data
     except Exception as e:
         if len(data.shape) != 3 and len(data.shape) != 2:
             raise InvalidNumpyInput(
@@ -164,7 +189,7 @@ def load_image_numpy_str(value):
             raise e
 
 
-def load_image_url(value):
+def load_image_url(value: str) -> np.ndarray:
     """Loads an image from a given URL.
 
     Args:
@@ -173,4 +198,6 @@ def load_image_url(value):
     Returns:
         Image.Image: The loaded PIL image.
     """
-    return Image.open(requests.get(value, stream=True).raw)
+    response = requests.get(value, stream=True)
+    image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
+    return cv2.imdecode(image_np, cv2.IMREAD_COLOR)
