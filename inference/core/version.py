@@ -4,7 +4,7 @@ import requests
 
 from inference.core.logger import logger
 
-__version__ = "0.8.6"
+__version__ = "0.8.7"
 
 latest_release = None
 last_checked = 0
