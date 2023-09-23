@@ -12,7 +12,6 @@ from inference.core.data_models import (
     InferenceResponseImage,
     MultiLabelClassificationInferenceResponse,
 )
-from inference.core.models.mixins import ClassificationMixin
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata

@@ -1,6 +1,5 @@
 import numpy as np
 
-from inference.core.models.mixins import ObjectDetectionMixin
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )

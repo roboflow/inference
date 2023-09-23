@@ -9,7 +9,6 @@ from inference.core.data_models import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
-from inference.core.models.mixins import ObjectDetectionMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import postprocess_predictions
