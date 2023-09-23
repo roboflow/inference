@@ -10,7 +10,6 @@ from inference.core.data_models import (
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
 )
-from inference.core.models.mixins import InstanceSegmentationMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
@@ -22,8 +21,9 @@ from inference.core.utils.postprocess import (
 )
 
 
-class YOLACT(OnnxRoboflowInferenceModel, InstanceSegmentationMixin):
+class YOLACT(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method)"""
+    task_type = "instance-segmentation"
 
     @property
     def weights_file(self) -> str:

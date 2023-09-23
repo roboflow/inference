@@ -72,30 +72,3 @@ class InferenceMixin:
             NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError
-
-
-class ObjectDetectionMixin(InferenceMixin):
-    """Object detection inference mixin class.
-
-    This mixin provides the interface for object detection inference tasks.
-    """
-
-    task_type = "object-detection"
-
-class InstanceSegmentationMixin(InferenceMixin):
-    """Instance segmentation inference mixin class.
-
-    This mixin provides the interface for instance segmentation inference tasks.
-    """
-
-    task_type = "instance-segmentation"
-
-
-
-class ClassificationMixin(InferenceMixin):
-    """Classification inference mixin class.
-
-    This mixin provides the interface for classification inference tasks.
-    """
-
-    task_type = "classification"

@@ -22,10 +22,10 @@ DEFAULT_MAX_CANDIDATES = 3000
 
 
 class ObjectDetectionBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, ObjectDetectionMixin
+    OnnxRoboflowInferenceModel
 ):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
-
+    task_type = "object-detection"
     def infer(
         self,
         image: Any,

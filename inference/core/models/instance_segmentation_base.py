@@ -10,7 +10,6 @@ from inference.core.data_models import (
     Point,
 )
 from inference.core.exceptions import InvalidMaskDecodeArgument
-from inference.core.models.mixins import InstanceSegmentationMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
@@ -36,13 +35,14 @@ PREDICTIONS_TYPE = List[List[List[float]]]
 
 
 class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, InstanceSegmentationMixin
+    OnnxRoboflowInferenceModel
 ):
     """Roboflow ONNX Instance Segmentation model.
 
     This class implements an instance segmentation specific inference method
     for ONNX models provided by Roboflow.
     """
+    task_type = "instance-segmentation"
 
     def infer(
         self,

@@ -20,7 +20,7 @@ from inference.core.utils.image_utils import load_image
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, ClassificationMixin
+    OnnxRoboflowInferenceModel
 ):
     """Base class for ONNX models for Roboflow classification inference.
 
@@ -34,6 +34,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         draw_predictions(inference_request, inference_response): Draw prediction visuals on an image.
     """
 
+    task_type = "classification"
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
         super().__init__(*args, **kwargs)
