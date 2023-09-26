@@ -1,9 +1,8 @@
 import functools
+from typing import Tuple
 
+import cv2
 import numpy as np
-import piexif
-import PIL
-from PIL import Image
 
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
@@ -12,65 +11,64 @@ from inference.core.env import (
     DISABLE_PREPROC_STATIC_CROP,
 )
 
+# def auto_orient(image):
+#     """
+#     Automatically adjusts the orientation of an image based on its EXIF data.
+#     The orientation is corrected by rotating or flipping the image as needed.
 
-def auto_orient(image):
-    """
-    Automatically adjusts the orientation of an image based on its EXIF data.
-    The orientation is corrected by rotating or flipping the image as needed.
+#     Args:
+#         image (PIL.Image.Image): The input image object that may contain EXIF orientation data.
 
-    Args:
-        image (PIL.Image.Image): The input image object that may contain EXIF orientation data.
+#     Returns:
+#         PIL.Image.Image: The image object with corrected orientation. If no EXIF orientation data is found,
+#                          the original image is returned unmodified.
 
-    Returns:
-        PIL.Image.Image: The image object with corrected orientation. If no EXIF orientation data is found,
-                         the original image is returned unmodified.
+#     Raises:
+#         None: Any exceptions raised during processing are caught and ignored, so the original image is returned.
 
-    Raises:
-        None: Any exceptions raised during processing are caught and ignored, so the original image is returned.
+#     Example:
+#         corrected_image = auto_orient(original_image)
+#     """
+#     info = image.info
+#     if "exif" in info:
+#         exif_dict = piexif.load(info["exif"])
 
-    Example:
-        corrected_image = auto_orient(original_image)
-    """
-    info = image.info
-    if "exif" in info:
-        exif_dict = piexif.load(info["exif"])
+#         try:
+#             if piexif.ImageIFD.Orientation in exif_dict["0th"]:
+#                 orientation = exif_dict["0th"].pop(piexif.ImageIFD.Orientation)
+#                 # exif_bytes = piexif.dump(exif_dict)
 
-        try:
-            if piexif.ImageIFD.Orientation in exif_dict["0th"]:
-                orientation = exif_dict["0th"].pop(piexif.ImageIFD.Orientation)
-                # exif_bytes = piexif.dump(exif_dict)
-
-                if orientation == 2:
-                    image = image.transpose(Image.FLIP_LEFT_RIGHT)
-                elif orientation == 3:
-                    image = image.rotate(180)
-                elif orientation == 4:
-                    image = image.rotate(180).transpose(Image.FLIP_LEFT_RIGHT)
-                elif orientation == 5:
-                    image = image.rotate(-90, expand=True).transpose(
-                        Image.FLIP_LEFT_RIGHT
-                    )
-                elif orientation == 6:
-                    image = image.rotate(-90, expand=True)
-                elif orientation == 7:
-                    image = image.rotate(90, expand=True).transpose(
-                        Image.FLIP_LEFT_RIGHT
-                    )
-                elif orientation == 8:
-                    image = image.rotate(90, expand=True)
-        except:
-            pass
-    return image
+#                 if orientation == 2:
+#                     image = image.transpose(Image.FLIP_LEFT_RIGHT)
+#                 elif orientation == 3:
+#                     image = image.rotate(180)
+#                 elif orientation == 4:
+#                     image = image.rotate(180).transpose(Image.FLIP_LEFT_RIGHT)
+#                 elif orientation == 5:
+#                     image = image.rotate(-90, expand=True).transpose(
+#                         Image.FLIP_LEFT_RIGHT
+#                     )
+#                 elif orientation == 6:
+#                     image = image.rotate(-90, expand=True)
+#                 elif orientation == 7:
+#                     image = image.rotate(90, expand=True).transpose(
+#                         Image.FLIP_LEFT_RIGHT
+#                     )
+#                 elif orientation == 8:
+#                     image = image.rotate(90, expand=True)
+#         except:
+#             pass
+#     return image
 
 
 def prepare(
-    image,
+    image: np.ndarray,
     preproc,
     disable_preproc_auto_orient: bool = False,
     disable_preproc_contrast: bool = False,
     disable_preproc_grayscale: bool = False,
     disable_preproc_static_crop: bool = False,
-):
+) -> Tuple[np.ndarray, Tuple[int, int]]:
     """
     Prepares an image by applying a series of preprocessing steps defined in the `preproc` dictionary.
 
@@ -97,137 +95,51 @@ def prepare(
         The function uses global flags like `DISABLE_PREPROC_AUTO_ORIENT`, `DISABLE_PREPROC_STATIC_CROP`, etc.
         to conditionally enable or disable certain preprocessing steps.
     """
-    if (
-        "auto-orient" in preproc.keys()
-        and not DISABLE_PREPROC_AUTO_ORIENT
-        and not disable_preproc_auto_orient
-    ):
-        if preproc["auto-orient"]["enabled"] == True:
-            # perform auto-orient logic
-            image = auto_orient(image)
-    img_dims = image.size[-1::-1]
-    # # static crop
+    h, w = image.shape[0:2]
+    img_dims = (h, w)
     if (
         "static-crop" in preproc.keys()
         and not DISABLE_PREPROC_STATIC_CROP
         and not disable_preproc_static_crop
     ):
         if preproc["static-crop"]["enabled"] == True:
-            w, h = image.size
+            x_min = int(preproc["static-crop"]["x_min"] / 100 * w)
+            y_min = int(preproc["static-crop"]["y_min"] / 100 * h)
+            x_max = int(preproc["static-crop"]["x_max"] / 100 * w)
+            y_max = int(preproc["static-crop"]["y_max"] / 100 * h)
 
-            x_min = preproc["static-crop"]["x_min"] / 100
-            y_min = preproc["static-crop"]["y_min"] / 100
-            x_max = preproc["static-crop"]["x_max"] / 100
-            y_max = preproc["static-crop"]["y_max"] / 100
-
-            crop_area = (int(x_min * w), int(y_min * h), int(x_max * w), int(y_max * h))
-            image = image.crop(crop_area)
-    # contrast
+            image = image[y_min:y_max, x_min:x_max, :]
     if (
         "contrast" in preproc.keys()
         and not DISABLE_PREPROC_CONTRAST
         and not disable_preproc_contrast
     ):
-        if preproc["contrast"]["enabled"] == True:
+        if preproc["contrast"]["enabled"]:
             how = preproc["contrast"]["type"]
 
-            image_np = np.asarray(image).astype(np.float64) / 255
-
-            # clip to range 0-1
-            image_np = np.clip(image_np, 0, 1, image_np)
-
             if how == "Contrast Stretching":
-                # grab 2nd and 98 percentile
-                p2 = np.percentile(image_np, 2)
-                p98 = np.percentile(image_np, 98)
-                # rescale
-                image_rescale = rescale_intensity(image_np, in_range=(p2, p98))
-                image = Image.fromarray((image_rescale * 255).astype(np.uint8))
-
-                # return img_rescale
+                p2, p98 = np.percentile(image, (2, 98))
+                image = rescale_intensity(image, in_range=(p2, p98))
 
             elif how == "Histogram Equalization":
-                image_eq = equalize_hist(image_np)
-                image = Image.fromarray((image_eq * 255).astype(np.uint8))
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                image = cv2.equalizeHist(image)
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
             elif how == "Adaptive Equalization":
-                image_adapteq = equalize_adapthist(image_np, clip_limit=0.03)
-                image = Image.fromarray((image_adapteq * 255).astype(np.uint8))
-    # grayscale
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                clahe = cv2.createCLAHE(clipLimit=0.03, tileGridSize=(8, 8))
+                image = clahe.apply(image)
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     if (
         "grayscale" in preproc.keys()
         and not DISABLE_PREPROC_GRAYSCALE
         and not disable_preproc_grayscale
     ):
-        if preproc["grayscale"]["enabled"] == True:
-            image_np = np.asarray(image).astype(np.float64) / 255
-            if image_np.ndim < 3:
-                image = image
-            else:
-                image_np = np.clip(image_np, 0, 1, image_np)
-                grayscale = rgb2gray(image_np)
-                arr = np.expand_dims(grayscale, axis=2)
-                grayscale = np.concatenate((arr, arr, arr), axis=2)
-                image = Image.fromarray((grayscale * 255).astype(np.uint8))
+        if preproc["grayscale"]["enabled"]:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image, img_dims
-
-
-def to_numpy_array(image, rescale=None, channel_first=True):
-    """
-    Converts an image to a numpy array, optionally rescales it, and puts the channel dimension as the first
-    dimension if required.
-
-    Args:
-        image (PIL.Image.Image or np.ndarray or torch.Tensor): The image to convert to a NumPy array.
-        rescale (bool, optional): Whether to apply the scaling factor (to make pixel values floats between 0 and 1).
-                                 Defaults to True if the image is a PIL Image or an array/tensor of integers, False otherwise.
-        channel_first (bool, optional, defaults to True): Whether to permute the dimensions of the image to put the channel dimension first.
-
-    Returns:
-        np.ndarray: The converted image as a NumPy array.
-    """
-
-    if isinstance(image, PIL.Image.Image):
-        image = np.array(image)
-
-    if rescale is None:
-        rescale = isinstance(image.flat[0], np.integer)
-
-    if rescale:
-        image = image.astype(np.float32) / 255.0
-
-    if channel_first:
-        image = image.transpose(2, 0, 1)
-
-    return image
-
-
-def normalize(image, mean, std):
-    """
-    Normalizes an image with the given mean and standard deviation. This will trigger a conversion of the image
-    to a NumPy array if it's a PIL Image.
-
-    Args:
-        image (PIL.Image.Image or np.ndarray or torch.Tensor): The image to normalize.
-        mean (List[float] or np.ndarray or torch.Tensor): The mean (per channel) to use for normalization.
-        std (List[float] or np.ndarray or torch.Tensor): The standard deviation (per channel) to use for normalization.
-
-    Returns:
-        np.ndarray or torch.Tensor: The normalized image.
-    """
-    if isinstance(image, PIL.Image.Image):
-        image = to_numpy_array(image)
-
-    if isinstance(image, np.ndarray):
-        if not isinstance(mean, np.ndarray):
-            mean = np.array(mean).astype(image.dtype)
-        if not isinstance(std, np.ndarray):
-            std = np.array(std).astype(image.dtype)
-
-    if image.ndim == 3 and image.shape[0] in [1, 3, 4]:
-        return (image[:3, :, :] - mean[:, None, None]) / std[:, None, None]
-    else:
-        return (image - mean) / std
 
 
 ### The following functions are included from scikit-image (https://github.com/scikit-image/scikit-image) ###

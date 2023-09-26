@@ -9,7 +9,7 @@ import docker
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL
 from inference.core.logger import logger
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 
 
@@ -125,7 +125,7 @@ class InferServerContainer:
                     if image["type"] == "base64":
                         value = image["value"]
                     else:
-                        loaded_image = load_image(image)
+                        loaded_image = load_image_rgb(image)
                         image_bytes = loaded_image.tobytes()
                         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                         value = image_base64
@@ -206,9 +206,6 @@ class ContainerService:
                 info["port"] = var.split("=")[1]
             elif var.startswith("HOST="):
                 info["host"] = var.split("=")[1]
-            elif var.startswith("METRICS_INTERVAL="):
-                if int(var.split("=")[1]) < self.pingback_interval:
-                    self.pingback_interval = int(var.split("=")[1])
         status = c.attrs.get("State", {}).get("Status")
         if status:
             info["status"] = status

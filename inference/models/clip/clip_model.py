@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Union
 import clip
 import numpy as np
 import onnxruntime
+from PIL import Image
 
 from inference.core.data_models import (
     ClipCompareRequest,
@@ -22,7 +23,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import cosine_similarity
 
 
@@ -342,7 +343,7 @@ class Clip(OnnxRoboflowCoreModel):
         Returns:
             np.ndarray: A numpy array of the preprocessed image pixel data.
         """
-        pil_image = load_image(image)
+        pil_image = Image.fromarray(load_image_rgb(image))
         preprocessed_image = self.clip_preprocess(pil_image)
 
         img_in = np.expand_dims(preprocessed_image, axis=0)

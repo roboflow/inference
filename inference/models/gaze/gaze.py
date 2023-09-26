@@ -2,6 +2,7 @@ import math
 from time import perf_counter
 from typing import List, Optional, Tuple, Union
 
+import cv2
 import mediapipe as mp
 import numpy as np
 import onnxruntime
@@ -11,7 +12,6 @@ import torchvision
 from mediapipe.tasks.python.components.containers.bounding_box import BoundingBox
 from mediapipe.tasks.python.components.containers.category import Category
 from mediapipe.tasks.python.components.containers.detections import Detection
-from PIL import Image
 from torchvision import transforms
 
 from inference.core.data_models import (
@@ -28,7 +28,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 from inference.models.gaze.l2cs import L2CS
 
 
@@ -88,8 +88,8 @@ class Gaze(OnnxRoboflowCoreModel):
         # additional settings for gaze detection
         self._gaze_transformations = transforms.Compose(
             [
-                transforms.Resize(448),
                 transforms.ToTensor(),
+                transforms.Resize(448),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
                 ),
@@ -98,15 +98,15 @@ class Gaze(OnnxRoboflowCoreModel):
 
         self.log(f"GAZE model loaded in {perf_counter() - t1:.2f} seconds")
 
-    def _crop_face_img(self, pil_img: Image.Image, face: Detection) -> Image.Image:
+    def _crop_face_img(self, np_img: np.ndarray, face: Detection) -> np.ndarray:
         """Extract facial area in an image.
 
         Args:
-            pil_img (Image.Image): The PIL image.
+            np_img (np.ndarray): The numpy image.
             face (mediapipe.tasks.python.components.containers.detections.Detection): The detected face.
 
         Returns:
-            Image.Image: Cropped face image.
+            np.ndarray: Cropped face image.
         """
         # extract face area
         bbox = face.bounding_box
@@ -114,24 +114,24 @@ class Gaze(OnnxRoboflowCoreModel):
         y_min = bbox.origin_y
         x_max = bbox.origin_x + bbox.width
         y_max = bbox.origin_y + bbox.height
-        face_img = pil_img.crop((x_min, y_min, x_max, y_max))
-        face_img = face_img.resize((224, 224))
+        face_img = np_img[y_min:y_max, x_min:x_max, :]
+        face_img = cv2.resize(face_img, (224, 224))
         return face_img
 
-    def _detect_gaze(self, pil_imgs: List[Image.Image]) -> List[Tuple[float, float]]:
+    def _detect_gaze(self, np_imgs: List[np.ndarray]) -> List[Tuple[float, float]]:
         """Detect faces and gazes in an image.
 
         Args:
-            pil_imgs (List[Image.Image]): The PIL image list, each image is a cropped facial image.
+            pil_imgs (List[np.ndarray]): The numpy image list, each image is a cropped facial image.
 
         Returns:
             List[Tuple[float, float]]: Yaw (radian) and Pitch (radian).
         """
         ret = []
-        for i in range(0, len(pil_imgs), GAZE_MAX_BATCH_SIZE):
+        for i in range(0, len(np_imgs), GAZE_MAX_BATCH_SIZE):
             img_batch = []
-            for j in range(i, min(len(pil_imgs), i + GAZE_MAX_BATCH_SIZE)):
-                img = self._gaze_transformations(pil_imgs[j])
+            for j in range(i, min(len(np_imgs), i + GAZE_MAX_BATCH_SIZE)):
+                img = self._gaze_transformations(np_imgs[j])
                 img = np.expand_dims(img, axis=0).astype(np.float32)
                 img_batch.append(img)
 
@@ -239,16 +239,16 @@ class Gaze(OnnxRoboflowCoreModel):
 
         # load pil images
         num_img = len(imgs)
-        pil_imgs = [load_image(img) for img in imgs]
+        np_imgs = [load_image_rgb(img) for img in imgs]
 
         # face detection
         # TODO: face detection for batch
         time_face_det = perf_counter()
         faces = []
-        for pil_img in pil_imgs:
+        for np_img in np_imgs:
             if request.do_run_face_detection:
                 mp_img = mp.Image(
-                    image_format=mp.ImageFormat.SRGB, data=np.asarray(pil_img)
+                    image_format=mp.ImageFormat.SRGB, data=np_img.astype(np.uint8)
                 )
                 faces_per_img = self.face_detector.detect(mp_img).detections
             else:
@@ -257,8 +257,8 @@ class Gaze(OnnxRoboflowCoreModel):
                         bounding_box=BoundingBox(
                             origin_x=0,
                             origin_y=0,
-                            width=pil_img.size[0],
-                            height=pil_img.size[1],
+                            width=np_img.shape[1],
+                            height=np_img.shape[0],
                         ),
                         categories=[Category(score=1.0, category_name="face")],
                         keypoints=[],
@@ -270,13 +270,13 @@ class Gaze(OnnxRoboflowCoreModel):
         # gaze detection
         time_gaze_det = perf_counter()
         face_imgs = []
-        for i, pil_img in enumerate(pil_imgs):
+        for i, np_img in enumerate(np_imgs):
             if request.do_run_face_detection:
                 face_imgs.extend(
-                    [self._crop_face_img(pil_img, face) for face in faces[i]]
+                    [self._crop_face_img(np_img, face) for face in faces[i]]
                 )
             else:
-                face_imgs.append(pil_img.resize((224, 224)))
+                face_imgs.append(cv2.resize(np_img, (224, 224)))
         gazes = self._detect_gaze(face_imgs)
         time_gaze_det = (perf_counter() - time_gaze_det) / num_img
 
@@ -285,8 +285,8 @@ class Gaze(OnnxRoboflowCoreModel):
         # prepare response
         response = []
         idx_gaze = 0
-        for i in range(len(pil_imgs)):
-            imgW, imgH = pil_imgs[i].size
+        for i in range(len(np_imgs)):
+            imgH, imgW, _ = np_imgs[i].shape
             faces_per_img = faces[i]
             gazes_per_img = gazes[idx_gaze : idx_gaze + len(faces_per_img)]
             response.append(

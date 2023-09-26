@@ -27,6 +27,7 @@ from inference.core.env import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
+    DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
@@ -39,7 +40,7 @@ from inference.core.exceptions import (
     TensorrtRoboflowAPIError,
 )
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import ApiUrl
@@ -142,7 +143,7 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: A base64 encoded image string
         """
-        image = load_image(inference_request.image)
+        image = load_image_rgb(inference_request.image)
         image = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB)
 
         for box in inference_response.predictions:
@@ -403,41 +404,52 @@ class RoboflowInferenceModel(Model):
         raise NotImplementedError(self.__class__.__name__ + ".initialize_model")
 
     @staticmethod
-    def letterbox_image(
-        image: Image.Image, size: Tuple[int, int], c: int = 0
-    ) -> Image.Image:
-        """Resize image to fit within the size specified while maintaining aspect ratio by padding the image
+    def letterbox_image(img, desired_size, c=(0, 0, 0)):
+        """
+        Resize and pad image to fit the desired size, preserving its aspect ratio.
 
-        Args:
-            image (Image.Image): PIL image to be resized
-            size (Tuple[int, int]): Desired width and height in pixels of the output image
-            c (int, optional): Color to use for padding. Defaults to 0. Not using this as it seems to be less performant. This should be investigated.
+        Parameters:
+        - img: numpy array representing the image.
+        - desired_size: tuple (width, height) representing the target dimensions.
+        - color: tuple (B, G, R) representing the color to pad with.
 
         Returns:
-            Image.Image: PIL image of dimensions `size` containing the original image plus any required padding
+        - letterboxed image.
         """
-        iw, ih = image.size
-        w, h = size
-        scale = min(w / iw, h / ih)
-        nw = int(iw * scale)
-        nh = int(ih * scale)
+        # Calculate the ratio of the old dimensions compared to the new desired dimensions
+        img_ratio = img.shape[1] / img.shape[0]
+        desired_ratio = desired_size[0] / desired_size[1]
 
-        image = image.resize((nw, nh), Image.BICUBIC)
-        new_image = Image.new("RGB", size, (114, 114, 114))
-        new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
-        return new_image
+        # Determine the new dimensions
+        if img_ratio >= desired_ratio:
+            # Resize by width
+            new_width = desired_size[0]
+            new_height = int(desired_size[0] / img_ratio)
+        else:
+            # Resize by height
+            new_height = desired_size[1]
+            new_width = int(desired_size[1] * img_ratio)
 
-    def load_preprocessed_image(self, image: InferenceRequestImage) -> Image.Image:
-        """Loads and preprocesses an image for inference.
+        # Resize the image to new dimensions
+        resized_img = cv2.resize(img, (new_width, new_height))
 
-        Args:
-            image (InferenceRequestImage): The image information to load and preprocess.
+        # Pad the image to fit the desired size
+        top_padding = (desired_size[1] - new_height) // 2
+        bottom_padding = desired_size[1] - new_height - top_padding
+        left_padding = (desired_size[0] - new_width) // 2
+        right_padding = desired_size[0] - new_width - left_padding
 
-        Returns:
-            Image.Image: The loaded and preprocessed PIL image.
-        """
-        pil_image = load_image(image)
-        return self.preprocess_image(pil_image)
+        letterboxed_img = cv2.copyMakeBorder(
+            resized_img,
+            top_padding,
+            bottom_padding,
+            left_padding,
+            right_padding,
+            cv2.BORDER_CONSTANT,
+            value=c,
+        )
+
+        return letterboxed_img
 
     def open_cache(self, f: str, mode: str, encoding: str = None):
         """Opens a cache file with the given filename, mode, and encoding.
@@ -473,9 +485,14 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
-        pil_image = load_image(image)
+        np_image, is_bgr = load_image(
+            image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient
+            or "auto-orient" not in self.preproc.keys()
+            or DISABLE_PREPROC_AUTO_ORIENT,
+        )
         preprocessed_image, img_dims = self.preprocess_image(
-            pil_image,
+            np_image,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
@@ -483,31 +500,35 @@ class RoboflowInferenceModel(Model):
         )
 
         if self.resize_method == "Stretch to":
-            resized = preprocessed_image.resize(
-                (self.img_size_w, self.img_size_h), Image.BICUBIC
+            resized = cv2.resize(
+                preprocessed_image, (self.img_size_h, self.img_size_w), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h)
+                preprocessed_image, (self.img_size_h, self.img_size_w)
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h), c=255
+                preprocessed_image,
+                (self.img_size_h, self.img_size_w),
+                c=(255, 255, 255),
             )
 
-        img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)  # HWC -> CHW
+        if is_bgr:
+            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)
         img_in = np.expand_dims(img_in, axis=0)
 
         return img_in, img_dims
 
     def preprocess_image(
         self,
-        image: Image.Image,
+        image: np.ndarray,
         disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-    ) -> Image.Image:
+    ) -> Tuple[np.ndarray, Tuple[int, int]]:
         """
         Preprocesses the given image using specified preprocessing steps.
 
