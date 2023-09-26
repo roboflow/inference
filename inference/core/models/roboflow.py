@@ -27,6 +27,7 @@ from inference.core.env import (
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
+    DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
@@ -484,7 +485,12 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
-        np_image, is_bgr = load_image(image)
+        np_image, is_bgr = load_image(
+            image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient
+            or "auto-orient" not in self.preproc.keys()
+            or DISABLE_PREPROC_AUTO_ORIENT,
+        )
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
