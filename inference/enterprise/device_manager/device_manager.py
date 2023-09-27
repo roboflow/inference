@@ -2,7 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
 from inference.core.env import METRICS_INTERVAL
-from inference.core.version import __version__
+from version import __version__
 from inference.enterprise.device_manager.command_handler import (
     Command,
     fetch_commands,

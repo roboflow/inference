@@ -7,7 +7,7 @@ import uuid
 
 from inference.core.cache import cache
 from inference.core.logger import logger
-from inference.core.version import __version__
+from version import __version__
 
 
 def get_model_metrics(
