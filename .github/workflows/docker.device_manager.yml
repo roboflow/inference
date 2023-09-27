@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-device-manager:latest,roboflow/roboflow-device-manager:${{ env.VERSION}}
+          tags: roboflow/roboflow-device-manager:latest,roboflow/roboflow-device-manager:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-device-manager:cache
           cache-to: type=registry,ref=roboflow/roboflow-device-manager:cache,mode=max
           platforms: linux/amd64,linux/arm64

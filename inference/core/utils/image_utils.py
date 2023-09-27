@@ -2,8 +2,7 @@ import os
 import pickle
 import re
 import traceback
-from io import BytesIO
-from typing import Any, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -30,9 +29,9 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         NotImplementedError: If the specified image type is not supported.
         InvalidNumpyInput: If the numpy input method is used and the input data is invalid.
     """
-    cv_imread_flags = [cv2.IMREAD_COLOR]
+    cv_imread_flags = cv2.IMREAD_COLOR
     if disable_preproc_auto_orient:
-        cv_imread_flags.append(cv2.IMREAD_IGNORE_ORIENTATION)
+        cv_imread_flags = cv_imread_flags | cv2.IMREAD_IGNORE_ORIENTATION
     type = None
     if isinstance(value, InferenceRequestImage):
         type = value.type
@@ -75,7 +74,7 @@ def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
     return np_image
 
 
-def load_image_inferred(value: Any, cv_imread_flags=[]) -> Image.Image:
+def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.Image:
     """Tries to infer the image type from the value and loads it.
 
     Args:
@@ -94,7 +93,7 @@ def load_image_inferred(value: Any, cv_imread_flags=[]) -> Image.Image:
     elif isinstance(value, str) and (value.startswith("http")):
         return load_image_url(value, cv_imread_flags=cv_imread_flags), True
     elif isinstance(value, str) and os.path.exists(value):
-        return cv2.imread(value, *cv_imread_flags), True
+        return cv2.imread(value, cv_imread_flags), True
     elif isinstance(value, str):
         try:
             return load_image_base64(value, cv_imread_flags=cv_imread_flags), True
@@ -105,7 +104,7 @@ def load_image_inferred(value: Any, cv_imread_flags=[]) -> Image.Image:
         except Exception:
             pass
         try:
-            return load_image_numpy_str(value, cv_imread_flags=cv_imread_flags), True
+            return load_image_numpy_str(value), True
         except Exception:
             pass
     raise NotImplementedError(
@@ -116,7 +115,7 @@ def load_image_inferred(value: Any, cv_imread_flags=[]) -> Image.Image:
 pattern = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
-def load_image_base64(value: str, cv_imread_flags=[]) -> np.ndarray:
+def load_image_base64(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     """Loads an image from a base64 encoded string using OpenCV.
 
     Args:
@@ -132,7 +131,7 @@ def load_image_base64(value: str, cv_imread_flags=[]) -> np.ndarray:
     try:
         value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
-        return cv2.imdecode(image_np, *cv_imread_flags)
+        return cv2.imdecode(image_np, cv_imread_flags)
     except Exception as e:
         # The variable "pattern" isn't defined in the original function. Assuming it exists somewhere in your code.
         # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
@@ -141,10 +140,10 @@ def load_image_base64(value: str, cv_imread_flags=[]) -> np.ndarray:
         value = pattern.sub("", value)
         value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
-        return cv2.imdecode(image_np, *cv_imread_flags)
+        return cv2.imdecode(image_np, cv_imread_flags)
 
 
-def load_image_multipart(value, cv_imread_flags=[]) -> np.ndarray:
+def load_image_multipart(value, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     """Loads an image from a multipart-encoded input.
 
     Args:
@@ -155,7 +154,7 @@ def load_image_multipart(value, cv_imread_flags=[]) -> np.ndarray:
     """
     value.seek(0)
     image_np = np.frombuffer(value.read(), np.uint8)
-    return cv2.imdecode(image_np, *cv_imread_flags)
+    return cv2.imdecode(image_np, cv_imread_flags)
 
 
 def load_image_numpy_str(value: str) -> np.ndarray:
@@ -194,7 +193,7 @@ def load_image_numpy_str(value: str) -> np.ndarray:
             raise e
 
 
-def load_image_url(value: str, cv_imread_flags=[]) -> np.ndarray:
+def load_image_url(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     """Loads an image from a given URL.
 
     Args:
@@ -205,4 +204,4 @@ def load_image_url(value: str, cv_imread_flags=[]) -> np.ndarray:
     """
     response = requests.get(value, stream=True)
     image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
-    return cv2.imdecode(image_np, *cv_imread_flags)
+    return cv2.imdecode(image_np, cv_imread_flags)
