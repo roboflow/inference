@@ -132,7 +132,7 @@ def load_image_base64(value: str, cv_imread_flags=[]) -> np.ndarray:
     try:
         value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
-        return cv2.imdecode(image_np, *cv_imread_flags)
+        return cv2.imdecode(image_np, sum(cv_imread_flags))
     except Exception as e:
         # The variable "pattern" isn't defined in the original function. Assuming it exists somewhere in your code.
         # Sometimes base64 strings that were encoded by a browser are padded with extra characters, so we need to remove them
@@ -141,7 +141,7 @@ def load_image_base64(value: str, cv_imread_flags=[]) -> np.ndarray:
         value = pattern.sub("", value)
         value = pybase64.b64decode(value)
         image_np = np.frombuffer(value, np.uint8)
-        return cv2.imdecode(image_np, *cv_imread_flags)
+        return cv2.imdecode(image_np, sum(cv_imread_flags))
 
 
 def load_image_multipart(value, cv_imread_flags=[]) -> np.ndarray:
@@ -155,7 +155,7 @@ def load_image_multipart(value, cv_imread_flags=[]) -> np.ndarray:
     """
     value.seek(0)
     image_np = np.frombuffer(value.read(), np.uint8)
-    return cv2.imdecode(image_np, *cv_imread_flags)
+    return cv2.imdecode(image_np, sum(cv_imread_flags))
 
 
 def load_image_numpy_str(value: str) -> np.ndarray:
@@ -205,4 +205,4 @@ def load_image_url(value: str, cv_imread_flags=[]) -> np.ndarray:
     """
     response = requests.get(value, stream=True)
     image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
-    return cv2.imdecode(image_np, *cv_imread_flags)
+    return cv2.imdecode(image_np, sum(cv_imread_flags))
