@@ -38,7 +38,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-gpu:latest,roboflow/roboflow-inference-server-gpu:${{ env.VERSION}}
+          tags: roboflow/roboflow-inference-server-gpu:latest,roboflow/roboflow-inference-server-gpu:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache,mode=max
           platforms: linux/amd64

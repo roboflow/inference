@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{ env.VERSION}}
+          tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache,mode=max
           platforms: linux/amd64,linux/arm64

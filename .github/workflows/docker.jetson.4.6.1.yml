@@ -38,7 +38,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-jetson-4.6.1:latest,roboflow/roboflow-inference-server-jetson-4.6.1:${{ env.VERSION}}
+          tags: roboflow/roboflow-inference-server-jetson-4.6.1:latest,roboflow/roboflow-inference-server-jetson-4.6.1:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:cache,mode=max
           platforms: linux/arm64
