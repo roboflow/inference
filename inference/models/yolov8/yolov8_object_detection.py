@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Tuple
 
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
@@ -29,7 +30,7 @@ class YOLOv8ObjectDetection(
         """
         return "weights.onnx"
 
-    def predict(self, img_in: np.ndarray) -> np.ndarray:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
@@ -44,4 +45,4 @@ class YOLOv8ObjectDetection(
         class_confs = predictions[:, :, 4:]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
         predictions = np.concatenate([boxes, confs, class_confs], axis=2)
-        return predictions
+        return (predictions,)

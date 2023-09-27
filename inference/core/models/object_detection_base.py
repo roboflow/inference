@@ -143,6 +143,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         max_candidates: int = DEFAULT_MAX_CANDIDATES,
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
+        **kwargs
     ) -> List[List[List[float]]]:
         """Postprocesses the object detection predictions.
 
@@ -173,8 +174,8 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         img_dims = preproc_return_metadata["img_dims"]
         predictions = postprocess_predictions(
             predictions,
-            img_dims,
             infer_shape,
+            img_dims,
             self.preproc,
             resize_method=self.resize_method,
             disable_preproc_static_crop=preproc_return_metadata[
@@ -193,6 +194,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
         fix_batch_size: bool = False,
+        **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         """Preprocesses an object detection inference request.
 

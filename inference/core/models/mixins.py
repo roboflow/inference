@@ -1,22 +1,16 @@
 from typing import Any, List, Union, TYPE_CHECKING, Tuple, Dict
 
-from inference.core.data_models import (
-    InferenceRequest,
-    InferenceResponse,
-    ObjectDetectionInferenceRequest,
-    ObjectDetectionInferenceResponse,
-)
+from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
 
-if TYPE_CHECKING:
-    import numpy as np
+import numpy as np
+
 
 class InferenceMixin:
     """General inference mixin class.
 
     This mixin provides a basic interface for inference tasks.
     """
-
 
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data."""
@@ -26,13 +20,13 @@ class InferenceMixin:
 
         return postprocessed
 
-    
-    def preprocess(self, image: Any, **kwargs) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         raise NotImplementedError
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
         raise NotImplementedError
-
 
     def postprocess(
         self,
@@ -44,9 +38,7 @@ class InferenceMixin:
 
     def infer_from_request(
         self, request: InferenceRequest
-    ) -> Union[
-        InferenceResponse, List[InferenceResponse]
-    ]:
+    ) -> Union[InferenceResponse, List[InferenceResponse]]:
         """Runs inference on a request
 
         Args:
@@ -60,12 +52,9 @@ class InferenceMixin:
         """
         raise NotImplementedError
 
-
     def make_response(
         self, *args, **kwargs
-    ) -> Union[
-        InferenceResponse, List[InferenceResponse]
-    ]:
+    ) -> Union[InferenceResponse, List[InferenceResponse]]:
         """Constructs an object detection response.
 
         Raises:

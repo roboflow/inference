@@ -26,7 +26,7 @@ class YOLOv5ObjectDetection(
         """
         return "yolov5s_weights.onnx"
 
-    def predict(self, img_in: np.ndarray) -> np.ndarray:
+    def predict(self, img_in: np.ndarray, **kwargs) -> np.ndarray:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
