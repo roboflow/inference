@@ -30,7 +30,7 @@ def infer(
         None, "-a", "--api_key", help="Path to save output image to."
     ),
     host: str = typer.Option(
-        "https://localhost:9001", "-h", "--host", help="Host to run inference on."
+        "http://localhost:9001", "-h", "--host", help="Host to run inference on."
     ),
 ):
     typer.echo(
