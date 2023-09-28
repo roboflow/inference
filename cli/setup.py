@@ -27,7 +27,7 @@ setuptools.setup(
     ),
     entry_points={
         "console_scripts": [
-            "inference=inference_cli.__init__:main",
+            "inference=inference_cli.main:app",
         ],
     },
     install_requires=read_requirements("requirements.txt"),
