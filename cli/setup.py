@@ -15,7 +15,7 @@ def read_requirements(path):
 
 setuptools.setup(
     name="inference-cli",
-    version="0.0.1",
+    version="0.0.3",
     author="Roboflow",
     author_email="help@roboflow.com",
     description="Inference CLI coming soon!",
@@ -27,7 +27,7 @@ setuptools.setup(
     ),
     entry_points={
         "console_scripts": [
-            "inference = __init__:main",
+            "inference=inference_cli.__init__:main",
         ],
     },
     install_requires=read_requirements("requirements.txt"),
