@@ -13,11 +13,17 @@ def serve(
         "-p",
         "--port",
         help="Port to run the inference server on (default is 9001).",
-    )
+    ),
+    project: str = typer.Option(
+        "roboflow-platform",
+        "-pr",
+        "--project",
+        help="Project to run the inference server with (default is roboflow-platform).",
+    ),
 ):
     """Start the inference server."""
     print(f"starting inference server on port {port}")
-    start_inference_container("", port=port)
+    start_inference_container("", port=port, project=project)
 
 
 @app.command()
