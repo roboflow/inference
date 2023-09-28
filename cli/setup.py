@@ -3,7 +3,7 @@ import setuptools
 from setuptools import find_packages
 import sys
 
-root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 sys.path.append(root)
 from version import __version__
 
@@ -15,7 +15,7 @@ def read_requirements(path):
 
 setuptools.setup(
     name="inference-cli",
-    version="0.0.3",
+    version=__version__,
     author="Roboflow",
     author_email="help@roboflow.com",
     description="Inference CLI coming soon!",

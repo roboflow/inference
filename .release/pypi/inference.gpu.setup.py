@@ -5,7 +5,7 @@ import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-from inference.core.version import __version__
+from version import __version__
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -35,12 +35,7 @@ setuptools.setup(
     ),
     packages=find_packages(
         where=root,
-        exclude=(
-            "docker",
-            "docs",
-            "requirements",
-            "test",
-        ),
+        exclude=("docker", "docs", "requirements", "test", "cli"),
     ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),

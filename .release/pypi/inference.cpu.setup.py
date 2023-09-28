@@ -5,7 +5,7 @@ import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-from inference.core.version import __version__
+from version import __version__
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -32,12 +32,7 @@ setuptools.setup(
     url="https://github.com/roboflow/inference",
     packages=find_packages(
         where=root,
-        exclude=(
-            "docker",
-            "docs",
-            "requirements",
-            "test",
-        ),
+        exclude=("docker", "docs", "requirements", "test", "cli"),
     ),
     install_requires=read_requirements(
         ["requirements/_requirements.txt", "requirements/requirements.cpu.txt"]
