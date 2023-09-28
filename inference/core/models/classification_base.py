@@ -168,12 +168,13 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         return_image_dims=False,
         **kwargs,
     ) -> Any:
+        predictions = predictions[0]
         if return_image_dims:
             return predictions, preprocess_return_metadata["img_dims"]
         else:
             return predictions
 
-    def predict(self, img_in: np.ndarray) -> Tuple[np.ndarray]:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         predictions = self.onnx_session.run(None, {self.input_name: img_in})
         return (predictions,)
 
