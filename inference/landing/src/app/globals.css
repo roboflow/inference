@@ -25,3 +25,31 @@ body {
     )
     rgb(var(--background-start-rgb));
 }
+
+#aboveFold {
+  background: url(/header-bg.png);
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.hideScrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.hideScrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+#dividerGradient {
+  background: linear-gradient(
+    90deg,
+    #fff 0%,
+    #35ecd9 25%,
+    #8315f9 50%,
+    #35ecd9 75%,
+    #fff 100%
+  );
+}
