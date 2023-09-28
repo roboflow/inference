@@ -87,14 +87,14 @@ def start_inference_container(
             [docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])],
         )
 
-    print("Starting inference server container...")
+    print(f"Starting inference server container...")
     docker_client.containers.run(
         image=image,
         privileged=privileged,
         detach=True,
         labels=labels,
         ports={"9001": port},
-        network="host",
+        # network="host",
         device_requests=device_requests,
         environment=[
             "HOST=0.0.0.0",

@@ -1,1 +1,1 @@
-from container_adapter import start_inference_container
+from inference_cli.lib.container_adapter import start_inference_container

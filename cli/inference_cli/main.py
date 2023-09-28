@@ -1,6 +1,7 @@
 import typer
 from typing_extensions import Annotated
 import inference_cli.actions
+from inference_cli.lib import start_inference_container
 
 app = typer.Typer()
 
@@ -8,11 +9,15 @@ app = typer.Typer()
 @app.command()
 def serve(
     port: int = typer.Option(
-        None, "-p", "--port", help="Port to run the inference server on."
+        9001,
+        "-p",
+        "--port",
+        help="Port to run the inference server on (default is 9001).",
     )
 ):
     """Start the inference server."""
     print(f"starting inference server on port {port}")
+    start_inference_container("", port=port)
 
 
 @app.command()
