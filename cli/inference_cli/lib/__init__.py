@@ -1,0 +1,1 @@
+from container_adapter import start_inference_container
