@@ -7,6 +7,7 @@ from fastapi import Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi_cprofile.profiler import CProfileMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from inference.core import data_models as M
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
@@ -293,23 +294,7 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
-        @app.get(
-            "/",
-            response_model=M.ServerVersionInfo,
-            summary="Root",
-            description="Get the server name and version number",
-        )
-        async def root():
-            """Endpoint to get the server name and version number.
-
-            Returns:
-                M.ServerVersionInfo: The server version information.
-            """
-            return M.ServerVersionInfo(
-                name="Roboflow Inference Server",
-                version=__version__,
-                uuid=GLOBAL_INFERENCE_SERVER_ID,
-            )
+        app.mount("/", StaticFiles(directory="./inference/landing/out", html=True), name="static")
 
         @app.get(
             "/info",
