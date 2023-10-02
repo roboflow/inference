@@ -3,9 +3,13 @@ import setuptools
 from setuptools import find_packages
 import sys
 
-root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+# Update system path temporarily so we can import __version__
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(root)
 from version import __version__
+
+root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+sys.path.append(root)
 
 
 def read_requirements(path):
