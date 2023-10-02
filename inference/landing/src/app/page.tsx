@@ -10,104 +10,156 @@ import classNames from "classnames";
 export default function Home() {
   const [page, setPage] = React.useState("landing");
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between gap-0">
+    <main className="flex min-h-screen flex-col items-stretch gap-0">
       <div
         id="aboveFold"
-        className="flex flex-col gap-16 py-16 px-20 items-center w-screen h-screen"
+        className="flex flex-col justify-center w-full min-h-screen py-12 overflow-hidden"
       >
-        <div className="flex flex-col items-center gap-6 max-w-xl">
+        <div className="flex flex-col items-center gap-6 px-8 text-center">
           <div className="flex flex-col gap-1 items-center">
             <img
               src="/roboflow_full_logo_color.png"
               alt="Roboflow Logo"
               width={200}
             />
-            <div className="font-bold text-gray-900 text-6xl">Inference</div>
-            <div className={roboto_mono.className}>
+            <div className="font-bold text-gray-900 text-5xl sm:text-6xl">
+              Inference
+            </div>
+            <div
+              className={classNames(
+                roboto_mono.className,
+                "font-bold text-purple-500"
+              )}
+            >
               developer-friendly vision inference
             </div>
           </div>
-          <div className="text-lg font-medium">
-            Roboflow Inference is an easy-to-use, production-ready inference
-            server for computer vision supporting deployment of many popular
-            model architectures and fine-tuned models.
+
+          <div className="text-lg font-medium max-w-xl">
+            Roboflow Inference is an{" "}
+            <span className="font-extrabold">
+              easy-to-use, production-ready
+            </span>{" "}
+            inference server for computer vision that supports the deployment of
+            many popular model architectures and fine-tuned models.
           </div>
-          <div className="flex items-center gap-4">
+          {/* <div className="flex items-center justify-center gap-2 flex-col sm:flex-row">
+            TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks
             <HeaderLink
               href="https://docs.roboflow.com/deploy/inference-api-schema"
               className="bg-purple-600"
               label="Documentation"
-              icon="file"
+              icon="📄"
               theme="dark"
             />
             <HeaderLink
               href="https://github.com/roboflow/inference"
               className="bg-gray-900"
               label="Github Repository"
-              icon="github"
+              icon="🧑‍💻"
               theme="dark"
+            />
+          </div> */}
+          <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-8">
+            <HeaderLink
+              href="https://docs.roboflow.com/deploy/inference-api-schema"
+              className=""
+              label="Start with code snippets"
+              icon="💻"
+              theme="light"
+            />
+            <HeaderLink
+              href="https://github.com/roboflow/inference"
+              className=""
+              label="Find interesting models"
+              icon="🔍"
+              theme="light"
+            />
+            <HeaderLink
+              href="https://github.com/roboflow/inference"
+              className=""
+              label="Train your own custom models"
+              icon="💫"
+              theme="light"
             />
           </div>
         </div>
-
-        <div className="flex flex-col gap-2 w-full">
-          <div className="text-xl font-semibold text-purple-600 flex gap-4 items-center">
+        <div className="mt-16 flex flex-col w-full self-start">
+          <div className="text-xl font-semibold text-gray-900 flex flex-col items-center sm:flex-row gap-1 sm:gap-4 px-4 sm:px-[10%] 2xl:px-[25%]">
             Example Projects{" "}
-            <span
+            <div
               className={classNames(
                 roboto_mono.className,
-                "text-base font-medium text-purple-400"
+                "flex items-center border border-purple-500 rounded px-1.5 py-0.5 text-sm text-purple-600"
               )}
             >
               Built with Inference
-            </span>
+            </div>
           </div>
-          <div className="hideScrollbar flex items-center gap-4 w-full overflow-x-auto overflow-y-hidden">
+          <div className="hideScrollbar flex items-stretch sm:items-center flex-col sm:flex-row gap-4 w-full overflow-visible sm:overflow-x-auto pt-4 sm:pt-3 pb-12 px-4 sm:px-[10%] 2xl:px-[25%]">
             <ExampleLink
-              href="#"
+              href="https://github.com/roboflow/inference/tree/main/examples/gaze-detection"
               title="Gaze Detection"
               body="Detects the direction in which someone is looking and the point in a frame at which someone is looking."
               icon="👁️"
+              // className="ml-40"
             />
             <ExampleLink
-              href="#"
+              href="https://github.com/roboflow/inference/tree/main/examples/inference-dashboard-example"
               title="Inference Dashboard"
               body="Extract insights from video frames at defined intervals and generates informative visualizations and CSV outputs."
               icon="📊"
             />
             <ExampleLink
-              href="#"
+              href="https://github.com/roboflow/inference/tree/main/examples/inference-client"
               title="Inference Client"
               body="Quickstart HTTP and UDP clients for use with Inference."
               icon="⚡"
             />
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        {/* <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-8">
           <HeaderLink
             href="https://docs.roboflow.com/deploy/inference-api-schema"
             className=""
             label="Start with code snippets"
-            icon="file"
+            icon="💻"
             theme="light"
           />
           <HeaderLink
             href="https://github.com/roboflow/inference"
             className=""
             label="Find interesting models"
-            icon="search"
+            icon="🔍"
             theme="light"
           />
           <HeaderLink
             href="https://github.com/roboflow/inference"
             className=""
             label="Train your own custom models"
-            icon="magic"
+            icon="💫"
             theme="light"
+          />
+        </div> */}
+        <div className="flex items-center justify-center gap-2 flex-col sm:flex-row">
+          {/* TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks */}
+          <HeaderLink
+            href="https://docs.roboflow.com/deploy/inference-api-schema"
+            className="bg-purple-600"
+            label="Documentation"
+            icon="📄"
+            theme="dark"
+          />
+          <HeaderLink
+            href="https://github.com/roboflow/inference"
+            className="bg-gray-900"
+            label="Github Repository"
+            icon="🧑‍💻"
+            theme="dark"
           />
         </div>
       </div>
-      <div id="dividerGradient" className="h-[3px] w-full">
+      <div id="dividerGradient" className="h-0.5 sm:h-1 w-full">
         {" "}
       </div>
       <div className="px-14 py-8 flex flex-col">
