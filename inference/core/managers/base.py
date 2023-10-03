@@ -3,9 +3,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import numpy as np
+from fastapi.encoders import jsonable_encoder
 
+from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
-from inference.core.env import ROBOFLOW_SERVER_UUID
+from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
@@ -59,13 +62,44 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self.check_for_model(model_id)
-        self._models[model_id].metrics["num_inferences"] += 1
-        tic = time.perf_counter()
-        rtn_val = self._models[model_id].infer_from_request(request)
-        toc = time.perf_counter()
-        self._models[model_id].metrics["avg_inference_time"] += toc - tic
-        return rtn_val
+        try:
+            self.check_for_model(model_id)
+
+            rtn_val = self._models[model_id].infer_from_request(request)
+
+            finish_time = time.time()
+            cache.zadd(
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value={
+                    "request": request.dict(),
+                    "response": jsonable_encoder(rtn_val),
+                },
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+
+            return rtn_val
+        except Exception as e:
+            finish_time = time.time()
+            cache.zadd(
+                f"models",
+                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            cache.zadd(
+                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                value={"request": request.dict(), "error": str(e)},
+                score=finish_time,
+                expire=METRICS_INTERVAL * 2,
+            )
+            raise
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs

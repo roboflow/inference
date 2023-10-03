@@ -38,6 +38,7 @@ WORKDIR /app/
 COPY inference inference
 COPY docker/config/trt_http.py trt_http.py
 
+ENV VERSION_CHECK_MODE=continuous
 ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
 ENV REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider
 ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1

@@ -39,6 +39,7 @@ WORKDIR /app/
 COPY inference inference
 COPY docker/config/trt_http.py trt_http.py
 
+ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0

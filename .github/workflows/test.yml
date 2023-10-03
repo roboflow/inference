@@ -34,13 +34,12 @@ jobs:
       - name: 🔨 Build and Push Test Docker
         uses: docker/build-push-action@v4
         with:
-          push: false
+          push: true
           tags: roboflow/roboflow-inference-server-cpu:test
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:test
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:test,mode=max
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:test-cache,mode=max
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu
-          outputs: type=docker
       - name: 🔋 Start Test Docker
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu DOCKERFILE=Dockerfile.onnx.cpu make start_test_docker

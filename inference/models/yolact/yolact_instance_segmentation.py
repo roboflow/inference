@@ -161,7 +161,6 @@ class YOLACT(OnnxRoboflowInferenceModel):
         predictions[:, :, 1] *= img_in_shape[3]
         predictions[:, :, 2] *= img_in_shape[2]
         predictions[:, :, 3] *= img_in_shape[3]
-
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=kwargs["confidence"],
@@ -174,46 +173,49 @@ class YOLACT(OnnxRoboflowInferenceModel):
         )
         predictions = np.array(predictions)
         batch_preds = []
-        for batch_idx, img_dim in zip(
-            range(batch_size), preprocess_return_metadata["img_dims"]
-        ):
-            boxes = predictions[batch_idx, :, :4]
-            scores = predictions[batch_idx, :, 4]
-            classes = predictions[batch_idx, :, 6]
-            masks = predictions[batch_idx, :, 7:]
-            proto = proto_data[batch_idx]
-            decoded_masks = self.decode_masks(boxes, masks, proto, img_in_shape[2:])
-            polys = mask2poly(decoded_masks)
-            infer_shape = (self.img_size_w, self.img_size_h)
-            boxes = postprocess_predictions(
-                [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
-            )[0]
-            polys = scale_polys(
-                img_in_shape[2:],
-                polys,
-                img_dim,
-                self.preproc,
-                resize_method=self.resize_method,
-            )
-            preds = []
-            for i, (box, poly, score, cls) in enumerate(
-                zip(boxes, polys, scores, classes)
+        if predictions.shape != (1, 0):
+            for batch_idx, img_dim in zip(
+                range(batch_size), preprocess_return_metadata["img_dims"]
             ):
-                confidence = float(score)
-                class_name = self.class_names[int(cls)]
-                points = [{"x": round(x, 1), "y": round(y, 1)} for (x, y) in poly]
-                pred = {
-                    "x": round((box[2] + box[0]) / 2, 1),
-                    "y": round((box[3] + box[1]) / 2, 1),
-                    "width": int(box[2] - box[0]),
-                    "height": int(box[3] - box[1]),
-                    "class": class_name,
-                    "confidence": round(confidence, 3),
-                    "points": points,
-                    "class_id": int(cls),
-                }
-                preds.append(pred)
-            batch_preds.append(preds)
+                boxes = predictions[batch_idx, :, :4]
+                scores = predictions[batch_idx, :, 4]
+                classes = predictions[batch_idx, :, 6]
+                masks = predictions[batch_idx, :, 7:]
+                proto = proto_data[batch_idx]
+                decoded_masks = self.decode_masks(boxes, masks, proto, img_in_shape[2:])
+                polys = mask2poly(decoded_masks)
+                infer_shape = (self.img_size_w, self.img_size_h)
+                boxes = postprocess_predictions(
+                    [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
+                )[0]
+                polys = scale_polys(
+                    img_in_shape[2:],
+                    polys,
+                    img_dim,
+                    self.preproc,
+                    resize_method=self.resize_method,
+                )
+                preds = []
+                for i, (box, poly, score, cls) in enumerate(
+                    zip(boxes, polys, scores, classes)
+                ):
+                    confidence = float(score)
+                    class_name = self.class_names[int(cls)]
+                    points = [{"x": round(x, 1), "y": round(y, 1)} for (x, y) in poly]
+                    pred = {
+                        "x": round((box[2] + box[0]) / 2, 1),
+                        "y": round((box[3] + box[1]) / 2, 1),
+                        "width": int(box[2] - box[0]),
+                        "height": int(box[3] - box[1]),
+                        "class": class_name,
+                        "confidence": round(confidence, 3),
+                        "points": points,
+                        "class_id": int(cls),
+                    }
+                    preds.append(pred)
+                batch_preds.append(preds)
+        else:
+            batch_preds.append([])
 
         if kwargs["return_image_dims"]:
             return batch_preds, preprocess_return_metadata["img_dims"]

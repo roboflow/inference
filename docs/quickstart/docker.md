@@ -23,7 +23,7 @@ hardware configurations.
         Official Roboflow Inference Server Docker Image for ARM CPU Targets.
     
         ```
-        docker pull roboflow/roboflow-inference-server-arm-cpu
+        docker pull roboflow/roboflow-inference-server-cpu
         ```
     
     === "GPU"
@@ -77,7 +77,7 @@ Server in a container.
     === "arm64 CPU"
         ```
         docker run -p 9001:9001 \
-        roboflow/roboflow-inference-server-arm-cpu:latest
+        roboflow/roboflow-inference-server-cpu:latest
         ```
 
     === "GPU"
@@ -121,7 +121,7 @@ You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your h
 To build a Docker image locally, first clone the Inference Server repository.
 
 ```bash
-git clone git clone https://github.com/roboflow/inference
+git clone https://github.com/roboflow/inference
 ```
 
 Choose a Dockerfile from the following options, depending on the hardware you want to run Inference Server on.
@@ -138,8 +138,8 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
     === "arm64 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.arm.cpu \
-        -t roboflow/roboflow-inference-server-arm-cpu .
+        -f dockerfiles/Dockerfile.onnx.cpu \
+        -t roboflow/roboflow-inference-server-cpu .
         ```
     
     === "GPU"

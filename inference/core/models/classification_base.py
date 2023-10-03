@@ -15,7 +15,7 @@ from inference.core.data_models import (
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image
+from inference.core.utils.image_utils import load_image_rgb
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(
@@ -51,7 +51,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         Returns:
             bytes: The bytes of the visualized image in JPEG format.
         """
-        image = load_image(inference_request.image)
+        image = load_image_rgb(inference_request.image)
         draw = ImageDraw.Draw(image)
         font = ImageFont.load_default()
         if isinstance(inference_response.predictions, list):

@@ -111,7 +111,7 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
-# Device ID, default is "sample-device-id"
+# ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
 # Flag to disable auto-orientation preprocessing, default is False
@@ -125,6 +125,9 @@ DISABLE_PREPROC_GRAYSCALE = bool_env(os.getenv("DISABLE_PREPROC_GRAYSCALE", Fals
 
 # Flag to disable static crop preprocessing, default is False
 DISABLE_PREPROC_STATIC_CROP = bool_env(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
+
+# Flag to disable version check, default is False
+DISABLE_VERSION_CHECK = bool_env(os.getenv("DISABLE_VERSION_CHECK", False))
 
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
@@ -167,6 +170,9 @@ LEGACY_ROUTE_ENABLED = bool_env(os.getenv("LEGACY_ROUTE_ENABLED", True))
 # License server, default is None
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
+# Log level, default is "INFO"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
@@ -178,6 +184,20 @@ MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
 
 # Maximum number of detections, default is 300
 MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
+
+# Loop interval for expiration of memory cache, default is 5
+MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
+
+# Metrics enabled flag, default is True
+METRICS_ENABLED = bool_env(os.getenv("METRICS_ENABLED", True))
+if LAMBDA:
+    METRICS_ENABLED = False
+
+# Interval for metrics aggregation, default is 60
+METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
+
+# URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/device-stats"
+METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/device-healthcheck")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
@@ -198,6 +218,12 @@ PORT = int(os.getenv("PORT", 9001))
 # Profile flag, default is False
 PROFILE = bool_env(os.getenv("PROFILE", False))
 
+# Redis host, default is None
+REDIS_HOST = os.getenv("REDIS_HOST", None)
+
+# Redis port, default is 6379
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
 # Required ONNX providers, default is None
 REQUIRED_ONNX_PROVIDERS = required_providers_env(
     os.getenv("REQUIRED_ONNX_PROVIDERS", None)
@@ -215,6 +241,9 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
+# Device ID, default is "sample-device-id"
+INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
+
 # Stream ID, default is None
 STREAM_ID = os.getenv("STREAM_ID")
 try:
@@ -222,22 +251,18 @@ try:
 except (TypeError, ValueError):
     pass
 
+# Tags used for device management
+TAGS = os.getenv("TAGS", "")
+TAGS = [t for t in TAGS.split(",") if t]
+
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)
 
-# Pingback enabled flag, default is True
-PINGBACK_ENABLED = bool_env(os.getenv("PINGBACK_ENABLED", True))
-if LAMBDA:
-    PINGBACK_ENABLED = False
-
-# Pingback URL
-PINGBACK_URL = os.getenv("PINGBACK_URL", "https://api.roboflow.com/pingback")
-
-# Pingback interval in seconds, default is 3600
-PINGBACK_INTERVAL_SECONDS = int(os.getenv("PINGBACK_INTERVAL_SECONDS", 3600))
-
 # Set TensorRT cache path
 os.environ["ORT_TENSORRT_CACHE_PATH"] = TENSORRT_CACHE_PATH
+
+# Version check mode, one of "once" or "continuous", default is "once"
+VERSION_CHECK_MODE = os.getenv("VERSION_CHECK_MODE", "once")
 
 # Metlo key, default is None
 METLO_KEY = os.getenv("METLO_KEY", None)
