@@ -9,7 +9,10 @@ knowledge of machine learning or device-specific deployment, you can deploy a co
 
 Check out Inference running on a video of a football game:
 
-https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
+<video width="320" height="240" controls style="width: 100%">
+  <source src="https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173" type="video/mp4"> 
+  Your browser does not support the video tag.
+</video>
 
 ## 👩‍🏫 Examples
 
