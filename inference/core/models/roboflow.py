@@ -39,6 +39,7 @@ from inference.core.exceptions import (
     OnnxProviderNotAvailable,
     TensorrtRoboflowAPIError,
 )
+from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -277,7 +278,7 @@ class RoboflowInferenceModel(Model):
         else:
             # If AWS keys are available, then we can download model artifacts directly
             if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-                self.log("Downloading model artifacts from S3")
+                logger.debug("Downloading model artifacts from S3")
                 for f in infer_bucket_files:
                     success = False
                     attempts = 0
@@ -291,7 +292,7 @@ class RoboflowInferenceModel(Model):
                             success = True
                         except Exception as e:
                             attempts += 1
-                            print(
+                            logger.error(
                                 f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f} | Weights File = {self.weights_file}",
                                 traceback.format_exc(),
                             )
@@ -618,7 +619,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                             success = True
                         except Exception as e:
                             attempts += 1
-                            print(
+                            logger.error(
                                 f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f}",
                                 traceback.format_exc(),
                             )

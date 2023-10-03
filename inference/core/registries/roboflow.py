@@ -5,6 +5,7 @@ import requests
 
 from inference.core.env import API_BASE_URL, MODEL_CACHE_DIR
 from inference.core.exceptions import DatasetLoadError, WorkspaceLoadError
+from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
 from inference.core.utils.url_utils import ApiUrl
@@ -78,7 +79,7 @@ def get_model_type(model_id: str, api_key: str) -> str:
     try:
         api_key_info.raise_for_status()
     except requests.exceptions.HTTPError as e:
-        print(e)
+        logger.error(e)
         raise WorkspaceLoadError("Could not load workspace, check your API key")
 
     workspace_id = api_key_info.json().get("workspace")
@@ -108,7 +109,7 @@ def get_model_type(model_id: str, api_key: str) -> str:
         dataset_info.raise_for_status()
         version_info.raise_for_status()
     except requests.exceptions.HTTPError as e:
-        print(e)
+        logger.error(e)
         raise DatasetLoadError(
             f"Could not load dataset with ID {dataset_id} and workspace ID {workspace_id} for version ID {version_id}, check your API key"
         )

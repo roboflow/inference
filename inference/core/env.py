@@ -114,6 +114,9 @@ CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
+# Flag to disable inference cache, default is False
+DISABLE_INFERENCE_CACHE = bool_env(os.getenv("DISABLE_INFERENCE_CACHE", False))
+
 # Flag to disable auto-orientation preprocessing, default is False
 DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
 
