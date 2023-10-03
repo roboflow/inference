@@ -34,8 +34,10 @@ class HTTPCallErrorError(HTTPClientError):
         return (f"{self.__class__.__name__}("
                 f"description='{self.description}', "
                 f"api_message='{self.api_message}',"
-                f"status_code='{self.__status_code}')")
+                f"status_code={self.__status_code})")
 
+    def __str__(self) -> str:
+        return self.__repr__()
 
 class InvalidInputFormatError(HTTPClientError):
     pass

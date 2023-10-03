@@ -30,7 +30,7 @@ def load_static_inference_input(
 
 
 def load_image_from_uri(uri: str) -> str:
-    if "http://" in uri or "https://":
+    if "http://" in uri or "https://" in uri:
         return load_file_from_url(url=uri)
     local_image = cv2.imread(uri)
     return encode_numpy_array(array=local_image, as_jpeg=True)

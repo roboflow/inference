@@ -73,7 +73,7 @@ class InferenceConfiguration:
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         parameters_specs = [
-            ("disable_preproc_auto_orient", "disable_preproc_auto_orient"),
+            ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),
@@ -105,7 +105,7 @@ class InferenceConfiguration:
 
     def to_classification_parameters(self) -> Dict[str, Any]:
         parameters_specs = [
-            ("disable_preproc_auto_orient", "disable_preproc_auto_orient"),
+            ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),
@@ -130,7 +130,7 @@ class InferenceConfiguration:
             ("stroke_width", "stroke"),
             ("count_inference", "countinference"),
             ("service_secret", "service_secret"),
-            ("disable_preproc_auto_orient", "disable_preproc_auto_orient"),
+            ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),

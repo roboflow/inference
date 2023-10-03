@@ -66,12 +66,9 @@ class InferenceHTTPClient:
         self.__client_mode = HTTPClientMode.NEW
         return self
 
-    def set_model_type(self, model_type: ModelType) -> "InferenceHTTPClient":
-        self.__model_type = model_type
-        return self
-
-    def use_model(self, model_id: str) -> "InferenceHTTPClient":
+    def use_model(self, model_id: str, model_type: ModelType) -> "InferenceHTTPClient":
         self.__selected_model = model_id
+        self.__model_type = model_type
         return self
 
     @wrap_errors
@@ -93,7 +90,7 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
-    def load_model(self, model_id: str, model_type: str, set_as_default: bool = True) -> RegisteredModels:
+    def load_model(self, model_id: str, model_type: str, set_as_default: bool = False) -> RegisteredModels:
         # model_type parameter was ignored, as it is not used in API
         response = requests.post(
             f"{self.__api_url}/model/add",
@@ -185,12 +182,14 @@ class InferenceHTTPClient:
         params = {
             "api_key": self.__api_key,
         }
+        params.update(self.__inference_configuration.to_legacy_call_parameters())
         results = []
         for element in encoded_inference_inputs:
             response = requests.post(
                 f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
                 headers=DEFAULT_HEADERS,
-                params=params, data=element
+                params=params,
+                data=element,
             )
             response.raise_for_status()
             results.append(response.json())
