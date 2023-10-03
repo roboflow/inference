@@ -20,11 +20,11 @@ DEFAUlT_MAX_DETECTIONS = 300
 DEFAULT_MAX_CANDIDATES = 3000
 
 
-class ObjectDetectionBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel
-):
+class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
+
     task_type = "object-detection"
+
     def infer(
         self,
         image: Any,
@@ -143,7 +143,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         max_candidates: int = DEFAULT_MAX_CANDIDATES,
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
-        **kwargs
+        **kwargs,
     ) -> List[List[List[float]]]:
         """Postprocesses the object detection predictions.
 
@@ -194,7 +194,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
         fix_batch_size: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         """Preprocesses an object detection inference request.
 

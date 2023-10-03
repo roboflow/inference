@@ -34,14 +34,13 @@ DEFAULT_TRADEOFF_FACTOR = 0.5
 PREDICTIONS_TYPE = List[List[List[float]]]
 
 
-class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel
-):
+class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Instance Segmentation model.
 
     This class implements an instance segmentation specific inference method
     for ONNX models provided by Roboflow.
     """
+
     task_type = "instance-segmentation"
 
     def infer(

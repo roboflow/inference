@@ -4,9 +4,7 @@ from inference.core.models.classification_base import (
 )
 
 
-class VitClassification(
-    ClassificationBaseOnnxRoboflowInferenceModel
-):
+class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
     """VitClassification handles classification inference
     for Vision Transformer (ViT) models using ONNX.
 

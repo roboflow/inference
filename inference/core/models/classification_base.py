@@ -18,9 +18,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 
 
-class ClassificationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel
-):
+class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Base class for ONNX models for Roboflow classification inference.
 
     Attributes:
@@ -34,6 +32,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
     """
 
     task_type = "classification"
+
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
         super().__init__(*args, **kwargs)
