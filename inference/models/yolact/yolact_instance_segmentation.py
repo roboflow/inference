@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, List, Union
+from typing import Any, List, Union, Tuple
 
 import cv2
 import numpy as np
@@ -19,10 +19,12 @@ from inference.core.utils.postprocess import (
     scale_boxes,
     scale_polys,
 )
+from inference.core.models.types import PreprocessReturnMetadata
 
 
 class YOLACT(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method)"""
+
     task_type = "instance-segmentation"
 
     @property
@@ -76,8 +78,20 @@ class YOLACT(OnnxRoboflowInferenceModel):
               where each inner list corresponds to the detections for a specific image.
             - The function internally uses an ONNX model for inference.
         """
-        t1 = perf_counter()
+        return super().infer(
+            image,
+            class_agnostic_nms=class_agnostic_nms,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_candidates=max_candidates,
+            max_detections=max_detections,
+            return_image_dims=return_image_dims,
+            **kwargs,
+        )
 
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         if isinstance(image, list):
             imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
@@ -99,8 +113,24 @@ class YOLACT(OnnxRoboflowInferenceModel):
         img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
         img_in[:, 2, :, :] = (img_in[:, 2, :, :] - mean[0]) / std[0]
 
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        return img_in, PreprocessReturnMetadata(
+            {
+                "img_dims": img_dims,
+                "im_shape": img_in.shape,
+            }
+        )
 
+    def predict(
+        self, img_in: np.ndarray, **kwargs
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        return self.onnx_session.run(None, {self.input_name: img_in})
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> Any:
         loc_data = np.float32(predictions[0])
         conf_data = np.float32(predictions[1])
         mask_data = np.float32(predictions[2])
@@ -126,37 +156,40 @@ class YOLACT(OnnxRoboflowInferenceModel):
 
         predictions = np.concatenate((boxes, box_confs, class_confs, mask_data), axis=2)
 
-        predictions[:, :, 0] *= img_in.shape[2]
-        predictions[:, :, 1] *= img_in.shape[3]
-        predictions[:, :, 2] *= img_in.shape[2]
-        predictions[:, :, 3] *= img_in.shape[3]
+        img_in_shape = preprocess_return_metadata["im_shape"]
+        predictions[:, :, 0] *= img_in_shape[2]
+        predictions[:, :, 1] *= img_in_shape[3]
+        predictions[:, :, 2] *= img_in_shape[2]
+        predictions[:, :, 3] *= img_in_shape[3]
 
         predictions = w_np_non_max_suppression(
             predictions,
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            class_agnostic=class_agnostic_nms,
-            max_detections=max_detections,
-            max_candidate_detections=max_candidates,
+            conf_thresh=kwargs["confidence"],
+            iou_thresh=kwargs["iou_threshold"],
+            class_agnostic=kwargs["class_agnostic_nms"],
+            max_detections=kwargs["max_detections"],
+            max_candidate_detections=kwargs["max_candidates"],
             num_masks=32,
             box_format="xyxy",
         )
         predictions = np.array(predictions)
         batch_preds = []
-        for batch_idx, img_dim in zip(range(batch_size), img_dims):
+        for batch_idx, img_dim in zip(
+            range(batch_size), preprocess_return_metadata["img_dims"]
+        ):
             boxes = predictions[batch_idx, :, :4]
             scores = predictions[batch_idx, :, 4]
             classes = predictions[batch_idx, :, 6]
             masks = predictions[batch_idx, :, 7:]
             proto = proto_data[batch_idx]
-            decoded_masks = self.decode_masks(boxes, masks, proto, img_in.shape[2:])
+            decoded_masks = self.decode_masks(boxes, masks, proto, img_in_shape[2:])
             polys = mask2poly(decoded_masks)
             infer_shape = (self.img_size_w, self.img_size_h)
             boxes = postprocess_predictions(
                 [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
             )[0]
             polys = scale_polys(
-                img_in.shape[2:],
+                img_in_shape[2:],
                 polys,
                 img_dim,
                 self.preproc,
@@ -182,8 +215,8 @@ class YOLACT(OnnxRoboflowInferenceModel):
                 preds.append(pred)
             batch_preds.append(preds)
 
-        if return_image_dims:
-            return batch_preds, img_dims
+        if kwargs["return_image_dims"]:
+            return batch_preds, preprocess_return_metadata["img_dims"]
         else:
             return batch_preds
 

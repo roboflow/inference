@@ -36,4 +36,4 @@ class YOLOv5ObjectDetection(
             np.ndarray: NumPy array representing the predictions.
         """
         predictions = self.onnx_session.run(None, {self.input_name: img_in})[0]
-        return predictions
+        return (predictions,)

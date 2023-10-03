@@ -275,4 +275,4 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         Raises:
             NotImplementedError: This method must be implemented by a subclass.
         """
-        raise NotImplementedError("infer_onnx must be implemented by a subclass")
+        raise NotImplementedError("predict must be implemented by a subclass")
