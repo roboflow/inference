@@ -26,8 +26,8 @@ from inference.core.env import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
-from version import __version__
 from inference.models.utils import get_roboflow_model
+from version import __version__
 
 
 class UdpStream(BaseInterface):
