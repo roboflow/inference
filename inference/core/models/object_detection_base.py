@@ -52,6 +52,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             fix_batch_size (bool, optional): If True, fix the batch size for predictions. Useful when the model requires a fixed batch size. Defaults to False.
             max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
             max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
+            return_image_dims (bool, optional): Whether to return the dimensions of the processed images along with the predictions. Defaults to False.
             disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
             disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
@@ -70,7 +71,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
-        predictions = super().infer(
+        return super().infer(
             image,
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
@@ -85,7 +86,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             return_image_dims=return_image_dims,
             **kwargs,
         )
-        return predictions
 
     def make_response(
         self,

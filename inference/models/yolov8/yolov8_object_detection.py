@@ -29,14 +29,14 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """
         return "weights.onnx"
 
-    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
             img_in (np.ndarray): Input image as a NumPy array.
 
         Returns:
-            np.ndarray: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
+            Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
         predictions = self.onnx_session.run(None, {self.input_name: img_in})[0]
         predictions = predictions.transpose(0, 2, 1)

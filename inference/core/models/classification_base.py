@@ -161,7 +161,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray, ...],
+        predictions: Tuple[np.ndarray],
         preprocess_return_metadata: PreprocessReturnMetadata,
         return_image_dims=False,
         **kwargs,

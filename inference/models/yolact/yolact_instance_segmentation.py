@@ -127,7 +127,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray, ...],
+        predictions: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:
@@ -174,9 +174,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
         predictions = np.array(predictions)
         batch_preds = []
         if predictions.shape != (1, 0):
-            for batch_idx, img_dim in zip(
-                range(batch_size), preprocess_return_metadata["img_dims"]
-            ):
+            for batch_idx, img_dim in enumerate(preprocess_return_metadata["img_dims"]):
                 boxes = predictions[batch_idx, :, :4]
                 scores = predictions[batch_idx, :, 4]
                 classes = predictions[batch_idx, :, 6]
@@ -196,9 +194,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
                     resize_method=self.resize_method,
                 )
                 preds = []
-                for i, (box, poly, score, cls) in enumerate(
-                    zip(boxes, polys, scores, classes)
-                ):
+                for box, poly, score, cls in zip(boxes, polys, scores, classes):
                     confidence = float(score)
                     class_name = self.class_names[int(cls)]
                     points = [{"x": round(x, 1), "y": round(y, 1)} for (x, y) in poly]

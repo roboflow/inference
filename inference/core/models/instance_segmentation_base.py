@@ -108,7 +108,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray, ...],
+        predictions: Tuple[np.ndarray, np.ndarray],
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:

@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Tuple
 
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
@@ -24,14 +25,14 @@ class YOLOv5ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """
         return "yolov5s_weights.onnx"
 
-    def predict(self, img_in: np.ndarray, **kwargs) -> np.ndarray:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
             img_in (np.ndarray): Input image as a NumPy array.
 
         Returns:
-            np.ndarray: NumPy array representing the predictions.
+            Tuple[np.ndarray]: NumPy array representing the predictions.
         """
         predictions = self.onnx_session.run(None, {self.input_name: img_in})[0]
         return (predictions,)
