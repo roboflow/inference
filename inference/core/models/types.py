@@ -1,3 +1,3 @@
-from typing import NewType, Dict
+from typing import Dict, NewType
 
 PreprocessReturnMetadata = NewType("PreprocessReturnMetadata", Dict)

@@ -1,7 +1,6 @@
-from typing import Any, List, Optional, Tuple, Union, Dict
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from inference.core.models.types import PreprocessReturnMetadata
 
 from inference.core.data_models import (
     InferenceResponseImage,
@@ -10,6 +9,7 @@ from inference.core.data_models import (
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import postprocess_predictions
 

@@ -22,7 +22,6 @@ from inference.core.utils.postprocess import (
     scale_polys,
 )
 
-
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
 DEFAULT_CLASS_AGNOSTIC_NMS = False

@@ -1,9 +1,9 @@
-from typing import Any, List, Union, TYPE_CHECKING, Tuple, Dict
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
+
+import numpy as np
 
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
-
-import numpy as np
 
 
 class InferenceMixin:

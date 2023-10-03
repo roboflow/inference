@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, List, Union, Tuple
+from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -11,6 +11,7 @@ from inference.core.data_models import (
     InstanceSegmentationPrediction,
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     crop_mask,
@@ -19,7 +20,6 @@ from inference.core.utils.postprocess import (
     scale_boxes,
     scale_polys,
 )
-from inference.core.models.types import PreprocessReturnMetadata
 
 
 class YOLACT(OnnxRoboflowInferenceModel):
