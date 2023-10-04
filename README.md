@@ -226,6 +226,30 @@ To standardize the inference process throughout all our models, Roboflow Inferen
 
 <img width="900" alt="inference structure" src="https://github.com/stellasphere/inference/assets/29011058/abf69717-f852-4655-9e6e-dae19fc263dc">
 
+## ✅ Supported Models
+
+### Load from Roboflow
+
+You can use models hosted on Roboflow with the following architectures through Inference:
+
+- YOLOv5 Object Detection
+- YOLOv5 Instance Segmentation
+- YOLOv8 Object Detection
+- YOLOv8 Classification
+- YOLOv8 Segmentation
+- YOLACT Segmentation
+- ViT Classification
+
+### Core Models
+
+Core Models are foundation models and models that have not been fine-tuned on a specific dataset.
+
+The following core models are supported:
+
+1. CLIP
+2. L2CS (Gaze Detection)
+3. Segment Anything (SAM)
+
 ## 📝 license
 
 The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.md). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
