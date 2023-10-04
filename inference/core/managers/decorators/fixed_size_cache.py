@@ -3,8 +3,8 @@ from typing import List
 
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
-from inference.core.managers.entities import ModelDescription
 from inference.core.managers.decorators.base import ModelManagerDecorator
+from inference.core.managers.entities import ModelDescription
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
