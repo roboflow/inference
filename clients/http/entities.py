@@ -7,11 +7,17 @@ from PIL import Image
 
 from dataclasses_json import DataClassJsonMixin
 
+from clients.http.errors import ModelTaskTypeNotSupportedError
 from clients.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
+
+TaskType = str
+CLASSIFICATION_TASK = "classification"
+OBJECT_DETECTION_TASK = "object-detection"
+INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 
 
 @dataclass(frozen=True)
@@ -24,7 +30,7 @@ class ServerInfo(DataClassJsonMixin):
 @dataclass(frozen=True)
 class ModelDescription(DataClassJsonMixin):
     model_id: str
-    task_type: str
+    task_type: TaskType
     batch_size: Optional[int] = None
     input_height: Optional[int] = None
     input_width: Optional[int] = None
@@ -32,18 +38,12 @@ class ModelDescription(DataClassJsonMixin):
 
 @dataclass(frozen=True)
 class RegisteredModels(DataClassJsonMixin):
-    models: List[str]
+    models: List[ModelDescription]
 
 
 class HTTPClientMode(Enum):
-    LEGACY = "legacy"
-    NEW = "new"
-
-
-class ModelType(Enum):
-    CLASSIFICATION = "classification"
-    OBJECT_DETECTION = "object_detection"
-    INSTANCE_SEGMENTATION = "instance_segmentation"
+    V0 = "v0"
+    V1 = "v1"
 
 
 class VisualisationResponseFormat:
@@ -73,7 +73,7 @@ class InferenceConfiguration:
     class_agnostic_nms: Optional[bool] = None
     class_filter: Optional[List[str]] = None
     fix_batch_size: Optional[bool] = None
-    visualize_predictions: Optional[bool] = None
+    visualize_predictions: bool = False
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
         VisualisationResponseFormat.BASE64
@@ -87,15 +87,19 @@ class InferenceConfiguration:
         return cls()
 
     def to_api_call_parameters(
-            self, client_mode: HTTPClientMode, model_type: ModelType
+        self, client_mode: HTTPClientMode, task_type: TaskType
     ) -> Dict[str, Any]:
-        if client_mode is HTTPClientMode.LEGACY:
+        if client_mode is HTTPClientMode.V0:
             return self.to_legacy_call_parameters()
-        if model_type is ModelType.OBJECT_DETECTION:
+        if task_type == OBJECT_DETECTION_TASK:
             return self.to_object_detection_parameters()
-        if model_type is ModelType.INSTANCE_SEGMENTATION:
+        if task_type == INSTANCE_SEGMENTATION_TASK:
             return self.to_instance_segmentation_parameters()
-        return self.to_classification_parameters()
+        if task_type == CLASSIFICATION_TASK:
+            return self.to_classification_parameters()
+        raise ModelTaskTypeNotSupportedError(
+            f"Model task {task_type} is not supported by API v1 client."
+        )
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         parameters_specs = [

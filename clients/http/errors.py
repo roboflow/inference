@@ -47,3 +47,11 @@ class InvalidInputFormatError(HTTPClientError):
 
 class InvalidModelIdentifier(HTTPClientError):
     pass
+
+
+class ModelNotInitializedError(HTTPClientError):
+    pass
+
+
+class ModelTaskTypeNotSupportedError(HTTPClientError):
+    pass
