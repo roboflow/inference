@@ -6,9 +6,9 @@ from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_KEY, METRICS_INTERVAL, METRICS_URL, TAGS
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
+from inference.core.version import __version__
 from inference.enterprise.device_manager.container_service import container_service
 from inference.enterprise.device_manager.helpers import get_cache_model_items
-from version import __version__
 
 
 def aggregate_model_stats(container_id):

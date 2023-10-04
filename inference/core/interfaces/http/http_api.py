@@ -49,7 +49,7 @@ if METLO_KEY:
     from metlo.fastapi import ASGIMiddleware
 
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from version import __version__
+from inference.core.version import __version__
 
 
 def with_route_exceptions(route):

@@ -5,7 +5,7 @@ import requests
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 from inference.core.logger import logger
-from version import __version__
+from inference.core.version import __version__
 
 latest_release = None
 last_checked = 0

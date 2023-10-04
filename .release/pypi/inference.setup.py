@@ -5,7 +5,7 @@ import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-from version import __version__
+from inference.core.version import __version__
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
