@@ -9,6 +9,8 @@ from clients.http.entities import ServerInfo, RegisteredModels, InferenceConfigu
     ImagesReference
 from clients.http.errors import HTTPClientError, HTTPCallErrorError, InvalidModelIdentifier
 from clients.http.utils.loaders import load_static_inference_input
+from clients.http.utils.post_processing import response_contains_jpeg_image, transform_visualisation_bytes, \
+    transform_base64_visualisation
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -194,7 +196,14 @@ class InferenceHTTPClient:
                 data=element,
             )
             response.raise_for_status()
-            results.append(response.json())
+            if response_contains_jpeg_image(response=response):
+                visualisation = transform_visualisation_bytes(
+                    visualisation=response.content,
+                    expected_format=self.__inference_configuration.output_visualisation_format,
+                )
+                results.append({"visualization": visualisation})
+            else:
+                results.append(response.json())
         return unwrap_single_element_list(sequence=results)
 
     def infer_from_new_api(
@@ -206,10 +215,6 @@ class InferenceHTTPClient:
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
-        image = [
-            {"type": "base64", "value": encoded_inference_input}
-            for encoded_inference_input in encoded_inference_inputs
-        ]
         payload = {
             "api_key": self.__api_key,
             "model_id": model_id or self.__selected_model,
@@ -222,13 +227,19 @@ class InferenceHTTPClient:
         ))
         results = []
         for element in encoded_inference_inputs:
-            payload["image"] = element
+            payload["image"] = {"type": "base64", "value": element}
             response = requests.post(
                 f"{self.__api_url}{endpoint}",
                 json=payload,
                 headers=DEFAULT_HEADERS,
             )
             response.raise_for_status()
+            parsed_response = response.json()
+            if "visualization" in parsed_response:
+                parsed_response["visualization"] = transform_base64_visualisation(
+                    visualisation=parsed_response["visualization"],
+                    expected_format=self.__inference_configuration.output_visualisation_format,
+                )
             results.append(response.json())
         return unwrap_single_element_list(sequence=results)
 

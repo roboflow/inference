@@ -3,13 +3,13 @@ from enum import Enum
 from typing import List, Optional, Union, Dict, Any, Tuple
 
 import numpy as np
-from PIL.Image import Image
+from PIL import Image
 
 from dataclasses_json import DataClassJsonMixin
 
 from clients.http.utils.iterables import remove_empty_values
 
-ImagesReference = Union[np.ndarray, Image, str]
+ImagesReference = Union[np.ndarray, Image.Image, str]
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,12 @@ class ModelType(Enum):
     CLASSIFICATION = "classification"
     OBJECT_DETECTION = "object_detection"
     INSTANCE_SEGMENTATION = "instance_segmentation"
+
+
+class VisualisationResponseFormat:
+    BASE64 = "base64"
+    NUMPY = "numpy"
+    PILLOW = "pillow"
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,7 @@ class InferenceConfiguration:
     fix_batch_size: Optional[bool] = None
     visualize_predictions: Optional[bool] = None
     visualize_labels: Optional[bool] = None
+    output_visualisation_format: VisualisationResponseFormat = VisualisationResponseFormat.BASE64
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

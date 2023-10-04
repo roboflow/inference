@@ -5,7 +5,7 @@ from typing import Union
 
 import cv2
 import numpy as np
-from PIL.Image import Image
+from PIL import Image
 
 
 def encode_numpy_array(
@@ -19,7 +19,7 @@ def encode_numpy_array(
     return pickle.dumps(array)
 
 
-def encode_pillow_image(image: Image) -> str:
+def encode_pillow_image(image: Image.Image) -> str:
     with BytesIO() as buffer:
         image.save(buffer, format="JPEG")
         return encode_base_64(payload=buffer.getvalue())
@@ -27,3 +27,13 @@ def encode_pillow_image(image: Image) -> str:
 
 def encode_base_64(payload: bytes) -> str:
     return base64.b64encode(payload).decode("utf-8")
+
+
+def bytes_to_np_array(payload: bytes, array_type: np.number = np.uint8) -> np.ndarray:
+    bytes_array = np.frombuffer(payload, dtype=array_type)
+    return cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+
+
+def bytes_to_pillow_image(payload: bytes) -> Image.Image:
+    buffer = BytesIO(payload)
+    return Image.open(buffer)

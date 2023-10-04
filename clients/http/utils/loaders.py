@@ -3,7 +3,7 @@ from typing import Union, List
 import cv2
 import numpy as np
 import requests
-from PIL.Image import Image
+from PIL import Image
 
 from clients.http.entities import ImagesReference
 from clients.http.errors import InvalidInputFormatError
@@ -22,7 +22,7 @@ def load_static_inference_input(
         return [load_image_from_uri(uri=inference_input)]
     if issubclass(type(inference_input), np.ndarray):
         return [encode_numpy_array(array=inference_input)]
-    if issubclass(type(inference_input), Image):
+    if issubclass(type(inference_input), Image.Image):
         return [encode_pillow_image(image=inference_input)]
     raise InvalidInputFormatError(
         f"Unknown type of input ({inference_input.__class__.__name__}) submitted."
