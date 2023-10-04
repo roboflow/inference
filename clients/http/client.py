@@ -22,6 +22,7 @@ from clients.http.errors import (
     InvalidModelIdentifier,
     ModelNotInitializedError,
     ModelTaskTypeNotSupportedError,
+    ModelNotSelectedError,
 )
 from clients.http.utils.loaders import (
     load_static_inference_input,
@@ -31,6 +32,7 @@ from clients.http.utils.post_processing import (
     response_contains_jpeg_image,
     transform_visualisation_bytes,
     transform_base64_visualisation,
+    adjust_prediction_to_client_scaling_factor,
 )
 
 SUCCESSFUL_STATUS_CODE = 200
@@ -79,6 +81,15 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+
+    @contextmanager
+    def use_configuration(
+        self, inference_configuration: InferenceConfiguration
+    ) -> Generator["InferenceHTTPClient", None, None]:
+        previous_configuration = self.__inference_configuration
+        self.__inference_configuration = inference_configuration
+        yield self
+        self.__inference_configuration = previous_configuration
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -164,6 +175,7 @@ class InferenceHTTPClient:
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
         model_description = self.get_model_description(model_id=model_id_to_be_used)
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
@@ -199,9 +211,16 @@ class InferenceHTTPClient:
                     visualisation=response.content,
                     expected_format=self.__inference_configuration.output_visualisation_format,
                 )
-                results.append({"visualization": visualisation})
+                parsed_response = {"visualization": visualisation}
             else:
+                parsed_response = response.json()
                 results.append(response.json())
+            parsed_response = adjust_prediction_to_client_scaling_factor(
+                prediction=parsed_response,
+                task_type=model_description.task_type,
+                scaling_factor=scaling_factor,
+            )
+            results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
     def infer_from_api_v1(
@@ -210,6 +229,7 @@ class InferenceHTTPClient:
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
         model_description = self.get_model_description(model_id=model_id_to_be_used)
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
@@ -252,6 +272,11 @@ class InferenceHTTPClient:
                     visualisation=parsed_response["visualization"],
                     expected_format=self.__inference_configuration.output_visualisation_format,
                 )
+            parsed_response = adjust_prediction_to_client_scaling_factor(
+                prediction=parsed_response,
+                task_type=model_description.task_type,
+                scaling_factor=scaling_factor,
+            )
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
@@ -344,3 +369,8 @@ def _determine_client_mode(api_url: str) -> HTTPClientMode:
     if "roboflow.com" in api_url:
         return HTTPClientMode.V0
     return HTTPClientMode.V1
+
+
+def _ensure_model_is_selected(model_id: Optional[str]) -> None:
+    if model_id is None:
+        raise ModelNotSelectedError("No model was selected to be used.")

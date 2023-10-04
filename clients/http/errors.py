@@ -55,3 +55,7 @@ class ModelNotInitializedError(HTTPClientError):
 
 class ModelTaskTypeNotSupportedError(HTTPClientError):
     pass
+
+
+class ModelNotSelectedError(HTTPClientError):
+    pass

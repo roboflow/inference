@@ -43,8 +43,8 @@ def resize_pillow_image(
     )
     if scaling_ratio is None:
         return image, None
-    new_width = int(round(scaling_ratio * width, 0))
-    new_height = int(round(scaling_ratio * height, 0))
+    new_width = round(scaling_ratio * width)
+    new_height = round(scaling_ratio * height)
     return image.resize(size=(new_width, new_height)), scaling_ratio
 
 

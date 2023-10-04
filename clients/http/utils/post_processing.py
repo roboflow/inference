@@ -1,11 +1,15 @@
 import base64
-from typing import Union
+from typing import Union, Optional, List
 
 import numpy as np
 from PIL import Image
 from requests import Response
 
-from clients.http.entities import VisualisationResponseFormat
+from clients.http.entities import (
+    VisualisationResponseFormat,
+    TaskType,
+    OBJECT_DETECTION_TASK,
+)
 from clients.http.utils.encoding import (
     encode_base_64,
     bytes_to_opencv_image,
@@ -51,3 +55,87 @@ def transform_visualisation_bytes(
         )
     transcoding_method = IMAGES_TRANSCODING_METHODS[expected_format]
     return transcoding_method(visualisation)
+
+
+def adjust_prediction_to_client_scaling_factor(
+    prediction: dict,
+    task_type: TaskType,
+    scaling_factor: Optional[float],
+) -> dict:
+    if scaling_factor is None:
+        return prediction
+    if "image" in prediction:
+        prediction["image"] = {
+            "width": round(prediction["image"]["width"] / scaling_factor),
+            "height": round(prediction["image"]["height"] / scaling_factor),
+        }
+    if "predictions" in prediction and task_type == OBJECT_DETECTION_TASK:
+        prediction[
+            "predictions"
+        ] = adjust_object_detection_predictions_to_client_scaling_factor(
+            predictions=prediction["predictions"],
+            scaling_factor=scaling_factor,
+        )
+    if "predictions" in prediction and task_type == OBJECT_DETECTION_TASK:
+        prediction[
+            "predictions"
+        ] = adjust_object_detection_predictions_to_client_scaling_factor(
+            predictions=prediction["predictions"],
+            scaling_factor=scaling_factor,
+        )
+    return prediction
+
+
+def adjust_object_detection_predictions_to_client_scaling_factor(
+    predictions: List[dict],
+    scaling_factor: float,
+) -> List[dict]:
+    result = []
+    for prediction in predictions:
+        prediction = adjust_bbox_coordinates_to_client_scaling_factor(
+            bbox=prediction,
+            scaling_factor=scaling_factor,
+        )
+        result.append(prediction)
+    return result
+
+
+def adjust_instance_segmentation_predictions_to_client_scaling_factor(
+    predictions: List[dict],
+    scaling_factor: float,
+) -> List[dict]:
+    result = []
+    for prediction in predictions:
+        prediction = adjust_bbox_coordinates_to_client_scaling_factor(
+            bbox=prediction,
+            scaling_factor=scaling_factor,
+        )
+        prediction["points"] = adjust_segmentation_polygon_to_client_scaling_factor(
+            points=prediction["points"],
+            scaling_factor=scaling_factor,
+        )
+        result.append(prediction)
+    return result
+
+
+def adjust_bbox_coordinates_to_client_scaling_factor(
+    bbox: dict,
+    scaling_factor: float,
+) -> dict:
+    bbox["x"] = bbox["x"] / scaling_factor
+    bbox["y"] = bbox["y"] / scaling_factor
+    bbox["width"] = bbox["width"] / scaling_factor
+    bbox["height"] = bbox["height"] / scaling_factor
+    return bbox
+
+
+def adjust_segmentation_polygon_to_client_scaling_factor(
+    points: List[dict],
+    scaling_factor: float,
+) -> List[dict]:
+    result = []
+    for point in points:
+        point["x"] = point["x"] / scaling_factor
+        point["y"] = point["y"] / scaling_factor
+        result.append(point)
+    return result
