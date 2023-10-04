@@ -10,6 +10,7 @@ from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
 
@@ -236,3 +237,14 @@ class ModelManager:
             List[str]: The keys of the models in the manager.
         """
         return self._models.keys()
+
+    def describe_models(self) -> List[ModelDescription]:
+        return [
+            ModelDescription(
+                model_id=model_id,
+                task_type=model.task_type,
+                batch_size=getattr(model, "batch_size", None),
+                input_width=getattr(model, "img_size_w", None),
+                input_height=getattr(model, "img_size_h", None),
+            ) for model_id, model in self._models.items()
+        ]

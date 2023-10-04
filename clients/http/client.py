@@ -68,11 +68,12 @@ class InferenceHTTPClient:
         self,
         api_url: str,
         api_key: str,
+        client_mode: HTTPClientMode = HTTPClientMode.NEW,
     ):
         self.__api_url = api_url
         self.__api_key = api_key
         self.__inference_configuration = InferenceConfiguration.init_default()
-        self.__client_mode = HTTPClientMode.NEW
+        self.__client_mode = client_mode
         self.__model_type = ModelType.OBJECT_DETECTION
         self.__selected_model: Optional[str] = None
 
@@ -263,7 +264,7 @@ class InferenceHTTPClient:
             )
             response.raise_for_status()
             parsed_response = response.json()
-            if "visualization" in parsed_response:
+            if parsed_response.get("visualization") is not None:
                 parsed_response["visualization"] = transform_base64_visualisation(
                     visualisation=parsed_response["visualization"],
                     expected_format=self.__inference_configuration.output_visualisation_format,
