@@ -2,12 +2,9 @@ from inference.core.env import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 from inference.core.models.classification_base import (
     ClassificationBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.models.mixins import ClassificationMixin
 
 
-class VitClassification(
-    ClassificationBaseOnnxRoboflowInferenceModel, ClassificationMixin
-):
+class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
     """VitClassification handles classification inference
     for Vision Transformer (ViT) models using ONNX.
 

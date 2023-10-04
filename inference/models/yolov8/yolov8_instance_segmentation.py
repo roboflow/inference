@@ -17,7 +17,7 @@ class YOLOv8InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         weights_file (str): Path to the ONNX weights file.
 
     Methods:
-        infer_onnx: Performs inference on the given image using the ONNX session.
+        predict: Performs inference on the given image using the ONNX session.
     """
 
     @property
@@ -29,7 +29,7 @@ class YOLOv8InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         """
         return "weights.onnx"
 
-    def infer_onnx(self, img_in: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """Performs inference on the given image using the ONNX session.
 
         Args:

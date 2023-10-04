@@ -1,14 +1,13 @@
+from typing import Tuple
+
 import numpy as np
 
-from inference.core.models.mixins import ObjectDetectionMixin
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 
 
-class YOLOv8ObjectDetection(
-    ObjectDetectionBaseOnnxRoboflowInferenceModel, ObjectDetectionMixin
-):
+class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
 
     This class is responsible for performing object detection using the YOLOv8 model
@@ -30,14 +29,14 @@ class YOLOv8ObjectDetection(
         """
         return "weights.onnx"
 
-    def predict(self, img_in: np.ndarray) -> np.ndarray:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
             img_in (np.ndarray): Input image as a NumPy array.
 
         Returns:
-            np.ndarray: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
+            Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
         predictions = self.onnx_session.run(None, {self.input_name: img_in})[0]
         predictions = predictions.transpose(0, 2, 1)
@@ -45,4 +44,4 @@ class YOLOv8ObjectDetection(
         class_confs = predictions[:, :, 4:]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
         predictions = np.concatenate([boxes, confs, class_confs], axis=2)
-        return predictions
+        return (predictions,)
