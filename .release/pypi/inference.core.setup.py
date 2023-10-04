@@ -28,7 +28,13 @@ setuptools.setup(
     packages=find_packages(
         where=root,
         exclude=("docker", "docs", "requirements", "test", "cli"),
-    ),
+    )
+    + ["cli.inference_cli"],
+    entry_points={
+        "console_scripts": [
+            "inference=inference_cli.main:app",
+        ],
+    },
     install_requires=read_requirements("requirements/_requirements.txt"),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
