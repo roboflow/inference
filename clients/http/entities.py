@@ -22,8 +22,17 @@ class ServerInfo(DataClassJsonMixin):
 
 
 @dataclass(frozen=True)
+class ModelDescription(DataClassJsonMixin):
+    model_id: str
+    task_type: str
+    batch_size: Optional[int] = None
+    input_height: Optional[int] = None
+    input_width: Optional[int] = None
+
+
+@dataclass(frozen=True)
 class RegisteredModels(DataClassJsonMixin):
-    model_ids: List[str]
+    models: List[str]
 
 
 class HTTPClientMode(Enum):
@@ -78,7 +87,7 @@ class InferenceConfiguration:
         return cls()
 
     def to_api_call_parameters(
-        self, client_mode: HTTPClientMode, model_type: ModelType
+            self, client_mode: HTTPClientMode, model_type: ModelType
     ) -> Dict[str, Any]:
         if client_mode is HTTPClientMode.LEGACY:
             return self.to_legacy_call_parameters()
@@ -159,7 +168,7 @@ class InferenceConfiguration:
 
 
 def get_non_empty_attributes(
-    source_object: object, specification: List[Tuple[str, str]]
+        source_object: object, specification: List[Tuple[str, str]]
 ) -> Dict[str, Any]:
     attributes = {
         external_name: getattr(source_object, internal_name)
