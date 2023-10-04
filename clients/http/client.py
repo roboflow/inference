@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union, List, Tuple, Generator
+from typing import Any, Optional, Union, List, Tuple, Generator, TypeVar
 
 import numpy as np
 import requests
@@ -19,6 +19,8 @@ NEW_INFERENCE_ENDPOINTS = {
     ModelType.OBJECT_DETECTION: "/infer/object_detection",
     ModelType.CLASSIFICATION: "/infer/classification",
 }
+
+T = TypeVar("T")
 
 
 def wrap_errors(function: callable) -> callable:
@@ -193,7 +195,7 @@ class InferenceHTTPClient:
             )
             response.raise_for_status()
             results.append(response.json())
-        return results
+        return unwrap_single_element_list(sequence=results)
 
     def infer_from_new_api(
         self,
@@ -210,7 +212,6 @@ class InferenceHTTPClient:
         ]
         payload = {
             "api_key": self.__api_key,
-            "image": image,
             "model_id": model_id or self.__selected_model,
         }
         model_type_in_use = model_type or self.__model_type
@@ -219,10 +220,21 @@ class InferenceHTTPClient:
             client_mode=self.__client_mode,
             model_type=model_type_in_use,
         ))
-        response = requests.post(
-            f"{self.__api_url}{endpoint}",
-            json=payload,
-            headers=DEFAULT_HEADERS,
-        )
-        response.raise_for_status()
-        return response.json()
+        results = []
+        for element in encoded_inference_inputs:
+            payload["image"] = element
+            response = requests.post(
+                f"{self.__api_url}{endpoint}",
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            )
+            response.raise_for_status()
+            results.append(response.json())
+        return unwrap_single_element_list(sequence=results)
+
+
+def unwrap_single_element_list(sequence: List[T]) -> Union[T, List[T]]:
+    if len(sequence) == 1:
+        return sequence[0]
+    return sequence
+
