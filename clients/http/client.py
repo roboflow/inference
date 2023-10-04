@@ -9,12 +9,18 @@ from clients.http.entities import (
     RegisteredModels,
     InferenceConfiguration,
     HTTPClientMode,
-    ImagesReference, ModelDescription, CLASSIFICATION_TASK, OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK,
+    ImagesReference,
+    ModelDescription,
+    CLASSIFICATION_TASK,
+    OBJECT_DETECTION_TASK,
+    INSTANCE_SEGMENTATION_TASK,
 )
 from clients.http.errors import (
     HTTPClientError,
     HTTPCallErrorError,
-    InvalidModelIdentifier, ModelNotInitializedError, ModelTaskTypeNotSupportedError,
+    InvalidModelIdentifier,
+    ModelNotInitializedError,
+    ModelTaskTypeNotSupportedError,
 )
 from clients.http.utils.loaders import (
     load_static_inference_input,
@@ -212,15 +218,21 @@ class InferenceHTTPClient:
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
-    def get_model_description(self, model_id: str, allow_loading: bool = True) -> ModelDescription:
+    def get_model_description(
+        self, model_id: str, allow_loading: bool = True
+    ) -> ModelDescription:
         registered_models = self.list_loaded_models()
-        matching_models = [e for e in registered_models.models if e.model_id == model_id]
+        matching_models = [
+            e for e in registered_models.models if e.model_id == model_id
+        ]
         if len(matching_models) > 0:
             return matching_models[0]
         if allow_loading is True:
             self.load_model(model_id=model_id)
             return self.get_model_description(model_id=model_id, allow_loading=False)
-        raise ModelNotInitializedError(f"Model {model_id} is not initialised and cannot retrieve its description.")
+        raise ModelNotInitializedError(
+            f"Model {model_id} is not initialised and cannot retrieve its description."
+        )
 
     @wrap_errors
     def list_loaded_models(self) -> RegisteredModels:

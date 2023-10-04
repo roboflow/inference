@@ -172,7 +172,7 @@ class InferenceConfiguration:
 
 
 def get_non_empty_attributes(
-        source_object: object, specification: List[Tuple[str, str]]
+    source_object: object, specification: List[Tuple[str, str]]
 ) -> Dict[str, Any]:
     attributes = {
         external_name: getattr(source_object, internal_name)
