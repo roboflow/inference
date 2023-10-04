@@ -23,6 +23,7 @@ class ServerInfo(DataClassJsonMixin):
 class RegisteredModels(DataClassJsonMixin):
     model_ids: List[str]
 
+
 class HTTPClientMode(Enum):
     LEGACY = "legacy"
     NEW = "new"
@@ -63,13 +64,17 @@ class InferenceConfiguration:
     fix_batch_size: Optional[bool] = None
     visualize_predictions: Optional[bool] = None
     visualize_labels: Optional[bool] = None
-    output_visualisation_format: VisualisationResponseFormat = VisualisationResponseFormat.BASE64
+    output_visualisation_format: VisualisationResponseFormat = (
+        VisualisationResponseFormat.BASE64
+    )
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
         return cls()
 
-    def to_api_call_parameters(self, client_mode: HTTPClientMode, model_type: ModelType) -> Dict[str, Any]:
+    def to_api_call_parameters(
+        self, client_mode: HTTPClientMode, model_type: ModelType
+    ) -> Dict[str, Any]:
         if client_mode is HTTPClientMode.LEGACY:
             return self.to_legacy_call_parameters()
         if model_type is ModelType.OBJECT_DETECTION:
@@ -149,8 +154,7 @@ class InferenceConfiguration:
 
 
 def get_non_empty_attributes(
-    source_object: object,
-    specification: List[Tuple[str, str]]
+    source_object: object, specification: List[Tuple[str, str]]
 ) -> Dict[str, Any]:
     attributes = {
         external_name: getattr(source_object, internal_name)

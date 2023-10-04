@@ -6,7 +6,11 @@ from PIL import Image
 from requests import Response
 
 from clients.http.entities import VisualisationResponseFormat
-from clients.http.utils.encoding import encode_base_64, bytes_to_np_array, bytes_to_pillow_image
+from clients.http.utils.encoding import (
+    encode_base_64,
+    bytes_to_np_array,
+    bytes_to_pillow_image,
+)
 
 CONTENT_TYPE_HEADERS = ["content-type", "Content-Type"]
 IMAGES_TRANSCODING_METHODS = {
@@ -14,6 +18,7 @@ IMAGES_TRANSCODING_METHODS = {
     VisualisationResponseFormat.NUMPY: bytes_to_np_array,
     VisualisationResponseFormat.PILLOW: bytes_to_pillow_image,
 }
+
 
 def response_contains_jpeg_image(response: Response) -> bool:
     content_type = None
@@ -31,7 +36,9 @@ def transform_base64_visualisation(
     expected_format: VisualisationResponseFormat,
 ) -> Union[str, np.ndarray, Image.Image]:
     visualisation_bytes = base64.b64decode(visualisation)
-    return transform_visualisation_bytes(visualisation=visualisation_bytes, expected_format=expected_format)
+    return transform_visualisation_bytes(
+        visualisation=visualisation_bytes, expected_format=expected_format
+    )
 
 
 def transform_visualisation_bytes(
@@ -44,9 +51,3 @@ def transform_visualisation_bytes(
         )
     transcoding_method = IMAGES_TRANSCODING_METHODS[expected_format]
     return transcoding_method(visualisation)
-
-
-
-
-
-

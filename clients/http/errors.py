@@ -6,7 +6,6 @@ class HTTPClientError(Exception):
 
 
 class HTTPCallErrorError(HTTPClientError):
-
     def __init__(
         self,
         description: str,
@@ -31,17 +30,20 @@ class HTTPCallErrorError(HTTPClientError):
         return self.__status_code
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
-                f"description='{self.description}', "
-                f"api_message='{self.api_message}',"
-                f"status_code={self.__status_code})")
+        return (
+            f"{self.__class__.__name__}("
+            f"description='{self.description}', "
+            f"api_message='{self.api_message}',"
+            f"status_code={self.__status_code})"
+        )
 
     def __str__(self) -> str:
         return self.__repr__()
 
+
 class InvalidInputFormatError(HTTPClientError):
     pass
 
+
 class InvalidModelIdentifier(HTTPClientError):
     pass
-

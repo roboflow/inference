@@ -7,7 +7,11 @@ from PIL import Image
 
 from clients.http.entities import ImagesReference
 from clients.http.errors import InvalidInputFormatError
-from clients.http.utils.encoding import encode_base_64, encode_numpy_array, encode_pillow_image
+from clients.http.utils.encoding import (
+    encode_base_64,
+    encode_numpy_array,
+    encode_pillow_image,
+)
 
 
 def load_static_inference_input(
@@ -40,4 +44,3 @@ def load_file_from_url(url: str) -> str:
     response = requests.get(url)
     response.raise_for_status()
     return encode_base_64(response.content)
-

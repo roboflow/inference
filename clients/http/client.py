@@ -5,12 +5,25 @@ import requests
 from requests import HTTPError
 import supervision as sv
 
-from clients.http.entities import ServerInfo, RegisteredModels, InferenceConfiguration, HTTPClientMode, ModelType, \
-    ImagesReference
-from clients.http.errors import HTTPClientError, HTTPCallErrorError, InvalidModelIdentifier
+from clients.http.entities import (
+    ServerInfo,
+    RegisteredModels,
+    InferenceConfiguration,
+    HTTPClientMode,
+    ModelType,
+    ImagesReference,
+)
+from clients.http.errors import (
+    HTTPClientError,
+    HTTPCallErrorError,
+    InvalidModelIdentifier,
+)
 from clients.http.utils.loaders import load_static_inference_input
-from clients.http.utils.post_processing import response_contains_jpeg_image, transform_visualisation_bytes, \
-    transform_base64_visualisation
+from clients.http.utils.post_processing import (
+    response_contains_jpeg_image,
+    transform_visualisation_bytes,
+    transform_base64_visualisation,
+)
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -30,7 +43,7 @@ def wrap_errors(function: callable) -> callable:
         try:
             return function(*args, **kwargs)
         except HTTPError as error:
-            if 'application/json' in error.response.headers.get("Content-Type"):
+            if "application/json" in error.response.headers.get("Content-Type"):
                 api_message = error.response.json().get("message")
             else:
                 api_message = error.response.text
@@ -40,12 +53,14 @@ def wrap_errors(function: callable) -> callable:
                 api_message=api_message,
             ) from error
         except ConnectionError as error:
-            raise HTTPClientError(f"Error with server connection: {str(error)}") from error
+            raise HTTPClientError(
+                f"Error with server connection: {str(error)}"
+            ) from error
+
     return decorate
 
 
 class InferenceHTTPClient:
-
     def __init__(
         self,
         api_url: str,
@@ -58,7 +73,9 @@ class InferenceHTTPClient:
         self.__model_type = ModelType.OBJECT_DETECTION
         self.__selected_model: Optional[str] = None
 
-    def configure(self, inference_configuration: InferenceConfiguration) -> "InferenceHTTPClient":
+    def configure(
+        self, inference_configuration: InferenceConfiguration
+    ) -> "InferenceHTTPClient":
         self.__inference_configuration = inference_configuration
         return self
 
@@ -94,7 +111,9 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
-    def load_model(self, model_id: str, model_type: str, set_as_default: bool = False) -> RegisteredModels:
+    def load_model(
+        self, model_id: str, model_type: str, set_as_default: bool = False
+    ) -> RegisteredModels:
         # model_type parameter was ignored, as it is not used in API
         response = requests.post(
             f"{self.__api_url}/model/add",
@@ -102,7 +121,7 @@ class InferenceHTTPClient:
                 "model_id": model_id,
                 "api_key": self.__api_key,
             },
-            headers=DEFAULT_HEADERS
+            headers=DEFAULT_HEADERS,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -120,7 +139,7 @@ class InferenceHTTPClient:
             json={
                 "model_id": model_id,
             },
-            headers=DEFAULT_HEADERS
+            headers=DEFAULT_HEADERS,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -182,7 +201,9 @@ class InferenceHTTPClient:
         model_id_to_be_used = model_id or self.__selected_model
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
-            raise InvalidModelIdentifier(f"Invalid model identifier: {model_id} in use.")
+            raise InvalidModelIdentifier(
+                f"Invalid model identifier: {model_id} in use."
+            )
         params = {
             "api_key": self.__api_key,
         }
@@ -221,10 +242,12 @@ class InferenceHTTPClient:
         }
         model_type_in_use = model_type or self.__model_type
         endpoint = NEW_INFERENCE_ENDPOINTS[model_type_in_use]
-        payload.update(self.__inference_configuration.to_api_call_parameters(
-            client_mode=self.__client_mode,
-            model_type=model_type_in_use,
-        ))
+        payload.update(
+            self.__inference_configuration.to_api_call_parameters(
+                client_mode=self.__client_mode,
+                model_type=model_type_in_use,
+            )
+        )
         results = []
         for element in encoded_inference_inputs:
             payload["image"] = {"type": "base64", "value": element}
@@ -248,4 +271,3 @@ def unwrap_single_element_list(sequence: List[T]) -> Union[T, List[T]]:
     if len(sequence) == 1:
         return sequence[0]
     return sequence
-
