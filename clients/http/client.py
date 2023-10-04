@@ -18,7 +18,10 @@ from clients.http.errors import (
     HTTPCallErrorError,
     InvalidModelIdentifier,
 )
-from clients.http.utils.loaders import load_static_inference_input, load_stream_inference_input
+from clients.http.utils.loaders import (
+    load_static_inference_input,
+    load_stream_inference_input,
+)
 from clients.http.utils.post_processing import (
     response_contains_jpeg_image,
     transform_visualisation_bytes,

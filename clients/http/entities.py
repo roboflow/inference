@@ -13,6 +13,7 @@ ImagesReference = Union[np.ndarray, Image.Image, str]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 
+
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):
     name: str

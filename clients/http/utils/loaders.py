@@ -21,9 +21,12 @@ def load_stream_inference_input(
     image_extensions: Optional[List[str]],
 ) -> Generator[np.ndarray, None, None]:
     if os.path.isdir(input_uri):
-        yield from load_directory_inference_input(directory_path=input_uri, image_extensions=image_extensions)
+        yield from load_directory_inference_input(
+            directory_path=input_uri, image_extensions=image_extensions
+        )
     else:
         yield from sv.get_video_frames_generator(source_path=input_uri)
+
 
 def load_directory_inference_input(
     directory_path: str,
