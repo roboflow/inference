@@ -18,7 +18,7 @@ from clients.http.errors import (
     HTTPCallErrorError,
     InvalidModelIdentifier,
 )
-from clients.http.utils.loaders import load_static_inference_input
+from clients.http.utils.loaders import load_static_inference_input, load_stream_inference_input
 from clients.http.utils.post_processing import (
     response_contains_jpeg_image,
     transform_visualisation_bytes,
@@ -132,7 +132,6 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
-        # model_type parameter was ignored, as it is not used in API
         # API KEY NOT NEEDED!
         response = requests.post(
             f"{self.__api_url}/model/remove",
@@ -164,12 +163,15 @@ class InferenceHTTPClient:
         model_type: Optional[str] = None,
         model_id: Optional[str] = None,
     ) -> Generator[Tuple[np.ndarray, dict], None, None]:
-        for frame in sv.get_video_frames_generator(source_path=input_uri):
+        for frame in load_stream_inference_input(
+            input_uri=input_uri,
+            image_extensions=self.__inference_configuration.image_extensions_for_directory_scan,
+        ):
             prediction = self.predict(
                 inference_input=frame,
                 model_type=model_type,
                 model_id=model_id,
-            )[0]
+            )
             yield frame, prediction
 
     @wrap_errors
@@ -263,7 +265,7 @@ class InferenceHTTPClient:
                     visualisation=parsed_response["visualization"],
                     expected_format=self.__inference_configuration.output_visualisation_format,
                 )
-            results.append(response.json())
+            results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
 

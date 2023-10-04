@@ -10,7 +10,7 @@ from PIL import Image
 
 def encode_numpy_array(
     array: np.ndarray,
-    as_jpeg: bool = False,
+    as_jpeg: bool = True,
 ) -> Union[str, bytes]:
     if as_jpeg:
         _, img_encoded = cv2.imencode(".jpg", array)

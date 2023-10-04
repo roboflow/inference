@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from enum import Enum
 from typing import List, Optional, Union, Dict, Any, Tuple
 
@@ -11,6 +11,7 @@ from clients.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
 
+DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):
@@ -66,6 +67,9 @@ class InferenceConfiguration:
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
         VisualisationResponseFormat.BASE64
+    )
+    image_extensions_for_directory_scan: Optional[List[str]] = field(
+        default_factory=lambda: DEFAULT_IMAGE_EXTENSIONS,
     )
 
     @classmethod
