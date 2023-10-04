@@ -341,12 +341,10 @@ class ServerVersionInfo(BaseModel):
 
 class ModelDescriptionEntity(BaseModel):
     model_id: str = Field(
-        description="Identifier of the model",
-        example="some-project/3"
+        description="Identifier of the model", example="some-project/3"
     )
     task_type: str = Field(
-        description="Type of the task that the model performs",
-        example="classification"
+        description="Type of the task that the model performs", example="classification"
     )
     batch_size: Optional[int] = Field(
         description="Batch size accepted by the model (if registered).",
@@ -359,7 +357,9 @@ class ModelDescriptionEntity(BaseModel):
     )
 
     @classmethod
-    def from_model_description(cls, model_description: ModelDescription) -> "ModelDescriptionEntity":
+    def from_model_description(
+        cls, model_description: ModelDescription
+    ) -> "ModelDescriptionEntity":
         return cls(
             model_id=model_description.model_id,
             task_type=model_description.task_type,
@@ -375,10 +375,14 @@ class ModelsDescriptions(BaseModel):
     )
 
     @classmethod
-    def from_models_descriptions(cls, models_descriptions: List[ModelDescription]) -> "ModelsDescriptions":
+    def from_models_descriptions(
+        cls, models_descriptions: List[ModelDescription]
+    ) -> "ModelsDescriptions":
         return cls(
             models=[
-                ModelDescriptionEntity.from_model_description(model_description=model_description)
+                ModelDescriptionEntity.from_model_description(
+                    model_description=model_description
+                )
                 for model_description in models_descriptions
             ]
         )

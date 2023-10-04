@@ -246,5 +246,6 @@ class ModelManager:
                 batch_size=getattr(model, "batch_size", None),
                 input_width=getattr(model, "img_size_w", None),
                 input_height=getattr(model, "img_size_h", None),
-            ) for model_id, model in self._models.items()
+            )
+            for model_id, model in self._models.items()
         ]

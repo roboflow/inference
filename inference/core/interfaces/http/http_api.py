@@ -345,7 +345,9 @@ class HttpInterface(BaseInterface):
                     M.ModelsDescriptions: The object containing models descriptions
                 """
                 models_descriptions = self.model_manager.describe_models()
-                return M.ModelsDescriptions.from_models_descriptions(models_descriptions=models_descriptions)
+                return M.ModelsDescriptions.from_models_descriptions(
+                    models_descriptions=models_descriptions
+                )
 
             @app.post(
                 "/model/add",
@@ -373,7 +375,9 @@ class HttpInterface(BaseInterface):
                     )
                     self.model_manager.add_model(request.model_id, model)
                 models_descriptions = self.model_manager.describe_models()
-                return M.ModelsDescriptions.from_models_descriptions(models_descriptions=models_descriptions)
+                return M.ModelsDescriptions.from_models_descriptions(
+                    models_descriptions=models_descriptions
+                )
 
             @app.post(
                 "/model/remove",
@@ -394,7 +398,9 @@ class HttpInterface(BaseInterface):
 
                 self.model_manager.remove(request.model_id)
                 models_descriptions = self.model_manager.describe_models()
-                return M.ModelsDescriptions.from_models_descriptions(models_descriptions=models_descriptions)
+                return M.ModelsDescriptions.from_models_descriptions(
+                    models_descriptions=models_descriptions
+                )
 
             @app.post(
                 "/model/clear",
@@ -412,7 +418,9 @@ class HttpInterface(BaseInterface):
 
                 self.model_manager.clear()
                 models_descriptions = self.model_manager.describe_models()
-                return M.ModelsDescriptions.from_models_descriptions(models_descriptions=models_descriptions)
+                return M.ModelsDescriptions.from_models_descriptions(
+                    models_descriptions=models_descriptions
+                )
 
             @app.post(
                 "/infer/object_detection",

@@ -29,7 +29,9 @@ def encode_base_64(payload: bytes) -> str:
     return base64.b64encode(payload).decode("utf-8")
 
 
-def bytes_to_np_array(payload: bytes, array_type: np.number = np.uint8) -> np.ndarray:
+def bytes_to_opencv_image(
+    payload: bytes, array_type: np.number = np.uint8
+) -> np.ndarray:
     bytes_array = np.frombuffer(payload, dtype=array_type)
     return cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
 

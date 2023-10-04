@@ -1,19 +1,60 @@
+from typing import Tuple, Optional
+
+import cv2
 import numpy as np
 from PIL import Image
 
 
 def resize_opencv_image(
     image: np.ndarray,
-    max_height: int,
-    max_width: int,
-) -> None:
+    max_height: Optional[int],
+    max_width: Optional[int],
+) -> Tuple[np.ndarray, Optional[float]]:
+    if max_width is None or max_height is None:
+        return image, None
     height, width = image.shape[:2]
-    height_scaling_ratio = ...
+    scaling_ratio = determine_scaling_aspect_ratio(
+        image_height=height,
+        image_width=width,
+        max_height=max_height,
+        max_width=max_width,
+    )
+    if scaling_ratio is None:
+        return image, None
+    resized_image = cv2.resize(
+        src=image, dsize=None, fx=scaling_ratio, fy=scaling_ratio
+    )
+    return resized_image, scaling_ratio
 
 
 def resize_pillow_image(
     image: Image.Image,
+    max_height: Optional[int],
+    max_width: Optional[int],
+) -> Tuple[Image.Image, Optional[float]]:
+    if max_width is None or max_height is None:
+        return image, None
+    width, height = image.size
+    scaling_ratio = determine_scaling_aspect_ratio(
+        image_height=height,
+        image_width=width,
+        max_height=max_height,
+        max_width=max_width,
+    )
+    if scaling_ratio is None:
+        return image, None
+    new_width = int(round(scaling_ratio * width, 0))
+    new_height = int(round(scaling_ratio * height, 0))
+    return image.resize(size=(new_width, new_height)), scaling_ratio
+
+
+def determine_scaling_aspect_ratio(
+    image_height: int,
+    image_width: int,
     max_height: int,
     max_width: int,
-) -> None:
-    pass
+) -> Optional[float]:
+    height_scaling_ratio = max_height / image_height
+    width_scaling_ratio = max_width / image_width
+    min_scaling_ratio = min(height_scaling_ratio, width_scaling_ratio)
+    return min_scaling_ratio if min_scaling_ratio < 1.0 else None

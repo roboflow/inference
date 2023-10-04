@@ -144,8 +144,15 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         model_description = self.get_model_description(model_id=model_id_to_be_used)
+        max_height, max_width = _determine_client_downsizing_parameters(
+            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+            model_description=model_description,
+            default_max_input_size=self.__inference_configuration.default_max_input_size,
+        )
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
         )
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
@@ -158,11 +165,12 @@ class InferenceHTTPClient:
         params.update(self.__inference_configuration.to_legacy_call_parameters())
         results = []
         for element in encoded_inference_inputs:
+            image, scaling_factor = element
             response = requests.post(
                 f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
                 headers=DEFAULT_HEADERS,
                 params=params,
-                data=element,
+                data=image,
             )
             response.raise_for_status()
             if response_contains_jpeg_image(response=response):
@@ -182,8 +190,15 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         model_description = self.get_model_description(model_id=model_id_to_be_used)
+        max_height, max_width = _determine_client_downsizing_parameters(
+            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+            model_description=model_description,
+            default_max_input_size=self.__inference_configuration.default_max_input_size,
+        )
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
         )
         payload = {
             "api_key": self.__api_key,
@@ -202,7 +217,8 @@ class InferenceHTTPClient:
         )
         results = []
         for element in encoded_inference_inputs:
-            payload["image"] = {"type": "base64", "value": element}
+            image, scaling_factor = element
+            payload["image"] = {"type": "base64", "value": image}
             response = requests.post(
                 f"{self.__api_url}{endpoint}",
                 json=payload,
@@ -289,3 +305,15 @@ def unwrap_single_element_list(sequence: List[T]) -> Union[T, List[T]]:
     if len(sequence) == 1:
         return sequence[0]
     return sequence
+
+
+def _determine_client_downsizing_parameters(
+    client_downsizing_disabled: bool,
+    model_description: ModelDescription,
+    default_max_input_size: int,
+) -> Tuple[Optional[int], Optional[int]]:
+    if client_downsizing_disabled:
+        return None, None
+    if model_description.input_height is None or model_description.input_width is None:
+        return default_max_input_size, default_max_input_size
+    return model_description.input_height, model_description.input_width

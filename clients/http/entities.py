@@ -18,6 +18,7 @@ TaskType = str
 CLASSIFICATION_TASK = "classification"
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
+DEFAULT_MAX_INPUT_SIZE = 1024
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,8 @@ class InferenceConfiguration:
     image_extensions_for_directory_scan: Optional[List[str]] = field(
         default_factory=lambda: DEFAULT_IMAGE_EXTENSIONS,
     )
+    client_downsizing_disabled: bool = False
+    default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

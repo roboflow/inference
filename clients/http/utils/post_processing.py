@@ -8,14 +8,14 @@ from requests import Response
 from clients.http.entities import VisualisationResponseFormat
 from clients.http.utils.encoding import (
     encode_base_64,
-    bytes_to_np_array,
+    bytes_to_opencv_image,
     bytes_to_pillow_image,
 )
 
 CONTENT_TYPE_HEADERS = ["content-type", "Content-Type"]
 IMAGES_TRANSCODING_METHODS = {
     VisualisationResponseFormat.BASE64: encode_base_64,
-    VisualisationResponseFormat.NUMPY: bytes_to_np_array,
+    VisualisationResponseFormat.NUMPY: bytes_to_opencv_image,
     VisualisationResponseFormat.PILLOW: bytes_to_pillow_image,
 }
 

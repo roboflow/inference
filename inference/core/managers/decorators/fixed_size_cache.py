@@ -80,4 +80,3 @@ class WithFixedSizeCache(ModelManagerDecorator):
 
     def describe_models(self) -> List[ModelDescription]:
         return self.model_manager.describe_models()
-
