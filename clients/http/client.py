@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Any, Optional, Union, List, Tuple, Generator, TypeVar
 
 import numpy as np
@@ -72,12 +73,11 @@ class InferenceHTTPClient:
         self,
         api_url: str,
         api_key: str,
-        client_mode: HTTPClientMode = HTTPClientMode.V1,
     ):
         self.__api_url = api_url
         self.__api_key = api_key
         self.__inference_configuration = InferenceConfiguration.init_default()
-        self.__client_mode = client_mode
+        self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
 
     def configure(
@@ -86,17 +86,38 @@ class InferenceHTTPClient:
         self.__inference_configuration = inference_configuration
         return self
 
-    def use_legacy_client(self) -> "InferenceHTTPClient":
+    def select_api_v0(self) -> "InferenceHTTPClient":
         self.__client_mode = HTTPClientMode.V0
         return self
 
-    def use_new_client(self) -> "InferenceHTTPClient":
+    def select_api_v1(self) -> "InferenceHTTPClient":
         self.__client_mode = HTTPClientMode.V1
         return self
 
-    def use_model(self, model_id: str) -> "InferenceHTTPClient":
+    @contextmanager
+    def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
+        previous_client_mode = self.__client_mode
+        self.__client_mode = HTTPClientMode.V0
+        yield self
+        self.__client_mode = previous_client_mode
+
+    @contextmanager
+    def use_api_v1(self) -> Generator["InferenceHTTPClient", None, None]:
+        previous_client_mode = self.__client_mode
+        self.__client_mode = HTTPClientMode.V1
+        yield self
+        self.__client_mode = previous_client_mode
+
+    def select_model(self, model_id: str) -> "InferenceHTTPClient":
         self.__selected_model = model_id
         return self
+
+    @contextmanager
+    def use_model(self, model_id: str) -> Generator["InferenceHTTPClient", None, None]:
+        previous_model = self.__selected_model
+        self.__selected_model = model_id
+        yield self
+        self.__selected_model = previous_model
 
     @wrap_errors
     def get_server_info(self) -> ServerInfo:
@@ -317,3 +338,9 @@ def _determine_client_downsizing_parameters(
     if model_description.input_height is None or model_description.input_width is None:
         return default_max_input_size, default_max_input_size
     return model_description.input_height, model_description.input_width
+
+
+def _determine_client_mode(api_url: str) -> HTTPClientMode:
+    if "roboflow.com" in api_url:
+        return HTTPClientMode.V0
+    return HTTPClientMode.V1
