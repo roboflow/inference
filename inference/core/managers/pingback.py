@@ -42,7 +42,7 @@ class PingbackInfo:
             self.scheduler = BackgroundScheduler()
             self.model_manager = manager
             self.process_startup_time = str(int(time.time()))
-            logger.info(
+            logger.debug(
                 "UUID: " + self.model_manager.uuid
             )  # To correlate with UI container view
             self.METRICS_URL = METRICS_URL  # Test URL
@@ -50,7 +50,7 @@ class PingbackInfo:
             self.system_info = get_system_info()
             self.window_start_timestamp = str(int(time.time()))
         except Exception as e:
-            logger.error(
+            logger.debug(
                 "Error sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
                 + str(e)
             )
@@ -61,7 +61,7 @@ class PingbackInfo:
         If METRICS_ENABLED is False, a warning is logged, and the method returns without starting the scheduler.
         """
         if METRICS_ENABLED == False:
-            logger.warn(
+            logger.debug(
                 "Metrics reporting to Roboflow is disabled; not sending back stats to Roboflow."
             )
             return
@@ -74,7 +74,7 @@ class PingbackInfo:
             )
             self.scheduler.start()
         except Exception as e:
-            print(e)
+            logger.debug(e)
 
     def stop(self):
         """Stops the scheduler."""
@@ -128,19 +128,26 @@ class PingbackInfo:
             all_data["timestamp"] = timestamp
             self.window_start_timestamp = timestamp
             res = requests.post(METRICS_URL, json=all_data)
-            res.raise_for_status()
-            logger.debug(
-                "Sent metrics to Roboflow {} at {}.".format(METRICS_URL, str(all_data))
-            )
+            try:
+                res.raise_for_status()
+                logger.debug(
+                    "Sent metrics to Roboflow {} at {}.".format(
+                        METRICS_URL, str(all_data)
+                    )
+                )
+            except Exception as e:
+                logger.debug(
+                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable."
+                )
 
         except Exception as e:
             try:
-                logger.error(
+                logger.debug(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {all_data}"
                 )
                 traceback.print_exc()
 
             except Exception as e2:
-                logger.error(
+                logger.debug(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}."
                 )
