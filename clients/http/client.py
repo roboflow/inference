@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Optional, Union, List, Tuple, Generator, TypeVar
+from typing import Any, Optional, Union, List, Tuple, Generator
 
 import numpy as np
 import requests
@@ -188,6 +188,11 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id_chunks = model_id_to_be_used.split("/")
+        if len(model_id_chunks) != 2:
+            raise InvalidModelIdentifier(
+                f"Invalid model identifier: {model_id} in use."
+            )
         model_description = self.get_model_description(model_id=model_id_to_be_used)
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
@@ -199,11 +204,6 @@ class InferenceHTTPClient:
             max_height=max_height,
             max_width=max_width,
         )
-        model_id_chunks = model_id_to_be_used.split("/")
-        if len(model_id_chunks) != 2:
-            raise InvalidModelIdentifier(
-                f"Invalid model identifier: {model_id} in use."
-            )
         params = {
             "api_key": self.__api_key,
         }
@@ -226,7 +226,6 @@ class InferenceHTTPClient:
                 parsed_response = {"visualization": visualisation}
             else:
                 parsed_response = response.json()
-                results.append(response.json())
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 task_type=model_description.task_type,
@@ -248,6 +247,10 @@ class InferenceHTTPClient:
             model_description=model_description,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
+        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
+            raise ModelTaskTypeNotSupportedError(
+                f"Model task {model_description.task_type} is not supported by API v1 client."
+            )
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
             max_height=max_height,
@@ -257,10 +260,6 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
             "model_id": model_id_to_be_used,
         }
-        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {model_description.task_type} is not supported by API v1 client."
-            )
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
         payload.update(
             self.__inference_configuration.to_api_call_parameters(

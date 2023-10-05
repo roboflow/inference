@@ -1,9 +1,14 @@
+import base64
 import json
+from io import BytesIO
+from unittest import mock
+from unittest.mock import MagicMock
 
 import pytest
 from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 
+from clients.http import client
 from clients.http.client import (
     _ensure_model_is_selected,
     _determine_client_mode,
@@ -22,6 +27,8 @@ from clients.http.errors import (
     ModelNotSelectedError,
     HTTPCallErrorError,
     HTTPClientError,
+    InvalidModelIdentifier,
+    ModelTaskTypeNotSupportedError,
 )
 
 
@@ -166,13 +173,13 @@ def test_wrap_errors_when_unknown_error_occurs() -> None:
 
 def test_setting_configuration_statically() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
     configuration = InferenceConfiguration(visualize_labels=True)
 
     # when
-    previous_configuration = client.inference_configuration
-    client.configure(inference_configuration=configuration)
-    new_configuration = client.inference_configuration
+    previous_configuration = http_client.inference_configuration
+    http_client.configure(inference_configuration=configuration)
+    new_configuration = http_client.inference_configuration
 
     # then
     assert previous_configuration is not configuration
@@ -181,28 +188,28 @@ def test_setting_configuration_statically() -> None:
 
 def test_setting_configuration_with_context_manager() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
     configuration = InferenceConfiguration(visualize_labels=True)
 
     # when
-    previous_configuration = client.inference_configuration
-    with client.use_configuration(inference_configuration=configuration):
-        new_configuration = client.inference_configuration
+    previous_configuration = http_client.inference_configuration
+    with http_client.use_configuration(inference_configuration=configuration):
+        new_configuration = http_client.inference_configuration
 
     # then
     assert previous_configuration is not configuration
     assert new_configuration is configuration
-    assert client.inference_configuration is previous_configuration
+    assert http_client.inference_configuration is previous_configuration
 
 
 def test_setting_model_statically() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
 
     # when
-    previous_model = client.selected_model
-    client.select_model(model_id="some/1")
-    new_model = client.selected_model
+    previous_model = http_client.selected_model
+    http_client.select_model(model_id="some/1")
+    new_model = http_client.selected_model
 
     # then
     assert previous_model is None
@@ -211,27 +218,27 @@ def test_setting_model_statically() -> None:
 
 def test_setting_model_with_context_manager() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
 
     # when
-    previous_model = client.selected_model
-    with client.use_model(model_id="some/1"):
-        new_model = client.selected_model
+    previous_model = http_client.selected_model
+    with http_client.use_model(model_id="some/1"):
+        new_model = http_client.selected_model
 
     # then
     assert previous_model is None
     assert new_model is "some/1"
-    assert client.selected_model is None
+    assert http_client.selected_model is None
 
 
 def test_setting_mode_statically() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
 
     # when
-    previous_mode = client.client_mode
-    client.select_api_v0()
-    new_mode = client.client_mode
+    previous_mode = http_client.client_mode
+    http_client.select_api_v0()
+    new_mode = http_client.client_mode
 
     # then
     assert previous_mode is HTTPClientMode.V1
@@ -240,17 +247,17 @@ def test_setting_mode_statically() -> None:
 
 def test_setting_mode_with_context_manager() -> None:
     # given
-    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
 
     # when
-    previous_mode = client.client_mode
-    with client.use_api_v0():
-        new_mode = client.client_mode
+    previous_mode = http_client.client_mode
+    with http_client.use_api_v0():
+        new_mode = http_client.client_mode
 
     # then
     assert previous_mode is HTTPClientMode.V1
     assert new_mode is HTTPClientMode.V0
-    assert client.client_mode is HTTPClientMode.V1
+    assert http_client.client_mode is HTTPClientMode.V1
 
 
 def test_client_unload_all_models_when_successful_response_expected(
@@ -259,10 +266,10 @@ def test_client_unload_all_models_when_successful_response_expected(
     # given
     api_url = "http://some.com"
     requests_mock.post(f"{api_url}/model/clear", json={"models": []})
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.unload_all_models()
+    result = http_client.unload_all_models()
 
     # then
     assert result == RegisteredModels(models=[])
@@ -276,11 +283,11 @@ def test_client_unload_all_models_when_error_occurs(requests_mock: Mocker) -> No
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.unload_all_models()
+        _ = http_client.unload_all_models()
 
 
 def test_client_unload_single_model_when_successful_response_expected(
@@ -292,10 +299,10 @@ def test_client_unload_single_model_when_successful_response_expected(
         f"{api_url}/model/remove",
         json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.unload_model(model_id="other/1")
+    result = http_client.unload_model(model_id="other/1")
 
     # then
     assert result == RegisteredModels(
@@ -314,11 +321,11 @@ def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> 
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.unload_model(model_id="other/1")
+        _ = http_client.unload_model(model_id="other/1")
     assert requests_mock.last_request.json() == {
         "model_id": "other/1",
     }
@@ -333,16 +340,16 @@ def test_client_load_model_when_successful_response_expected(
         f"{api_url}/model/add",
         json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.load_model(model_id="some/1", set_as_default=True)
+    result = http_client.load_model(model_id="some/1", set_as_default=True)
 
     # then
     assert result == RegisteredModels(
         models=[ModelDescription(model_id="some/1", task_type="classification")]
     )
-    assert client.selected_model == "some/1"
+    assert http_client.selected_model == "some/1"
     assert requests_mock.last_request.json() == {
         "model_id": "some/1",
         "api_key": "my-api-key",
@@ -359,14 +366,14 @@ def test_client_load_model_when_unsuccessful_response_expected(
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.load_model(model_id="some/1", set_as_default=True)
+        _ = http_client.load_model(model_id="some/1", set_as_default=True)
 
     # then
-    assert client.selected_model is None
+    assert http_client.selected_model is None
     assert requests_mock.last_request.json() == {
         "model_id": "some/1",
         "api_key": "my-api-key",
@@ -382,10 +389,10 @@ def test_list_loaded_models_when_successful_response_expected(
         f"{api_url}/model/registry",
         json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.list_loaded_models()
+    result = http_client.list_loaded_models()
 
     # then
     assert result == RegisteredModels(
@@ -403,11 +410,11 @@ def test_list_loaded_models_when_unsuccessful_response_expected(
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.list_loaded_models()
+        _ = http_client.list_loaded_models()
 
 
 def test_get_model_description_when_model_when_error_occurs_in_model_listing(
@@ -420,11 +427,11 @@ def test_get_model_description_when_model_when_error_occurs_in_model_listing(
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.get_model_description(model_id="some/1")
+        _ = http_client.get_model_description(model_id="some/1")
 
 
 def test_get_model_description_when_model_was_loaded_already(
@@ -436,10 +443,10 @@ def test_get_model_description_when_model_was_loaded_already(
         f"{api_url}/model/registry",
         json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.get_model_description(model_id="some/1")
+    result = http_client.get_model_description(model_id="some/1")
 
     # then
     assert result == ModelDescription(model_id="some/1", task_type="classification")
@@ -465,10 +472,10 @@ def test_get_model_description_when_model_was_not_loaded_before_and_successful_l
         f"{api_url}/model/add",
         json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = client.get_model_description(model_id="some/1")
+    result = http_client.get_model_description(model_id="some/1")
 
     # then
     assert result == ModelDescription(model_id="some/1", task_type="classification")
@@ -495,8 +502,484 @@ def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful
         json={"message": "Internal error."},
         status_code=500,
     )
-    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = client.get_model_description(model_id="some/1")
+        _ = http_client.get_model_description(model_id="some/1")
+
+
+def test_infer_from_api_v0_when_model_not_selected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(ModelNotSelectedError):
+        _ = http_client.infer_from_api_v0(inference_input="https://some/image.jpg")
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_when_request_succeed_for_object_detection(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == {
+        "image": {"height": 960, "width": 1280},
+        "predictions": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "width": 400.0,
+                "height": 600.0,
+                "confidence": 0.9,
+                "class": "A",
+            }
+        ],
+    }
+    assert requests_mock.last_request.query == "api_key=my-api-key&confidence=0.5"
+
+
+def test_infer_from_api_v0_when_model_id_is_invalid() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidModelIdentifier):
+        _ = http_client.infer_from_api_v0(
+            inference_input="https://some/image.jpg",
+            model_id="invalid",
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_request(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [
+        ("base64_image", 0.5),
+        ("another_image", None),
+    ]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/some/1",
+        [
+            {
+                "json": {
+                    "image": {"height": 480, "width": 640},
+                    "predictions": [
+                        {
+                            "x": 100.0,
+                            "y": 200.0,
+                            "width": 200.0,
+                            "height": 300.0,
+                            "confidence": 0.9,
+                            "class": "A",
+                        }
+                    ],
+                },
+            },
+            {
+                "json": {
+                    "image": {"height": 480, "width": 640},
+                    "predictions": [
+                        {
+                            "x": 100.0,
+                            "y": 200.0,
+                            "width": 200.0,
+                            "height": 300.0,
+                            "confidence": 0.9,
+                            "class": "B",
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == [
+        {
+            "image": {"height": 960, "width": 1280},
+            "predictions": [
+                {
+                    "x": 200.0,
+                    "y": 400.0,
+                    "width": 400.0,
+                    "height": 600.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+        },
+        {
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "B",
+                }
+            ],
+        },
+    ]
+    assert requests_mock.request_history[0].query == "api_key=my-api-key&confidence=0.5"
+    assert requests_mock.request_history[1].query == "api_key=my-api-key&confidence=0.5"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visualisation(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(confidence_threshold=0.5, format="jpg")
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/some/1",
+        body=BytesIO(b"data"),
+        headers={"content-type": "image/jpeg"},
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == {"visualization": base64.b64encode(b"data").decode("utf-8")}
+    assert (
+        requests_mock.last_request.query
+        == "api_key=my-api-key&confidence=0.5&format=jpg"
+    )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_when_request_succeed_for_object_detection(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == {
+        "image": {"height": 960, "width": 1280},
+        "predictions": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "width": 400.0,
+                "height": 600.0,
+                "confidence": 0.9,
+                "class": "A",
+            }
+        ],
+    }
+    assert requests_mock.last_request.query == "api_key=my-api-key&confidence=0.5"
+
+
+def test_infer_from_api_v1_when_model_id_is_not_selected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(ModelNotSelectedError):
+        _ = http_client.infer_from_api_v0(
+            inference_input="https://some/image.jpg",
+        )
+
+
+def test_infer_from_api_v1_when_task_type_is_not_recognised() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="unknown",
+        input_height=480,
+        input_width=640,
+    )
+    # when
+    with pytest.raises(ModelTaskTypeNotSupportedError):
+        _ = http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_request(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [
+        ("base64_image", 0.5),
+        ("another_image", None),
+    ]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        [
+            {
+                "json": {
+                    "image": {"height": 480, "width": 640},
+                    "predictions": [
+                        {
+                            "x": 100.0,
+                            "y": 200.0,
+                            "width": 200.0,
+                            "height": 300.0,
+                            "confidence": 0.9,
+                            "class": "A",
+                        }
+                    ],
+                    "visualization": None,
+                },
+            },
+            {
+                "json": {
+                    "image": {"height": 480, "width": 640},
+                    "predictions": [
+                        {
+                            "x": 100.0,
+                            "y": 200.0,
+                            "width": 200.0,
+                            "height": 300.0,
+                            "confidence": 0.9,
+                            "class": "B",
+                        }
+                    ],
+                    "visualization": None,
+                },
+            },
+        ],
+    )
+
+    # when
+    result = http_client.infer_from_api_v1(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+    # then
+    assert result == [
+        {
+            "image": {"height": 960, "width": 1280},
+            "predictions": [
+                {
+                    "x": 200.0,
+                    "y": 400.0,
+                    "width": 400.0,
+                    "height": 600.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+            "visualization": None,
+        },
+        {
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "B",
+                }
+            ],
+            "visualization": None,
+        },
+    ]
+    assert requests_mock.request_history[0].json() == {
+        "model_id": "some/1",
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "visualize_predictions": False,
+        "confidence": 0.5,
+    }
+    assert requests_mock.request_history[1].json() == {
+        "model_id": "some/1",
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "another_image"},
+        "visualize_predictions": False,
+        "confidence": 0.5,
+    }
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_visualisation(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description = MagicMock()
+    http_client.get_model_description.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, visualize_predictions=True
+    )
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/infer/object_detection",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+            "visualization": "aGVsbG8=",
+        },
+    )
+
+    # when
+    result = http_client.infer_from_api_v1(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == {
+        "image": {"height": 960, "width": 1280},
+        "predictions": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "width": 400.0,
+                "height": 600.0,
+                "confidence": 0.9,
+                "class": "A",
+            },
+        ],
+        "visualization": "aGVsbG8=",
+    }
+    assert requests_mock.request_history[0].json() == {
+        "model_id": "some/1",
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "visualize_predictions": True,
+        "confidence": 0.5,
+    }
