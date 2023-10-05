@@ -2,14 +2,22 @@ import json
 
 import pytest
 from requests import HTTPError, Request, Response
+from requests_mock.mocker import Mocker
 
 from clients.http.client import (
     _ensure_model_is_selected,
     _determine_client_mode,
     _determine_client_downsizing_parameters,
     wrap_errors,
+    InferenceHTTPClient,
 )
-from clients.http.entities import HTTPClientMode, ModelDescription, CLASSIFICATION_TASK
+from clients.http.entities import (
+    HTTPClientMode,
+    ModelDescription,
+    CLASSIFICATION_TASK,
+    RegisteredModels,
+    InferenceConfiguration,
+)
 from clients.http.errors import (
     ModelNotSelectedError,
     HTTPCallErrorError,
@@ -154,3 +162,163 @@ def test_wrap_errors_when_unknown_error_occurs() -> None:
     # when
     with pytest.raises(Exception):
         example()
+
+
+def test_setting_configuration_statically() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    configuration = InferenceConfiguration(visualize_labels=True)
+
+    # when
+    previous_configuration = client.inference_configuration
+    client.configure(inference_configuration=configuration)
+    new_configuration = client.inference_configuration
+
+    # then
+    assert previous_configuration is not configuration
+    assert new_configuration is configuration
+
+
+def test_setting_configuration_with_context_manager() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+    configuration = InferenceConfiguration(visualize_labels=True)
+
+    # when
+    previous_configuration = client.inference_configuration
+    with client.use_configuration(inference_configuration=configuration):
+        new_configuration = client.inference_configuration
+
+    # then
+    assert previous_configuration is not configuration
+    assert new_configuration is configuration
+    assert client.inference_configuration is previous_configuration
+
+
+def test_setting_model_statically() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+
+    # when
+    previous_model = client.selected_model
+    client.select_model(model_id="some/1")
+    new_model = client.selected_model
+
+    # then
+    assert previous_model is None
+    assert new_model is "some/1"
+
+
+def test_setting_model_with_context_manager() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+
+    # when
+    previous_model = client.selected_model
+    with client.use_model(model_id="some/1"):
+        new_model = client.selected_model
+
+    # then
+    assert previous_model is None
+    assert new_model is "some/1"
+    assert client.selected_model is None
+
+
+def test_setting_mode_statically() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+
+    # when
+    previous_mode = client.client_mode
+    client.select_api_v0()
+    new_mode = client.client_mode
+
+    # then
+    assert previous_mode is HTTPClientMode.V1
+    assert new_mode is HTTPClientMode.V0
+
+
+def test_setting_mode_with_context_manager() -> None:
+    # given
+    client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
+
+    # when
+    previous_mode = client.client_mode
+    with client.use_api_v0():
+        new_mode = client.client_mode
+
+    # then
+    assert previous_mode is HTTPClientMode.V1
+    assert new_mode is HTTPClientMode.V0
+    assert client.client_mode is HTTPClientMode.V1
+
+
+def test_client_unload_all_models_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(f"{api_url}/model/clear", json={"models": []})
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.unload_all_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+
+
+def test_client_unload_all_models_when_error_occurs(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/clear",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.unload_all_models()
+
+
+def test_client_unload_single_model_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/remove",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.unload_model(model_id="other/1")
+
+    # then
+    assert result == RegisteredModels(
+        models=[ModelDescription(model_id="some/1", task_type="classification")]
+    )
+    assert requests_mock.last_request.json() == {
+        "model_id": "other/1",
+    }
+
+
+def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/remove",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.unload_model(model_id="other/1")
+    assert requests_mock.last_request.json() == {
+        "model_id": "other/1",
+    }

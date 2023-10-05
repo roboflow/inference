@@ -53,7 +53,7 @@ def wrap_errors(function: callable) -> callable:
         try:
             return function(*args, **kwargs)
         except HTTPError as error:
-            if "application/json" in error.response.headers.get("Content-Type"):
+            if "application/json" in error.response.headers.get("Content-Type", ""):
                 api_message = error.response.json().get("message")
             else:
                 api_message = error.response.text
@@ -81,6 +81,18 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+
+    @property
+    def inference_configuration(self) -> InferenceConfiguration:
+        return self.__inference_configuration
+
+    @property
+    def client_mode(self) -> HTTPClientMode:
+        return self.__client_mode
+
+    @property
+    def selected_model(self) -> Optional[str]:
+        return self.__selected_model
 
     @contextmanager
     def use_configuration(
