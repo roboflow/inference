@@ -700,7 +700,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
         input_width=640,
     )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    configuration = InferenceConfiguration(confidence_threshold=0.5, format="jpg")
+    configuration = InferenceConfiguration(confidence_threshold=0.5, format="image")
     http_client.configure(inference_configuration=configuration)
     requests_mock.post(
         f"{api_url}/some/1",
@@ -717,7 +717,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     assert result == {"visualization": base64.b64encode(b"data").decode("utf-8")}
     assert (
         requests_mock.last_request.query
-        == "api_key=my-api-key&confidence=0.5&format=jpg"
+        == "api_key=my-api-key&confidence=0.5&format=image"
     )
 
 
