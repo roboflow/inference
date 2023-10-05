@@ -9,7 +9,6 @@ import docker
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL
 from inference.core.logger import logger
-
 from inference.core.utils.image_utils import load_image_rgb
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 

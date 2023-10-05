@@ -1,9 +1,9 @@
 from typing import Literal, Optional
 
 import requests
-import docker
 from pydantic import BaseModel
 
+import docker
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_BASE_URL, API_KEY
 from inference.core.logger import logger
