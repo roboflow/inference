@@ -14,6 +14,7 @@ from inference.core.data_models import (
     ClipInferenceRequest,
     ClipTextEmbeddingRequest,
     InferenceRequestImage,
+    InferenceResponse,
 )
 from inference.core.env import (
     CLIP_MAX_BATCH_SIZE,
@@ -340,6 +341,9 @@ class Clip(OnnxRoboflowCoreModel):
         response = make_response_func(data)
         response.time = perf_counter() - t1
         return response
+
+    def make_response(self, embeddings) -> InferenceResponse:
+        return self.make_embed_image_response(embeddings)
 
     def postprocess(
         self,
