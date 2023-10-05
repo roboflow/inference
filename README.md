@@ -136,7 +136,7 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 </details>
 
 <br/>
-
+[test.yml](.github%2Fworkflows%2Ftest.yml)
 ### Inference clients
 
 If you seek for Python client to consume predictions from inference server - you can do it via `inference-clients`

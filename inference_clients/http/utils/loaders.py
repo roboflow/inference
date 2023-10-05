@@ -15,7 +15,10 @@ from inference_clients.http.utils.encoding import (
     numpy_array_to_base64_jpeg,
     pillow_image_to_base64_jpeg,
 )
-from inference_clients.http.utils.pre_processing import resize_opencv_image, resize_pillow_image
+from inference_clients.http.utils.pre_processing import (
+    resize_opencv_image,
+    resize_pillow_image,
+)
 
 
 def load_stream_inference_input(
