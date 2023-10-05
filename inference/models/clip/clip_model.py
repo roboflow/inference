@@ -1,8 +1,9 @@
 from time import perf_counter
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import clip
 import numpy as np
+from inference.core.models.types import PreprocessReturnMetadata
 import onnxruntime
 from PIL import Image
 
@@ -334,6 +335,21 @@ class Clip(OnnxRoboflowCoreModel):
         response.time = perf_counter() - t1
         return response
 
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
+        return (self.embed_image(img_in),)
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> Any:
+        return predictions
+
+    def infer(self, image: Any, **kwargs) -> Any:
+        """Embeds an image"""
+        return super().infer(image, **kwargs)
+
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image.
 
@@ -349,3 +365,8 @@ class Clip(OnnxRoboflowCoreModel):
         img_in = np.expand_dims(preprocessed_image, axis=0)
 
         return img_in.astype(np.float32)
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        return self.preproc_image(image), PreprocessReturnMetadata({})
