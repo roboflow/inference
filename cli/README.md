@@ -27,7 +27,7 @@ To create custom inference server Docker images, go to the parent package, [Robo
 
 ## 👩‍🏫 Examples
 
-### `inference server start`
+### inference server start
 
 Starts a local inference server. It optionally takes a port number (default is 9001) and will only start the docker container if there is not already a container running on that port.
 
@@ -39,7 +39,7 @@ It will automatically detect the device you are running on and pull the appropri
 inference server start --port 9001
 ````
 
-### `inference server status`
+### inference server status
 
 Checks the status of the local inference server.
 
@@ -47,7 +47,7 @@ Checks the status of the local inference server.
 inference server status
 ```
 
-### `inference infer`
+### inference infer
 
 Runs inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
 
@@ -77,7 +77,7 @@ Roboflow Inference CLI currently supports the following device targets:
 - ARM64 CPU
 - NVIDIA GPU
 
-For Jetson specific inference server images, check out the [Roboflow Inference](https://pypi.org/project/inference/) package, or pull the images directly following the official [Roboflow Inference instructions](https://inference.roboflow.com/quickstart/docker/#pull).
+For Jetson specific inference server images, check out the [Roboflow Inference](https://pypi.org/project/inference/) package, or pull the images directly following instructions in the official [Roboflow Inference documentation](https://inference.roboflow.com/quickstart/docker/#pull).
 
 ## 📝 license
 

@@ -13,7 +13,7 @@ shutil.copyfile(
 )
 from inference_cli.version import __version__
 
-with open("README.md", "r") as fh:
+with open("cli/README.md", "r") as fh:
     long_description = fh.read()
 
 
