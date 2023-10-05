@@ -1,28 +1,28 @@
 from contextlib import contextmanager
-from typing import Any, Optional, Union, List, Tuple, Generator
+from typing import Any, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
 from requests import HTTPError
 
 from clients.http.entities import (
-    ServerInfo,
-    RegisteredModels,
-    InferenceConfiguration,
+    CLASSIFICATION_TASK,
+    INSTANCE_SEGMENTATION_TASK,
+    OBJECT_DETECTION_TASK,
     HTTPClientMode,
     ImagesReference,
+    InferenceConfiguration,
     ModelDescription,
-    CLASSIFICATION_TASK,
-    OBJECT_DETECTION_TASK,
-    INSTANCE_SEGMENTATION_TASK,
+    RegisteredModels,
+    ServerInfo,
 )
 from clients.http.errors import (
-    HTTPClientError,
     HTTPCallErrorError,
+    HTTPClientError,
     InvalidModelIdentifier,
     ModelNotInitializedError,
-    ModelTaskTypeNotSupportedError,
     ModelNotSelectedError,
+    ModelTaskTypeNotSupportedError,
 )
 from clients.http.utils.iterables import unwrap_single_element_list
 from clients.http.utils.loaders import (
@@ -30,10 +30,10 @@ from clients.http.utils.loaders import (
     load_stream_inference_input,
 )
 from clients.http.utils.post_processing import (
-    response_contains_jpeg_image,
-    transform_visualisation_bytes,
-    transform_base64_visualisation,
     adjust_prediction_to_client_scaling_factor,
+    response_contains_jpeg_image,
+    transform_base64_visualisation,
+    transform_visualisation_bytes,
 )
 
 SUCCESSFUL_STATUS_CODE = 200
@@ -45,7 +45,6 @@ NEW_INFERENCE_ENDPOINTS = {
     OBJECT_DETECTION_TASK: "/infer/object_detection",
     CLASSIFICATION_TASK: "/infer/classification",
 }
-
 
 
 def wrap_errors(function: callable) -> callable:

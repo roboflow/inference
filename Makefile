@@ -1,7 +1,7 @@
 .PHONY: style check_code_quality
 
 export PYTHONPATH = .
-check_dirs := inference
+check_dirs := inference clients
 
 style:
 	black  $(check_dirs)

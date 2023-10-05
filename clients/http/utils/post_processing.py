@@ -1,20 +1,20 @@
 import base64
-from typing import Union, Optional, List
+from typing import List, Optional, Union
 
 import numpy as np
 from PIL import Image
 from requests import Response
 
 from clients.http.entities import (
-    VisualisationResponseFormat,
-    TaskType,
-    OBJECT_DETECTION_TASK,
     INSTANCE_SEGMENTATION_TASK,
+    OBJECT_DETECTION_TASK,
+    TaskType,
+    VisualisationResponseFormat,
 )
 from clients.http.utils.encoding import (
-    encode_base_64,
     bytes_to_opencv_image,
     bytes_to_pillow_image,
+    encode_base_64,
 )
 
 CONTENT_TYPE_HEADERS = ["content-type", "Content-Type"]

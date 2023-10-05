@@ -1,19 +1,19 @@
 import os
-from typing import Union, List, Generator, Optional, Tuple
+from typing import Generator, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import requests
-from PIL import Image
 import supervision as sv
+from PIL import Image
 
 from clients.http.entities import ImagesReference
-from clients.http.errors import InvalidInputFormatError, EncodingError
+from clients.http.errors import EncodingError, InvalidInputFormatError
 from clients.http.utils.encoding import (
+    bytes_to_opencv_image,
     encode_base_64,
     numpy_array_to_base64_jpeg,
     pillow_image_to_base64_jpeg,
-    bytes_to_opencv_image,
 )
 from clients.http.utils.pre_processing import resize_opencv_image, resize_pillow_image
 

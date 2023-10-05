@@ -1,11 +1,10 @@
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Union, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from PIL import Image
-
 from dataclasses_json import DataClassJsonMixin
+from PIL import Image
 
 from clients.http.errors import ModelTaskTypeNotSupportedError
 from clients.http.utils.iterables import remove_empty_values
