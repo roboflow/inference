@@ -55,10 +55,8 @@ class VisualisationResponseFormat:
 
 @dataclass(frozen=True)
 class InferenceConfiguration:
-    # Here we could add methods like with_confidence_threshold(...) - nice but a lot of code
     confidence_threshold: Optional[float] = None
     format: Optional[str] = None
-    show_labels: Optional[bool] = None
     mask_decode_mode: Optional[str] = None
     tradeoff_factor: Optional[float] = None
     max_candidates: Optional[int] = None
@@ -155,7 +153,7 @@ class InferenceConfiguration:
         parameters_specs = [
             ("confidence_threshold", "confidence"),
             ("format", "format"),
-            ("show_labels", "labels"),
+            ("visualize_labels", "labels"),
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
             ("max_detections", "max_detections"),
