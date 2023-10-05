@@ -28,7 +28,7 @@ from inference_clients.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
-    ModelTaskTypeNotSupportedError,
+    ModelTaskTypeNotSupportedError, WrongClientModeError,
 )
 
 
@@ -260,6 +260,17 @@ def test_setting_mode_with_context_manager() -> None:
     assert http_client.client_mode is HTTPClientMode.V1
 
 
+def test_client_unload_all_models_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.unload_all_models()
+
+
 def test_client_unload_all_models_when_successful_response_expected(
     requests_mock: Mocker,
 ) -> None:
@@ -288,6 +299,17 @@ def test_client_unload_all_models_when_error_occurs(requests_mock: Mocker) -> No
     # when
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.unload_all_models()
+
+
+def test_client_unload_single_model_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.unload_model(model_id="other/1")
 
 
 def test_client_unload_single_model_when_successful_response_expected(
@@ -356,6 +378,17 @@ def test_client_load_model_when_successful_response_expected(
     }
 
 
+def test_client_load_model_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.load_model(model_id="other/1")
+
+
 def test_client_load_model_when_unsuccessful_response_expected(
     requests_mock: Mocker,
 ) -> None:
@@ -378,6 +411,17 @@ def test_client_load_model_when_unsuccessful_response_expected(
         "model_id": "some/1",
         "api_key": "my-api-key",
     }
+
+
+def test_list_loaded_models_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.list_loaded_models()
 
 
 def test_list_loaded_models_when_successful_response_expected(
@@ -415,6 +459,17 @@ def test_list_loaded_models_when_unsuccessful_response_expected(
     # when
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.list_loaded_models()
+
+
+def test_get_model_description_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.get_model_description(model_id="some/1")
 
 
 def test_get_model_description_when_model_when_error_occurs_in_model_listing(
@@ -757,9 +812,23 @@ def test_infer_from_api_v1_when_model_id_is_not_selected() -> None:
 
     # when
     with pytest.raises(ModelNotSelectedError):
-        _ = http_client.infer_from_api_v0(
+        _ = http_client.infer_from_api_v1(
             inference_input="https://some/image.jpg",
         )
+
+
+def test_infer_from_api_v1_when_v0_mode_enabled() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = http_client.infer_from_api_v1(
+                inference_input="https://some/image.jpg",
+                model_id="some/1"
+            )
 
 
 def test_infer_from_api_v1_when_task_type_is_not_recognised() -> None:

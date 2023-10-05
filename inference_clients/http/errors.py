@@ -63,3 +63,7 @@ class ModelNotSelectedError(HTTPClientError):
 
 class EncodingError(HTTPClientError):
     pass
+
+
+class WrongClientModeError(HTTPClientError):
+    pass

@@ -23,6 +23,7 @@ from inference_clients.http.errors import (
     ModelNotInitializedError,
     ModelNotSelectedError,
     ModelTaskTypeNotSupportedError,
+    WrongClientModeError,
 )
 from inference_clients.http.utils.iterables import unwrap_single_element_list
 from inference_clients.http.utils.loaders import (
@@ -143,7 +144,6 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def get_server_info(self) -> ServerInfo:
-        # API KEY NOT NEEDED!
         response = requests.get(f"{self.__api_url}/info")
         response.raise_for_status()
         response_payload = response.json()
@@ -236,6 +236,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         model_description = self.get_model_description(model_id=model_id_to_be_used)
@@ -290,6 +291,7 @@ class InferenceHTTPClient:
     def get_model_description(
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
+        self.__ensure_v1_client_mode()
         registered_models = self.list_loaded_models()
         matching_models = [
             e for e in registered_models.models if e.model_id == model_id
@@ -305,8 +307,7 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def list_loaded_models(self) -> RegisteredModels:
-        # This may be problematic due to route structure in API - given LAMBDA is used - it will not return 404,
-        # but attempts to load models that does not exist...
+        self.__ensure_v1_client_mode()
         response = requests.get(f"{self.__api_url}/model/registry")
         response.raise_for_status()
         response_payload = response.json()
@@ -316,6 +317,7 @@ class InferenceHTTPClient:
     def load_model(
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
         response = requests.post(
             f"{self.__api_url}/model/add",
             json={
@@ -332,6 +334,7 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
@@ -347,11 +350,16 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
         response = requests.post(f"{self.__api_url}/model/clear")
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
+
+    def __ensure_v1_client_mode(self) -> None:
+        if self.__client_mode is not HTTPClientMode.V1:
+            raise WrongClientModeError("Use client mode `v1` to run this operation.")
 
 
 def _determine_client_downsizing_parameters(
