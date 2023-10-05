@@ -31,10 +31,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall pillow -y \
-    && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd \
-    && rm -rf ~/.cache/pip
-
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/trt_http.py trt_http.py

@@ -34,16 +34,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-ARG TARGETPLATFORM
-RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
-        pip3 uninstall pillow -y \
-        && CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd \
-        && rm -rf ~/.cache/pip; \
-    else \
-        echo "Skipping pillow-simd install"; \
-    fi
-
-
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
 

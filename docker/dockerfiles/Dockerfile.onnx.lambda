@@ -37,11 +37,6 @@ RUN pip3 install \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall pillow -y \
-    && pip3 install --upgrade pip \
-    && CC="cc -mavx2" pip3 install -U --force-reinstall --compile pillow-simd \
-    && rm -rf ~/.cache/pip
-
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 
