@@ -322,3 +322,181 @@ def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> 
     assert requests_mock.last_request.json() == {
         "model_id": "other/1",
     }
+
+
+def test_client_load_model_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.load_model(model_id="some/1", set_as_default=True)
+
+    # then
+    assert result == RegisteredModels(
+        models=[ModelDescription(model_id="some/1", task_type="classification")]
+    )
+    assert client.selected_model == "some/1"
+    assert requests_mock.last_request.json() == {
+        "model_id": "some/1",
+        "api_key": "my-api-key",
+    }
+
+
+def test_client_load_model_when_unsuccessful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.load_model(model_id="some/1", set_as_default=True)
+
+    # then
+    assert client.selected_model is None
+    assert requests_mock.last_request.json() == {
+        "model_id": "some/1",
+        "api_key": "my-api-key",
+    }
+
+
+def test_list_loaded_models_when_successful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.list_loaded_models()
+
+    # then
+    assert result == RegisteredModels(
+        models=[ModelDescription(model_id="some/1", task_type="classification")]
+    )
+
+
+def test_list_loaded_models_when_unsuccessful_response_expected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.list_loaded_models()
+
+
+def test_get_model_description_when_model_when_error_occurs_in_model_listing(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.get_model_description(model_id="some/1")
+
+
+def test_get_model_description_when_model_was_loaded_already(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.get_model_description(model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="classification")
+
+
+def test_get_model_description_when_model_was_not_loaded_before_and_successful_load(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        [
+            {"json": {"models": []}},
+            {
+                "json": {
+                    "models": [{"model_id": "some/1", "task_type": "classification"}]
+                }
+            },
+        ],
+    )
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = client.get_model_description(model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="classification")
+
+
+def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful_load(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        [
+            {"json": {"models": []}},
+            {
+                "json": {
+                    "models": [{"model_id": "some/1", "task_type": "classification"}]
+                }
+            },
+        ],
+    )
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"message": "Internal error."},
+        status_code=500,
+    )
+    client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = client.get_model_description(model_id="some/1")
