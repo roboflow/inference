@@ -19,9 +19,9 @@
 
 # Roboflow Inference CLI
 
-Roboflow Inference CLI offers a lightweight interface for running the Roboflow inference server locally or on the hosted api.
+Roboflow Inference CLI offers a lightweight interface for running the Roboflow inference server locally or the Roboflow Hosted API.
 
-To create custom inference server deployments, go to the parent package, [Roboflow Inference](https://pypi.org/project/inference/).
+To create custom inference server Docker images, go to the parent package, [Roboflow Inference](https://pypi.org/project/inference/).
 
 [Roboflow](https://roboflow.com) has everything you need to deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
 
@@ -29,7 +29,7 @@ To create custom inference server deployments, go to the parent package, [Robofl
 
 ### `inference server start`
 
-`inference server start` starts a local inference server. It optionally takes a port number (default is 9001) and will only start the docker container if there is not already a container running on that port.
+Starts a local inference server. It optionally takes a port number (default is 9001) and will only start the docker container if there is not already a container running on that port.
 
 ```bash
 inference server start --port 9001
@@ -37,7 +37,7 @@ inference server start --port 9001
 
 ### `inference server status`
 
-`inference server status` checks the status of a local inference server.
+Checks the status of the local inference server.
 
 ```bash
 inference server status
@@ -45,24 +45,24 @@ inference server status
 
 ### `inference infer`
 
-`inference infer` runs inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
+Runs inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
 
 #### Local image
 
 ```bash
-inference infer --image ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key
+inference infer ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key
 ```
 
 #### Hosted image
 
 ```bash
-inference infer --image https://[your-hosted-image-url] --project_id my-project --model-version 1 --api-key my-api-key
+inference infer https://[YOUR_HOSTED_IMAGE_URL] --project_id my-project --model-version 1 --api-key my-api-key
 ```
 
-#### Hosted inference
+#### Hosted API inference
 
 ```bash
-inference infer --image ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
+inference infer ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
 ```
 
 ## 📝 license
