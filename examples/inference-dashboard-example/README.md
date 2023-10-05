@@ -24,11 +24,11 @@ This is counting products on shelf, every 5 minutes, categorically and in total.
 
 <br/>
 
-![alt text](./results/objects_by_class_over_time.png "Title")
+![alt text](https://storage.googleapis.com/com-roboflow-marketing/objects_by_class_over_time.png "Title")
 
 <br/>
 
-![alt text](./results/objects_over_time_d.png "Title")
+![alt text](https://storage.googleapis.com/com-roboflow-marketing/objects_over_time_d.png "Title")
 
 ##  ⚙️ Requirements
 

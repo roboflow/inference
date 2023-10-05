@@ -1,6 +1,6 @@
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Union
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -12,14 +12,12 @@ from inference.core.data_models import (
     InferenceResponseImage,
     MultiLabelClassificationInferenceResponse,
 )
-from inference.core.models.mixins import ClassificationMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 
 
-class ClassificationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, ClassificationMixin
-):
+class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Base class for ONNX models for Roboflow classification inference.
 
     Attributes:
@@ -31,6 +29,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         infer(request: ClassificationInferenceRequest) -> Union[List[Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]], Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]]: Perform inference on a given request and return the response.
         draw_predictions(inference_request, inference_response): Draw prediction visuals on an image.
     """
+
+    task_type = "classification"
 
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
@@ -150,32 +150,57 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
             - The input image(s) will be preprocessed (normalized and reshaped) before inference.
             - This function uses an ONNX session to perform inference on the input image(s).
         """
-        t1 = perf_counter()
+        return super().infer(
+            image,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+            disable_preproc_contrast=disable_preproc_contrast,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+            return_image_dims=return_image_dims,
+        )
 
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        return_image_dims=False,
+        **kwargs,
+    ) -> Any:
+        predictions = predictions[0]
+        if return_image_dims:
+            return predictions, preprocess_return_metadata["img_dims"]
+        else:
+            return predictions
+
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
+        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        return (predictions,)
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         if isinstance(image, list):
             imgs_with_dims = [
                 self.preproc_image(
                     i,
-                    disable_preproc_auto_orient=disable_preproc_auto_orient,
-                    disable_preproc_contrast=disable_preproc_contrast,
-                    disable_preproc_grayscale=disable_preproc_grayscale,
-                    disable_preproc_static_crop=disable_preproc_static_crop,
+                    disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
+                    disable_preproc_contrast=kwargs["disable_preproc_contrast"],
+                    disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
+                    disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
                 )
                 for i in image
             ]
             imgs, img_dims = zip(*imgs_with_dims)
             img_in = np.concatenate(imgs, axis=0)
-            unwrap = False
         else:
             img_in, img_dims = self.preproc_image(
                 image,
-                disable_preproc_auto_orient=disable_preproc_auto_orient,
-                disable_preproc_contrast=disable_preproc_contrast,
-                disable_preproc_grayscale=disable_preproc_grayscale,
-                disable_preproc_static_crop=disable_preproc_static_crop,
+                disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
+                disable_preproc_contrast=kwargs["disable_preproc_contrast"],
+                disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
+                disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
             )
             img_dims = [img_dims]
-            unwrap = True
 
         img_in /= 255.0
 
@@ -187,13 +212,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
         img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
         img_in[:, 2, :, :] = (img_in[:, 2, :, :] - mean[2]) / std[2]
-
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
-
-        if return_image_dims:
-            return predictions, img_dims
-        else:
-            return predictions
+        return img_in, PreprocessReturnMetadata({"img_dims": img_dims})
 
     def infer_from_request(
         self,
