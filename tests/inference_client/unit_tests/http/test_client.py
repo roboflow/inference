@@ -8,27 +8,28 @@ import pytest
 from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 
-from inference_clients.http import client
-from inference_clients.http.client import (
+from inference_client.http import client
+from inference_client.http.client import (
     _ensure_model_is_selected,
     _determine_client_mode,
     _determine_client_downsizing_parameters,
     wrap_errors,
     InferenceHTTPClient,
 )
-from inference_clients.http.entities import (
+from inference_client.http.entities import (
     HTTPClientMode,
     ModelDescription,
     CLASSIFICATION_TASK,
     RegisteredModels,
     InferenceConfiguration,
 )
-from inference_clients.http.errors import (
+from inference_client.http.errors import (
     ModelNotSelectedError,
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
-    ModelTaskTypeNotSupportedError, WrongClientModeError,
+    ModelTaskTypeNotSupportedError,
+    WrongClientModeError,
 )
 
 
@@ -431,7 +432,15 @@ def test_list_loaded_models_when_successful_response_expected(
     api_url = "http://some.com"
     requests_mock.get(
         f"{api_url}/model/registry",
-        json={"models": [{"model_id": "some/1", "task_type": "classification", "batch_size": "batch"}]},
+        json={
+            "models": [
+                {
+                    "model_id": "some/1",
+                    "task_type": "classification",
+                    "batch_size": "batch",
+                }
+            ]
+        },
     )
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
@@ -440,7 +449,11 @@ def test_list_loaded_models_when_successful_response_expected(
 
     # then
     assert result == RegisteredModels(
-        models=[ModelDescription(model_id="some/1", task_type="classification", batch_size="batch")]
+        models=[
+            ModelDescription(
+                model_id="some/1", task_type="classification", batch_size="batch"
+            )
+        ]
     )
 
 
@@ -826,8 +839,7 @@ def test_infer_from_api_v1_when_v0_mode_enabled() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.infer_from_api_v1(
-                inference_input="https://some/image.jpg",
-                model_id="some/1"
+                inference_input="https://some/image.jpg", model_id="some/1"
             )
 
 

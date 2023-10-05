@@ -40,9 +40,8 @@ setuptools.setup(
             "docs",
             "requirements",
             "tests",
-            "tests.*"
-            "inference_clients",
-            "inference_clients.*"
+            "tests.*" "inference_client",
+            "inference_client.*",
         ),
     ),
     extras_require={

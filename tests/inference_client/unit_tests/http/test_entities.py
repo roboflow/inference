@@ -1,4 +1,4 @@
-from inference_clients.http.entities import (
+from inference_client.http.entities import (
     InferenceConfiguration,
     get_non_empty_attributes,
     DEFAULT_IMAGE_EXTENSIONS,

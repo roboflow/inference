@@ -143,7 +143,7 @@ If you seek for Python client to consume predictions from inference server - you
 package.
 
 ```bash
-pip install inference-clients
+pip install inference-client
 ```
 
 
@@ -154,11 +154,11 @@ pip install inference-clients
 We've made calling our models easy with Python client for HTTP API exposed by `inference`.
 
 ```python
-from inference_clients.http.client import InferenceHTTPClient
+from inference_client.http.client import InferenceHTTPClient
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
-#Replace ROBOFLOW_API_KEY with your Roboflow API Key
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
     api_url="http://localhost:9001",
     api_key="ROBOFLOW_API_KEY"

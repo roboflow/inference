@@ -5,13 +5,13 @@ import numpy as np
 from PIL import Image
 from requests import Response
 
-from inference_clients.http.entities import (
+from inference_client.http.entities import (
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
     TaskType,
     VisualisationResponseFormat,
 )
-from inference_clients.http.utils.encoding import (
+from inference_client.http.utils.encoding import (
     bytes_to_opencv_image,
     bytes_to_pillow_image,
     encode_base_64,

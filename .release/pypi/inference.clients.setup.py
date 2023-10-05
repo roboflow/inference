@@ -10,7 +10,7 @@ sys.path.append(root)
 
 shutil.copyfile(
     os.path.join(root, "inference/core/version.py"),
-    os.path.join(root, "inference_clients/version.py"),
+    os.path.join(root, "inference_client/version.py"),
 )
 
 from inference.core.version import __version__
@@ -30,7 +30,7 @@ def read_requirements(path):
 
 
 setuptools.setup(
-    name="inference-clients",
+    name="inference-client",
     version=__version__,
     author="Roboflow",
     author_email="help@roboflow.com",
@@ -45,14 +45,11 @@ setuptools.setup(
             "docs",
             "requirements",
             "tests",
-            "tests.*"
-            "inference",
-            "inference.*"
-        )
+            "tests.*" "inference",
+            "inference.*",
+        ),
     ),
-    install_requires=read_requirements(
-        ["requirements/requirements.clients.http.txt"]
-    ),
+    install_requires=read_requirements(["requirements/requirements.clients.http.txt"]),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",

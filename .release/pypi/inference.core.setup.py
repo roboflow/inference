@@ -32,9 +32,8 @@ setuptools.setup(
             "docs",
             "requirements",
             "tests",
-            "tests.*"
-            "inference_clients",
-            "inference_clients.*"
+            "tests.*" "inference_client",
+            "inference_client.*",
         ),
     ),
     install_requires=read_requirements("requirements/_requirements.txt"),

@@ -5,7 +5,7 @@ import numpy as np
 import requests
 from requests import HTTPError
 
-from inference_clients.http.entities import (
+from inference_client.http.entities import (
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
@@ -16,7 +16,7 @@ from inference_clients.http.entities import (
     RegisteredModels,
     ServerInfo,
 )
-from inference_clients.http.errors import (
+from inference_client.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
@@ -25,12 +25,12 @@ from inference_clients.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
-from inference_clients.http.utils.iterables import unwrap_single_element_list
-from inference_clients.http.utils.loaders import (
+from inference_client.http.utils.iterables import unwrap_single_element_list
+from inference_client.http.utils.loaders import (
     load_static_inference_input,
     load_stream_inference_input,
 )
-from inference_clients.http.utils.post_processing import (
+from inference_client.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     response_contains_jpeg_image,
     transform_base64_visualisation,

@@ -7,15 +7,15 @@ import requests
 import supervision as sv
 from PIL import Image
 
-from inference_clients.http.entities import ImagesReference
-from inference_clients.http.errors import EncodingError, InvalidInputFormatError
-from inference_clients.http.utils.encoding import (
+from inference_client.http.entities import ImagesReference
+from inference_client.http.errors import EncodingError, InvalidInputFormatError
+from inference_client.http.utils.encoding import (
     bytes_to_opencv_image,
     encode_base_64,
     numpy_array_to_base64_jpeg,
     pillow_image_to_base64_jpeg,
 )
-from inference_clients.http.utils.pre_processing import (
+from inference_client.http.utils.pre_processing import (
     resize_opencv_image,
     resize_pillow_image,
 )
