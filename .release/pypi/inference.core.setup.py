@@ -31,7 +31,7 @@ setuptools.setup(
             "docker",
             "docs",
             "requirements",
-            "test",
+            "tests",
         ),
     ),
     install_requires=read_requirements("requirements/_requirements.txt"),

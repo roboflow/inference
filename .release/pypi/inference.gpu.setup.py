@@ -39,7 +39,7 @@ setuptools.setup(
             "docker",
             "docs",
             "requirements",
-            "test",
+            "tests",
         ),
     ),
     extras_require={
