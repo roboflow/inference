@@ -149,3 +149,5 @@ README.dataset*
 _annotations*
 
 export_api_keys.sh
+
+inference_client/version.py
