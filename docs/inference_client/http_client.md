@@ -177,6 +177,97 @@ for file_path, image, prediction in CLIENT.infer_on_stream("local/dir/", model_i
 is done only in context of `visualization` key that keep server-generated prediction visualisation (it
 can be transcoded to the format of choice) and in terms of client-side re-scaling.
 
+## Methods to control `inference` server (in `v1` mode only)
+
+### Getting server info
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.get_server_info()
+```
+
+### Listing loaded models
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.list_loaded_models()
+```
+
+### Getting specific model description
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.get_model_description(model_id="some/1", allow_loading=True)
+```
+
+If `allow_loading` is set to `True` - model will be loaded as side-effect if it is not already loaded.
+Default: `True`.
+
+
+### Loading model
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.load_model(model_id="some/1", set_as_default=True)
+```
+
+The pointed model will be loaded. If `set_as_default` is set to `True` - after successful load, model
+will be used as default model for the client. Default value: `False`.
+
+
+### Unloading model
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.unload_model(model_id="some/1")
+```
+
+Sometimes (to avoid OOM at server side) - unloading model will be required.
+
+
+### Unloading all models
+
+```python
+from inference_client import InferenceHTTPClient
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.unload_all_models()
+```
+
 
 ## Details about client configuration
 
