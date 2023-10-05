@@ -62,7 +62,7 @@ inference infer --image https://[your-hosted-image-url] --project_id my-project 
 #### Hosted inference
 
 ```bash
-inference infer --image ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://infer.roboflow.com
+inference infer --image ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
 ```
 
 ## 📝 license
