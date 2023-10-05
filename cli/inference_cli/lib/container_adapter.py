@@ -108,5 +108,34 @@ def start_inference_container(
     )
 
 
+def check_inference_server_status():
+    containers = find_existing_containers()
+    if len(containers) > 0:
+        for c in containers:
+            container_name = c.attrs.get("Name", "")
+            created = c.attrs.get("Created", "")
+            exposed_port = list(c.attrs.get("Config").get("ExposedPorts", {}).keys())[0]
+            status = c.attrs.get("State", {}).get("Status", "unknown")
+            image = c.attrs.get("Image", "")
+            container_status_message = """
+Container Name: {container_name}
+Created: {created}
+Exposed Port: {exposed_port}
+Status: {status}
+Image: {image}
+            """
+            print(
+                container_status_message.format(
+                    container_name=container_name,
+                    created=created,
+                    exposed_port=exposed_port,
+                    status=status,
+                    image=image,
+                )
+            )
+            return
+    print("No inference server container running.")
+
+
 if __name__ == "__main__":
     start_inference_container("my_api_key")

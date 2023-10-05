@@ -1,26 +1,10 @@
 import typer
-import inference_cli.actions
-from inference_cli.lib import start_inference_container
+from inference_cli.server import server_app
+import inference_cli.lib
 
 app = typer.Typer()
 
-
-@app.command()
-def serve(
-    port: int = typer.Option(
-        9001,
-        "-p",
-        "--port",
-        help="Port to run the inference server on (default is 9001).",
-    ),
-    rf_env: str = typer.Option(
-        "roboflow-platform",
-        "-rfe",
-        "--rf-env",
-        help="Roboflow environment to run the inference server with (default is roboflow-platform).",
-    ),
-):
-    start_inference_container("", port=port, project=rf_env)
+app.add_typer(server_app, name="server")
 
 
 @app.command()
@@ -44,7 +28,7 @@ def infer(
     typer.echo(
         f"Running inference on image {image}, using model ({project_id}/{model_version}), and host ({host})"
     )
-    inference_cli.actions.infer(image, project_id, model_version, api_key, host)
+    inference_cli.lib.infer(image, project_id, model_version, api_key, host)
 
 
 if __name__ == "__main__":

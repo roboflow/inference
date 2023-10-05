@@ -1,14 +1,14 @@
 <div align="center">
     <img
     width="100%"
-    src="https://github.com/roboflow/inference/blob/main/banner.png?raw=true"
+    src="https://github.com/roboflow/inference/assets/6319317/9230d986-183d-4ab0-922b-4b497f16d937"
     />
 
-<br>
+  <br/>
 
-[notebooks](https://github.com/roboflow/notebooks) | [inference](https://github.com/roboflow/inference) | [autodistill](https://github.com/autodistill/autodistill) | [collect](https://github.com/roboflow/roboflow-collect)
+### [inference package](https://pypi.org/project/inference/) | [inference repo](https://github.com/roboflow/inference)
 
-<br>
+  <br/>
 
 [![version](https://badge.fury.io/py/roboflow.svg)](https://badge.fury.io/py/inference-cli)
 [![downloads](https://img.shields.io/pypi/dm/inference-cli)](https://pypistats.org/packages/inference-cli)
@@ -19,30 +19,33 @@
 
 # Roboflow Inference CLI
 
-[Roboflow](https://roboflow.com) Inference is an opinionated tool for running inference on state-of-the-art computer vision models. With no prior
-knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
+Roboflow Inference CLI offers a lightweight interface for running the Roboflow inference server locally or on the hosted api.
 
-## 🎥 Inference in action
+To create custom inference server deployments, go to the parent package, [Roboflow Inference](https://pypi.org/project/inference/).
 
-Check out Inference running on a video of a football game:
-
-https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
+[Roboflow](https://roboflow.com) has everything you need to deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
 
 ## 👩‍🏫 Examples
 
-The [`/examples` directory](https://github.com/roboflow/inference/blob/main/examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
+### `inference server start`
 
-### `inference serve`
-
-`inference serve` is the main command for starting a local inference server. It takes a port number and will only start the docker container if there is not already a container running on that port.
+`inference server start` starts a local inference server. It optionally takes a port number (default is 9001) and will only start the docker container if there is not already a container running on that port.
 
 ```bash
-inference serve --port 9001
+inference server start --port 9001
+```
+
+### `inference server status`
+
+`inference server status` checks the status of a local inference server.
+
+```bash
+inference server status
 ```
 
 ### `inference infer`
 
-`inference infer` is the main command for running inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
+`inference infer` runs inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
 
 #### Local image
 
@@ -61,24 +64,6 @@ inference infer --image https://[your-hosted-image-url] --project_id my-project 
 ```bash
 inference infer --image ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://infer.roboflow.com
 ```
-
-## 💻 Why Inference?
-
-Inference provides a scalable method through which you can manage inferences for your vision projects.
-
-Inference is backed by:
-
-- A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
-
-- Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
-
-- Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
-
-- A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
-
-- Data management integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
-
-And more!
 
 ## 📝 license
 
@@ -109,10 +94,6 @@ To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 ## 📚 documentation
 
 Visit our [documentation](https://roboflow.github.io/inference) for usage examples and reference for Roboflow Inference.
-
-## 🏆 contribution
-
-We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
 
 ## 💻 explore more Roboflow open source projects
 
