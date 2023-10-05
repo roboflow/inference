@@ -10,8 +10,8 @@ from inference.core.data_models import (
     Point,
 )
 from inference.core.exceptions import InvalidMaskDecodeArgument
-from inference.core.models.mixins import InstanceSegmentationMixin
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     mask2poly,
@@ -22,35 +22,43 @@ from inference.core.utils.postprocess import (
     scale_polys,
 )
 
+DEFAULT_CONFIDENCE = 0.5
+DEFAULT_IOU_THRESH = 0.5
+DEFAULT_CLASS_AGNOSTIC_NMS = False
+DEFAUlT_MAX_DETECTIONS = 300
+DEFAULT_MAX_CANDIDATES = 3000
+DEFAULT_MASK_DECODE_MODE = "accurate"
+DEFAULT_TRADEOFF_FACTOR = 0.5
 
-class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
-    OnnxRoboflowInferenceModel, InstanceSegmentationMixin
-):
+PREDICTIONS_TYPE = List[List[List[float]]]
+
+
+class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Instance Segmentation model.
 
     This class implements an instance segmentation specific inference method
     for ONNX models provided by Roboflow.
     """
 
+    task_type = "instance-segmentation"
+
     def infer(
         self,
         image: Any,
         class_agnostic_nms: bool = False,
-        confidence: float = 0.5,
+        confidence: float = DEFAULT_CONFIDENCE,
         disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-        iou_threshold: float = 0.5,
-        mask_decode_mode: str = "accurate",
-        max_candidates: int = 3000,
-        max_detections: int = 300,
+        iou_threshold: float = DEFAULT_IOU_THRESH,
+        mask_decode_mode: str = DEFAULT_MASK_DECODE_MODE,
+        max_candidates: int = DEFAULT_MAX_CANDIDATES,
+        max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
-        tradeoff_factor: float = 0.5,
+        tradeoff_factor: float = DEFAULT_TRADEOFF_FACTOR,
         **kwargs,
-    ) -> Union[
-        List[List[List[float]]], Tuple[List[List[List[float]]], List[Tuple[int, int]]]
-    ]:
+    ) -> Union[PREDICTIONS_TYPE, Tuple[PREDICTIONS_TYPE, List[Tuple[int, int]]]]:
         """
         Process an image or list of images for instance segmentation.
 
@@ -82,39 +90,53 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
             - Applies non-maximum suppression to the predictions.
             - Decodes the masks according to the specified mode.
         """
-        t1 = perf_counter()
-
-        img_in, img_dims = self.load_image(
+        return super().infer(
             image,
+            class_agnostic_nms=class_agnostic_nms,
+            confidence=confidence,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
+            iou_threshold=iou_threshold,
+            mask_decode_mode=mask_decode_mode,
+            max_candidates=max_candidates,
+            max_detections=max_detections,
+            return_image_dims=return_image_dims,
+            tradeoff_factor=tradeoff_factor,
         )
 
-        img_in /= 255.0
-        predictions, protos = self.infer_onnx(img_in)
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, np.ndarray],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> Any:
+        predictions, protos = predictions
         predictions = w_np_non_max_suppression(
             predictions,
-            conf_thresh=confidence,
-            iou_thresh=iou_threshold,
-            class_agnostic=class_agnostic_nms,
-            max_detections=max_detections,
-            max_candidate_detections=max_candidates,
+            conf_thresh=kwargs["confidence"],
+            iou_thresh=kwargs["iou_threshold"],
+            class_agnostic=kwargs["class_agnostic_nms"],
+            max_detections=kwargs["max_detections"],
+            max_candidate_detections=kwargs["max_candidates"],
             num_masks=32,
         )
         infer_shape = (self.img_size_w, self.img_size_h)
         predictions = np.array(predictions)
         masks = []
+        mask_decode_mode = kwargs["mask_decode_mode"]
+        tradeoff_factor = kwargs["tradeoff_factor"]
+        img_in_shape = preprocess_return_metadata["im_shape"]
         if predictions.shape[1] > 0:
             for i, (pred, proto, img_dim) in enumerate(
-                zip(predictions, protos, img_dims)
+                zip(predictions, protos, preprocess_return_metadata["img_dims"])
             ):
                 if mask_decode_mode == "accurate":
                     batch_masks = process_mask_accurate(
-                        proto, pred[:, 7:], pred[:, :4], img_in.shape[2:]
+                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
                     )
-                    output_mask_shape = img_in.shape[2:]
+                    output_mask_shape = img_in_shape[2:]
                 elif mask_decode_mode == "tradeoff":
                     if not 0 <= tradeoff_factor <= 1:
                         raise InvalidMaskDecodeArgument(
@@ -124,13 +146,13 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                         proto,
                         pred[:, 7:],
                         pred[:, :4],
-                        img_in.shape[2:],
+                        img_in_shape[2:],
                         tradeoff_factor,
                     )
                     output_mask_shape = batch_masks.shape[1:]
                 elif mask_decode_mode == "fast":
                     batch_masks = process_mask_fast(
-                        proto, pred[:, 7:], pred[:, :4], img_in.shape[2:]
+                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
                     )
                     output_mask_shape = batch_masks.shape[1:]
                 else:
@@ -144,7 +166,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                     [img_dim],
                     self.preproc,
                     resize_method=self.resize_method,
-                    disable_preproc_static_crop=disable_preproc_static_crop,
+                    disable_preproc_static_crop=preprocess_return_metadata[
+                        "disable_preproc_static_crop"
+                    ],
                 )[0]
                 polys = scale_polys(
                     output_mask_shape,
@@ -156,10 +180,30 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
                 masks.append(polys)
         else:
             masks.append([])
-        if return_image_dims:
-            return predictions, masks, img_dims
+        if kwargs["return_image_dims"]:
+            return predictions, masks, preprocess_return_metadata["img_dims"]
         else:
             return predictions, masks
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        img_in, img_dims = self.load_image(
+            image,
+            disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
+            disable_preproc_contrast=kwargs["disable_preproc_contrast"],
+            disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
+            disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+        )
+
+        img_in /= 255.0
+        return img_in, PreprocessReturnMetadata(
+            {
+                "img_dims": img_dims,
+                "im_shape": img_in.shape,
+                "disable_preproc_static_crop": kwargs["disable_preproc_static_crop"],
+            }
+        )
 
     def make_response(
         self,
@@ -217,7 +261,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         ]
         return responses
 
-    def infer_onnx(self, img_in: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """Runs inference on the ONNX model.
 
         Args:
@@ -229,4 +273,4 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(
         Raises:
             NotImplementedError: This method must be implemented by a subclass.
         """
-        raise NotImplementedError("infer_onnx must be implemented by a subclass")
+        raise NotImplementedError("predict must be implemented by a subclass")
