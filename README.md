@@ -154,7 +154,7 @@ pip install inference-client
 We've made calling our models easy with Python client for HTTP API exposed by `inference`.
 
 ```python
-from inference_client.http.client import InferenceHTTPClient
+from inference_client import InferenceHTTPClient
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
