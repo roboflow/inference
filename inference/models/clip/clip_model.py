@@ -342,7 +342,7 @@ class Clip(OnnxRoboflowCoreModel):
         response.time = perf_counter() - t1
         return response
 
-    def make_response(self, embeddings) -> InferenceResponse:
+    def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:
         return self.make_embed_image_response(embeddings)
 
     def postprocess(
