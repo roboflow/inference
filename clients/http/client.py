@@ -142,8 +142,8 @@ class InferenceHTTPClient:
         self,
         input_uri: str,
         model_id: Optional[str] = None,
-    ) -> Generator[Tuple[np.ndarray, dict], None, None]:
-        for frame in load_stream_inference_input(
+    ) -> Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]:
+        for reference, frame in load_stream_inference_input(
             input_uri=input_uri,
             image_extensions=self.__inference_configuration.image_extensions_for_directory_scan,
         ):
@@ -151,7 +151,7 @@ class InferenceHTTPClient:
                 inference_input=frame,
                 model_id=model_id,
             )
-            yield frame, prediction
+            yield reference, frame, prediction
 
     @wrap_errors
     def infer(

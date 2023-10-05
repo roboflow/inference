@@ -5,21 +5,20 @@ from typing import Union
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
+
+from clients.http.errors import EncodingError
 
 
-def encode_numpy_array(
-    array: np.ndarray,
-    as_jpeg: bool = True,
+def numpy_array_to_base64_jpeg(
+    image: np.ndarray,
 ) -> Union[str, bytes]:
-    if as_jpeg:
-        _, img_encoded = cv2.imencode(".jpg", array)
-        image_bytes = np.array(img_encoded).tobytes()
-        return encode_base_64(payload=image_bytes)
-    return pickle.dumps(array)
+    _, img_encoded = cv2.imencode(".jpg", image)
+    image_bytes = np.array(img_encoded).tobytes()
+    return encode_base_64(payload=image_bytes)
 
 
-def encode_pillow_image(image: Image.Image) -> str:
+def pillow_image_to_base64_jpeg(image: Image.Image) -> str:
     with BytesIO() as buffer:
         image.save(buffer, format="JPEG")
         return encode_base_64(payload=buffer.getvalue())
@@ -33,9 +32,15 @@ def bytes_to_opencv_image(
     payload: bytes, array_type: np.number = np.uint8
 ) -> np.ndarray:
     bytes_array = np.frombuffer(payload, dtype=array_type)
-    return cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+    if decoding_result is None:
+        raise EncodingError("Could not encode bytes to OpenCV image.")
+    return decoding_result
 
 
 def bytes_to_pillow_image(payload: bytes) -> Image.Image:
     buffer = BytesIO(payload)
-    return Image.open(buffer)
+    try:
+        return Image.open(buffer)
+    except UnidentifiedImageError as error:
+        raise EncodingError("Could not encode bytes to PIL image.") from error
