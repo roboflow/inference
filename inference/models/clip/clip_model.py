@@ -213,10 +213,16 @@ class Clip(OnnxRoboflowCoreModel):
         else:
             img_in = self.preproc_image(image)
 
+
         onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
         embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
 
         return embeddings
+    
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
+        onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
+        embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
+        return (embeddings,)
 
     def make_embed_image_response(
         self, embeddings: np.ndarray
@@ -334,9 +340,6 @@ class Clip(OnnxRoboflowCoreModel):
         response = make_response_func(data)
         response.time = perf_counter() - t1
         return response
-
-    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
-        return (self.embed_image(img_in),)
 
     def postprocess(
         self,
