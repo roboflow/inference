@@ -343,7 +343,7 @@ class Clip(OnnxRoboflowCoreModel):
         return response
 
     def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:
-        return self.make_embed_image_response(embeddings)
+        return [self.make_embed_image_response(embeddings)]
 
     def postprocess(
         self,
