@@ -31,7 +31,7 @@ class ServerInfo(DataClassJsonMixin):
 class ModelDescription(DataClassJsonMixin):
     model_id: str
     task_type: TaskType
-    batch_size: Optional[int] = None
+    batch_size: Optional[Union[int, str]] = None
     input_height: Optional[int] = None
     input_width: Optional[int] = None
 

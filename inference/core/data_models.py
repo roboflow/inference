@@ -346,7 +346,7 @@ class ModelDescriptionEntity(BaseModel):
     task_type: str = Field(
         description="Type of the task that the model performs", example="classification"
     )
-    batch_size: Optional[int] = Field(
+    batch_size: Optional[Union[int, str]] = Field(
         description="Batch size accepted by the model (if registered).",
     )
     input_height: Optional[int] = Field(

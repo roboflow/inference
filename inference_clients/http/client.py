@@ -192,10 +192,9 @@ class InferenceHTTPClient:
             raise InvalidModelIdentifier(
                 f"Invalid model identifier: {model_id} in use."
             )
-        model_description = self.get_model_description(model_id=model_id_to_be_used)
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
-            model_description=model_description,
+            model_description=None,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
         encoded_inference_inputs = load_static_inference_input(
@@ -227,7 +226,6 @@ class InferenceHTTPClient:
                 parsed_response = response.json()
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
-                task_type=model_description.task_type,
                 scaling_factor=scaling_factor,
             )
             results.append(parsed_response)
@@ -284,7 +282,6 @@ class InferenceHTTPClient:
                 )
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
-                task_type=model_description.task_type,
                 scaling_factor=scaling_factor,
             )
             results.append(parsed_response)
@@ -359,12 +356,12 @@ class InferenceHTTPClient:
 
 def _determine_client_downsizing_parameters(
     client_downsizing_disabled: bool,
-    model_description: ModelDescription,
+    model_description: Optional[ModelDescription],
     default_max_input_size: int,
 ) -> Tuple[Optional[int], Optional[int]]:
     if client_downsizing_disabled:
         return None, None
-    if model_description.input_height is None or model_description.input_width is None:
+    if model_description is None or model_description.input_height is None or model_description.input_width is None:
         return default_max_input_size, default_max_input_size
     return model_description.input_height, model_description.input_width
 

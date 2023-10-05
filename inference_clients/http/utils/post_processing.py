@@ -60,7 +60,6 @@ def transform_visualisation_bytes(
 
 def adjust_prediction_to_client_scaling_factor(
     prediction: dict,
-    task_type: TaskType,
     scaling_factor: Optional[float],
 ) -> dict:
     if scaling_factor is None:
@@ -70,17 +69,19 @@ def adjust_prediction_to_client_scaling_factor(
             "width": round(prediction["image"]["width"] / scaling_factor),
             "height": round(prediction["image"]["height"] / scaling_factor),
         }
-    if "predictions" in prediction and task_type == OBJECT_DETECTION_TASK:
+    if "predictions" not in prediction or len(prediction["predictions"]) == 0:
+        return prediction
+    if "points" in prediction["predictions"][0]:
         prediction[
             "predictions"
         ] = adjust_object_detection_predictions_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
-    if "predictions" in prediction and task_type == INSTANCE_SEGMENTATION_TASK:
+    else:
         prediction[
             "predictions"
-        ] = adjust_instance_segmentation_predictions_to_client_scaling_factor(
+        ] = adjust_object_detection_predictions_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )

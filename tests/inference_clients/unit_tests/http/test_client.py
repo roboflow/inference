@@ -387,7 +387,7 @@ def test_list_loaded_models_when_successful_response_expected(
     api_url = "http://some.com"
     requests_mock.get(
         f"{api_url}/model/registry",
-        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        json={"models": [{"model_id": "some/1", "task_type": "classification", "batch_size": "batch"}]},
     )
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
@@ -396,7 +396,7 @@ def test_list_loaded_models_when_successful_response_expected(
 
     # then
     assert result == RegisteredModels(
-        models=[ModelDescription(model_id="some/1", task_type="classification")]
+        models=[ModelDescription(model_id="some/1", task_type="classification", batch_size="batch")]
     )
 
 
@@ -527,13 +527,6 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection(
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    http_client.get_model_description = MagicMock()
-    http_client.get_model_description.return_value = ModelDescription(
-        model_id="some/1",
-        task_type="object-detection",
-        input_height=480,
-        input_width=640,
-    )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     configuration = InferenceConfiguration(confidence_threshold=0.5)
     http_client.configure(inference_configuration=configuration)
@@ -597,13 +590,6 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    http_client.get_model_description = MagicMock()
-    http_client.get_model_description.return_value = ModelDescription(
-        model_id="some/1",
-        task_type="object-detection",
-        input_height=480,
-        input_width=640,
-    )
     load_static_inference_input_mock.return_value = [
         ("base64_image", 0.5),
         ("another_image", None),
@@ -692,13 +678,6 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    http_client.get_model_description = MagicMock()
-    http_client.get_model_description.return_value = ModelDescription(
-        model_id="some/1",
-        task_type="object-detection",
-        input_height=480,
-        input_width=640,
-    )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     configuration = InferenceConfiguration(confidence_threshold=0.5, format="image")
     http_client.configure(inference_configuration=configuration)
@@ -729,13 +708,6 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection(
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    http_client.get_model_description = MagicMock()
-    http_client.get_model_description.return_value = ModelDescription(
-        model_id="some/1",
-        task_type="object-detection",
-        input_height=480,
-        input_width=640,
-    )
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     configuration = InferenceConfiguration(confidence_threshold=0.5)
     http_client.configure(inference_configuration=configuration)
