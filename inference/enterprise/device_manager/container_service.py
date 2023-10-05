@@ -9,6 +9,7 @@ import docker
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL
 from inference.core.logger import logger
+
 from inference.core.utils.image_utils import load_image_rgb
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 
@@ -33,6 +34,14 @@ class InferServerContainer:
             if t is not None
             else datetime.now().timestamp()
         )
+
+    def kill(self):
+        try:
+            self.container.kill()
+            return True, None
+        except Exception as e:
+            logger.error(e)
+            return False, None
 
     def restart(self):
         try:
@@ -138,6 +147,31 @@ class InferServerContainer:
                     num_images += 1
         return latest_inferred_images
 
+    def get_startup_config(self):
+        """
+        Get the startup configuration for this container.
+
+        Returns:
+            dict: A dictionary containing the startup configuration for this container.
+        """
+        env_vars = self.container.attrs.get("Config", {}).get("Env", {})
+        port_bindings = self.container.attrs.get("HostConfig", {}).get(
+            "PortBindings", {}
+        )
+        detached = self.container.attrs.get("HostConfig", {}).get("Detached", False)
+        image = self.container.attrs.get("Config", {}).get("Image", "")
+        privileged = self.container.attrs.get("HostConfig", {}).get("Privileged", False)
+        labels = self.container.attrs.get("Config", {}).get("Labels", {})
+        return {
+            "env": env_vars,
+            "port_bindings": port_bindings,
+            "detach": detached,
+            "image": image,
+            "privileged": privileged,
+            "labels": labels,
+            # TODO: add device requests
+        }
+
 
 class ContainerService:
     """
@@ -149,7 +183,6 @@ class ContainerService:
 
     def __init__(self):
         self.client = docker.from_env()
-        self.inference_containers = []
 
     def is_inference_server_container(self, container):
         """
@@ -167,27 +200,33 @@ class ContainerService:
                 return True
         return False
 
-    def discover_containers(self):
+    def get_inference_containers(self):
         """
         Discovers inference server containers running on the host
         and parses their information into a list of InferServerContainer objects
         """
         containers = self.client.containers.list()
+        inference_containers = []
         for c in containers:
             if self.is_inference_server_container(c):
                 details = self.parse_container_info(c)
-                info = requests.get(
-                    f"http://{details['host']}:{details['port']}/info"
-                ).json()
+                info = {}
+                try:
+                    info = requests.get(
+                        f"http://{details['host']}:{details['port']}/info", timeout=3
+                    ).json()
+                except Exception as e:
+                    logger.error(f"Failed to get info from container {c.id}")
                 details.update(info)
                 infer_container = InferServerContainer(c, details)
-                if len(self.inference_containers) == 0:
-                    self.inference_containers.append(infer_container)
+                if len(inference_containers) == 0:
+                    inference_containers.append(infer_container)
                     continue
-                for ic in self.inference_containers:
+                for ic in inference_containers:
                     if ic.id == infer_container.id:
                         continue
-                    self.inference_containers.append(infer_container)
+                    inference_containers.append(infer_container)
+        return inference_containers
 
     def parse_container_info(self, c):
         """
@@ -227,8 +266,8 @@ class ContainerService:
         Returns:
             container: The container object if found, None otherwise
         """
-        self.discover_containers()
-        for c in self.inference_containers:
+        containers = self.get_inference_containers()
+        for c in containers:
             if c.id == id:
                 return c
         return None
@@ -240,8 +279,8 @@ class ContainerService:
         Returns:
             list: A list of container ids
         """
-        self.discover_containers()
-        return [c.id for c in self.inference_containers]
+        containers = self.get_inference_containers()
+        return [c.id for c in containers]
 
 
 container_service = ContainerService()
