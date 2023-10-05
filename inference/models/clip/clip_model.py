@@ -344,7 +344,7 @@ class Clip(OnnxRoboflowCoreModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:
-        return predictions
+        return predictions[0]
 
     def infer(self, image: Any, **kwargs) -> Any:
         """Embeds an image"""
