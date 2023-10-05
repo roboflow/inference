@@ -67,7 +67,8 @@ class Stream(BaseInterface):
         model: Union[str, Callable] = MODEL_ID,
         camera: Union[int, str] = STREAM_ID,
         use_bytetrack: bool = ENABLE_BYTE_TRACK,
-        main_thread: bool = False,
+        use_main_thread: bool = False,
+        output_channel_order: str = "RGB",
         on_prediction: Callable = None
     ):
         """Initialize the stream with the given parameters.
@@ -105,7 +106,8 @@ class Stream(BaseInterface):
         self.max_candidates = max_candidates
         self.max_detections = max_detections
         self.json_response = json_response
-        self.main_thread = main_thread
+        self.use_main_thread = use_main_thread
+        self.output_channel_order = output_channel_order
 
         self.inference_request_type = M.ObjectDetectionInferenceRequest
 
@@ -247,9 +249,11 @@ class Stream(BaseInterface):
                 self.inference_response = predictions
                 self.frame_count += 1
 
-                print(len(self.on_prediction_callbacks), len(predictions))
                 for cb in self.on_prediction_callbacks:
-                    cb(predictions, np.asarray(self.frame))
+                    if self.output_channel_order == "BGR":
+                        cb(predictions, self.frame_cv)
+                    else:
+                        cb(predictions, np.asarray(self.frame))
                 
                 if time.perf_counter() - last_print > 1:
                     print(f"Streaming {print_chars[print_ind]}", end="\r")
@@ -264,7 +268,7 @@ class Stream(BaseInterface):
         preprocess_thread = threading.Thread(target=self.preprocess_thread)
         preprocess_thread.start()
         
-        if self.main_thread:
+        if self.use_main_thread:
             self.inference_request_thread()
         else:
             # start a thread that looks for the predictions

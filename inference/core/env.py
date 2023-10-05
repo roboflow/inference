@@ -1,6 +1,9 @@
 import os
 import uuid
 
+from dotenv import load_dotenv
+load_dotenv(os.getcwd() + "/.env")
+
 from inference.core.exceptions import InvalidEnvironmentVariableError
 
 
@@ -67,7 +70,7 @@ API_BASE_URL = os.getenv(
 API_DEBUG = os.getenv("API_DEBUG", False)
 
 # API key, default is None
-API_KEY = os.getenv("API_KEY", None)
+API_KEY = os.getenv("ROBOFLOW_API_KEY", None) or os.getenv("API_KEY", None)
 
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = None #os.getenv("AWS_ACCESS_KEY_ID", None)
