@@ -9,6 +9,7 @@ from clients.http.entities import (
     VisualisationResponseFormat,
     TaskType,
     OBJECT_DETECTION_TASK,
+    INSTANCE_SEGMENTATION_TASK,
 )
 from clients.http.utils.encoding import (
     encode_base_64,
@@ -76,10 +77,10 @@ def adjust_prediction_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
-    if "predictions" in prediction and task_type == OBJECT_DETECTION_TASK:
+    if "predictions" in prediction and task_type == INSTANCE_SEGMENTATION_TASK:
         prediction[
             "predictions"
-        ] = adjust_object_detection_predictions_to_client_scaling_factor(
+        ] = adjust_instance_segmentation_predictions_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
