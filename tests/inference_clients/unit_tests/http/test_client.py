@@ -8,22 +8,22 @@ import pytest
 from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
 
-from clients.http import client
-from clients.http.client import (
+from inference_clients.http import client
+from inference_clients.http.client import (
     _ensure_model_is_selected,
     _determine_client_mode,
     _determine_client_downsizing_parameters,
     wrap_errors,
     InferenceHTTPClient,
 )
-from clients.http.entities import (
+from inference_clients.http.entities import (
     HTTPClientMode,
     ModelDescription,
     CLASSIFICATION_TASK,
     RegisteredModels,
     InferenceConfiguration,
 )
-from clients.http.errors import (
+from inference_clients.http.errors import (
     ModelNotSelectedError,
     HTTPCallErrorError,
     HTTPClientError,

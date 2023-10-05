@@ -10,8 +10,8 @@ import pytest
 from PIL import Image
 from requests import Response, HTTPError
 
-from clients.http.errors import EncodingError, InvalidInputFormatError
-from clients.http.utils.loaders import (
+from inference_clients.http.errors import EncodingError, InvalidInputFormatError
+from inference_clients.http.utils.loaders import (
     uri_is_http_link,
     load_image_from_url,
     load_image_from_uri,
@@ -19,7 +19,7 @@ from clients.http.utils.loaders import (
     load_directory_inference_input,
     load_stream_inference_input,
 )
-from clients.http.utils import loaders
+from inference_clients.http.utils import loaders
 
 
 def test_uri_is_http_link_when_local_absolute_path_provided() -> None:

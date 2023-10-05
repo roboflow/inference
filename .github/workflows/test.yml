@@ -49,4 +49,4 @@ jobs:
       - name: 🧪 Unit Tests of clients
         run: |
           pip install -r requirements/requirements.clients.http.txt
-          python -m pytest tests/clients/unit_tests
+          python -m pytest tests/inference_clients/unit_tests

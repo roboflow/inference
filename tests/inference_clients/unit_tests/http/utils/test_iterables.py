@@ -1,4 +1,4 @@
-from clients.http.utils.iterables import remove_empty_values, unwrap_single_element_list
+from inference_clients.http.utils.iterables import remove_empty_values, unwrap_single_element_list
 
 
 def test_remove_empty_values_when_dictionary_is_empty() -> None:

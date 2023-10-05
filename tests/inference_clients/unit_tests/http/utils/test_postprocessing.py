@@ -7,8 +7,8 @@ import pytest
 from PIL import Image, ImageChops
 from requests import Response
 
-from clients.http.entities import VisualisationResponseFormat
-from clients.http.utils.post_processing import (
+from inference_clients.http.entities import VisualisationResponseFormat
+from inference_clients.http.utils.post_processing import (
     adjust_segmentation_polygon_to_client_scaling_factor,
     adjust_bbox_coordinates_to_client_scaling_factor,
     adjust_instance_segmentation_predictions_to_client_scaling_factor,
