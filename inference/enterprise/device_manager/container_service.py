@@ -162,8 +162,12 @@ class InferServerContainer:
         image = self.container.attrs.get("Config", {}).get("Image", "")
         privileged = self.container.attrs.get("HostConfig", {}).get("Privileged", False)
         labels = self.container.attrs.get("Config", {}).get("Labels", {})
+        env = []
+        for var in env_vars:
+            name, value = var.split("=")
+            env.append(f"{name}={value}")
         return {
-            "env": env_vars,
+            "env": env,
             "port_bindings": port_bindings,
             "detach": detached,
             "image": image,
@@ -173,114 +177,105 @@ class InferServerContainer:
         }
 
 
-class ContainerService:
+def is_inference_server_container(container):
     """
-    ContainerService is a wrapper around the Docker SDK Container API
+    Checks if a container is an inference server container
 
-    It provides a way to discover inference server containers running on the host
-    and perform actions on them.
+    Args:
+        container (any): A container object from the Docker SDK
+
+    Returns:
+        boolean: True if the container is an inference server container, False otherwise
     """
+    image_tags = container.image.tags
+    for t in image_tags:
+        if t.startswith("roboflow/roboflow-inference-server"):
+            return True
+    return False
 
-    def __init__(self):
-        self.client = docker.from_env()
 
-    def is_inference_server_container(self, container):
-        """
-        Checks if a container is an inference server container
-
-        Args:
-            container (any): A container object from the Docker SDK
-
-        Returns:
-            boolean: True if the container is an inference server container, False otherwise
-        """
-        image_tags = container.image.tags
-        for t in image_tags:
-            if t.startswith("roboflow/roboflow-inference-server"):
-                return True
-        return False
-
-    def get_inference_containers(self):
-        """
-        Discovers inference server containers running on the host
-        and parses their information into a list of InferServerContainer objects
-        """
-        containers = self.client.containers.list()
-        inference_containers = []
-        for c in containers:
-            if self.is_inference_server_container(c):
-                details = self.parse_container_info(c)
-                info = {}
-                try:
-                    info = requests.get(
-                        f"http://{details['host']}:{details['port']}/info", timeout=3
-                    ).json()
-                except Exception as e:
-                    logger.error(f"Failed to get info from container {c.id}")
-                details.update(info)
-                infer_container = InferServerContainer(c, details)
-                if len(inference_containers) == 0:
-                    inference_containers.append(infer_container)
+def get_inference_containers():
+    """
+    Discovers inference server containers running on the host
+    and parses their information into a list of InferServerContainer objects
+    """
+    client = docker.from_env()
+    containers = client.containers.list()
+    inference_containers = []
+    for c in containers:
+        if is_inference_server_container(c):
+            details = parse_container_info(c)
+            info = {}
+            try:
+                info = requests.get(
+                    f"http://{details['host']}:{details['port']}/info", timeout=3
+                ).json()
+            except Exception as e:
+                logger.error(f"Failed to get info from container {c.id} {details} {e}")
+            details.update(info)
+            infer_container = InferServerContainer(c, details)
+            if len(inference_containers) == 0:
+                inference_containers.append(infer_container)
+                continue
+            for ic in inference_containers:
+                if ic.id == infer_container.id:
                     continue
-                for ic in inference_containers:
-                    if ic.id == infer_container.id:
-                        continue
-                    inference_containers.append(infer_container)
-        return inference_containers
-
-    def parse_container_info(self, c):
-        """
-        Parses the container information into a dictionary
-
-        Args:
-            c (any): Docker SDK Container object
-
-        Returns:
-            dict: A dictionary containing the container information
-        """
-        env = c.attrs.get("Config", {}).get("Env", {})
-        info = {"container_id": c.id, "port": 9001, "host": "0.0.0.0"}
-        for var in env:
-            if var.startswith("PORT="):
-                info["port"] = var.split("=")[1]
-            elif var.startswith("HOST="):
-                info["host"] = var.split("=")[1]
-        status = c.attrs.get("State", {}).get("Status")
-        if status:
-            info["status"] = status
-        container_name = c.attrs.get("Name")
-        if container_name:
-            info["container_name_on_host"] = container_name
-        startup_time = c.attrs.get("State", {}).get("StartedAt")
-        if startup_time:
-            info["startup_time_ts"] = startup_time
-        return info
-
-    def get_container_by_id(self, id):
-        """
-        Gets an inference server container by its id
-
-        Args:
-            id (string): The id of the container
-
-        Returns:
-            container: The container object if found, None otherwise
-        """
-        containers = self.get_inference_containers()
-        for c in containers:
-            if c.id == id:
-                return c
-        return None
-
-    def get_container_ids(self):
-        """
-        Gets the ids of the inference server containers
-
-        Returns:
-            list: A list of container ids
-        """
-        containers = self.get_inference_containers()
-        return [c.id for c in containers]
+                inference_containers.append(infer_container)
+    return inference_containers
 
 
-container_service = ContainerService()
+def parse_container_info(c):
+    """
+    Parses the container information into a dictionary
+
+    Args:
+        c (any): Docker SDK Container object
+
+    Returns:
+        dict: A dictionary containing the container information
+    """
+    env = c.attrs.get("Config", {}).get("Env", {})
+    info = {"container_id": c.id, "port": 9001, "host": "0.0.0.0"}
+    for var in env:
+        if var.startswith("PORT="):
+            info["port"] = var.split("=")[1]
+        elif var.startswith("HOST="):
+            info["host"] = var.split("=")[1]
+    status = c.attrs.get("State", {}).get("Status")
+    if status:
+        info["status"] = status
+    container_name = c.attrs.get("Name")
+    if container_name:
+        info["container_name_on_host"] = container_name
+    startup_time = c.attrs.get("State", {}).get("StartedAt")
+    if startup_time:
+        info["startup_time_ts"] = startup_time
+    return info
+
+
+def get_container_by_id(id):
+    """
+    Gets an inference server container by its id
+
+    Args:
+        id (string): The id of the container
+
+    Returns:
+        container: The container object if found, None otherwise
+    """
+    containers = get_inference_containers()
+    for c in containers:
+        if c.id == id:
+            return c
+    return None
+
+
+def get_container_ids():
+    """
+    Gets the ids of the inference server containers
+
+    Returns:
+        list: A list of container ids
+    """
+    containers = get_inference_containers()
+    return [c.id for c in containers]
