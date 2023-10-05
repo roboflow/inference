@@ -3,7 +3,8 @@ import socket
 import sys
 import threading
 import time
-from typing import Union
+from typing import Union, Callable
+import numpy as np
 
 import supervision as sv
 from PIL import Image
@@ -16,8 +17,6 @@ from inference.core.env import (
     ENABLE_BYTE_TRACK,
     ENFORCE_FPS,
     IOU_THRESHOLD,
-    IP_BROADCAST_ADDR,
-    IP_BROADCAST_PORT,
     JSON_RESPONSE,
     MAX_CANDIDATES,
     MAX_DETECTIONS,
@@ -31,8 +30,8 @@ from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
 
-class UdpStream(BaseInterface):
-    """Roboflow defined UDP interface for a general-purpose inference server.
+class Stream(BaseInterface):
+    """Roboflow defined stream interface for a general-purpose inference server.
 
     Attributes:
         model_manager (ModelManager): The manager that handles model inference tasks.
@@ -40,13 +39,11 @@ class UdpStream(BaseInterface):
         api_key (str): The API key for accessing models.
         class_agnostic_nms (bool): Flag for class-agnostic non-maximum suppression.
         confidence (float): Confidence threshold for inference.
-        ip_broadcast_addr (str): The IP address to broadcast to.
-        ip_broadcast_port (int): The port to broadcast on.
         iou_threshold (float): The intersection-over-union threshold for detection.
         json_response (bool): Flag to toggle JSON response format.
         max_candidates (float): The maximum number of candidates for detection.
         max_detections (float): The maximum number of detections.
-        model_id (str): The ID of the model to be used.
+        model (str|Callable): The model to be used.
         stream_id (str): The ID of the stream to be used.
         use_bytetrack (bool): Flag to use bytetrack,
 
@@ -63,17 +60,17 @@ class UdpStream(BaseInterface):
         class_agnostic_nms: bool = CLASS_AGNOSTIC_NMS,
         confidence: float = CONFIDENCE,
         enforce_fps: bool = ENFORCE_FPS,
-        ip_broadcast_addr: str = IP_BROADCAST_ADDR,
-        ip_broadcast_port: int = IP_BROADCAST_PORT,
         iou_threshold: float = IOU_THRESHOLD,
         json_response: bool = JSON_RESPONSE,
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
-        model_id: str = MODEL_ID,
-        stream_id: Union[int, str] = STREAM_ID,
+        model: Union[str, Callable] = MODEL_ID,
+        camera: Union[int, str] = STREAM_ID,
         use_bytetrack: bool = ENABLE_BYTE_TRACK,
+        main_thread: bool = False,
+        on_prediction: Callable = None
     ):
-        """Initialize the UDP stream with the given parameters.
+        """Initialize the stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
         """
         logger.info("Initializing server")
@@ -82,37 +79,35 @@ class UdpStream(BaseInterface):
         self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
         self.use_bytetrack = use_bytetrack
 
+        if camera == "webcam":
+            stream_id = 0
+        else:
+            stream_id = camera
+
         self.stream_id = stream_id
         if self.stream_id is None:
             raise ValueError("STREAM_ID is not defined")
-        self.model_id = model_id
+        self.model_id = model
         if not self.model_id:
             raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
         if not self.api_key:
             raise ValueError("API_KEY is not defined")
 
-        self.model = get_roboflow_model(self.model_id, self.api_key)
+        if isinstance(model, str):
+            self.model = get_roboflow_model(model, self.api_key)
+        else:
+            self.model = model
 
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
         self.iou_threshold = iou_threshold
         self.max_candidates = max_candidates
         self.max_detections = max_detections
-        self.ip_broadcast_addr = ip_broadcast_addr
-        self.ip_broadcast_port = ip_broadcast_port
         self.json_response = json_response
+        self.main_thread = main_thread
 
         self.inference_request_type = M.ObjectDetectionInferenceRequest
-
-        self.UDPServerSocket = socket.socket(
-            family=socket.AF_INET, type=socket.SOCK_DGRAM
-        )
-        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
-        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
-
 
         self.webcam_stream = WebcamStream(
             stream_id=self.stream_id, enforce_fps=enforce_fps
@@ -120,6 +115,12 @@ class UdpStream(BaseInterface):
         logger.info(
             f"Streaming from device with resolution: {self.webcam_stream.width} x {self.webcam_stream.height}"
         )
+
+        self.on_start_callbacks = []
+        self.on_prediction_callbacks = []
+
+        if(on_prediction):
+            self.on_prediction_callbacks.append(on_prediction)
 
         self.init_infer()
         self.preproc_result = None
@@ -134,11 +135,27 @@ class UdpStream(BaseInterface):
         logger.info("Server initialized with settings:")
         logger.info(f"Stream ID: {self.stream_id}")
         logger.info(f"Model ID: {self.model_id}")
+        logger.info(f"Enforce FPS: {enforce_fps}")
+        logger.info(f"JSON Response: {self.json_response}")
         logger.info(f"Confidence: {self.confidence}")
         logger.info(f"Class Agnostic NMS: {self.class_agnostic_nms}")
         logger.info(f"IOU Threshold: {self.iou_threshold}")
         logger.info(f"Max Candidates: {self.max_candidates}")
         logger.info(f"Max Detections: {self.max_detections}")
+
+        self.run_thread()
+
+    def on_start(self, callback):
+        self.on_start_callbacks.append(callback)
+
+        unsubscribe = lambda: self.on_start_callbacks.remove(callback)
+        return unsubscribe
+
+    def on_prediction(self, callback):
+        self.on_prediction_callbacks.append(callback)
+
+        unsubscribe = lambda: self.on_prediction_callbacks.remove(callback)
+        return unsubscribe
 
     def init_infer(self):
         """Initialize the inference with a test frame.
@@ -178,7 +195,7 @@ class UdpStream(BaseInterface):
         """Manage the inference requests.
 
         Processes preprocessed frames for inference, post-processes the predictions, and sends the results
-        as a UDP broadcast.
+        to registered callbacks.
         """
         last_print = time.perf_counter()
         print_ind = 0
@@ -187,6 +204,11 @@ class UdpStream(BaseInterface):
             if self.stop:
                 break
             if self.queue_control:
+                while len(self.on_start_callbacks) > 0:
+                    # run each onStart callback only once from this thread
+                    cb = self.on_start_callbacks.pop()
+                    cb()
+
                 self.queue_control = False
                 frame_id = self.frame_id
                 predictions = self.model.predict(
@@ -216,21 +238,19 @@ class UdpStream(BaseInterface):
                         for pred, detect in zip(predictions.predictions, detections):
                             pred.tracker_id = int(detect[4])
                     predictions.frame_id = frame_id
-                    predictions = predictions.json(exclude_none=True, by_alias=True)
+                    # predictions = predictions.json(exclude_none=True, by_alias=True)
+                    predictions = predictions.dict(by_alias=True)
                 else:
-                    predictions = json.dumps(predictions)
+                    pass
+                    #predictions = json.dumps(predictions)
 
                 self.inference_response = predictions
                 self.frame_count += 1
 
-                bytesToSend = predictions.encode("utf-8")
-                self.UDPServerSocket.sendto(
-                    bytesToSend,
-                    (
-                        self.ip_broadcast_addr,
-                        self.ip_broadcast_port,
-                    ),
-                )
+                print(len(self.on_prediction_callbacks), len(predictions))
+                for cb in self.on_prediction_callbacks:
+                    cb(predictions, np.asarray(self.frame))
+                
                 if time.perf_counter() - last_print > 1:
                     print(f"Streaming {print_chars[print_ind]}", end="\r")
                     print_ind = (print_ind + 1) % 4
@@ -242,18 +262,14 @@ class UdpStream(BaseInterface):
         Starts the preprocessing and inference threads, and handles graceful shutdown on KeyboardInterrupt.
         """
         preprocess_thread = threading.Thread(target=self.preprocess_thread)
-        inference_request_thread = threading.Thread(
-            target=self.inference_request_thread
-        )
-
         preprocess_thread.start()
-        inference_request_thread.start()
-
-        while True:
-            try:
-                time.sleep(10)
-            except KeyboardInterrupt:
-                logger.info("Stopping server...")
-                self.stop = True
-                time.sleep(3)
-                sys.exit(0)
+        
+        if self.main_thread:
+            self.inference_request_thread()
+        else:
+            # start a thread that looks for the predictions
+            # and call the callbacks
+            inference_request_thread = threading.Thread(
+                target=self.inference_request_thread
+            )
+            inference_request_thread.start()
