@@ -361,7 +361,11 @@ def _determine_client_downsizing_parameters(
 ) -> Tuple[Optional[int], Optional[int]]:
     if client_downsizing_disabled:
         return None, None
-    if model_description is None or model_description.input_height is None or model_description.input_width is None:
+    if (
+        model_description is None
+        or model_description.input_height is None
+        or model_description.input_width is None
+    ):
         return default_max_input_size, default_max_input_size
     return model_description.input_height, model_description.input_width
 
