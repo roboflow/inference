@@ -24,6 +24,7 @@ from clients.http.errors import (
     ModelTaskTypeNotSupportedError,
     ModelNotSelectedError,
 )
+from clients.http.utils.iterables import unwrap_single_element_list
 from clients.http.utils.loaders import (
     load_static_inference_input,
     load_stream_inference_input,
@@ -45,7 +46,6 @@ NEW_INFERENCE_ENDPOINTS = {
     CLASSIFICATION_TASK: "/infer/classification",
 }
 
-T = TypeVar("T")
 
 
 def wrap_errors(function: callable) -> callable:
@@ -345,12 +345,6 @@ class InferenceHTTPClient:
         response_payload = response.json()
         self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
-
-
-def unwrap_single_element_list(sequence: List[T]) -> Union[T, List[T]]:
-    if len(sequence) == 1:
-        return sequence[0]
-    return sequence
 
 
 def _determine_client_downsizing_parameters(
