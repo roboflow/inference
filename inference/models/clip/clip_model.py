@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Tuple, Union
 
 import clip
 import numpy as np
-from inference.core.models.types import PreprocessReturnMetadata
 import onnxruntime
 from PIL import Image
 
@@ -24,6 +23,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import cosine_similarity
 
