@@ -62,7 +62,6 @@ def adjust_prediction_to_client_scaling_factor(
     prediction: dict,
     scaling_factor: Optional[float],
 ) -> dict:
-    print(prediction)
     if scaling_factor is None:
         return prediction
     if "image" in prediction:
@@ -75,17 +74,18 @@ def adjust_prediction_to_client_scaling_factor(
     if "points" in prediction["predictions"][0]:
         prediction[
             "predictions"
-        ] = adjust_object_detection_predictions_to_client_scaling_factor(
+        ] = adjust_instance_segmentation_predictions_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
-    elif "points" in prediction["predictions"][0]:
+    elif "x" in prediction["predictions"][0] and "y" in prediction["predictions"][0]:
         prediction[
             "predictions"
         ] = adjust_object_detection_predictions_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
+
     return prediction
 
 

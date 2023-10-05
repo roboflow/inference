@@ -14,7 +14,7 @@ from inference_client.http.utils.post_processing import (
     adjust_instance_segmentation_predictions_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
     response_contains_jpeg_image,
-    transform_base64_visualisation,
+    transform_base64_visualisation, adjust_prediction_to_client_scaling_factor,
 )
 
 
@@ -222,3 +222,117 @@ def test_transform_base64_visualisation_when_result_should_be_pillow_image() -> 
     assert result.size == image.size
     difference = ImageChops.difference(image, result)
     assert difference.getbbox() is None
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_factor_is_not_enabled() -> None:
+    # given
+    prediction = {
+        "visualization": None,
+        "frame_id": None,
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [
+            {"class": "Corn", "class_id": 1, "confidence": 0.4329},
+            {"class": "Rice", "class_id": 0, "confidence": 0.3397},
+        ],
+        "top": "Corn",
+        "confidence": 0.4329
+
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=None)
+
+    # then
+    assert result is prediction
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_classification() -> None:
+    # given
+    prediction = {
+        "visualization": None,
+        "frame_id": None,
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [
+            {"class": "Corn", "class_id": 1, "confidence": 0.4329},
+            {"class": "Rice", "class_id": 0, "confidence": 0.3397},
+        ],
+        "top": "Corn",
+        "confidence": 0.4329
+
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+
+    # then
+    assert result["image"] == {"width": 448, "height": 300}
+    for key in ["visualization", "frame_id", "time", "predictions", "top", "confidence"]:
+        assert result[key] == prediction[key]
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_object_detection() -> None:
+    # given
+    prediction = {
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [{
+            "x": 21.0,
+            "y": 128.0,
+            "width": 42.0,
+            "height": 48.0,
+            "confidence": 0.9,
+            "class": "wood-log",
+            "class_id": 0,
+        }],
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+
+    # then
+    assert result["image"] == {"width": 448, "height": 300}
+    assert len(result["predictions"]) == 1
+    assert result["predictions"][0] == {
+        "x": 42.0,
+        "y": 256.0,
+        "width": 84.0,
+        "height": 96.0,
+        "confidence": 0.9,
+        "class": "wood-log",
+        "class_id": 0,
+    }
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_instance_segmentation() -> None:
+    # given
+    prediction = {
+        "visualization": None,
+        "frame_id": None,
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [{
+            "x": 21.0,
+            "y": 128.0,
+            "width": 42.0,
+            "height": 48.0,
+            "confidence": 0.9,
+            "class": "wood-log",
+            "class_id": 0,
+            "points": [{"x": 100.0, "y": 200.0}]
+        }],
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+
+    # then
+    assert result["image"] == {"width": 448, "height": 300}
+    assert len(result["predictions"]) == 1
+    assert result["predictions"][0] == {
+        "x": 42.0,
+        "y": 256.0,
+        "width": 84.0,
+        "height": 96.0,
+        "confidence": 0.9,
+        "class": "wood-log",
+        "class_id": 0,
+        "points": [{"x": 200.0, "y": 400.0}]
+    }

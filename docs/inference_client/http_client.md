@@ -253,7 +253,7 @@ CLIENT.unload_model(model_id="some/1")
 ```
 
 Sometimes (to avoid OOM at server side) - unloading model will be required.
-
+[test_postprocessing.py](..%2F..%2Ftests%2Finference_client%2Funit_tests%2Fhttp%2Futils%2Ftest_postprocessing.py)
 
 ### Unloading all models
 
