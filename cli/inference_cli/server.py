@@ -2,7 +2,10 @@ import typer
 from typing_extensions import Annotated
 from inference_cli.lib import start_inference_container, check_inference_server_status
 
-server_app = typer.Typer()
+server_app = typer.Typer(
+    help="""Commands for running the inference server locally. \n 
+    Supported devices targets are x86 CPU, ARM64 CPU, and NVIDIA GPU."""
+)
 
 
 @server_app.command()
