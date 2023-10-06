@@ -1,2 +1,2 @@
-onnxruntime<=1.14.1
+onnxruntime<=1.15.1
 GPUtil==1.4.0
