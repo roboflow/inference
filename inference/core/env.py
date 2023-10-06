@@ -99,8 +99,8 @@ CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 # Class agnostic NMS flag, default is False
 CLASS_AGNOSTIC_NMS = bool_env(os.getenv("CLASS_AGNOSTIC_NMS", False))
 
-# Confidence threshold, default is 0.0
-CONFIDENCE = float(os.getenv("CONFIDENCE", 0.0))
+# Confidence threshold, default is 50%
+CONFIDENCE = float(os.getenv("CONFIDENCE", 0.5))
 
 # Flag to enable core models, default is True
 CORE_MODELS_ENABLED = bool_env(os.getenv("CORE_MODELS_ENABLED", True))

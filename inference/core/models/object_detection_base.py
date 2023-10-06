@@ -106,6 +106,9 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
         """
 
+        if isinstance(img_dims, dict) and 'img_dims' in img_dims:
+            img_dims = img_dims['img_dims']
+        
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
