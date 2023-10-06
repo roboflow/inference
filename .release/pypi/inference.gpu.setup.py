@@ -41,9 +41,8 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_client",
-            "inference_client.*",
             "cli",
+            "cli.*"
         ),
     )
     + ["cli.inference_cli"],

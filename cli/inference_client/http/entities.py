@@ -4,10 +4,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from dataclasses_json import DataClassJsonMixin
-from PIL import Image
-
 from inference_client.http.errors import ModelTaskTypeNotSupportedError
 from inference_client.http.utils.iterables import remove_empty_values
+from PIL import Image
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
 

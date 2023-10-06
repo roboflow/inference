@@ -1,7 +1,8 @@
 import subprocess
 
-import docker
 import typer
+
+import docker
 
 docker_client = docker.from_env()
 

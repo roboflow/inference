@@ -5,8 +5,6 @@ import cv2
 import numpy as np
 import requests
 import supervision as sv
-from PIL import Image
-
 from inference_client.http.entities import ImagesReference
 from inference_client.http.errors import EncodingError, InvalidInputFormatError
 from inference_client.http.utils.encoding import (
@@ -19,6 +17,7 @@ from inference_client.http.utils.pre_processing import (
     resize_opencv_image,
     resize_pillow_image,
 )
+from PIL import Image
 
 
 def load_stream_inference_input(

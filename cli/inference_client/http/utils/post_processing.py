@@ -2,20 +2,14 @@ import base64
 from typing import List, Optional, Union
 
 import numpy as np
-from PIL import Image
-from requests import Response
-
-from inference_client.http.entities import (
-    INSTANCE_SEGMENTATION_TASK,
-    OBJECT_DETECTION_TASK,
-    TaskType,
-    VisualisationResponseFormat,
-)
+from inference_client.http.entities import VisualisationResponseFormat
 from inference_client.http.utils.encoding import (
     bytes_to_opencv_image,
     bytes_to_pillow_image,
     encode_base_64,
 )
+from PIL import Image
+from requests import Response
 
 CONTENT_TYPE_HEADERS = ["content-type", "Content-Type"]
 IMAGES_TRANSCODING_METHODS = {

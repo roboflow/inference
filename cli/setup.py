@@ -11,9 +11,13 @@ shutil.copyfile(
     os.path.join(root, "../inference/core/version.py"),
     os.path.join(root, "inference_cli/version.py"),
 )
+shutil.copyfile(
+    os.path.join(root, "../inference/core/version.py"),
+    os.path.join(root, "inference_client/version.py"),
+)
 from inference_cli.version import __version__
 
-with open("cli/README.md", "r") as fh:
+with open("README.md", "r") as fh:
     long_description = fh.read()
 
 
@@ -33,6 +37,7 @@ setuptools.setup(
     url="https://github.com/roboflow/inference",
     packages=find_packages(
         where="./",
+        exclude=("tests", "tests.*")
     ),
     entry_points={
         "console_scripts": [

@@ -4,9 +4,8 @@ from typing import Union
 
 import cv2
 import numpy as np
-from PIL import Image, UnidentifiedImageError
-
 from inference_client.http.errors import EncodingError
+from PIL import Image, UnidentifiedImageError
 
 
 def numpy_array_to_base64_jpeg(

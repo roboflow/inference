@@ -3,8 +3,6 @@ from typing import Any, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
-from requests import HTTPError
-
 from inference_client.http.entities import (
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
@@ -36,6 +34,7 @@ from inference_client.http.utils.post_processing import (
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
+from requests import HTTPError
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
