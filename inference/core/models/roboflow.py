@@ -148,7 +148,6 @@ class RoboflowInferenceModel(Model):
             str: A base64 encoded image string
         """
         image = load_image_rgb(inference_request.image)
-        image = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB)
 
         for box in inference_response.predictions:
             color = tuple(
