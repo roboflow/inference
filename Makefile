@@ -1,7 +1,7 @@
 .PHONY: style check_code_quality
 
 export PYTHONPATH = .
-check_dirs := inference inference_client
+check_dirs := inference inference_sdk
 
 style:
 	black  $(check_dirs)
@@ -24,8 +24,9 @@ create_wheels:
 	python .release/pypi/inference.cpu.setup.py bdist_wheel
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
 	python .release/pypi/inference.setup.py bdist_wheel
-	python cli/setup.py bdist_wheel
-	python .release/pypi/inference.clients.setup.py bdist_wheel
+	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	cd cli && python setup.py bdist_wheel && cd ..
 
 upload_wheels:
 	twine upload dist/*.whl
+	twine upload cli/dist/*.whl

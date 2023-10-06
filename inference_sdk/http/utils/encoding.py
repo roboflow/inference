@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from inference_client.http.errors import EncodingError
+from inference_sdk.http.errors import EncodingError
 
 
 def numpy_array_to_base64_jpeg(

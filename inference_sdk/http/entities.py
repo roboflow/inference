@@ -6,8 +6,8 @@ import numpy as np
 from dataclasses_json import DataClassJsonMixin
 from PIL import Image
 
-from inference_client.http.errors import ModelTaskTypeNotSupportedError
-from inference_client.http.utils.iterables import remove_empty_values
+from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
+from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
 

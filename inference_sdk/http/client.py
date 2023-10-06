@@ -5,7 +5,7 @@ import numpy as np
 import requests
 from requests import HTTPError
 
-from inference_client.http.entities import (
+from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
@@ -16,7 +16,7 @@ from inference_client.http.entities import (
     RegisteredModels,
     ServerInfo,
 )
-from inference_client.http.errors import (
+from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
@@ -25,12 +25,12 @@ from inference_client.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
-from inference_client.http.utils.iterables import unwrap_single_element_list
-from inference_client.http.utils.loaders import (
+from inference_sdk.http.utils.iterables import unwrap_single_element_list
+from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
     load_stream_inference_input,
 )
-from inference_client.http.utils.post_processing import (
+from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     response_contains_jpeg_image,
     transform_base64_visualisation,
@@ -100,8 +100,10 @@ class InferenceHTTPClient:
     ) -> Generator["InferenceHTTPClient", None, None]:
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
-        yield self
-        self.__inference_configuration = previous_configuration
+        try:
+            yield self
+        finally:
+            self.__inference_configuration = previous_configuration
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -121,15 +123,19 @@ class InferenceHTTPClient:
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V0
-        yield self
-        self.__client_mode = previous_client_mode
+        try:
+            yield self
+        finally:
+            self.__client_mode = previous_client_mode
 
     @contextmanager
     def use_api_v1(self) -> Generator["InferenceHTTPClient", None, None]:
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V1
-        yield self
-        self.__client_mode = previous_client_mode
+        try:
+            yield self
+        finally:
+            self.__client_mode = previous_client_mode
 
     def select_model(self, model_id: str) -> "InferenceHTTPClient":
         self.__selected_model = model_id
@@ -139,8 +145,10 @@ class InferenceHTTPClient:
     def use_model(self, model_id: str) -> Generator["InferenceHTTPClient", None, None]:
         previous_model = self.__selected_model
         self.__selected_model = model_id
-        yield self
-        self.__selected_model = previous_model
+        try:
+            yield self
+        finally:
+            self.__selected_model = previous_model
 
     @wrap_errors
     def get_server_info(self) -> ServerInfo:

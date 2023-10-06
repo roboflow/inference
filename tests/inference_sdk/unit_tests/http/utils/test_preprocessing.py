@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 
-from inference_client.http.utils.pre_processing import (
+from inference_sdk.http.utils.pre_processing import (
     determine_scaling_aspect_ratio,
     resize_pillow_image,
     resize_opencv_image,

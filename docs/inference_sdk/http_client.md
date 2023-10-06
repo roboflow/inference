@@ -7,7 +7,7 @@ your own.
 ## 🔥 quickstart
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
@@ -49,7 +49,7 @@ Methods `use_configuration(...)`, `use_api_v0(...)`, `use_api_v1(...)`, `use_mod
 work in context managers. **Once context manager is left - old config values are restored.**
 
 ```python
-from inference_client import InferenceHTTPClient, InferenceConfiguration
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
@@ -79,7 +79,7 @@ Methods `configure(...)`, `select_api_v0(...)`, `select_api_v1(...)`, `select_mo
 state and will be preserved until next change.
 
 ```python
-from inference_client import InferenceHTTPClient, InferenceConfiguration
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
@@ -105,12 +105,13 @@ _ = CLIENT.infer(image_url)
 ```
 
 One may also initialise in `chain` mode:
+
 ```python
-from inference_client import InferenceHTTPClient, InferenceConfiguration
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
-    .select_api_v0() \
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY")
+    .select_api_v0()
     .select_model("soccer-players-5fuqs/1")
 ```
 
@@ -118,12 +119,12 @@ CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_
 `model_id` can be overriden for specific call
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY")
     .select_model("soccer-players-5fuqs/1")
 
 _ = CLIENT.infer(image_url, model_id="another-model/1")
@@ -134,7 +135,7 @@ You may want to predict against multiple images at single call. It is possible, 
 batching is implemented in naive way (sequential requests to API) - stay tuned for future improvements.
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
@@ -143,7 +144,7 @@ CLIENT = InferenceHTTPClient(
     api_url="http://localhost:9001",
     api_key="ROBOFLOW_API_KEY"
 )
-predictions = CLIENT.infer([image_url]*5, model_id="soccer-players-5fuqs/1")
+predictions = CLIENT.infer([image_url] * 5, model_id="soccer-players-5fuqs/1")
 
 print(predictions)
 ```
@@ -152,7 +153,7 @@ print(predictions)
 One may want to infer against video or directory of images - and that modes are supported in `inference-client`
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -182,7 +183,7 @@ can be transcoded to the format of choice) and in terms of client-side re-scalin
 ### Getting server info
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -195,7 +196,7 @@ CLIENT.get_server_info()
 ### Listing loaded models
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -208,7 +209,7 @@ CLIENT.list_loaded_models()
 ### Getting specific model description
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -225,7 +226,7 @@ Default: `True`.
 ### Loading model
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -242,7 +243,7 @@ will be used as default model for the client. Default value: `False`.
 ### Unloading model
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -258,7 +259,7 @@ Sometimes (to avoid OOM at server side) - unloading model will be required.
 ### Unloading all models
 
 ```python
-from inference_client import InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
@@ -274,7 +275,7 @@ CLIENT.unload_all_models()
 `inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
 
 ```python
-from inference_client import InferenceConfiguration
+from inference_sdk import InferenceConfiguration
 ```
 
 Overriding fields in this config changes the behaviour of client (and API serving model). Specific fields are

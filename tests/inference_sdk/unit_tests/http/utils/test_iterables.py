@@ -1,4 +1,4 @@
-from inference_client.http.utils.iterables import (
+from inference_sdk.http.utils.iterables import (
     remove_empty_values,
     unwrap_single_element_list,
 )

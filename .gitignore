@@ -150,4 +150,4 @@ _annotations*
 export_api_keys.sh
 cli/inference_cli/version.py
 
-inference_client/version.py
+inference_sdk/version.py

@@ -1,6 +1,6 @@
 import typer
+from inference_cli.lib import check_inference_server_status, start_inference_container
 from typing_extensions import Annotated
-from inference_cli.lib import start_inference_container, check_inference_server_status
 
 server_app = typer.Typer(
     help="""Commands for running the inference server locally. \n 

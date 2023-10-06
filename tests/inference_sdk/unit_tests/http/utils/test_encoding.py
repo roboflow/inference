@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from PIL import Image, ImageChops
 
-from inference_client.http.errors import EncodingError
-from inference_client.http.utils.encoding import (
+from inference_sdk.http.errors import EncodingError
+from inference_sdk.http.utils.encoding import (
     numpy_array_to_base64_jpeg,
     pillow_image_to_base64_jpeg,
     encode_base_64,

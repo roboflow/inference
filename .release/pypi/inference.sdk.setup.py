@@ -30,7 +30,7 @@ def read_requirements(path):
 
 
 setuptools.setup(
-    name="inference-client",
+    name="inference-sdk",
     version=__version__,
     author="Roboflow",
     author_email="help@roboflow.com",
@@ -45,11 +45,12 @@ setuptools.setup(
             "docs",
             "requirements",
             "tests",
-            "tests.*" "inference",
+            "tests.*",
+            "inference",
             "inference.*",
         ),
     ),
-    install_requires=read_requirements(["requirements/requirements.clients.http.txt"]),
+    install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
