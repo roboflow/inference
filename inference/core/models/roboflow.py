@@ -505,16 +505,16 @@ class RoboflowInferenceModel(Model):
 
         if self.resize_method == "Stretch to":
             resized = cv2.resize(
-                preprocessed_image, (self.img_size_h, self.img_size_w), cv2.INTER_CUBIC
+                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_h, self.img_size_w)
+                preprocessed_image, (self.img_size_w, self.img_size_h)
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = self.letterbox_image(
                 preprocessed_image,
-                (self.img_size_h, self.img_size_w),
+                (self.img_size_w, self.img_size_h),
                 c=(255, 255, 255),
             )
 
