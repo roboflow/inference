@@ -1,4 +1,4 @@
-from inference.core.env import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+from inference.core.env import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, LAMBDA
 from inference.core.models.classification_base import (
     ClassificationBaseOnnxRoboflowInferenceModel,
 )
@@ -36,7 +36,7 @@ class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
         Returns:
             str: Path to the weights file.
         """
-        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
             return "weights.onnx"
         else:
             return "best.onnx"

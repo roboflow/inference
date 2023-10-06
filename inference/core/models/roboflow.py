@@ -29,6 +29,7 @@ from inference.core.env import (
     CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
+    LAMBDA,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
@@ -102,7 +103,9 @@ class RoboflowInferenceModel(Model):
         super().__init__()
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
-        if not self.api_key and not (AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID):
+        if not self.api_key and not (
+            AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
+        ):
             raise MissingApiKeyError(
                 "No API Key Found, must provide an API Key in each request or as an environment variable on server startup"
             )
@@ -277,7 +280,7 @@ class RoboflowInferenceModel(Model):
                     i += 1
         else:
             # If AWS keys are available, then we can download model artifacts directly
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
                 logger.debug("Downloading model artifacts from S3")
                 for f in infer_bucket_files:
                     success = False
@@ -594,7 +597,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             ]
         ):
             self.log("Downloading model artifacts")
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
                 infer_bucket_files = self.get_infer_bucket_file_list()
                 for f in infer_bucket_files:
                     success = False
