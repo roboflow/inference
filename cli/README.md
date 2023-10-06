@@ -33,11 +33,9 @@ Starts a local inference server. It optionally takes a port number (default is 9
 
 It will automatically detect the device you are running on and pull the appropriate Docker image.
 
-````bash
-
 ```bash
 inference server start --port 9001
-````
+```
 
 ### inference server status
 
