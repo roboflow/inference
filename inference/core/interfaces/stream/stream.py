@@ -232,11 +232,15 @@ class Stream(BaseInterface):
                     )[0]
                     if self.use_bytetrack:
                         detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True), self.model.class_names
+                            predictions.dict(by_alias=True)
                         )
                         detections = self.byte_tracker.update_with_detections(
                             detections
                         )
+
+                        if detections.tracker_id is None:
+                            detections.tracker_id=np.array([], dtype=int)
+
                         for pred, detect in zip(predictions.predictions, detections):
                             pred.tracker_id = int(detect[4])
                     predictions.frame_id = frame_id
@@ -249,6 +253,9 @@ class Stream(BaseInterface):
                 self.inference_response = predictions
                 self.frame_count += 1
 
+                if self.use_bytetrack:
+                    predictions = detections
+                
                 for cb in self.on_prediction_callbacks:
                     if self.output_channel_order == "BGR":
                         cb(predictions, self.frame_cv)
