@@ -110,8 +110,8 @@ One may also initialise in `chain` mode:
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY")
-    .select_api_v0()
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
+    .select_api_v0() \
     .select_model("soccer-players-5fuqs/1")
 ```
 
@@ -124,7 +124,7 @@ from inference_sdk import InferenceHTTPClient
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
 
 # Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY")
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
     .select_model("soccer-players-5fuqs/1")
 
 _ = CLIENT.infer(image_url, model_id="another-model/1")
