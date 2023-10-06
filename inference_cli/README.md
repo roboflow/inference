@@ -35,7 +35,7 @@ It will automatically detect the device you are running on and pull the appropri
 
 ```bash
 inference server start --port 9001
-````
+```
 
 ### inference server status
 
