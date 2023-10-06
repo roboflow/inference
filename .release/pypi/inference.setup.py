@@ -32,7 +32,16 @@ setuptools.setup(
     url="https://github.com/roboflow/inference",
     packages=find_packages(
         where=root,
-        exclude=("docker", "docs", "requirements", "test", "cli"),
+        exclude=(
+            "docker",
+            "docs",
+            "requirements",
+            "tests",
+            "tests.*",
+            "inference_client",
+            "inference_client.*",
+            "cli",
+        ),
     )
     + ["cli.inference_cli"],
     entry_points={

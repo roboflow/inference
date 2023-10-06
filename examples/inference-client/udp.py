@@ -14,7 +14,6 @@ arguments = parser.parse_args()
 
 
 def start_udp_server(ip: str, port: int):
-
     fps_array = []
 
     # Create a datagram (UDP) socket

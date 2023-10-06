@@ -136,32 +136,40 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 </details>
 
 <br/>
+[test.yml](.github%2Fworkflows%2Ftest.yml)
+### Inference clients
+
+If you seek for Python client to consume predictions from inference server - you can do it via `inference-clients`
+package.
+
+```bash
+pip install inference-client
+```
+
 
 ## 🔥 quickstart
 
 **Docker Quickstart**:
 
+We've made calling our models easy with Python client for HTTP API exposed by `inference`.
+
 ```python
-import requests
+from inference_client import InferenceHTTPClient
 
-dataset_id = "soccer-players-5fuqs"
-version_id = "1"
 image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-#Replace ROBOFLOW_API_KEY with your Roboflow API Key
-api_key = "ROBOFLOW_API_KEY"
-confidence = 0.5
 
-url = f"http://localhost:9001/{dataset_id}/{version_id}"
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+with CLIENT.use_model("soccer-players-5fuqs/1"):
+    predictions = CLIENT.infer(image_url)
 
-params = {
-    "api_key": api_key,
-    "confidence": confidence,
-    "image": image_url,
-}
-
-res = requests.post(url, params=params)
-print(res.json())
+print(predictions)
 ```
+Visit our [documentation](https://roboflow.github.io/inference) to discover capabilities of `inference-clients` library.
+
 
 **pip Quickstart**:
 
