@@ -25,8 +25,7 @@ create_wheels:
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
 	python .release/pypi/inference.setup.py bdist_wheel
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
-	cd cli && python setup.py bdist_wheel && cd ..
+	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 upload_wheels:
 	twine upload dist/*.whl
-	twine upload cli/dist/*.whl

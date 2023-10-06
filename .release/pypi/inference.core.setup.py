@@ -36,8 +36,7 @@ setuptools.setup(
             "inference_sdk",
             "inference_sdk.*",
         ),
-    )
-    + ["cli.inference_cli"],
+    ),
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",

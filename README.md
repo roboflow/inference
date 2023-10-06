@@ -273,6 +273,9 @@ The Roboflow Inference code is distributed under an [Apache 2.0 license](https:/
 | `inference/models/yolov7` |                                  [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)                                  |
 | `inference/models/yolov8` |                              [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)                               |
 
+## Inference CLI
+We've created a CLI tool with useful commands to make the `inference` usage easier. Check out [docs](./inference_cli/README.md).
+
 ## 🚀 enterprise
 
 With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
