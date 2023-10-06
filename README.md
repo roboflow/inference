@@ -137,15 +137,18 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 
 <br/>
 [test.yml](.github%2Fworkflows%2Ftest.yml)
-### Inference clients
+
+### Inference CLI
 
 If you seek for Python client to consume predictions from inference server - you can do it via `inference-clients`
 package.
 
 ```bash
-pip install inference-client
+pip install inference-cli
 ```
 
+Apart from the Python client - `inference-cli` offers set of useful CLI commands to make `inference` easier to use.
+Visit [cli docs](./cli/README.md) to learn more.
 
 ## 🔥 quickstart
 
@@ -168,7 +171,7 @@ with CLIENT.use_model("soccer-players-5fuqs/1"):
 
 print(predictions)
 ```
-Visit our [documentation](https://roboflow.github.io/inference) to discover capabilities of `inference-clients` library.
+Visit our [documentation](https://roboflow.github.io/inference) to discover capabilities of `inference-cli` library.
 
 
 **pip Quickstart**:
