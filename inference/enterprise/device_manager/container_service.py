@@ -20,6 +20,7 @@ class InferServerContainer:
     port: int
     host: str
     startup_time: float
+    version: str
 
     def __init__(self, docker_container, details):
         self.container = docker_container
@@ -27,6 +28,7 @@ class InferServerContainer:
         self.id = details.get("uuid")
         self.port = details.get("port")
         self.host = details.get("host")
+        self.version = details.get("version")
         t = details.get("startup_time_ts").split(".")[0]
         self.startup_time = (
             datetime.strptime(t, "%Y-%m-%dT%H:%M:%S").timestamp()
