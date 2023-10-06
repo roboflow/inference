@@ -100,8 +100,10 @@ class InferenceHTTPClient:
     ) -> Generator["InferenceHTTPClient", None, None]:
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
-        yield self
-        self.__inference_configuration = previous_configuration
+        try:
+            yield self
+        finally:
+            self.__inference_configuration = previous_configuration
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -121,15 +123,19 @@ class InferenceHTTPClient:
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V0
-        yield self
-        self.__client_mode = previous_client_mode
+        try:
+            yield self
+        finally:
+            self.__client_mode = previous_client_mode
 
     @contextmanager
     def use_api_v1(self) -> Generator["InferenceHTTPClient", None, None]:
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V1
-        yield self
-        self.__client_mode = previous_client_mode
+        try:
+            yield self
+        finally:
+            self.__client_mode = previous_client_mode
 
     def select_model(self, model_id: str) -> "InferenceHTTPClient":
         self.__selected_model = model_id
@@ -139,8 +145,10 @@ class InferenceHTTPClient:
     def use_model(self, model_id: str) -> Generator["InferenceHTTPClient", None, None]:
         previous_model = self.__selected_model
         self.__selected_model = model_id
-        yield self
-        self.__selected_model = previous_model
+        try:
+            yield self
+        finally:
+            self.__selected_model = previous_model
 
     @wrap_errors
     def get_server_info(self) -> ServerInfo:
