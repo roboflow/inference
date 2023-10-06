@@ -50,7 +50,7 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
             np_image = load_image_numpy_str(value)
         elif type == "pil":
-            np_image = np.asarray(value)
+            np_image = np.asarray(value.convert("RGB"))
             is_bgr = False
         elif type == "url":
             np_image = load_image_url(value, cv_imread_flags=cv_imread_flags)
@@ -89,7 +89,7 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
     if isinstance(value, (np.ndarray, np.generic)):
         return value, True
     elif isinstance(value, Image.Image):
-        return np.asarray(value), False
+        return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
         return load_image_url(value, cv_imread_flags=cv_imread_flags), True
     elif isinstance(value, str) and os.path.exists(value):

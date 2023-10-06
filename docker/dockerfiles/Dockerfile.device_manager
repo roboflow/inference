@@ -6,10 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
 
+RUN apt update -y && apt install -y \
+    ffmpeg \
+    libxext6 \
+    libsm6 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN python3 -m pip install --upgrade pip
-COPY requirements/requirements.device_manager.txt \
-    requirements/_requirements.txt \
-    ./
+COPY requirements/requirements.device_manager.txt ./
+COPY requirements/_requirements.txt ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \

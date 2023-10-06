@@ -17,20 +17,39 @@ TESTS = [
         "payload": {
             "image": {
                 "type": "url",
-                "value": "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img12.jpg"
+                "value": "https://raw.githubusercontent.com/serengil/deepface/master/tests/dataset/img12.jpg",
             }
         },
         "expected_response": [
-            {'predictions': [
-                {'face': {'x': 298.0, 'y': 175.0, 'width': 160.0, 'height': 160.0, 'confidence': 0.9520819187164307,
-                          'class': 'face',
-                          'landmarks': [{'x': 257.0, 'y': 141.0}, {'x': 323.0, 'y': 145.0}, {'x': 282.0, 'y': 185.0},
-                                        {'x': 283.0, 'y': 213.0}, {'x': 230.0, 'y': 147.0}, {'x': 370.0, 'y': 157.0}]},
-                 'pitch': -0.14007748663425446, 'yaw': 0.1661173403263092}], 'time_total': 0.7869974579953123,
-                'time_load_img': 0.6480592500010971, 'time_face_det': 0.005114250001497567,
-                'time_gaze_det': 0.13382395799271762
+            {
+                "predictions": [
+                    {
+                        "face": {
+                            "x": 298.0,
+                            "y": 175.0,
+                            "width": 160.0,
+                            "height": 160.0,
+                            "confidence": 0.9520819187164307,
+                            "class": "face",
+                            "landmarks": [
+                                {"x": 257.0, "y": 141.0},
+                                {"x": 323.0, "y": 145.0},
+                                {"x": 282.0, "y": 185.0},
+                                {"x": 283.0, "y": 213.0},
+                                {"x": 230.0, "y": 147.0},
+                                {"x": 370.0, "y": 157.0},
+                            ],
+                        },
+                        "pitch": -0.14007748663425446,
+                        "yaw": 0.1661173403263092,
+                    }
+                ],
+                "time_total": 0.7869974579953123,
+                "time_load_img": 0.6480592500010971,
+                "time_face_det": 0.005114250001497567,
+                "time_gaze_det": 0.13382395799271762,
             }
-        ]
+        ],
     }
 ]
 
@@ -47,14 +66,18 @@ def test_gaze(test):
         response.raise_for_status()
         data = response.json()[0]
         try:
-            assert 'predictions' in data
+            assert "predictions" in data
         except:
             print(f"Invalid response: {data}, expected 'predictions' in data")
 
         try:
-            assert isinstance(data['predictions'], list) and len(data['predictions']) > 0
+            assert (
+                isinstance(data["predictions"], list) and len(data["predictions"]) > 0
+            )
         except:
-            print(f"Invalid response: {data['predictions']}, expected at least one face")
+            print(
+                f"Invalid response: {data['predictions']}, expected at least one face"
+            )
     except Exception as e:
         raise e
 

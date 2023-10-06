@@ -1,4 +1,3 @@
-import asyncio
 import threading
 import time
 from typing import Any, Optional
@@ -27,6 +26,8 @@ class MemoryCache(BaseCache):
         self.zexpires = dict()
 
         self._expire_thread = threading.Thread(target=self._expire)
+        self._expire_thread.daemon = True
+        self._expire_thread.start()
 
     def _expire(self):
         """
@@ -36,16 +37,22 @@ class MemoryCache(BaseCache):
         """
         while True:
             now = time.time()
-            for k, v in self.expires.items():
+            keys_to_delete = []
+            for k, v in self.expires.copy().items():
                 if v < now:
-                    del self.cache[k]
-                    del self.expires[k]
-            for k, v in self.zexpires.items():
+                    keys_to_delete.append(k)
+            for k in keys_to_delete:
+                del self.cache[k]
+                del self.expires[k]
+            keys_to_delete = []
+            for k, v in self.zexpires.copy().items():
                 if v < now:
-                    del self.cache[k[0]][k[1]]
-                    del self.zexpires[k]
+                    keys_to_delete.append(k)
+            for k in keys_to_delete:
+                del self.cache[k[0]][k[1]]
+                del self.zexpires[k]
             while time.time() - now < MEMORY_CACHE_EXPIRE_INTERVAL:
-                asyncio.sleep(0.01)
+                time.sleep(0.1)
 
     def get(self, key: str):
         """
