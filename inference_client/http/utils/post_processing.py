@@ -69,7 +69,7 @@ def adjust_prediction_to_client_scaling_factor(
             "width": round(prediction["image"]["width"] / scaling_factor),
             "height": round(prediction["image"]["height"] / scaling_factor),
         }
-    if "predictions" not in prediction or len(prediction["predictions"]) == 0:
+    if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
     if "points" in prediction["predictions"][0]:
         prediction[
@@ -85,8 +85,16 @@ def adjust_prediction_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
         )
-
     return prediction
+
+
+def predictions_should_not_be_post_processed(prediction: dict) -> bool:
+    # excluding from post-processing classification output and empty predictions
+    return (
+        "predictions" not in prediction
+        or not issubclass(type(prediction["predictions"]), list)
+        or len(prediction["predictions"]) == 0
+    )
 
 
 def adjust_object_detection_predictions_to_client_scaling_factor(

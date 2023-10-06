@@ -14,7 +14,8 @@ from inference_client.http.utils.post_processing import (
     adjust_instance_segmentation_predictions_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
     response_contains_jpeg_image,
-    transform_base64_visualisation, adjust_prediction_to_client_scaling_factor,
+    transform_base64_visualisation,
+    adjust_prediction_to_client_scaling_factor,
 )
 
 
@@ -224,7 +225,9 @@ def test_transform_base64_visualisation_when_result_should_be_pillow_image() -> 
     assert difference.getbbox() is None
 
 
-def test_adjust_prediction_to_client_scaling_factor_when_scaling_factor_is_not_enabled() -> None:
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_factor_is_not_enabled() -> (
+    None
+):
     # given
     prediction = {
         "visualization": None,
@@ -236,17 +239,20 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_factor_is_not_e
             {"class": "Rice", "class_id": 0, "confidence": 0.3397},
         ],
         "top": "Corn",
-        "confidence": 0.4329
-
+        "confidence": 0.4329,
     }
     # when
-    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=None)
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=None
+    )
 
     # then
     assert result is prediction
 
 
-def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_classification() -> None:
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_classification() -> (
+    None
+):
     # given
     prediction = {
         "visualization": None,
@@ -258,35 +264,49 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
             {"class": "Rice", "class_id": 0, "confidence": 0.3397},
         ],
         "top": "Corn",
-        "confidence": 0.4329
-
+        "confidence": 0.4329,
     }
     # when
-    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
 
     # then
     assert result["image"] == {"width": 448, "height": 300}
-    for key in ["visualization", "frame_id", "time", "predictions", "top", "confidence"]:
+    for key in [
+        "visualization",
+        "frame_id",
+        "time",
+        "predictions",
+        "top",
+        "confidence",
+    ]:
         assert result[key] == prediction[key]
 
 
-def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_object_detection() -> None:
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_object_detection() -> (
+    None
+):
     # given
     prediction = {
         "time": 0.26239124999847263,
         "image": {"width": 224, "height": 150},
-        "predictions": [{
-            "x": 21.0,
-            "y": 128.0,
-            "width": 42.0,
-            "height": 48.0,
-            "confidence": 0.9,
-            "class": "wood-log",
-            "class_id": 0,
-        }],
+        "predictions": [
+            {
+                "x": 21.0,
+                "y": 128.0,
+                "width": 42.0,
+                "height": 48.0,
+                "confidence": 0.9,
+                "class": "wood-log",
+                "class_id": 0,
+            }
+        ],
     }
     # when
-    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
 
     # then
     assert result["image"] == {"width": 448, "height": 300}
@@ -302,26 +322,32 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
     }
 
 
-def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_instance_segmentation() -> None:
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_instance_segmentation() -> (
+    None
+):
     # given
     prediction = {
         "visualization": None,
         "frame_id": None,
         "time": 0.26239124999847263,
         "image": {"width": 224, "height": 150},
-        "predictions": [{
-            "x": 21.0,
-            "y": 128.0,
-            "width": 42.0,
-            "height": 48.0,
-            "confidence": 0.9,
-            "class": "wood-log",
-            "class_id": 0,
-            "points": [{"x": 100.0, "y": 200.0}]
-        }],
+        "predictions": [
+            {
+                "x": 21.0,
+                "y": 128.0,
+                "width": 42.0,
+                "height": 48.0,
+                "confidence": 0.9,
+                "class": "wood-log",
+                "class_id": 0,
+                "points": [{"x": 100.0, "y": 200.0}],
+            }
+        ],
     }
     # when
-    result = adjust_prediction_to_client_scaling_factor(prediction=prediction, scaling_factor=0.5)
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
 
     # then
     assert result["image"] == {"width": 448, "height": 300}
@@ -334,5 +360,28 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
         "confidence": 0.9,
         "class": "wood-log",
         "class_id": 0,
-        "points": [{"x": 200.0, "y": 400.0}]
+        "points": [{"x": 200.0, "y": 400.0}],
     }
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_multi_label_classification() -> (
+    None
+):
+    # given
+    prediction = {
+        "time": 0.14,
+        "image": {"width": 224, "height": 224},
+        "predictions": {"cat": {"confidence": 0.49}, "dog": {"confidence": 0.92}},
+        "predicted_classes": ["cat", "dog"],
+    }
+
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
+
+    # then
+    assert result["image"] == {"width": 448, "height": 448}
+    assert result["time"] == prediction["time"]
+    assert result["predictions"] == prediction["predictions"]
+    assert result["predicted_classes"] == prediction["predicted_classes"]
