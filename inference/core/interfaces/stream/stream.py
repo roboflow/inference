@@ -65,7 +65,7 @@ class Stream(BaseInterface):
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
         model: Union[str, Callable] = MODEL_ID,
-        camera: Union[int, str] = STREAM_ID,
+        source: Union[int, str] = STREAM_ID,
         use_bytetrack: bool = ENABLE_BYTE_TRACK,
         use_main_thread: bool = False,
         output_channel_order: str = "RGB",
@@ -80,10 +80,10 @@ class Stream(BaseInterface):
         self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
         self.use_bytetrack = use_bytetrack
 
-        if camera == "webcam":
+        if source == "webcam":
             stream_id = 0
         else:
-            stream_id = camera
+            stream_id = source
 
         self.stream_id = stream_id
         if self.stream_id is None:
