@@ -41,12 +41,10 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_client",
-            "inference_client.*",
-            "cli",
+            "inference_sdk",
+            "inference_sdk.*",
         ),
-    )
-    + ["cli.inference_cli"],
+    ),
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",

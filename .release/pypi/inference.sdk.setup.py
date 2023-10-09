@@ -1,10 +1,18 @@
 import os
+import shutil
+
 import setuptools
 from setuptools import find_packages
 import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
+
+shutil.copyfile(
+    os.path.join(root, "inference/core/version.py"),
+    os.path.join(root, "inference_sdk/version.py"),
+)
+
 from inference.core.version import __version__
 
 with open("README.md", "r") as fh:
@@ -22,7 +30,7 @@ def read_requirements(path):
 
 
 setuptools.setup(
-    name="inference-cpu",
+    name="inference-sdk",
     version=__version__,
     author="Roboflow",
     author_email="help@roboflow.com",
@@ -38,26 +46,13 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
+            "inference",
+            "inference.*",
+            "inference_cli",
+            "inference_cli.*",
         ),
     ),
-    entry_points={
-        "console_scripts": [
-            "inference=inference_cli.main:app",
-        ],
-    },
-    install_requires=read_requirements(
-        ["requirements/_requirements.txt", "requirements/requirements.cpu.txt"]
-    ),
-    extras_require={
-        "clip": read_requirements("requirements/requirements.clip.txt"),
-        "gaze": read_requirements("requirements/requirements.gaze.txt"),
-        "hosted": read_requirements("requirements/requirements.hosted.txt"),
-        "http": read_requirements("requirements/requirements.http.txt"),
-        "sam": read_requirements("requirements/requirements.sam.txt"),
-        "waf": read_requirements("requirements/requirements.waf.txt"),
-    },
+    install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",

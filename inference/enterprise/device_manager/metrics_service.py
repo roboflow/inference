@@ -82,6 +82,7 @@ def build_container_stats():
             container_stats = {}
             models = aggregate_model_stats(id)
             container_stats["uuid"] = container.id
+            container_stats["version"] = container.version
             container_stats["startup_time"] = container.startup_time
             container_stats["models"] = models
             if container.status == "running" or container.status == "restarting":
