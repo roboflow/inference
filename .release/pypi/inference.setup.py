@@ -36,9 +36,17 @@ setuptools.setup(
             "docker",
             "docs",
             "requirements",
-            "test",
+            "tests",
+            "tests.*",
+            "inference_sdk",
+            "inference_sdk.*",
         ),
     ),
+    entry_points={
+        "console_scripts": [
+            "inference=inference_cli.main:app",
+        ],
+    },
     install_requires=read_requirements(
         ["requirements/_requirements.txt", "requirements/requirements.cpu.txt"]
     ),

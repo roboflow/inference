@@ -9,9 +9,7 @@ IMG_PATH = "image.jpg"
 API_KEY = os.environ["API_KEY"]
 DISTANCE_TO_OBJECT = 1000  # mm
 HEIGHT_OF_HUMAN_FACE = 250  # mm
-GAZE_DETECTION_URL = (
-    "http://127.0.0.1:9001/gaze/gaze_detection?api_key=" + API_KEY
-)
+GAZE_DETECTION_URL = "http://127.0.0.1:9001/gaze/gaze_detection?api_key=" + API_KEY
 
 
 def detect_gazes(frame: np.ndarray):
@@ -89,19 +87,46 @@ if __name__ == "__main__":
 
         length_per_pixel = HEIGHT_OF_HUMAN_FACE / gaze["face"]["height"]
 
-        dx = -DISTANCE_TO_OBJECT * np.tan(gaze['yaw']) / length_per_pixel
+        dx = -DISTANCE_TO_OBJECT * np.tan(gaze["yaw"]) / length_per_pixel
         # 100000000 is used to denote out of bounds
         dx = dx if not np.isnan(dx) else 100000000
-        dy = -DISTANCE_TO_OBJECT * np.arccos(gaze['yaw']) * np.tan(gaze['pitch']) / length_per_pixel
+        dy = (
+            -DISTANCE_TO_OBJECT
+            * np.arccos(gaze["yaw"])
+            * np.tan(gaze["pitch"])
+            / length_per_pixel
+        )
         dy = dy if not np.isnan(dy) else 100000000
         gaze_point = int(image_width / 2 + dx), int(image_height / 2 + dy)
 
         quadrants = [
-            ("center", (int(image_width / 4), int(image_height / 4), int(image_width / 4 * 3), int(image_height / 4 * 3))),
+            (
+                "center",
+                (
+                    int(image_width / 4),
+                    int(image_height / 4),
+                    int(image_width / 4 * 3),
+                    int(image_height / 4 * 3),
+                ),
+            ),
             ("top_left", (0, 0, int(image_width / 2), int(image_height / 2))),
-            ("top_right", (int(image_width / 2), 0, image_width, int(image_height / 2))),
-            ("bottom_left", (0, int(image_height / 2), int(image_width / 2), image_height)),
-            ("bottom_right", (int(image_width / 2), int(image_height / 2), image_width, image_height)),
+            (
+                "top_right",
+                (int(image_width / 2), 0, image_width, int(image_height / 2)),
+            ),
+            (
+                "bottom_left",
+                (0, int(image_height / 2), int(image_width / 2), image_height),
+            ),
+            (
+                "bottom_right",
+                (
+                    int(image_width / 2),
+                    int(image_height / 2),
+                    image_width,
+                    image_height,
+                ),
+            ),
         ]
 
         for quadrant, (x_min, y_min, x_max, y_max) in quadrants:

@@ -8,7 +8,9 @@ from inference.enterprise.device_manager.command_handler import (
     fetch_commands,
     handle_command,
 )
-from inference.enterprise.device_manager.metrics_service import report_metrics
+from inference.enterprise.device_manager.metrics_service import (
+    report_metrics_and_handle_commands,
+)
 
 app = FastAPI(
     title="Roboflow Device Manager",
@@ -48,11 +50,13 @@ def root():
 
 @app.post("/exec_command")
 async def exec_command(command: Command):
-    info = handle_command(command)
-    return {"status": "ok", "data": info}
+    handle_command(command.dict())
+    return {"status": "ok"}
 
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(fetch_commands, "interval", seconds=4)
-scheduler.add_job(report_metrics, "interval", seconds=METRICS_INTERVAL)
+scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "max_instances": 3})
+scheduler.add_job(
+    report_metrics_and_handle_commands, "interval", seconds=METRICS_INTERVAL
+)
+scheduler.add_job(fetch_commands, "interval", seconds=3)
 scheduler.start()
