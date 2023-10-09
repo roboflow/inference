@@ -48,9 +48,13 @@ from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import ApiUrl
 
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
-    import boto3
+    try:
+        import boto3
 
-    s3 = boto3.client("s3")
+        s3 = boto3.client("s3")
+    except:
+        logger.debug("Error loading boto3")
+        pass
 
 NUM_S3_RETRY = 3
 SLEEP_SECONDS_BETWEEN_RETRIES = 3

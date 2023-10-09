@@ -36,6 +36,7 @@ class WebcamStream:
         self.vcap = cv2.VideoCapture(self.stream_id)
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.max_fps = 30
         if self.vcap.isOpened() is False:
             logger.debug("[Exiting]: Error accessing webcam stream.")
             exit(0)
@@ -76,7 +77,9 @@ class WebcamStream:
                 break
             if self.enforce_fps:
                 t2 = time.perf_counter()
-                time.sleep(max(0, 1 / self.fps_input_stream - (t2 - t1)))
+                time.sleep(
+                    max(1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1))
+                )
         self.vcap.release()
 
     def read(self):
