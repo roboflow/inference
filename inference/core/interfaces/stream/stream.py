@@ -69,7 +69,9 @@ class Stream(BaseInterface):
         use_bytetrack: bool = ENABLE_BYTE_TRACK,
         use_main_thread: bool = False,
         output_channel_order: str = "RGB",
-        on_prediction: Callable = None
+        on_prediction: Callable = None,
+        on_start: Callable = None,
+        on_stop: Callable = None
     ):
         """Initialize the stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -119,10 +121,17 @@ class Stream(BaseInterface):
         )
 
         self.on_start_callbacks = []
+        self.on_stop_callbacks = []
         self.on_prediction_callbacks = []
 
         if(on_prediction):
             self.on_prediction_callbacks.append(on_prediction)
+
+        if(on_start):
+            self.on_start_callbacks.append(on_start)
+        
+        if(on_stop):
+            self.on_stop_callbacks.append(on_stop)
 
         self.init_infer()
         self.preproc_result = None
@@ -151,6 +160,12 @@ class Stream(BaseInterface):
         self.on_start_callbacks.append(callback)
 
         unsubscribe = lambda: self.on_start_callbacks.remove(callback)
+        return unsubscribe
+
+    def on_stop(self, callback):
+        self.on_stop_callbacks.append(callback)
+
+        unsubscribe = lambda: self.on_stop_callbacks.remove(callback)
         return unsubscribe
 
     def on_prediction(self, callback):
@@ -203,7 +218,11 @@ class Stream(BaseInterface):
         print_ind = 0
         print_chars = ["|", "/", "-", "\\"]
         while True:
-            if self.stop:
+            if self.webcam_stream.stopped is True or self.stop:
+                while len(self.on_stop_callbacks) > 0:
+                    # run each onStop callback only once from this thread
+                    cb = self.on_stop_callbacks.pop()
+                    cb()
                 break
             if self.queue_control:
                 while len(self.on_start_callbacks) > 0:
@@ -225,6 +244,8 @@ class Stream(BaseInterface):
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
                 )
+
+                start = time.perf_counter()
                 if self.json_response:
                     predictions = self.model.make_response(
                         predictions,
@@ -262,8 +283,12 @@ class Stream(BaseInterface):
                     else:
                         cb(predictions, np.asarray(self.frame))
                 
+                current = time.perf_counter()
+                self.webcam_stream.max_fps = 1 / (current - start)
+                logger.debug(f"FPS: {self.webcam_stream.max_fps:.2f}")
+
                 if time.perf_counter() - last_print > 1:
-                    print(f"Streaming {print_chars[print_ind]}", end="\r")
+                    # print(f"Streaming {print_chars[print_ind]}", end="\r")
                     print_ind = (print_ind + 1) % 4
                     last_print = time.perf_counter()
 
