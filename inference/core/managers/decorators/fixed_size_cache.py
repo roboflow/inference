@@ -1,8 +1,10 @@
 from collections import deque
+from typing import List
 
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
+from inference.core.managers.entities import ModelDescription
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -75,3 +77,6 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue.remove(model_id)
         self._key_queue.append(model_id)
         return super().preprocess(model_id, request)
+
+    def describe_models(self) -> List[ModelDescription]:
+        return self.model_manager.describe_models()

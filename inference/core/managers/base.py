@@ -8,8 +8,14 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.cache import cache
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
-from inference.core.env import METRICS_INTERVAL, ROBOFLOW_SERVER_UUID
+from inference.core.env import (
+    DISABLE_INFERENCE_CACHE,
+    METRICS_ENABLED,
+    METRICS_INTERVAL,
+    ROBOFLOW_SERVER_UUID,
+)
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
 
@@ -24,8 +30,9 @@ class ModelManager:
         """Initializes pingback mechanism."""
         self.num_errors = 0  # in the device
         self.uuid = ROBOFLOW_SERVER_UUID
-        self.pingback = PingbackInfo(self)
-        self.pingback.start()
+        if METRICS_ENABLED:
+            self.pingback = PingbackInfo(self)
+            self.pingback.start()
 
     def add_model(self, model_id: str, model: Model) -> None:
         """Adds a new model to the manager.
@@ -68,37 +75,39 @@ class ModelManager:
             rtn_val = self._models[model_id].infer_from_request(request)
 
             finish_time = time.time()
-            cache.zadd(
-                f"models",
-                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                score=finish_time,
-                expire=METRICS_INTERVAL * 2,
-            )
-            cache.zadd(
-                f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                value={
-                    "request": request.dict(),
-                    "response": jsonable_encoder(rtn_val),
-                },
-                score=finish_time,
-                expire=METRICS_INTERVAL * 2,
-            )
+            if not DISABLE_INFERENCE_CACHE:
+                cache.zadd(
+                    f"models",
+                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+                cache.zadd(
+                    f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                    value={
+                        "request": request.dict(),
+                        "response": jsonable_encoder(rtn_val),
+                    },
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
 
             return rtn_val
         except Exception as e:
             finish_time = time.time()
-            cache.zadd(
-                f"models",
-                value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
-                score=finish_time,
-                expire=METRICS_INTERVAL * 2,
-            )
-            cache.zadd(
-                f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                value={"request": request.dict(), "error": str(e)},
-                score=finish_time,
-                expire=METRICS_INTERVAL * 2,
-            )
+            if not DISABLE_INFERENCE_CACHE:
+                cache.zadd(
+                    f"models",
+                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+                cache.zadd(
+                    f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                    value={"request": request.dict(), "error": str(e)},
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
             raise
 
     def make_response(
@@ -236,3 +245,15 @@ class ModelManager:
             List[str]: The keys of the models in the manager.
         """
         return self._models.keys()
+
+    def describe_models(self) -> List[ModelDescription]:
+        return [
+            ModelDescription(
+                model_id=model_id,
+                task_type=model.task_type,
+                batch_size=getattr(model, "batch_size", None),
+                input_width=getattr(model, "img_size_w", None),
+                input_height=getattr(model, "img_size_h", None),
+            )
+            for model_id, model in self._models.items()
+        ]

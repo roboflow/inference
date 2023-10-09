@@ -29,6 +29,7 @@ from inference.core.env import (
     CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
+    LAMBDA,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
@@ -39,6 +40,7 @@ from inference.core.exceptions import (
     OnnxProviderNotAvailable,
     TensorrtRoboflowAPIError,
 )
+from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -101,7 +103,9 @@ class RoboflowInferenceModel(Model):
         super().__init__()
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
-        if not self.api_key and not (AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID):
+        if not self.api_key and not (
+            AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
+        ):
             raise MissingApiKeyError(
                 "No API Key Found, must provide an API Key in each request or as an environment variable on server startup"
             )
@@ -144,7 +148,6 @@ class RoboflowInferenceModel(Model):
             str: A base64 encoded image string
         """
         image = load_image_rgb(inference_request.image)
-        image = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB)
 
         for box in inference_response.predictions:
             color = tuple(
@@ -276,8 +279,8 @@ class RoboflowInferenceModel(Model):
                     i += 1
         else:
             # If AWS keys are available, then we can download model artifacts directly
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-                self.log("Downloading model artifacts from S3")
+            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
+                logger.debug("Downloading model artifacts from S3")
                 for f in infer_bucket_files:
                     success = False
                     attempts = 0
@@ -291,7 +294,7 @@ class RoboflowInferenceModel(Model):
                             success = True
                         except Exception as e:
                             attempts += 1
-                            print(
+                            logger.error(
                                 f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f} | Weights File = {self.weights_file}",
                                 traceback.format_exc(),
                             )
@@ -501,16 +504,16 @@ class RoboflowInferenceModel(Model):
 
         if self.resize_method == "Stretch to":
             resized = cv2.resize(
-                preprocessed_image, (self.img_size_h, self.img_size_w), cv2.INTER_CUBIC
+                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
             resized = self.letterbox_image(
-                preprocessed_image, (self.img_size_h, self.img_size_w)
+                preprocessed_image, (self.img_size_w, self.img_size_h)
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = self.letterbox_image(
                 preprocessed_image,
-                (self.img_size_h, self.img_size_w),
+                (self.img_size_w, self.img_size_h),
                 c=(255, 255, 255),
             )
 
@@ -593,7 +596,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             ]
         ):
             self.log("Downloading model artifacts")
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
                 infer_bucket_files = self.get_infer_bucket_file_list()
                 for f in infer_bucket_files:
                     success = False
@@ -618,7 +621,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                             success = True
                         except Exception as e:
                             attempts += 1
-                            print(
+                            logger.error(
                                 f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f}",
                                 traceback.format_exc(),
                             )

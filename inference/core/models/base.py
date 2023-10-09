@@ -1,12 +1,71 @@
 from time import perf_counter
-from typing import List, Union
+from typing import Any, List, Tuple, Union
+
+import numpy as np
 
 from inference.core.data_models import InferenceRequest, InferenceResponse
-from inference.core.models.mixins import InferenceMixin
+from inference.core.models.types import PreprocessReturnMetadata
 
 
-class Model(InferenceMixin):
-    """Base Inference Model (Inherits from InferenceMixin to define the needed methods)
+class BaseInference:
+    """General inference class.
+
+    This class provides a basic interface for inference tasks.
+    """
+
+    def infer(self, image: Any, **kwargs) -> Any:
+        """Runs inference on given data."""
+        preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+        predicted_arrays = self.predict(preproc_image, **kwargs)
+        postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
+
+        return postprocessed
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        raise NotImplementedError
+
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
+        raise NotImplementedError
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs
+    ) -> Any:
+        raise NotImplementedError
+
+    def infer_from_request(
+        self, request: InferenceRequest
+    ) -> Union[InferenceResponse, List[InferenceResponse]]:
+        """Runs inference on a request
+
+        Args:
+            request (CVInferenceRequest): The request object.
+
+        Returns:
+            Union[CVInferenceResponse, List[CVInferenceResponse]]: The response object(s).
+
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
+        """
+        raise NotImplementedError
+
+    def make_response(
+        self, *args, **kwargs
+    ) -> Union[InferenceResponse, List[InferenceResponse]]:
+        """Constructs an object detection response.
+
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
+        """
+        raise NotImplementedError
+
+
+class Model(BaseInference):
+    """Base Inference Model (Inherits from BaseInference to define the needed methods)
 
     This class provides the foundational methods for inference and logging, and can be extended by specific models.
 

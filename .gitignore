@@ -18,7 +18,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -149,3 +148,5 @@ README.dataset*
 _annotations*
 
 export_api_keys.sh
+inference_cli/version.py
+inference_sdk/version.py

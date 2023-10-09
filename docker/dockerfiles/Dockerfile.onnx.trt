@@ -28,10 +28,6 @@ RUN pip install --upgrade pip  && pip install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip uninstall pillow -y \
-    && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd \
-    && rm -rf ~/.cache/pip
-
 RUN conda install -c anaconda libstdcxx-ng
 
 WORKDIR /app/

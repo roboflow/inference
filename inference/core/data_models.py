@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 from pydantic import BaseModel, Field
 
 from inference.core.env import CLIP_VERSION_ID, GAZE_VERSION_ID, SAM_VERSION_ID
+from inference.core.managers.entities import ModelDescription
 
 # This file defines the pydantic data models used internally throughout the inference server API. Descriptions are included in many cases for the purpose of auto generated docs.
 
@@ -147,37 +148,6 @@ class ClipCompareRequest(ClipInferenceRequest):
         default="text",
         example="text",
         description="The type of prompt, one of 'image' or 'text'",
-    )
-
-
-class ClipEmbeddingResponse(BaseModel):
-    """Response for CLIP embedding.
-
-    Attributes:
-        embeddings (List[List[float]]): A list of embeddings, each embedding is a list of floats.
-        time (float): The time in seconds it took to produce the embeddings including preprocessing.
-    """
-
-    embeddings: List[List[float]] = Field(
-        example="[[0.12, 0.23, 0.34, ..., 0.43]]",
-        description="A list of embeddings, each embedding is a list of floats",
-    )
-    time: Optional[float] = Field(
-        description="The time in seconds it took to produce the embeddings including preprocessing"
-    )
-
-
-class ClipCompareResponse(BaseModel):
-    """Response for CLIP comparison.
-
-    Attributes:
-        similarity (Union[List[float], Dict[str, float]]): Similarity scores.
-        time (float): The time in seconds it took to produce the similarity scores including preprocessing.
-    """
-
-    similarity: Union[List[float], Dict[str, float]]
-    time: Optional[float] = Field(
-        description="The time in seconds it took to produce the similarity scores including preprocessing"
     )
 
 
@@ -338,17 +308,53 @@ class ServerVersionInfo(BaseModel):
     uuid: str = Field(example="9c18c6f4-2266-41fb-8a0f-c12ae28f6fbe")
 
 
-class ModelManagerKeys(BaseModel):
-    """Model manager keys.
-
-    Attributes:
-        model_ids (Set[str]): The set of model IDs currently loaded.
-    """
-
-    model_ids: Set[str] = Field(
-        example=["Model ID 1", "Model ID 2", "Model ID N"],
-        description="The set of model IDs currently loaded",
+class ModelDescriptionEntity(BaseModel):
+    model_id: str = Field(
+        description="Identifier of the model", example="some-project/3"
     )
+    task_type: str = Field(
+        description="Type of the task that the model performs", example="classification"
+    )
+    batch_size: Optional[Union[int, str]] = Field(
+        description="Batch size accepted by the model (if registered).",
+    )
+    input_height: Optional[int] = Field(
+        description="Image input height accepted by the model (if registered).",
+    )
+    input_width: Optional[int] = Field(
+        description="Image input width accepted by the model (if registered).",
+    )
+
+    @classmethod
+    def from_model_description(
+        cls, model_description: ModelDescription
+    ) -> "ModelDescriptionEntity":
+        return cls(
+            model_id=model_description.model_id,
+            task_type=model_description.task_type,
+            batch_size=model_description.batch_size,
+            input_height=model_description.input_height,
+            input_width=model_description.input_width,
+        )
+
+
+class ModelsDescriptions(BaseModel):
+    models: List[ModelDescriptionEntity] = Field(
+        description="List of models that are loaded by model manager.",
+    )
+
+    @classmethod
+    def from_models_descriptions(
+        cls, models_descriptions: List[ModelDescription]
+    ) -> "ModelsDescriptions":
+        return cls(
+            models=[
+                ModelDescriptionEntity.from_model_description(
+                    model_description=model_description
+                )
+                for model_description in models_descriptions
+            ]
+        )
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -504,6 +510,37 @@ class InferenceResponse(BaseModel):
     time: Optional[float] = Field(
         default=None,
         description="The time in seconds it took to produce the predictions including image preprocessing",
+    )
+
+
+class ClipEmbeddingResponse(InferenceResponse):
+    """Response for CLIP embedding.
+
+    Attributes:
+        embeddings (List[List[float]]): A list of embeddings, each embedding is a list of floats.
+        time (float): The time in seconds it took to produce the embeddings including preprocessing.
+    """
+
+    embeddings: List[List[float]] = Field(
+        example="[[0.12, 0.23, 0.34, ..., 0.43]]",
+        description="A list of embeddings, each embedding is a list of floats",
+    )
+    time: Optional[float] = Field(
+        description="The time in seconds it took to produce the embeddings including preprocessing"
+    )
+
+
+class ClipCompareResponse(InferenceResponse):
+    """Response for CLIP comparison.
+
+    Attributes:
+        similarity (Union[List[float], Dict[str, float]]): Similarity scores.
+        time (float): The time in seconds it took to produce the similarity scores including preprocessing.
+    """
+
+    similarity: Union[List[float], Dict[str, float]]
+    time: Optional[float] = Field(
+        description="The time in seconds it took to produce the similarity scores including preprocessing"
     )
 
 

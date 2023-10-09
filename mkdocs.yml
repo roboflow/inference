@@ -31,6 +31,10 @@ nav:
   - Quickstart:
     - Docker: quickstart/docker.md
     - HTTP Inference: quickstart/http_inference.md
+    - CLIP Example: https://github.com/roboflow/inference/tree/main/examples/clip-search-engine
+    - SAM Example: https://github.com/roboflow/inference/tree/main/examples/sam-client
+    - Gaze Detection Example: https://github.com/roboflow/inference/tree/main/examples/gaze-detection
+    - UDP and Video Examples: https://github.com/roboflow/inference/tree/main/examples/inference-client
   - API Reference: api.md
   - Library Reference:
     - Models:
@@ -55,6 +59,7 @@ nav:
       - HTTP Interface: library/interfaces/http.md
       - UDP Stream Interface: library/interfaces/udp.md
   - Add a Model: add_a_model.md
+  - Inference SDK - HTTP client: inference_sdk/http_client.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 

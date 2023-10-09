@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import clip
 import numpy as np
@@ -14,6 +14,7 @@ from inference.core.data_models import (
     ClipInferenceRequest,
     ClipTextEmbeddingRequest,
     InferenceRequestImage,
+    InferenceResponse,
 )
 from inference.core.env import (
     CLIP_MAX_BATCH_SIZE,
@@ -23,6 +24,7 @@ from inference.core.env import (
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import cosine_similarity
 
@@ -217,6 +219,11 @@ class Clip(OnnxRoboflowCoreModel):
 
         return embeddings
 
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
+        onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
+        embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
+        return (embeddings,)
+
     def make_embed_image_response(
         self, embeddings: np.ndarray
     ) -> ClipEmbeddingResponse:
@@ -334,6 +341,21 @@ class Clip(OnnxRoboflowCoreModel):
         response.time = perf_counter() - t1
         return response
 
+    def make_response(self, embeddings, *args, **kwargs) -> InferenceResponse:
+        return [self.make_embed_image_response(embeddings)]
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> Any:
+        return predictions[0]
+
+    def infer(self, image: Any, **kwargs) -> Any:
+        """Embeds an image"""
+        return super().infer(image, **kwargs)
+
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         """Preprocesses an inference request image.
 
@@ -349,3 +371,8 @@ class Clip(OnnxRoboflowCoreModel):
         img_in = np.expand_dims(preprocessed_image, axis=0)
 
         return img_in.astype(np.float32)
+
+    def preprocess(
+        self, image: Any, **kwargs
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        return self.preproc_image(image), PreprocessReturnMetadata({})
