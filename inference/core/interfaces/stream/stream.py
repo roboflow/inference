@@ -3,9 +3,9 @@ import socket
 import sys
 import threading
 import time
-from typing import Union, Callable
-import numpy as np
+from typing import Callable, Union
 
+import numpy as np
 import supervision as sv
 from PIL import Image
 
