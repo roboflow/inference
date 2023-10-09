@@ -512,6 +512,7 @@ class InferenceResponse(BaseModel):
         description="The time in seconds it took to produce the predictions including image preprocessing",
     )
 
+
 class ClipEmbeddingResponse(InferenceResponse):
     """Response for CLIP embedding.
 
@@ -541,7 +542,6 @@ class ClipCompareResponse(InferenceResponse):
     time: Optional[float] = Field(
         description="The time in seconds it took to produce the similarity scores including preprocessing"
     )
-
 
 
 class CvInferenceResponse(InferenceResponse):

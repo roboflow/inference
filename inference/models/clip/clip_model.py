@@ -214,12 +214,11 @@ class Clip(OnnxRoboflowCoreModel):
         else:
             img_in = self.preproc_image(image)
 
-
         onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
         embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
 
         return embeddings
-    
+
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
         embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
