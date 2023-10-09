@@ -274,8 +274,8 @@ class Stream(BaseInterface):
                 self.inference_response = predictions
                 self.frame_count += 1
 
-                if self.use_bytetrack:
-                    predictions = detections
+                # if self.use_bytetrack:
+                #     predictions = detections
                 
                 for cb in self.on_prediction_callbacks:
                     if self.output_channel_order == "BGR":
