@@ -266,7 +266,7 @@ class Stream(BaseInterface):
                             pred.tracker_id = int(detect[4])
                     predictions.frame_id = frame_id
                     # predictions = predictions.json(exclude_none=True, by_alias=True)
-                    predictions = predictions.dict(by_alias=True)
+                    predictions = predictions.dict(by_alias=True, exclude_none=True)
                 else:
                     pass
                     # predictions = json.dumps(predictions)
