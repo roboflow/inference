@@ -77,7 +77,9 @@ class WebcamStream:
                 break
             if self.enforce_fps:
                 t2 = time.perf_counter()
-                time.sleep(max(1/self.max_fps+0.02, 1 / self.fps_input_stream - (t2 - t1)))
+                time.sleep(
+                    max(1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1))
+                )
         self.vcap.release()
 
     def read(self):

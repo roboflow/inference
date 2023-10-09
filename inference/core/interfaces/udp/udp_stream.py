@@ -113,7 +113,6 @@ class UdpStream(BaseInterface):
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
 
-
         self.webcam_stream = WebcamStream(
             stream_id=self.stream_id, enforce_fps=enforce_fps
         )

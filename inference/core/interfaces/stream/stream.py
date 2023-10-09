@@ -71,7 +71,7 @@ class Stream(BaseInterface):
         output_channel_order: str = "RGB",
         on_prediction: Callable = None,
         on_start: Callable = None,
-        on_stop: Callable = None
+        on_stop: Callable = None,
     ):
         """Initialize the stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
@@ -124,13 +124,13 @@ class Stream(BaseInterface):
         self.on_stop_callbacks = []
         self.on_prediction_callbacks = []
 
-        if(on_prediction):
+        if on_prediction:
             self.on_prediction_callbacks.append(on_prediction)
 
-        if(on_start):
+        if on_start:
             self.on_start_callbacks.append(on_start)
-        
-        if(on_stop):
+
+        if on_stop:
             self.on_stop_callbacks.append(on_stop)
 
         self.init_infer()
@@ -253,14 +253,14 @@ class Stream(BaseInterface):
                     )[0]
                     if self.use_bytetrack:
                         detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True)
+                            predictions.dict(by_alias=True, exclude_none=True)
                         )
                         detections = self.byte_tracker.update_with_detections(
                             detections
                         )
 
                         if detections.tracker_id is None:
-                            detections.tracker_id=np.array([], dtype=int)
+                            detections.tracker_id = np.array([], dtype=int)
 
                         for pred, detect in zip(predictions.predictions, detections):
                             pred.tracker_id = int(detect[4])
@@ -269,20 +269,20 @@ class Stream(BaseInterface):
                     predictions = predictions.dict(by_alias=True)
                 else:
                     pass
-                    #predictions = json.dumps(predictions)
+                    # predictions = json.dumps(predictions)
 
                 self.inference_response = predictions
                 self.frame_count += 1
 
                 # if self.use_bytetrack:
                 #     predictions = detections
-                
+
                 for cb in self.on_prediction_callbacks:
                     if self.output_channel_order == "BGR":
                         cb(predictions, self.frame_cv)
                     else:
                         cb(predictions, np.asarray(self.frame))
-                
+
                 current = time.perf_counter()
                 self.webcam_stream.max_fps = 1 / (current - start)
                 logger.debug(f"FPS: {self.webcam_stream.max_fps:.2f}")
@@ -299,7 +299,7 @@ class Stream(BaseInterface):
         """
         preprocess_thread = threading.Thread(target=self.preprocess_thread)
         preprocess_thread.start()
-        
+
         if self.use_main_thread:
             self.inference_request_thread()
         else:
