@@ -73,10 +73,10 @@ API_DEBUG = os.getenv("API_DEBUG", False)
 API_KEY = os.getenv("ROBOFLOW_API_KEY", None) or os.getenv("API_KEY", None)
 
 # AWS access key ID, default is None
-AWS_ACCESS_KEY_ID = None #os.getenv("AWS_ACCESS_KEY_ID", None)
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 
 # AWS secret access key, default is None
-AWS_SECRET_ACCESS_KEY = None #os.getenv("AWS_SECRET_ACCESS_KEY", None)
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
