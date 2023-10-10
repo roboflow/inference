@@ -248,12 +248,13 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
     )
 
 
-class KeypointsDetectionInferenceRequest(CVInferenceRequest):
+class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
     keypoint_confidence: Optional[float] = Field(
         default=0.0,
         example=0.5,
         description="The confidence threshold used to filter out non visible keypoints",
     )
+
 
 class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     """Instance Segmentation inference request.

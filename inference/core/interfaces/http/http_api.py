@@ -495,13 +495,13 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/infer/keypoints_detection",
-                response_model=KeypointsDetectionInferenceRequest,
+                response_model=KeypointsDetectionInferenceResponse,
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
             )
             @with_route_exceptions
             async def infer_keypoints(
-                inference_request: M.ClassificationInferenceRequest,
+                inference_request: M.KeypointsDetectionInferenceRequest,
             ):
                 """Run inference with the specified keypoints detection model.
 
