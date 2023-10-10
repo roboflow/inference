@@ -31,7 +31,11 @@ To create custom inference server Docker images, go to the parent package, [Robo
 
 Starts a local inference server. It optionally takes a port number (default is 9001) and will only start the docker container if there is not already a container running on that port.
 
-It will automatically detect the device you are running on and pull the appropriate Docker image.
+Before you begin, ensure that you have Docker installed on your machine. Docker provides a containerized environment, 
+allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If 
+you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
+
+The CLI will automatically detect the device you are running on and pull the appropriate Docker image.
 
 ```bash
 inference server start --port 9001
