@@ -1,5 +1,6 @@
 APScheduler<=3.10.1
 cython<=3.0.0
+python-dotenv<=2.0.0
 fastapi<=0.85.1
 numpy<=1.25.2
 opencv-python<=4.8.0.76

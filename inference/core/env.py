@@ -1,6 +1,10 @@
 import os
 import uuid
 
+from dotenv import load_dotenv
+
+load_dotenv(os.getcwd() + "/.env")
+
 from inference.core.exceptions import InvalidEnvironmentVariableError
 
 
@@ -67,7 +71,7 @@ API_BASE_URL = os.getenv(
 API_DEBUG = os.getenv("API_DEBUG", False)
 
 # API key, default is None
-API_KEY = os.getenv("API_KEY", None)
+API_KEY = os.getenv("ROBOFLOW_API_KEY", None) or os.getenv("API_KEY", None)
 
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
@@ -96,8 +100,8 @@ CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 # Class agnostic NMS flag, default is False
 CLASS_AGNOSTIC_NMS = bool_env(os.getenv("CLASS_AGNOSTIC_NMS", False))
 
-# Confidence threshold, default is 0.0
-CONFIDENCE = float(os.getenv("CONFIDENCE", 0.0))
+# Confidence threshold, default is 50%
+CONFIDENCE = float(os.getenv("CONFIDENCE", 0.5))
 
 # Flag to enable core models, default is True
 CORE_MODELS_ENABLED = bool_env(os.getenv("CORE_MODELS_ENABLED", True))
