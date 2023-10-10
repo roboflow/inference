@@ -31,7 +31,11 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/roboflow/inference",
     install_requires=read_requirements(
-        ["requirements/_requirements.txt", "requirements/requirements.gpu.txt"]
+        [
+            "requirements/_requirements.txt",
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.gpu.txt",
+        ]
     ),
     packages=find_packages(
         where=root,

@@ -48,7 +48,11 @@ setuptools.setup(
         ],
     },
     install_requires=read_requirements(
-        ["requirements/_requirements.txt", "requirements/requirements.cpu.txt"]
+        [
+            "requirements/_requirements.txt",
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.cpu.txt",
+        ]
     ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),

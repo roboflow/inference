@@ -42,7 +42,12 @@ setuptools.setup(
             "inference=inference_cli.main:app",
         ],
     },
-    install_requires=read_requirements("requirements/_requirements.txt"),
+    install_requires=read_requirements(
+        [
+            "requirements/_requirements.txt",
+            "requirements/requirements.cli.txt",
+        ]
+    ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "cpu": read_requirements("requirements/requirements.cpu.txt"),
