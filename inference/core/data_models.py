@@ -581,6 +581,20 @@ class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationRes
     predictions: List[ObjectDetectionPrediction]
 
 
+class Keypoint(Point):
+    confidence: float = Field(description="Model confidence regarding keypoint visibility.")
+    id: int = Field(description="Identifier of keypoint.")
+    category: str = Field(description="Type of keypoint.")
+
+
+class KeypointsPrediction(ObjectDetectionPrediction):
+    keypoints: List[Keypoint]
+
+
+class KeypointsDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
+    predictions: List[KeypointsPrediction]
+
+
 class InstanceSegmentationInferenceResponse(
     CvInferenceResponse, WithVisualizationResponse
 ):

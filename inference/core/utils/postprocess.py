@@ -461,6 +461,69 @@ def scale_polys(
     return shifted_polys
 
 
+def scale_keypoints(
+    predictions: List[List[List[float]]],
+    keypoints_start_index: int,
+    infer_shape: Tuple[int, int],
+    img_dims: List[Tuple[int, int]],
+    preproc: dict,
+    disable_preproc_static_crop: bool = False,
+    resize_method: str = "Stretch to",
+) -> List[List[List[float]]]:
+    # Get static crop params
+    scaled_predictions = []
+    # Loop through batches
+    for i, batch_predictions in enumerate(predictions):
+        if len(batch_predictions) == 0:
+            scaled_predictions.append([])
+            continue
+        np_batch_predictions = np.array(batch_predictions)
+        # Get coords from predictions (x,y,confidece, ...)
+        coords = np_batch_predictions[:, keypoints_start_index:]
+
+        # Shape before resize to infer shape
+        orig_shape = img_dims[i][-1::-1]
+        # Adjust shape and get shift pased on static crop preproc
+        (crop_shift_x, crop_shift_y), orig_shape = generate_transform_from_proc(
+            orig_shape, preproc, disable_preproc_static_crop=disable_preproc_static_crop
+        )
+        if resize_method == "Stretch to":
+            scale_height = orig_shape[1] / infer_shape[1]
+            scale_width = orig_shape[0] / infer_shape[0]
+            for i in range(coords.shape[1] // 3):
+                coords[:, i * 3] *= scale_width
+                coords[:, i * 3 + 1] *= scale_height
+
+        elif (
+            resize_method == "Fit (black edges) in"
+            or resize_method == "Fit (white edges) in"
+        ):
+            # Undo scaling and padding from letterbox resize preproc operation
+            scale = min(infer_shape[0] / orig_shape[0], infer_shape[1] / orig_shape[1])
+            inter_w = int(orig_shape[0] * scale)
+            inter_h = int(orig_shape[1] * scale)
+
+            pad_x = (infer_shape[0] - inter_w) / 2
+            pad_y = (infer_shape[1] - inter_h) / 2
+            for i in range(coords.shape[1] // 3):
+                coords[:, i * 3] -= pad_x
+                coords[:, i * 3] /= scale
+                coords[:, i * 3 + 1] -= pad_y
+                coords[:, i * 3 + 1] /= scale
+
+        for i in range(coords.shape[1] // 3):
+            coords[:, i * 3] = np.round_(
+                np.clip(coords[:, i * 3], a_min=0, a_max=orig_shape[0])
+            ).astype(int) + crop_shift_x
+            coords[:, i * 3 + 1] = np.round_(
+                np.clip(coords[:, i * 3 + 1], a_min=0, a_max=orig_shape[1])
+            ).astype(int) + crop_shift_y
+
+        np_batch_predictions[:, keypoints_start_index:] = coords
+        scaled_predictions.append(np_batch_predictions.tolist())
+    return scaled_predictions
+
+
 def sigmoid(x):
     """Computes the sigmoid function for the given input.
 

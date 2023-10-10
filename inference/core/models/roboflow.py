@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
 from time import perf_counter, sleep
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, Union, Optional
 
 import cv2
 import numpy as np
@@ -117,8 +117,8 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
+        self.keypoints_metadata: Optional[dict] = None
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def cache_file(self, f: str) -> str:
@@ -281,6 +281,13 @@ class RoboflowInferenceModel(Model):
                 for c in self.class_names:
                     self.colors[c] = colors_order[i % len(colors_order)]
                     i += 1
+            if "keypoints_metadata.json" in infer_bucket_files:
+                with self.open_cache("keypoints_metadata.json", "r") as f:
+                    self.keypoints_metadata = {
+                        e["object_class_id"]: {
+                            int(key): value for key, value in e["keypoints"].items()
+                        } for e in json.load(f)
+                    }
         else:
             # If AWS keys are available, then we can download model artifacts directly
             if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
@@ -341,7 +348,13 @@ class RoboflowInferenceModel(Model):
                     for c in self.class_names:
                         self.colors[c] = colors_order[i % len(colors_order)]
                         i += 1
-
+                if "keypoints_metadata.json" in infer_bucket_files:
+                    with self.open_cache("keypoints_metadata.json", "r") as f:
+                        self.keypoints_metadata = {
+                            e["object_class_id"]: {
+                                int(key): value for key, value in e["keypoints"].items()
+                            } for e in json.load(f)
+                        }
             else:
                 self.log("Downloading model artifacts from Roboflow API")
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
@@ -363,6 +376,14 @@ class RoboflowInferenceModel(Model):
 
                 if "colors" in api_data:
                     self.colors = api_data["colors"]
+
+                if "keypoints_metadata" in api_data:
+                    # TODO: make sure backend provides that
+                    self.keypoints_metadata = {
+                        e["object_class_id"]: {
+                            int(key): value for key, value in e["keypoints"].items()
+                        } for e in api_data["keypoints_metadata"]
+                    }
 
                 t1 = perf_counter()
                 weights_url = ApiUrl(api_data["model"])
@@ -388,7 +409,10 @@ class RoboflowInferenceModel(Model):
                 for c in self.class_names:
                     f.write(f"{c}\n")
         self.num_classes = len(self.class_names)
-        self.preproc = json.loads(self.environment["PREPROCESSING"])
+        if issubclass(type(self.environment["PREPROCESSING"]), dict):
+            self.preproc = self.environment["PREPROCESSING"]
+        else:
+            self.preproc = json.loads(self.environment["PREPROCESSING"])
 
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")

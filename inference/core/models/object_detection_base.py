@@ -138,7 +138,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray],
+        predictions: Tuple[np.ndarray, ...],
         preproc_return_metadata: PreprocessReturnMetadata,
         class_agnostic_nms=DEFAULT_CLASS_AGNOSTIC_NMS,
         confidence: float = DEFAULT_CONFIDENCE,
@@ -164,6 +164,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         """
         predictions = predictions[0]
 
+
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=confidence,
@@ -172,6 +173,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_detections=max_detections,
             max_candidate_detections=max_candidates,
         )
+
 
         infer_shape = (self.img_size_w, self.img_size_h)
         img_dims = preproc_return_metadata["img_dims"]
