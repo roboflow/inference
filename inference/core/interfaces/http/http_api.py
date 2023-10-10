@@ -6,8 +6,8 @@ import uvicorn
 from fastapi import Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from fastapi_cprofile.profiler import CProfileMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
@@ -294,7 +294,11 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
-        app.mount("/", StaticFiles(directory="./inference/landing/out", html=True), name="static")
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
 
         @app.get(
             "/info",
