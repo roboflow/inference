@@ -9,7 +9,7 @@ You can [train and deploy your own custom model](https://github.com/roboflow/not
 
 There are three primary `inference` interfaces:
 * A Python-native package (`pip install inference`)
-* An self-hosted inference server (`inference server start`)
+* A self-hosted inference server (`inference server start`)
 * A [fully-managed, auto-scaling API](https://docs.roboflow.com).
 
 ## 🏃 Getting Started
