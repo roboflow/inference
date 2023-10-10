@@ -27,7 +27,6 @@ class ModelManager:
 
     _models: Dict[str, Model] = field(default_factory=dict, init=False)
     model_registry: ModelRegistry = field()
-    
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -46,9 +45,7 @@ class ModelManager:
         """
         if model_id in self._models:
             return
-        model = self.model_registry.get_model(
-            model_id, api_key
-        )(
+        model = self.model_registry.get_model(model_id, api_key)(
             model_id=model_id,
             api_key=api_key,
         )

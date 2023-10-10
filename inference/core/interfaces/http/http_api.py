@@ -211,7 +211,9 @@ class HttpInterface(BaseInterface):
             Returns:
                 M.InferenceResponse: The response containing the inference results.
             """
-            self.model_manager.add_model(inference_request.model_id, inference_request.api_key)
+            self.model_manager.add_model(
+                inference_request.model_id, inference_request.api_key
+            )
             return self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request
             )
