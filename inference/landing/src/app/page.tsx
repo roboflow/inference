@@ -92,13 +92,13 @@ export default function Home() {
               icon="💻"
             />
             <HeaderLink
-              href="https://github.com/roboflow/inference"
+              href="https://universe.roboflow.com/"
               className=""
               label="Find interesting models"
               icon="🔍"
             />
             <HeaderLink
-              href="https://github.com/roboflow/inference"
+              href="https://blog.roboflow.com/how-to-train-yolov8-on-a-custom-dataset/"
               className=""
               label="Train your own custom models"
               icon="💫"
