@@ -15,8 +15,8 @@ export default function Home() {
         id="aboveFold"
         className="flex flex-col justify-center w-full min-h-screen py-6 md:py-12 overflow-hidden"
       >
-        <div className="flex flex-col items-center gap-6 px-8 text-center">
-          <div className="flex flex-col gap-1 items-center">
+        <div className="flex flex-col items-center gap-6 px-8 text-center ">
+          <div className="flex flex-col gap-1 items-center relative z-10">
             <img
               src="/roboflow_full_logo_color.svg"
               alt="Roboflow Logo"
@@ -33,6 +33,30 @@ export default function Home() {
             >
               developer-friendly vision inference
             </div>
+            <img
+              src="/cone.svg"
+              alt="Roboflow Logo"
+              width={120}
+              className="hidden md:flex flex-none absolute left-[-400px] -top-20 xl:left-[-450px] xl:-top-28 z-0"
+            />
+            <img
+              src="/trash.svg"
+              alt="Roboflow Logo"
+              width={110}
+              className="hidden md:flex flex-none absolute -left-56 top-4 xl:-left-64 xl:top-6 z-0"
+            />
+            <img
+              src="/boat.svg"
+              alt="Roboflow Logo"
+              width={100}
+              className="hidden md:flex flex-none absolute right-[-375px] top-36 xl:right-[-420px] xl:top-12 z-0"
+            />
+            <img
+              src="/car.svg"
+              alt="Roboflow Logo"
+              width={140}
+              className="hidden md:flex flex-none absolute -right-56 top- xl:-right-56 xl:-top-6 z-0"
+            />
           </div>
 
           <div className="text-base md:text-lg font-medium max-w-xl">
@@ -66,26 +90,23 @@ export default function Home() {
               className=""
               label="Start with code snippets"
               icon="💻"
-              theme="light"
             />
             <HeaderLink
               href="https://github.com/roboflow/inference"
               className=""
               label="Find interesting models"
               icon="🔍"
-              theme="light"
             />
             <HeaderLink
               href="https://github.com/roboflow/inference"
               className=""
               label="Train your own custom models"
               icon="💫"
-              theme="light"
             />
           </div>
         </div>
         <div className="mt-10 md:mt-16 flex flex-col w-full self-start">
-          <div className="text-xl font-semibold text-gray-900 flex flex-col items-center sm:flex-row gap-1 sm:gap-4 px-4 sm:px-[10%] 2xl:px-[25%]">
+          <div className="text-xl font-semibold text-gray-900 flex flex-col items-center sm:flex-row gap-1 sm:gap-4 px-4 sm:px-[10%] ">
             Example Projects{" "}
             <div
               className={classNames(
@@ -96,7 +117,7 @@ export default function Home() {
               Built with Inference
             </div>
           </div>
-          <div className="hideScrollbar flex items-stretch sm:items-center flex-col sm:flex-row gap-4 w-full overflow-visible sm:overflow-x-auto pt-4 sm:pt-3 pb-12 px-4 sm:px-[10%] 2xl:px-[25%]">
+          <div className="hideScrollbar flex items-stretch sm:items-center flex-col sm:flex-row gap-4 w-full overflow-visible sm:overflow-x-auto pt-4 sm:pt-3 pb-12 px-4 sm:px-[10%] ">
             <ExampleLink
               href="https://github.com/roboflow/inference/tree/main/examples/gaze-detection"
               title="Gaze Detection"
@@ -162,14 +183,12 @@ export default function Home() {
             className="bg-purple-600"
             label="Documentation"
             icon="📄"
-            theme="dark"
           />
           <HeaderLink
             href="https://github.com/roboflow/inference"
             className="bg-gray-900"
             label="Github Repository"
             icon="🧑‍💻"
-            theme="dark"
           />
         </div>
       </div>
