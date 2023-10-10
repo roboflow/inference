@@ -13,16 +13,16 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-stretch gap-0">
       <div
         id="aboveFold"
-        className="flex flex-col justify-center w-full min-h-screen py-12 overflow-hidden"
+        className="flex flex-col justify-center w-full min-h-screen py-6 md:py-12 overflow-hidden"
       >
         <div className="flex flex-col items-center gap-6 px-8 text-center">
           <div className="flex flex-col gap-1 items-center">
             <img
-              src="/roboflow_full_logo_color.png"
+              src="/roboflow_full_logo_color.svg"
               alt="Roboflow Logo"
               width={200}
             />
-            <div className="font-bold text-gray-900 text-5xl sm:text-6xl">
+            <div className="font-bold text-gray-900 text-5xl md:text-6xl">
               Inference
             </div>
             <div
@@ -35,7 +35,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="text-lg font-medium max-w-xl">
+          <div className="text-base md:text-lg font-medium max-w-xl">
             Roboflow Inference is an{" "}
             <span className="font-extrabold">
               easy-to-use, production-ready
@@ -60,7 +60,7 @@ export default function Home() {
               theme="dark"
             />
           </div> */}
-          <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-8">
+          <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
               href="https://docs.roboflow.com/deploy/inference-api-schema"
               className=""
@@ -84,7 +84,7 @@ export default function Home() {
             />
           </div>
         </div>
-        <div className="mt-16 flex flex-col w-full self-start">
+        <div className="mt-10 md:mt-16 flex flex-col w-full self-start">
           <div className="text-xl font-semibold text-gray-900 flex flex-col items-center sm:flex-row gap-1 sm:gap-4 px-4 sm:px-[10%] 2xl:px-[25%]">
             Example Projects{" "}
             <div
@@ -104,17 +104,31 @@ export default function Home() {
               icon="👁️"
               // className="ml-40"
             />
-            <ExampleLink
-              href="https://github.com/roboflow/inference/tree/main/examples/inference-dashboard-example"
-              title="Inference Dashboard"
-              body="Extract insights from video frames at defined intervals and generates informative visualizations and CSV outputs."
-              icon="📊"
-            />
+
             <ExampleLink
               href="https://github.com/roboflow/inference/tree/main/examples/inference-client"
               title="Inference Client"
               body="Quickstart HTTP and UDP clients for use with Inference."
               icon="⚡"
+            />
+            <ExampleLink
+              href="https://blog.roboflow.com/how-to-use-computer-vision-to-monitor-inventory/"
+              title="Monitor Inventory"
+              body="Use computer vision to analyze video streams, extract insights from video frames, and create actionable visualizations and CSV outputs."
+              icon="📦"
+            />
+
+            <ExampleLink
+              href="https://github.com/roboflow/inference/tree/main/examples/inference-dashboard-example"
+              title="Create an Inference Dashboard"
+              body="Extract insights from video frames at defined intervals and generates informative visualizations and CSV outputs."
+              icon="📊"
+            />
+            <ExampleLink
+              href="https://github.com/roboflow/inference/tree/main/examples/inference-client"
+              title="Build Image-to-Image Search"
+              body="Build a CLIP powered search that uses images as input to find other similar images."
+              icon="🖼️"
             />
           </div>
         </div>
@@ -162,9 +176,9 @@ export default function Home() {
       <div id="dividerGradient" className="h-0.5 sm:h-1 w-full">
         {" "}
       </div>
-      <div className="px-14 py-8 flex flex-col">
+      {/* <div className="px-14 py-8 flex flex-col">
         {page === "landing" && <div>Below the fold</div>}
-      </div>
+      </div> */}
     </main>
   );
 }
