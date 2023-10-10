@@ -119,7 +119,7 @@ class Model(BaseInference):
         t1 = perf_counter()
         predictions_data = self.infer(**request.dict(), return_image_dims=True)
         responses = self.make_response(
-            *predictions_data, class_filter=request.class_filter
+            *predictions_data, class_filter=request.class_filter, request=request
         )
         for response in responses:
             response.time = perf_counter() - t1

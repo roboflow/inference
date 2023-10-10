@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
+from inference.core.data_models import KeypointsDetectionInferenceResponse, KeypointsDetectionInferenceRequest
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import (
     ALLOW_ORIGINS,
@@ -492,6 +493,27 @@ class HttpInterface(BaseInterface):
 
                 return process_inference_request(inference_request)
 
+            @app.post(
+                "/infer/keypoints_detection",
+                response_model=KeypointsDetectionInferenceRequest,
+                summary="Keypoints detection infer",
+                description="Run inference with the specified keypoints detection model",
+            )
+            @with_route_exceptions
+            async def infer_keypoints(
+                inference_request: M.ClassificationInferenceRequest,
+            ):
+                """Run inference with the specified keypoints detection model.
+
+                Args:
+                    inference_request (M.KeypointsDetectionInferenceRequest): The request containing the necessary details for keypoints detection.
+
+                Returns:
+                    Union[M.ClassificationInferenceResponse, M.MultiLabelClassificationInferenceResponse]: The response containing the inference results.
+                """
+
+                return process_inference_request(inference_request)
+
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
 
@@ -743,6 +765,7 @@ class HttpInterface(BaseInterface):
                     M.ObjectDetectionInferenceResponse,
                     M.ClassificationInferenceResponse,
                     M.MultiLabelClassificationInferenceResponse,
+                    M.KeypointsDetectionInferenceResponse,
                     Any,
                 ],
                 response_model_exclude_none=True,
@@ -762,6 +785,10 @@ class HttpInterface(BaseInterface):
                 confidence: float = Query(
                     0.4,
                     description="The confidence threshold used to filter out predictions",
+                ),
+                keypoint_confidence: float = Query(
+                    0.0,
+                    description="The confidence threshold used to filter out keypoints that are not visible based on model confidence",
                 ),
                 format: str = Query(
                     "json",
@@ -911,7 +938,9 @@ class HttpInterface(BaseInterface):
                     }
                 elif task_type == "classification":
                     inference_request_type = M.ClassificationInferenceRequest
-
+                elif task_type == "keypoints-detection":
+                    inference_request_type = M.KeypointsDetectionInferenceRequest
+                    args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(
                     model_id=request_model_id,
                     image=request_image,

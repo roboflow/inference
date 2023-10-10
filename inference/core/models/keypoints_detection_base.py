@@ -122,7 +122,9 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
 
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
-
+        keypoint_confidence_threshold = 0.0
+        if "request" in kwargs:
+            keypoint_confidence_threshold = kwargs["request"].keypoint_confidence
         responses = [
             KeypointsDetectionInferenceResponse(
                 predictions=[
@@ -139,6 +141,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
                             "keypoints": self._model_keypoints_to_response(
                                 keypoints=pred[-(len(pred) - 6 - len(self.get_class_names)):],
                                 predicted_object_class_id=int(pred[6]),
+                                keypoint_confidence_threshold=keypoint_confidence_threshold,
                             )
                         }
                     )
@@ -158,16 +161,20 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
         self,
         keypoints: List[float],
         predicted_object_class_id: int,
+        keypoint_confidence_threshold: float
     ) -> List[Keypoint]:
         if self.keypoints_metadata is None:
             raise RuntimeError("Keypoints metadata not available.")
         keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
         results = []
         for keypoint_id in range(len(keypoints) // 3):
+            confidence = keypoints[3*keypoint_id+2]
+            if confidence < keypoint_confidence_threshold:
+                continue
             keypoint = Keypoint(
                 x=keypoints[3*keypoint_id],
                 y=keypoints[3*keypoint_id+1],
-                confidence=keypoints[3*keypoint_id+2],
+                confidence=confidence,
                 id=keypoint_id,
                 category=keypoint_id2name[keypoint_id],
             )

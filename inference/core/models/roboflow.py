@@ -180,6 +180,12 @@ class RoboflowInferenceModel(Model):
                         color=color,
                         thickness=inference_request.visualization_stroke_width,
                     )
+            if hasattr(box, "keypoints"):
+                for point in box.keypoints:
+                    center_coordinates = (round(point.x), round(point.y))
+                    image = cv2.circle(
+                        image, center_coordinates, inference_request.visualization_stroke_width, color, -1
+                    )
             if inference_request.visualization_labels:
                 text = f"{box.class_name} {box.confidence:.2f}"
                 (text_width, text_height), _ = cv2.getTextSize(
