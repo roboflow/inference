@@ -1,41 +1,55 @@
 ## Setup
 
-Before you begin, ensure that you have Docker installed on your machine. Docker provides a containerized environment, 
-allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If 
+Before you begin, ensure that you have Docker installed on your machine. Docker provides a containerized environment,
+allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If
 you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
 
-## Pull
+## via CLI
 
-If you don't wish to build the Docker image locally or prefer to use the official releases, you can directly pull the 
-pre-built images from the Docker Hub. These images are maintained by the Roboflow team and are optimized for various 
+The easiest way to run the Roboflow Inference Server with Docker is via the command line.
+
+First, [Install the CLI](../index.md#cli).
+
+Running the Inference Server is as simple as running the following command:
+
+```bash
+inference server start
+```
+
+This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [HTTP Inference](http_inference.md).
+
+## Pull from Docker Hub
+
+If you don't wish to build the Docker image locally or prefer to use the official releases, you can directly pull the
+pre-built images from the Docker Hub. These images are maintained by the Roboflow team and are optimized for various
 hardware configurations.
 
 !!! example "docker pull"
 
     === "x86 CPU"
         Official Roboflow Inference Server Docker Image for x86 CPU Targets.
-    
+
         ```
         docker pull roboflow/roboflow-inference-server-cpu
         ```
-    
+
     === "arm64 CPU"
         Official Roboflow Inference Server Docker Image for ARM CPU Targets.
-    
+
         ```
         docker pull roboflow/roboflow-inference-server-cpu
         ```
-    
+
     === "GPU"
         Official Roboflow Inference Server Docker Image for Nvidia GPU Targets.
-    
+
         ```
         docker pull roboflow/roboflow-inference-server-gpu
         ```
 
     === "GPU + TensorRT"
         Official Roboflow Inference Server Docker Image for Nvidia GPU with TensorRT Runtime Targets.
-    
+
         ```
         docker pull roboflow/roboflow-inference-server-trt
         ```
@@ -63,8 +77,8 @@ hardware configurations.
 
 ## Run
 
-Once you have a Docker image (either built locally or pulled from Docker Hub), you can run the Roboflow Inference 
-Server in a container. 
+Once you have a Docker image (either built locally or pulled from Docker Hub), you can run the Roboflow Inference
+Server in a container.
 
 !!! example "docker run"
 
@@ -134,14 +148,14 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
         -f dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
-    
+
     === "arm64 CPU"
         ```
         docker build \
         -f dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
-    
+
     === "GPU"
         ```
         docker build \

@@ -52,19 +52,19 @@ Runs inference on a single image. It takes a path to an image, a Roboflow projec
 #### Local image
 
 ```bash
-inference infer ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key
+inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key
 ```
 
 #### Hosted image
 
 ```bash
-inference infer https://[YOUR_HOSTED_IMAGE_URL] --project_id my-project --model-version 1 --api-key my-api-key
+inference infer https://[YOUR_HOSTED_IMAGE_URL] --project-id my-project --model-version 1 --api-key my-api-key
 ```
 
 #### Hosted API inference
 
 ```bash
-inference infer ./image.jpg --project_id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
+inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
 ```
 
 ## Supported Devices

@@ -83,7 +83,7 @@ Some functionality requires extra dependencies. These can be installed by specif
 | `clip` | Ability to use the core `CLIP` model (by OpenAI) |
 | `gaze` | Ability to use the core `Gaze` model |
 | `http` | Ability to run the http interface |
-| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
+| `sam` | Ability to run the core `Segment Anything` model (by Meta AI) |
 
 **_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependencies however pytorch installs can be highly environment dependent. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
 
@@ -140,6 +140,33 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 
 <br/>
 
+## 📟 CLI
+
+To use the CLI you will need python 3.7 or higher. To ensure you have the correct version of python, run `python --version` in your terminal. To install python, follow the instructions [here](https://www.python.org/downloads/).
+
+After you have python installed, install the pypi package `inference-cli` or `inference`:
+
+```bash
+pip install inference-cli
+```
+
+From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md/#via-cli) for more information.
+
+```bash
+inference server start
+```
+
+To use the CLI to make inferences, first find your project ID and model version number in the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+
+See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
+
+```bash
+inference infer {image_path} \
+    --project-id {project_id} \
+    --model-version {model_version} \
+    --api-key {api_key}
+```
+
 ## 🔥 quickstart
 
 **Docker Quickstart**:
@@ -174,7 +201,7 @@ After installing via pip, you can run a simple inference using:
 from inference.models.utils import get_roboflow_model
 
 model = get_roboflow_model(
-    model_id="soccer-players-5fuqs/1", 
+    model_id="soccer-players-5fuqs/1",
     #Replace ROBOFLOW_API_KEY with your Roboflow API Key
     api_key="ROBOFLOW_API_KEY"
 )
@@ -233,16 +260,16 @@ To standardize the inference process throughout all our models, Roboflow Inferen
 
 The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.md). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
 
-| model                     |                                        license                                        |
-| :------------------------ | :-----------------------------------------------------------------------------------: |
-| `inference/models/clip`   |                [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                |
-|`inference/models/gaze` | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
-| `inference/models/sam`    | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)  |
-| `inference/models/vit`    | [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE) |
-| `inference/models/yolact` |             [MIT](https://github.com/dbolya/yolact/blob/master/README.md)             |
-| `inference/models/yolov5` |         [AGPL-3.0](https://github.com/ultralytics/yolov5/blob/master/LICENSE)         |
-| `inference/models/yolov7` |          [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)          |
-| `inference/models/yolov8` |      [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)       |
+| model                     |                                                                license                                                                |
+| :------------------------ | :-----------------------------------------------------------------------------------------------------------------------------------: |
+| `inference/models/clip`   |                                        [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                                        |
+| `inference/models/gaze`   | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
+| `inference/models/sam`    |                         [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)                          |
+| `inference/models/vit`    |                         [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE)                         |
+| `inference/models/yolact` |                                     [MIT](https://github.com/dbolya/yolact/blob/master/README.md)                                     |
+| `inference/models/yolov5` |                                 [AGPL-3.0](https://github.com/ultralytics/yolov5/blob/master/LICENSE)                                 |
+| `inference/models/yolov7` |                                  [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)                                  |
+| `inference/models/yolov8` |                              [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)                               |
 
 ## 🚀 enterprise
 
@@ -265,13 +292,13 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
 
 ## 💻 explore more Roboflow open source projects
 
-|Project | Description|
-|:---|:---|
-|[supervision](https://roboflow.com/supervision) | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.
-|[Autodistill](https://github.com/autodistill/autodistill) | Automatically label images for use in training computer vision models. |
-|[Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models.
-|[Notebooks](https://roboflow.com/notebooks) | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.
-|[Collect](https://github.com/roboflow/roboflow-collect) | Automated, intelligent data collection powered by CLIP.
+| Project                                                           | Description                                                                                                                                            |
+| :---------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [supervision](https://roboflow.com/supervision)                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
+| [Autodistill](https://github.com/autodistill/autodistill)         | Automatically label images for use in training computer vision models.                                                                                 |
+| [Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
+| [Notebooks](https://roboflow.com/notebooks)                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
+| [Collect](https://github.com/roboflow/roboflow-collect)           | Automated, intelligent data collection powered by CLIP.                                                                                                |
 
 <br>
 
