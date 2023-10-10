@@ -7,7 +7,7 @@ from inference.core.managers.decorators.base import ModelManagerDecorator
 class WithLogger(ModelManagerDecorator):
     """Logger Decorator, it logs what's going on inside the manager."""
 
-    def add_model(self, model_id: str, model: Model):
+    def add_model(self, model_id: str, api_key: str):
         """Adds a model to the manager and logs the action.
 
         Args:
@@ -18,7 +18,7 @@ class WithLogger(ModelManagerDecorator):
             The result of the add_model method from the superclass.
         """
         logger.info(f"🤖 {model_id} added.")
-        return super().add_model(model_id, model)
+        return super().add_model(model_id, api_key)
 
     def infer_from_request(
         self, model_id: str, request: InferenceRequest
