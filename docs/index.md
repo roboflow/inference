@@ -167,33 +167,6 @@ inference infer {image_path} \
     --api-key {api_key}
 ```
 
-##  quickstart
-
-To use the CLI you will need python 3.7 or higher. To ensure you have the correct version of python, run `python --version` in your terminal. To install python, follow the instructions [here](https://www.python.org/downloads/).
-
-After you have python installed, install the pypi package `inference-cli` or `inference`:
-
-```bash
-pip install inference-cli
-```
-
-From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md/#via-cli) for more information.
-
-```bash
-inference server start
-```
-
-To use the CLI to make inferences, first find your project ID and model version number in the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
-
-See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
-
-```bash
-inference infer {image_path} \
-    --project-id {project_id} \
-    --model-version {model_version} \
-    --api-key {api_key}
-```
-
 ## 🔥 quickstart
 
 **Docker Quickstart**:
