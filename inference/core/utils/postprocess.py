@@ -512,12 +512,18 @@ def scale_keypoints(
                 coords[:, i * 3 + 1] /= scale
 
         for i in range(coords.shape[1] // 3):
-            coords[:, i * 3] = np.round_(
-                np.clip(coords[:, i * 3], a_min=0, a_max=orig_shape[0])
-            ).astype(int) + crop_shift_x
-            coords[:, i * 3 + 1] = np.round_(
-                np.clip(coords[:, i * 3 + 1], a_min=0, a_max=orig_shape[1])
-            ).astype(int) + crop_shift_y
+            coords[:, i * 3] = (
+                np.round_(
+                    np.clip(coords[:, i * 3], a_min=0, a_max=orig_shape[0])
+                ).astype(int)
+                + crop_shift_x
+            )
+            coords[:, i * 3 + 1] = (
+                np.round_(
+                    np.clip(coords[:, i * 3 + 1], a_min=0, a_max=orig_shape[1])
+                ).astype(int)
+                + crop_shift_y
+            )
 
         np_batch_predictions[:, keypoints_start_index:] = coords
         scaled_predictions.append(np_batch_predictions.tolist())

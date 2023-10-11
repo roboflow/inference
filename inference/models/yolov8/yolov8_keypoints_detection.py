@@ -2,7 +2,9 @@ from typing import Tuple
 
 import numpy as np
 
-from inference.core.models.keypoints_detection_base import KeypointsDetectionBaseOnnxRoboflowInferenceModel
+from inference.core.models.keypoints_detection_base import (
+    KeypointsDetectionBaseOnnxRoboflowInferenceModel,
+)
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
@@ -43,10 +45,10 @@ class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel)
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         number_of_classes = len(self.get_class_names)
-        class_confs = predictions[:, :, 4:4+number_of_classes]
-        keypoints_detections = predictions[:, :, 4+number_of_classes:]
+        class_confs = predictions[:, :, 4 : 4 + number_of_classes]
+        keypoints_detections = predictions[:, :, 4 + number_of_classes :]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
-        bboxes_predictions = np.concatenate([boxes, confs, class_confs, keypoints_detections], axis=2)
-        return (bboxes_predictions, )
-
-
+        bboxes_predictions = np.concatenate(
+            [boxes, confs, class_confs, keypoints_detections], axis=2
+        )
+        return (bboxes_predictions,)

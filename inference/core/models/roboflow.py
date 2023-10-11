@@ -184,7 +184,11 @@ class RoboflowInferenceModel(Model):
                 for point in box.keypoints:
                     center_coordinates = (round(point.x), round(point.y))
                     image = cv2.circle(
-                        image, center_coordinates, inference_request.visualization_stroke_width, color, -1
+                        image,
+                        center_coordinates,
+                        inference_request.visualization_stroke_width,
+                        color,
+                        -1,
                     )
             if inference_request.visualization_labels:
                 text = f"{box.class_name} {box.confidence:.2f}"
@@ -292,7 +296,8 @@ class RoboflowInferenceModel(Model):
                     self.keypoints_metadata = {
                         e["object_class_id"]: {
                             int(key): value for key, value in e["keypoints"].items()
-                        } for e in json.load(f)
+                        }
+                        for e in json.load(f)
                     }
         else:
             # If AWS keys are available, then we can download model artifacts directly
@@ -359,7 +364,8 @@ class RoboflowInferenceModel(Model):
                         self.keypoints_metadata = {
                             e["object_class_id"]: {
                                 int(key): value for key, value in e["keypoints"].items()
-                            } for e in json.load(f)
+                            }
+                            for e in json.load(f)
                         }
             else:
                 self.log("Downloading model artifacts from Roboflow API")
@@ -388,7 +394,8 @@ class RoboflowInferenceModel(Model):
                     self.keypoints_metadata = {
                         e["object_class_id"]: {
                             int(key): value for key, value in e["keypoints"].items()
-                        } for e in api_data["keypoints_metadata"]
+                        }
+                        for e in api_data["keypoints_metadata"]
                     }
 
                 t1 = perf_counter()

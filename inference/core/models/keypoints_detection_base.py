@@ -5,10 +5,15 @@ import numpy as np
 from inference.core.data_models import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction, KeypointsDetectionInferenceResponse, KeypointsPrediction, Keypoint,
+    ObjectDetectionPrediction,
+    KeypointsDetectionInferenceResponse,
+    KeypointsPrediction,
+    Keypoint,
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
-from inference.core.models.object_detection_base import ObjectDetectionBaseOnnxRoboflowInferenceModel
+from inference.core.models.object_detection_base import (
+    ObjectDetectionBaseOnnxRoboflowInferenceModel,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import postprocess_predictions, scale_keypoints
@@ -20,7 +25,9 @@ DEFAUlT_MAX_DETECTIONS = 300
 DEFAULT_MAX_CANDIDATES = 3000
 
 
-class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRoboflowInferenceModel):
+class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
+    ObjectDetectionBaseOnnxRoboflowInferenceModel
+):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
     task_type = "keypoints-detection"
@@ -35,6 +42,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
             list: A list of filenames specific to ONNX models.
         """
         return ["environment.json", "class_names.txt", "keypoints_metadata.json"]
+
     def postprocess(
         self,
         predictions: Tuple[np.ndarray],
@@ -139,10 +147,12 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
                             "class": self.class_names[int(pred[6])],
                             "class_id": int(pred[6]),
                             "keypoints": self._model_keypoints_to_response(
-                                keypoints=pred[-(len(pred) - 6 - len(self.get_class_names)):],
+                                keypoints=pred[
+                                    -(len(pred) - 6 - len(self.get_class_names)) :
+                                ],
                                 predicted_object_class_id=int(pred[6]),
                                 keypoint_confidence_threshold=keypoint_confidence_threshold,
-                            )
+                            ),
                         }
                     )
                     for pred in batch_predictions
@@ -161,19 +171,19 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(ObjectDetectionBaseOnnxRo
         self,
         keypoints: List[float],
         predicted_object_class_id: int,
-        keypoint_confidence_threshold: float
+        keypoint_confidence_threshold: float,
     ) -> List[Keypoint]:
         if self.keypoints_metadata is None:
             raise RuntimeError("Keypoints metadata not available.")
         keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
         results = []
         for keypoint_id in range(len(keypoints) // 3):
-            confidence = keypoints[3*keypoint_id+2]
+            confidence = keypoints[3 * keypoint_id + 2]
             if confidence < keypoint_confidence_threshold:
                 continue
             keypoint = Keypoint(
-                x=keypoints[3*keypoint_id],
-                y=keypoints[3*keypoint_id+1],
+                x=keypoints[3 * keypoint_id],
+                y=keypoints[3 * keypoint_id + 1],
                 confidence=confidence,
                 id=keypoint_id,
                 category=keypoint_id2name[keypoint_id],

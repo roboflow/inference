@@ -9,7 +9,10 @@ from fastapi.responses import JSONResponse, Response
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
-from inference.core.data_models import KeypointsDetectionInferenceResponse, KeypointsDetectionInferenceRequest
+from inference.core.data_models import (
+    KeypointsDetectionInferenceResponse,
+    KeypointsDetectionInferenceRequest,
+)
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import (
     ALLOW_ORIGINS,
