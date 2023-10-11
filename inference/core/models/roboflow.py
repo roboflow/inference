@@ -46,6 +46,7 @@ from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import ApiUrl
+from inference.core.cache import cache
 
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     try:
@@ -95,6 +96,7 @@ class RoboflowInferenceModel(Model):
         model_id: str,
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
+        load_weights=True,
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -105,6 +107,7 @@ class RoboflowInferenceModel(Model):
             api_key (str, optional): API key for authentication. Defaults to None.
         """
         super().__init__()
+        self.load_weights = load_weights or not self.has_model_metadata
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         if not self.api_key and not (
@@ -234,6 +237,58 @@ class RoboflowInferenceModel(Model):
             self.__class__.__name__ + ".get_infer_bucket_file_list"
         )
 
+    def load_environment_artifacts_from_cache(self):
+        infer_bucket_files = self.get_infer_bucket_file_list()
+        if "environment.json" in infer_bucket_files:
+            with self.open_cache("environment.json", "r") as f:
+                self.environment = json.load(f)
+
+        if "class_names.txt" in infer_bucket_files:
+            self.class_names = []
+            with self.open_cache("class_names.txt", "r") as f:
+                for l in f.readlines():
+                    self.class_names.append(l.strip("\n"))
+        elif "CLASS_MAP" in self.environment:
+            self.class_names = []
+            for i in range(len(self.environment["CLASS_MAP"].keys())):
+                self.class_names.append(self.environment["CLASS_MAP"][str(i)])
+        if "COLORS" in self.environment.keys():
+            self.colors = json.loads(self.environment["COLORS"])
+        else:
+            # then no colors have been saved to S3
+            colors_order = [
+                "#4892EA",
+                "#00EEC3",
+                "#FE4EF0",
+                "#F4004E",
+                "#FA7200",
+                "#EEEE17",
+                "#90FF00",
+                "#78C1D2",
+                "#8C29FF",
+            ]
+
+            self.colors = {}
+            i = 1
+            for c in self.class_names:
+                self.colors[c] = colors_order[i % len(colors_order)]
+                i += 1
+    
+    @property
+    def cache_key(self):
+        return f"metadata:{self.endpoint}"
+
+    def model_metadata_from_memcache(self):
+        model_metadata = cache.get(self.cache_key)
+        return model_metadata
+
+    def write_model_metadata_to_memcache(self, metadata):
+        cache.set(self.cache_key, metadata)
+
+    @property
+    def has_model_metadata(self):
+        return self.model_metadata_from_memcache() is not None
+
     def get_model_artifacts(self) -> None:
         """Fetch or load the model artifacts.
 
@@ -244,43 +299,11 @@ class RoboflowInferenceModel(Model):
             TensorrtRoboflowAPIError: If an error occurs while fetching data from the Roboflow API.
         """
         infer_bucket_files = self.get_infer_bucket_file_list()
-        infer_bucket_files.append(self.weights_file)
+        if self.load_weights:
+            infer_bucket_files.append(self.weights_file)
         if all([os.path.exists(self.cache_file(f)) for f in infer_bucket_files]):
             self.log("Model artifacts already downloaded, loading model from cache")
-            if "environment.json" in infer_bucket_files:
-                with self.open_cache("environment.json", "r") as f:
-                    self.environment = json.load(f)
-
-            if "class_names.txt" in infer_bucket_files:
-                self.class_names = []
-                with self.open_cache("class_names.txt", "r") as f:
-                    for l in f.readlines():
-                        self.class_names.append(l.strip("\n"))
-            elif "CLASS_MAP" in self.environment:
-                self.class_names = []
-                for i in range(len(self.environment["CLASS_MAP"].keys())):
-                    self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-            if "COLORS" in self.environment.keys():
-                self.colors = json.loads(self.environment["COLORS"])
-            else:
-                # then no colors have been saved to S3
-                colors_order = [
-                    "#4892EA",
-                    "#00EEC3",
-                    "#FE4EF0",
-                    "#F4004E",
-                    "#FA7200",
-                    "#EEEE17",
-                    "#90FF00",
-                    "#78C1D2",
-                    "#8C29FF",
-                ]
-
-                self.colors = {}
-                i = 1
-                for c in self.class_names:
-                    self.colors[c] = colors_order[i % len(colors_order)]
-                    i += 1
+            self.load_environment_artifacts_from_cache()
         else:
             # If AWS keys are available, then we can download model artifacts directly
             if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
@@ -306,42 +329,7 @@ class RoboflowInferenceModel(Model):
                     if not success:
                         raise Exception(f"Failed to download model artifacts.")
 
-                if "environment.json" in infer_bucket_files:
-                    with self.open_cache("environment.json", "r") as f:
-                        self.environment = json.load(f)
-
-                if "class_names.txt" in infer_bucket_files:
-                    self.class_names = []
-                    with self.open_cache("class_names.txt", "r") as f:
-                        for l in f.readlines():
-                            self.class_names.append(l.strip("\n"))
-                elif "CLASS_MAP" in self.environment:
-                    self.class_names = []
-                    for i in range(len(self.environment["CLASS_MAP"].keys())):
-                        self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-
-                if "COLORS" in self.environment.keys():
-                    self.colors = json.loads(self.environment["COLORS"])
-                else:
-                    # then no colors have been saved to S3
-                    colors_order = [
-                        "#4892EA",
-                        "#00EEC3",
-                        "#FE4EF0",
-                        "#F4004E",
-                        "#FA7200",
-                        "#EEEE17",
-                        "#90FF00",
-                        "#78C1D2",
-                        "#8C29FF",
-                    ]
-
-                    self.colors = {}
-                    i = 1
-                    for c in self.class_names:
-                        self.colors[c] = colors_order[i % len(colors_order)]
-                        i += 1
-
+                self.load_environment_artifacts_from_cache()
             else:
                 self.log("Downloading model artifacts from Roboflow API")
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
@@ -364,16 +352,17 @@ class RoboflowInferenceModel(Model):
                 if "colors" in api_data:
                     self.colors = api_data["colors"]
 
-                t1 = perf_counter()
-                weights_url = ApiUrl(api_data["model"])
-                r = requests.get(weights_url)
-                with self.open_cache(self.weights_file, "wb") as f:
-                    f.write(r.content)
-                if perf_counter() - t1 > 120:
-                    self.log(
-                        "Weights download took longer than 120 seconds, refreshing API request"
-                    )
-                    api_data = get_api_data(self.api_url)
+                if self.load_weights:
+                    t1 = perf_counter()
+                    weights_url = ApiUrl(api_data["model"])
+                    r = requests.get(weights_url)
+                    with self.open_cache(self.weights_file, "wb") as f:
+                        f.write(r.content)
+                    if perf_counter() - t1 > 120:
+                        self.log(
+                            "Weights download took longer than 120 seconds, refreshing API request"
+                        )
+                        api_data = get_api_data(self.api_url)
                 env_url = ApiUrl(api_data["environment"])
                 self.environment = requests.get(env_url).json()
                 with open(self.cache_file("environment.json"), "w") as f:
@@ -401,6 +390,7 @@ class RoboflowInferenceModel(Model):
         else:
             self.resize_method = "Stretch to"
         self.log(f"Resize method is '{self.resize_method}'")
+
 
     def initialize_model(self) -> None:
         """Initialize the model.
@@ -730,19 +720,20 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(model_id, *args, **kwargs)
-        self.onnxruntime_execution_providers = onnxruntime_execution_providers
-        for ep in self.onnxruntime_execution_providers:
-            if ep == "TensorrtExecutionProvider":
-                ep = (
-                    "TensorrtExecutionProvider",
-                    {
-                        "trt_engine_cache_enable": True,
-                        "trt_engine_cache_path": os.path.join(
-                            TENSORRT_CACHE_PATH, self.endpoint
-                        ),
-                        "trt_fp16_enable": True,
-                    },
-                )
+        if self.load_weights:
+            self.onnxruntime_execution_providers = onnxruntime_execution_providers
+            for ep in self.onnxruntime_execution_providers:
+                if ep == "TensorrtExecutionProvider":
+                    ep = (
+                        "TensorrtExecutionProvider",
+                        {
+                            "trt_engine_cache_enable": True,
+                            "trt_engine_cache_path": os.path.join(
+                                TENSORRT_CACHE_PATH, self.endpoint
+                            ),
+                            "trt_fp16_enable": True,
+                        },
+                    )
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
 
@@ -758,42 +749,55 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
         self.log("Creating inference session")
-        t1_session = perf_counter()
-        # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
-        self.onnx_session = onnxruntime.InferenceSession(
-            self.cache_file(self.weights_file),
-            providers=self.onnxruntime_execution_providers,
-        )
-        self.log(f"Session created in {perf_counter() - t1_session} seconds")
+        if self.load_weights:
+            t1_session = perf_counter()
+            # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
+            self.onnx_session = onnxruntime.InferenceSession(
+                self.cache_file(self.weights_file),
+                providers=self.onnxruntime_execution_providers,
+            )
+            self.log(f"Session created in {perf_counter() - t1_session} seconds")
 
-        if REQUIRED_ONNX_PROVIDERS:
-            available_providers = onnxruntime.get_available_providers()
-            for provider in REQUIRED_ONNX_PROVIDERS:
-                if provider not in available_providers:
-                    raise OnnxProviderNotAvailable(
-                        f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
-                    )
+            if REQUIRED_ONNX_PROVIDERS:
+                available_providers = onnxruntime.get_available_providers()
+                for provider in REQUIRED_ONNX_PROVIDERS:
+                    if provider not in available_providers:
+                        raise OnnxProviderNotAvailable(
+                            f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
+                        )
 
-        inputs = self.onnx_session.get_inputs()[0]
-        input_shape = inputs.shape
-        self.batch_size = input_shape[0]
-        self.img_size_h = input_shape[2]
-        self.img_size_w = input_shape[3]
-        self.input_name = inputs.name
-        if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
-            if "resize" in self.preproc:
-                self.img_size_h = int(self.preproc["resize"]["height"])
-                self.img_size_w = int(self.preproc["resize"]["width"])
+            inputs = self.onnx_session.get_inputs()[0]
+            input_shape = inputs.shape
+            self.batch_size = input_shape[0]
+            self.img_size_h = input_shape[2]
+            self.img_size_w = input_shape[3]
+            self.input_name = inputs.name
+            if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
+                if "resize" in self.preproc:
+                    self.img_size_h = int(self.preproc["resize"]["height"])
+                    self.img_size_w = int(self.preproc["resize"]["width"])
+                else:
+                    self.img_size_h = 640
+                    self.img_size_w = 640
+
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
             else:
-                self.img_size_h = 640
-                self.img_size_w = 640
+                self.batching_enabled = False
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
 
-        if isinstance(self.batch_size, str):
-            self.batching_enabled = True
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
+            model_metadata = {"batch_size": self.batch_size, "img_size_h": self.img_size_h, "img_size_w": self.img_size_w}
+            self.log(f"Writing model metadata to memcache")
+            self.write_model_metadata_to_memcache(model_metadata)
         else:
-            self.batching_enabled = False
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
+            if not self.has_model_metadata:
+                raise ValueError("This should be unreachable, should get weights if we don't have model metadata")
+            self.log(f"Loading model metadata from memcache")
+            metadata = self.model_metadata_from_memcache
+            self.batch_size = metadata["batch_size"]
+            self.img_size_h = metadata["img_size_h"]
+            self.img_size_w = metadata["img_size_w"]
 
     def load_image(
         self,
