@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
 from time import perf_counter, sleep
-from typing import Any, List, Tuple, Union, Optional
+from typing import Any, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np

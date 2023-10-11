@@ -4,11 +4,11 @@ import numpy as np
 
 from inference.core.data_models import (
     InferenceResponseImage,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
+    Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
-    Keypoint,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
 from inference.core.models.object_detection_base import (
