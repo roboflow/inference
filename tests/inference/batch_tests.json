@@ -7,11 +7,11 @@
         "version": 6,
         "confidence": 0.4,
         "iou_threshold": 0.3,
-        "batch_size": 16,
+        "batch_size": 8,
         "expected_response": {
             "url": [
                 {
-                    "time": 1.3544026470008248,
+                    "time": 0.604194245999679,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -38,7 +38,7 @@
                     ]
                 },
                 {
-                    "time": 1.354414467999959,
+                    "time": 0.604205911000463,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -65,7 +65,7 @@
                     ]
                 },
                 {
-                    "time": 1.354416640000636,
+                    "time": 0.6042078200007381,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -92,7 +92,7 @@
                     ]
                 },
                 {
-                    "time": 1.3544182540008478,
+                    "time": 0.6042093209998711,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -119,7 +119,7 @@
                     ]
                 },
                 {
-                    "time": 1.3544198399995366,
+                    "time": 0.6042107169996598,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -146,7 +146,7 @@
                     ]
                 },
                 {
-                    "time": 1.35442139999941,
+                    "time": 0.6042120680012886,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -173,7 +173,7 @@
                     ]
                 },
                 {
-                    "time": 1.3544230000006792,
+                    "time": 0.6042134689996601,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -200,223 +200,7 @@
                     ]
                 },
                 {
-                    "time": 1.354424580000341,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544261480001296,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544277300006797,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.354429283999707,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544308580003417,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544324049998977,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544339689997287,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.354435547000321,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 1.3544371240004693,
+                    "time": 0.604214848999618,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -445,7 +229,7 @@
             ],
             "base64": [
                 {
-                    "time": 0.7108527029995457,
+                    "time": 0.2873647369997343,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -472,7 +256,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108607360005408,
+                    "time": 0.2873739040005603,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -499,7 +283,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108624809989124,
+                    "time": 0.2873755849996087,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -526,7 +310,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108637439996528,
+                    "time": 0.2873769979996723,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -553,7 +337,7 @@
                     ]
                 },
                 {
-                    "time": 0.710864937000224,
+                    "time": 0.2873783640006877,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -580,7 +364,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108661199999915,
+                    "time": 0.2873797310003283,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -607,7 +391,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108673749989975,
+                    "time": 0.28738109999903827,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -634,223 +418,7 @@
                     ]
                 },
                 {
-                    "time": 0.7108686409992515,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108698579995689,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108711250002671,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108723019991885,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108734859994001,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108746889989561,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108758670001407,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108770479990199,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 784.5,
-                            "y": 397.5,
-                            "width": 187.0,
-                            "height": 309.0,
-                            "confidence": 0.955079197883606,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 939.5,
-                            "y": 453.5,
-                            "width": 229.0,
-                            "height": 211.0,
-                            "confidence": 0.8664125204086304,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.7108782209998026,
+                    "time": 0.28738245199929224,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -879,7 +447,7 @@
             ],
             "base64_diffsize": [
                 {
-                    "time": 0.49275271899932704,
+                    "time": 2.348157808999531,
                     "image": {
                         "width": 155,
                         "height": 73
@@ -906,7 +474,7 @@
                     ]
                 },
                 {
-                    "time": 0.4927625969994551,
+                    "time": 2.348184095999386,
                     "image": {
                         "width": 125,
                         "height": 43
@@ -914,7 +482,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.49276439099958225,
+                    "time": 2.348185855000338,
                     "image": {
                         "width": 165,
                         "height": 82
@@ -941,7 +509,7 @@
                     ]
                 },
                 {
-                    "time": 0.49276580799960357,
+                    "time": 2.348187308998604,
                     "image": {
                         "width": 115,
                         "height": 36
@@ -949,7 +517,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.4927670519991807,
+                    "time": 2.348188684998604,
                     "image": {
                         "width": 134,
                         "height": 58
@@ -957,7 +525,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.49276829799964617,
+                    "time": 2.348190060998604,
                     "image": {
                         "width": 115,
                         "height": 40
@@ -965,7 +533,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.4927696680006193,
+                    "time": 2.348191412998858,
                     "image": {
                         "width": 164,
                         "height": 91
@@ -992,7 +560,7 @@
                     ]
                 },
                 {
-                    "time": 0.49277091399926576,
+                    "time": 2.3481928259989218,
                     "image": {
                         "width": 200,
                         "height": 88
@@ -1017,119 +585,6 @@
                             "class_id": 0
                         }
                     ]
-                },
-                {
-                    "time": 0.4927721539988852,
-                    "image": {
-                        "width": 137,
-                        "height": 60
-                    },
-                    "predictions": [
-                        {
-                            "x": 99.5,
-                            "y": 37.5,
-                            "width": 27.0,
-                            "height": 23.0,
-                            "confidence": 0.4248011112213135,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.492773424999541,
-                    "image": {
-                        "width": 155,
-                        "height": 77
-                    },
-                    "predictions": [
-                        {
-                            "x": 114.0,
-                            "y": 50.0,
-                            "width": 32.0,
-                            "height": 28.0,
-                            "confidence": 0.5903328657150269,
-                            "class": "fox",
-                            "class_id": 0
-                        },
-                        {
-                            "x": 95.5,
-                            "y": 41.5,
-                            "width": 25.0,
-                            "height": 29.0,
-                            "confidence": 0.5636375546455383,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.4927746779994777,
-                    "image": {
-                        "width": 144,
-                        "height": 65
-                    },
-                    "predictions": [
-                        {
-                            "x": 105.0,
-                            "y": 40.5,
-                            "width": 28.0,
-                            "height": 25.0,
-                            "confidence": 0.5327520370483398,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.4927759589991183,
-                    "image": {
-                        "width": 132,
-                        "height": 49
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.492777188999753,
-                    "image": {
-                        "width": 140,
-                        "height": 52
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.4927784219999012,
-                    "image": {
-                        "width": 178,
-                        "height": 75
-                    },
-                    "predictions": [
-                        {
-                            "x": 110.0,
-                            "y": 40.5,
-                            "width": 28.0,
-                            "height": 29.0,
-                            "confidence": 0.7783187031745911,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.49277964400062046,
-                    "image": {
-                        "width": 155,
-                        "height": 61
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.49278088900064176,
-                    "image": {
-                        "width": 147,
-                        "height": 56
-                    },
-                    "predictions": []
                 }
             ]
         }
@@ -1142,11 +597,11 @@
         "version": 7,
         "confidence": 0.4,
         "iou_threshold": 0.3,
-        "batch_size": 16,
+        "batch_size": 8,
         "expected_response": {
             "url": [
                 {
-                    "time": 0.9443522170004144,
+                    "time": 0.5419635529997322,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1173,7 +628,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443617020006059,
+                    "time": 0.5419732040008967,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1200,7 +655,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443635470015579,
+                    "time": 0.5419750130004104,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1227,7 +682,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443649080003524,
+                    "time": 0.541976448999776,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1254,7 +709,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443661680015794,
+                    "time": 0.5419778510004107,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1281,7 +736,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443674200010719,
+                    "time": 0.5419792669999879,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1308,7 +763,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443686590002471,
+                    "time": 0.5419806690006226,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1335,223 +790,7 @@
                     ]
                 },
                 {
-                    "time": 0.9443699340008607,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443711690000782,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.944372411000586,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443736680004804,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443749120000575,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443761530001211,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443773990005866,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.9443786410010944,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.944379888000185,
+                    "time": 0.5419822080002632,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1580,7 +819,7 @@
             ],
             "base64": [
                 {
-                    "time": 0.6765781020003487,
+                    "time": 0.2864223439992202,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1607,7 +846,7 @@
                     ]
                 },
                 {
-                    "time": 0.6765906939999695,
+                    "time": 0.2864315529986925,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1634,7 +873,7 @@
                     ]
                 },
                 {
-                    "time": 0.6765937460004352,
+                    "time": 0.28643339299924264,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1661,7 +900,7 @@
                     ]
                 },
                 {
-                    "time": 0.6765958970008796,
+                    "time": 0.28643481499966583,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1688,7 +927,7 @@
                     ]
                 },
                 {
-                    "time": 0.6765981429998646,
+                    "time": 0.28643618099886226,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1715,7 +954,7 @@
                     ]
                 },
                 {
-                    "time": 0.6766003660013666,
+                    "time": 0.28643752499920083,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1742,7 +981,7 @@
                     ]
                 },
                 {
-                    "time": 0.6766024460011977,
+                    "time": 0.2864388689995394,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -1769,223 +1008,7 @@
                     ]
                 },
                 {
-                    "time": 0.6766047580003942,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766069830009656,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766091320005216,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766112530003738,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766133239998453,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766155020013684,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766178710004169,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766199880003114,
-                    "image": {
-                        "width": 1280,
-                        "height": 720
-                    },
-                    "predictions": [
-                        {
-                            "x": 790.0,
-                            "y": 409.0,
-                            "width": 204.0,
-                            "height": 314.0,
-                            "confidence": 0.8599653244018555,
-                            "class": "marth",
-                            "class_id": 1
-                        },
-                        {
-                            "x": 940.5,
-                            "y": 454.5,
-                            "width": 231.0,
-                            "height": 217.0,
-                            "confidence": 0.7245640158653259,
-                            "class": "fox",
-                            "class_id": 0
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6766220680001425,
+                    "time": 0.2864402559989685,
                     "image": {
                         "width": 1280,
                         "height": 720
@@ -2014,7 +1037,7 @@
             ],
             "base64_diffsize": [
                 {
-                    "time": 0.6016504419985722,
+                    "time": 1.2678778230001626,
                     "image": {
                         "width": 155,
                         "height": 73
@@ -2022,7 +1045,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.6016614829986793,
+                    "time": 1.267886923998958,
                     "image": {
                         "width": 125,
                         "height": 43
@@ -2030,7 +1053,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.6016637819993775,
+                    "time": 1.2678886379999312,
                     "image": {
                         "width": 165,
                         "height": 82
@@ -2048,7 +1071,7 @@
                     ]
                 },
                 {
-                    "time": 0.6016654959985317,
+                    "time": 1.2678900529990642,
                     "image": {
                         "width": 115,
                         "height": 36
@@ -2056,7 +1079,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.601667250999526,
+                    "time": 1.2678914689986414,
                     "image": {
                         "width": 134,
                         "height": 58
@@ -2064,7 +1087,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.6016690259984898,
+                    "time": 1.2678928749992338,
                     "image": {
                         "width": 115,
                         "height": 40
@@ -2072,7 +1095,7 @@
                     "predictions": []
                 },
                 {
-                    "time": 0.6016708219995053,
+                    "time": 1.2678943409991916,
                     "image": {
                         "width": 164,
                         "height": 91
@@ -2090,7 +1113,7 @@
                     ]
                 },
                 {
-                    "time": 0.6016725640001823,
+                    "time": 1.267895736000355,
                     "image": {
                         "width": 200,
                         "height": 88
@@ -2102,120 +1125,6 @@
                             "width": 34.0,
                             "height": 49.0,
                             "confidence": 0.541096031665802,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6016742470001191,
-                    "image": {
-                        "width": 137,
-                        "height": 60
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.6016759009999078,
-                    "image": {
-                        "width": 155,
-                        "height": 77
-                    },
-                    "predictions": [
-                        {
-                            "x": 95.0,
-                            "y": 39.5,
-                            "width": 26.0,
-                            "height": 43.0,
-                            "confidence": 0.4776994287967682,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6016776289998234,
-                    "image": {
-                        "width": 144,
-                        "height": 65
-                    },
-                    "predictions": [
-                        {
-                            "x": 88.0,
-                            "y": 33.0,
-                            "width": 24.0,
-                            "height": 36.0,
-                            "confidence": 0.4466840922832489,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6016794359984488,
-                    "image": {
-                        "width": 132,
-                        "height": 49
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.6016811499994219,
-                    "image": {
-                        "width": 140,
-                        "height": 52
-                    },
-                    "predictions": []
-                },
-                {
-                    "time": 0.6016829449999932,
-                    "image": {
-                        "width": 178,
-                        "height": 75
-                    },
-                    "predictions": [
-                        {
-                            "x": 109.0,
-                            "y": 38.0,
-                            "width": 30.0,
-                            "height": 42.0,
-                            "confidence": 0.621406614780426,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6016845779995492,
-                    "image": {
-                        "width": 155,
-                        "height": 61
-                    },
-                    "predictions": [
-                        {
-                            "x": 94.5,
-                            "y": 31.0,
-                            "width": 27.0,
-                            "height": 34.0,
-                            "confidence": 0.500927209854126,
-                            "class": "marth",
-                            "class_id": 1
-                        }
-                    ]
-                },
-                {
-                    "time": 0.6016862159995071,
-                    "image": {
-                        "width": 147,
-                        "height": 56
-                    },
-                    "predictions": [
-                        {
-                            "x": 89.5,
-                            "y": 28.5,
-                            "width": 25.0,
-                            "height": 31.0,
-                            "confidence": 0.4605277180671692,
                             "class": "marth",
                             "class_id": 1
                         }

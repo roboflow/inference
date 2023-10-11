@@ -11,7 +11,7 @@ from io import BytesIO
 from pathlib import Path
 from PIL import Image
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from regression_test import compare_detection_response
+from tests.inference.regression_test import compare_detection_response
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
@@ -98,6 +98,59 @@ def infer_request_with_base64_image_dif_size(
         "base64_diffsize",
     )
 
+def infer_request_with_base64_image_dif_size_fixed(
+    test, port=9001, api_key="", base_url="http://localhost", batch_size=1
+):
+    sizes = [
+        (155, 73),
+        (125, 43),
+        (165, 82),
+        (115, 36),
+        (134, 58),
+        (115, 40),
+        (164, 91),
+        (200, 88),
+        (137, 60),
+        (155, 77),
+        (144, 65),
+        (132, 49),
+        (140, 52),
+        (178, 75),
+        (155, 61),
+        (147, 56),
+    ]
+    images = []
+    for i in range(batch_size):
+        buffered = BytesIO()
+        im = test["pil_image"]
+        im = im.resize(sizes[i])
+        im.save(buffered, quality=100, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
+        images.append(img_str)
+
+    payload = {
+        "model_id": f"{test['project']}/{test['version']}",
+        "image": [
+            {
+                "type": "base64",
+                "value": img_str,
+            }
+            for img_str in images
+        ],
+        "confidence": test["confidence"],
+        "iou_threshold": test["iou_threshold"],
+        "api_key": api_key,
+        "fix_batch_size": True
+    }
+    return (
+        requests.post(
+            f"{base_url}:{port}/infer/{test['type']}",
+            json=payload,
+        ),
+        "base64_diffsize",
+    )
+
 
 def infer_request_with_base64_image(
     test, port=9001, api_key="", base_url="http://localhost", batch_size=1
@@ -131,10 +184,12 @@ def infer_request_with_base64_image(
 with open(os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "r") as f:
     TESTS = json.load(f)
 
+
 INFER_RESPONSE_FUNCTIONS = [
     infer_request_with_image_url,
     infer_request_with_base64_image,
     infer_request_with_base64_image_dif_size,
+    infer_request_with_base64_image_dif_size_fixed,
 ]
 
 DETECTION_TEST_PARAMS = []
