@@ -211,6 +211,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         masks: List[List[List[float]]],
         img_dims: List[Tuple[int, int]],
         class_filter: List[str] = [],
+        **kwargs,
     ) -> Union[
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
