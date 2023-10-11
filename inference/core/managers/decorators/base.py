@@ -145,3 +145,6 @@ class ModelManagerDecorator(ModelManager):
             List of keys (model IDs).
         """
         return self.model_manager.keys()
+
+    def models(self):
+        return self.model_manager.models()
