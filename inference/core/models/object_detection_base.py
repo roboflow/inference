@@ -247,7 +247,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 height_padding = 32 - (img_in.shape[3] % 32)
             else:
                 height_padding = 0
-            print(width_padding, height_padding, batch_padding)
             img_in = np.pad(
                 img_in,
                 ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),
