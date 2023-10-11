@@ -223,6 +223,13 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 if FIX_BATCH_SIZE or fix_batch_size
                 else 0
             )
+            if batch_padding < 0:
+                raise ValueError(
+                    f"Requested fix_batch_size but passed in {img_in.shape[0]} images "
+                    f"when the model's batch size is {MAX_BATCH_SIZE}\n"
+                    f"Consider turning off fix_batch_size, changing `MAX_BATCH_SIZE` in"
+                    f"your inference server config, or passing at most {MAX_BATCH_SIZE} images at a time"
+                )
             width_remainder = img_in.shape[2] % 32
             height_remainder = img_in.shape[3] % 32
             if width_remainder > 0:
@@ -233,6 +240,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 height_padding = 32 - (img_in.shape[3] % 32)
             else:
                 height_padding = 0
+            print(width_padding, height_padding, batch_padding)
             img_in = np.pad(
                 img_in,
                 ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),
