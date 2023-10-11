@@ -113,7 +113,9 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
 
-        predictions = predictions[:len(img_dims)] # If the batch size was fixed we have empty preds at the end
+        predictions = predictions[
+            : len(img_dims)
+        ]  # If the batch size was fixed we have empty preds at the end
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
