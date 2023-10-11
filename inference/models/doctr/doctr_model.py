@@ -24,68 +24,6 @@ from inference.core.models.roboflow import RoboflowCoreModel
 from doctr import models as models
 import os
 
-# models.pytorch.default_cfgs: Dict[str, Dict[str, Any]] = {
-#     "master": {
-#         "mean": (0.694, 0.695, 0.693),
-#         "std": (0.299, 0.296, 0.301),
-#         "input_shape": (3, 32, 128),
-#         "url": "",
-#     },
-# }
-
-# models.recognition.crnn.pytorch.default_cfgs: Dict[str, Dict[str, Any]] = {
-#     "crnn_vgg16_bn": {
-#         "mean": (0.694, 0.695, 0.693),
-#         "std": (0.299, 0.296, 0.301),
-#         "input_shape": (3, 32, 128),
-#         "vocab": VOCABS["english"],
-#         "url": None,
-#     },
-#     "crnn_mobilenet_v3_small": {
-#         "mean": (0.694, 0.695, 0.693),
-#         "std": (0.299, 0.296, 0.301),
-#         "input_shape": (3, 32, 128),
-#         "vocab": VOCABS["english"],
-#         "url": None,
-#     },
-#     "crnn_mobilenet_v3_large": {
-#         "mean": (0.694, 0.695, 0.693),
-#         "std": (0.299, 0.296, 0.301),
-#         "input_shape": (3, 32, 128),
-#         "vocab": VOCABS["english"],
-#         "url": None,
-#     },
-# }
-
-# # doctr/models/detection/differentiable_binarization/pytorch.py
-# models.detection.differentiable_binarization.pytorch.default_cfgs: Dict[str, Dict[str, Any]] = {
-#     "db_resnet50": {
-#         "input_shape": (3, 1024, 1024),
-#         "mean": (0.798, 0.785, 0.772),
-#         "std": (0.264, 0.2749, 0.287),
-#         "url": None,
-#     },
-#     "db_resnet34": {
-#         "input_shape": (3, 1024, 1024),
-#         "mean": (0.798, 0.785, 0.772),
-#         "std": (0.264, 0.2749, 0.287),
-#         "url": None,
-#     },
-#     "db_mobilenet_v3_large": {
-#         "input_shape": (3, 1024, 1024),
-#         "mean": (0.798, 0.785, 0.772),
-#         "std": (0.264, 0.2749, 0.287),
-#         "url": None,
-#     },
-#     "db_resnet50_rotation": {
-#         "input_shape": (3, 1024, 1024),
-#         "mean": (0.798, 0.785, 0.772),
-#         "std": (0.264, 0.2749, 0.287),
-#         "url": None,
-#     },
-# }
-
-
 class DocTR(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
         """Initializes the DocTR model.
@@ -139,11 +77,8 @@ class DocTR(RoboflowCoreModel):
         """
         t1 = perf_counter()
 
-        print(request)
-
         img = load_image(request["image"]["value"])
 
-        # save as tmp file
         with tempfile.NamedTemporaryFile(suffix=".jpg") as f:
             img.save(f.name)
 

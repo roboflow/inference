@@ -1,1 +1,0 @@
-from inference.models.grounding_dino.grounding_dino_model import GroundingDINO
