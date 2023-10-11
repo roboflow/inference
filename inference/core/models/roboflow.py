@@ -293,12 +293,9 @@ class RoboflowInferenceModel(Model):
                     i += 1
             if "keypoints_metadata.json" in infer_bucket_files:
                 with self.open_cache("keypoints_metadata.json", "r") as f:
-                    self.keypoints_metadata = {
-                        e["object_class_id"]: {
-                            int(key): value for key, value in e["keypoints"].items()
-                        }
-                        for e in json.load(f)
-                    }
+                    self.keypoints_metadata = parse_keypoints_metadata(
+                        metadata=json.load(f),
+                    )
         else:
             # If AWS keys are available, then we can download model artifacts directly
             if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
@@ -361,12 +358,9 @@ class RoboflowInferenceModel(Model):
                         i += 1
                 if "keypoints_metadata.json" in infer_bucket_files:
                     with self.open_cache("keypoints_metadata.json", "r") as f:
-                        self.keypoints_metadata = {
-                            e["object_class_id"]: {
-                                int(key): value for key, value in e["keypoints"].items()
-                            }
-                            for e in json.load(f)
-                        }
+                        self.keypoints_metadata = parse_keypoints_metadata(
+                            metadata=json.load(f)
+                        )
             else:
                 self.log("Downloading model artifacts from Roboflow API")
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
@@ -391,12 +385,9 @@ class RoboflowInferenceModel(Model):
 
                 if "keypoints_metadata" in api_data:
                     # TODO: make sure backend provides that
-                    self.keypoints_metadata = {
-                        e["object_class_id"]: {
-                            int(key): value for key, value in e["keypoints"].items()
-                        }
-                        for e in api_data["keypoints_metadata"]
-                    }
+                    self.keypoints_metadata = parse_keypoints_metadata(
+                        metadata=api_data["keypoints_metadata"]
+                    )
 
                 t1 = perf_counter()
                 weights_url = ApiUrl(api_data["model"])
@@ -876,3 +867,10 @@ class OnnxRoboflowCoreModel(RoboflowCoreModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
     pass
+
+
+def parse_keypoints_metadata(metadata: list) -> dict:
+    return {
+        e["object_class_id"]: {int(key): value for key, value in e["keypoints"].items()}
+        for e in metadata
+    }
