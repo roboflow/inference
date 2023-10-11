@@ -6,6 +6,7 @@ import time
 from typing import Any, Optional
 
 import redis
+from contextlib import asynccontextmanager
 
 from inference.core.cache.base import BaseCache
 from inference.core.data_models import InferenceResponseImage
@@ -140,3 +141,10 @@ class RedisCache(BaseCache):
                 elif inspect.isclass(v) and isinstance(v, InferenceResponseImage):
                     value[k] = v.dict()
         return value
+
+    def acquire_lock(self, key: str) -> Any:
+        l = self.client.lock(key, blocking=True)
+        acquired = l.acquire()
+        if not acquired:
+            raise TimeoutError("Couldn't get lock")
+        return l

@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Any
+from contextlib import contextmanager
 
 
 class BaseCache:
@@ -86,3 +87,14 @@ class BaseCache:
             NotImplementedError: This method must be implemented by subclasses.
         """
         raise NotImplementedError()
+
+    def acquire_lock(self, key: str) -> Any:
+        raise NotImplementedError()
+
+    @contextmanager
+    def lock(self, key: str) -> Any:
+        l = self.acquire_lock(key)
+        try:
+            yield l
+        finally:
+            l.release()
