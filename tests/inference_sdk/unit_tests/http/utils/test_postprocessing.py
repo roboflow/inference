@@ -9,22 +9,21 @@ from requests import Response
 
 from inference_sdk.http.entities import VisualisationResponseFormat
 from inference_sdk.http.utils.post_processing import (
-    adjust_segmentation_polygon_to_client_scaling_factor,
+    adjust_points_coordinates_to_client_scaling_factor,
     adjust_bbox_coordinates_to_client_scaling_factor,
-    adjust_instance_segmentation_predictions_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
     response_contains_jpeg_image,
     transform_base64_visualisation,
-    adjust_prediction_to_client_scaling_factor,
+    adjust_prediction_to_client_scaling_factor, adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
 )
 
 
-def test_adjust_segmentation_polygon_to_client_scaling_factor() -> None:
+def test_adjust_points_coordinates_to_client_scaling_factor() -> None:
     # given
     points = [{"x": 50, "y": 100}, {"x": 80, "y": 120}]
 
     # when
-    result = adjust_segmentation_polygon_to_client_scaling_factor(
+    result = adjust_points_coordinates_to_client_scaling_factor(
         points=points,
         scaling_factor=0.5,
     )
@@ -61,7 +60,7 @@ def test_adjust_bbox_coordinates_to_client_scaling_factor() -> None:
     }
 
 
-def test_adjust_instance_segmentation_predictions_to_client_scaling_factor() -> None:
+def test_adjust_prediction_with_bbox_and_points_to_client_scaling_factor() -> None:
     # given
     predictions = [
         {
@@ -76,9 +75,10 @@ def test_adjust_instance_segmentation_predictions_to_client_scaling_factor() -> 
     ]
 
     # when
-    result = adjust_instance_segmentation_predictions_to_client_scaling_factor(
+    result = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
         predictions=predictions,
         scaling_factor=0.5,
+        points_key="points",
     )
 
     # then

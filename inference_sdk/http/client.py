@@ -8,13 +8,14 @@ from requests import HTTPError
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
+    KEYPOINTS_DETECTION_TASK,
     OBJECT_DETECTION_TASK,
     HTTPClientMode,
     ImagesReference,
     InferenceConfiguration,
     ModelDescription,
     RegisteredModels,
-    ServerInfo, KEYPOINTS_DETECTION_TASK,
+    ServerInfo,
 )
 from inference_sdk.http.errors import (
     HTTPCallErrorError,
@@ -45,7 +46,7 @@ NEW_INFERENCE_ENDPOINTS = {
     INSTANCE_SEGMENTATION_TASK: "/infer/instance_segmentation",
     OBJECT_DETECTION_TASK: "/infer/object_detection",
     CLASSIFICATION_TASK: "/infer/classification",
-    KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection"
+    KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
 }
 
 
