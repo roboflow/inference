@@ -14,7 +14,8 @@ from inference_sdk.http.utils.post_processing import (
     adjust_object_detection_predictions_to_client_scaling_factor,
     response_contains_jpeg_image,
     transform_base64_visualisation,
-    adjust_prediction_to_client_scaling_factor, adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
+    adjust_prediction_to_client_scaling_factor,
+    adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
 )
 
 
@@ -361,6 +362,64 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
         "class": "wood-log",
         "class_id": 0,
         "points": [{"x": 200.0, "y": 400.0}],
+    }
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_keypoints_detection() -> (
+    None
+):
+    # given
+    prediction = {
+        "visualization": None,
+        "frame_id": None,
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [
+            {
+                "x": 21.0,
+                "y": 128.0,
+                "width": 42.0,
+                "height": 48.0,
+                "confidence": 0.9,
+                "class": "wood-log",
+                "class_id": 0,
+                "keypoints": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "confidence": 0.92,
+                        "id": 16,
+                        "category": "right_ankle",
+                    }
+                ],
+            }
+        ],
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
+
+    # then
+    assert result["image"] == {"width": 448, "height": 300}
+    assert len(result["predictions"]) == 1
+    assert result["predictions"][0] == {
+        "x": 42.0,
+        "y": 256.0,
+        "width": 84.0,
+        "height": 96.0,
+        "confidence": 0.9,
+        "class": "wood-log",
+        "class_id": 0,
+        "keypoints": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "confidence": 0.92,
+                "id": 16,
+                "category": "right_ankle",
+            }
+        ],
     }
 
 
