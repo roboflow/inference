@@ -71,6 +71,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
+        if batch_size > MAX_BATCH_SIZE:
+            raise ValueError(
+                f"Request has {batch_size} images but MAX_BATCH_SIZE is set to {MAX_BATCH_SIZE}"
+            )
         return super().infer(
             image,
             class_agnostic_nms=class_agnostic_nms,
