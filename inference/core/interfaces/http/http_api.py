@@ -762,10 +762,10 @@ class HttpInterface(BaseInterface):
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     M.InstanceSegmentationInferenceResponse,
+                    M.KeypointsDetectionInferenceResponse,
                     M.ObjectDetectionInferenceResponse,
                     M.ClassificationInferenceResponse,
                     M.MultiLabelClassificationInferenceResponse,
-                    M.KeypointsDetectionInferenceResponse,
                     Any,
                 ],
                 response_model_exclude_none=True,
@@ -960,7 +960,6 @@ class HttpInterface(BaseInterface):
                 inference_response = self.model_manager.infer_from_request(
                     inference_request.model_id, inference_request
                 )
-
                 if format == "image":
                     return Response(
                         content=inference_response.visualization,
