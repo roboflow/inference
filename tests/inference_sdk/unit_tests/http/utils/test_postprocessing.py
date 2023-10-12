@@ -388,8 +388,8 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
                         "x": 100.0,
                         "y": 200.0,
                         "confidence": 0.92,
-                        "id": 16,
-                        "category": "right_ankle",
+                        "class_id": 16,
+                        "class": "right_ankle",
                     }
                 ],
             }
@@ -416,8 +416,8 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
                 "x": 200.0,
                 "y": 400.0,
                 "confidence": 0.92,
-                "id": 16,
-                "category": "right_ankle",
+                "class_id": 16,
+                "class": "right_ankle",
             }
         ],
     }

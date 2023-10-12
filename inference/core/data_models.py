@@ -593,8 +593,8 @@ class Keypoint(Point):
     confidence: float = Field(
         description="Model confidence regarding keypoint visibility."
     )
-    id: int = Field(description="Identifier of keypoint.")
-    category: str = Field(description="Type of keypoint.")
+    class_id: int = Field(description="Identifier of keypoint.")
+    class_name: str = Field(field="class", description="Type of keypoint.")
 
 
 class KeypointsPrediction(ObjectDetectionPrediction):

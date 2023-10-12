@@ -490,9 +490,9 @@ def scale_keypoints(
         if resize_method == "Stretch to":
             scale_height = orig_shape[1] / infer_shape[1]
             scale_width = orig_shape[0] / infer_shape[0]
-            for i in range(coords.shape[1] // 3):
-                coords[:, i * 3] *= scale_width
-                coords[:, i * 3 + 1] *= scale_height
+            for coord_id in range(coords.shape[1] // 3):
+                coords[:, coord_id * 3] *= scale_width
+                coords[:, coord_id * 3 + 1] *= scale_height
 
         elif (
             resize_method == "Fit (black edges) in"
@@ -505,22 +505,22 @@ def scale_keypoints(
 
             pad_x = (infer_shape[0] - inter_w) / 2
             pad_y = (infer_shape[1] - inter_h) / 2
-            for i in range(coords.shape[1] // 3):
-                coords[:, i * 3] -= pad_x
-                coords[:, i * 3] /= scale
-                coords[:, i * 3 + 1] -= pad_y
-                coords[:, i * 3 + 1] /= scale
+            for coord_id in range(coords.shape[1] // 3):
+                coords[:, coord_id * 3] -= pad_x
+                coords[:, coord_id * 3] /= scale
+                coords[:, coord_id * 3 + 1] -= pad_y
+                coords[:, coord_id * 3 + 1] /= scale
 
-        for i in range(coords.shape[1] // 3):
+        for coord_id in range(coords.shape[1] // 3):
             coords[:, i * 3] = (
                 np.round_(
-                    np.clip(coords[:, i * 3], a_min=0, a_max=orig_shape[0])
+                    np.clip(coords[:, coord_id * 3], a_min=0, a_max=orig_shape[0])
                 ).astype(int)
                 + crop_shift_x
             )
-            coords[:, i * 3 + 1] = (
+            coords[:, coord_id * 3 + 1] = (
                 np.round_(
-                    np.clip(coords[:, i * 3 + 1], a_min=0, a_max=orig_shape[1])
+                    np.clip(coords[:, coord_id * 3 + 1], a_min=0, a_max=orig_shape[1])
                 ).astype(int)
                 + crop_shift_y
             )
