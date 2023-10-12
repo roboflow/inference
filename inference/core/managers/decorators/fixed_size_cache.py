@@ -26,6 +26,11 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        if model_id in self:
+            self._key_queue.remove(model_id)
+            self._key_queue.append(model_id)
+            return
+
         should_pop = len(self) == self.max_size
         if should_pop:
             to_remove_model_id = self._key_queue.popleft()
@@ -33,6 +38,13 @@ class WithFixedSizeCache(ModelManagerDecorator):
 
         self._key_queue.append(model_id)
         return super().add_model(model_id, api_key)
+
+    def remove(self, model_id: str) -> Model:
+        try:
+            self._key_queue.remove(model_id)
+        except ValueError:
+            pass
+        return super().remove(model_id)
 
     def infer_from_request(
         self, model_id: str, request: InferenceRequest

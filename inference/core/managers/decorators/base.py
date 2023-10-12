@@ -2,7 +2,7 @@ from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 
 
-class ModelManagerDecorator(ModelManager):
+class ModelManagerDecorator:
     """Basic decorator, it acts like a `ModelManager` and contains a `ModelManager`.
 
     Args:
@@ -33,6 +33,8 @@ class ModelManagerDecorator(ModelManager):
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        if model_id in self:
+            return
         self.model_manager.add_model(model_id, api_key)
 
     def infer_from_request(
