@@ -60,6 +60,8 @@ def legacy_infer_with_base64_image(
     test["pil_image"].save(buffered, quality=100, format="PNG")
     img_str = base64.b64encode(buffered.getvalue())
     img_str = img_str.decode("ascii")
+    if test.get("simulate_rfwidget_upload", False):
+        img_str = f"data:image/jpeg;base64,{img_str}"
     return (
         requests.post(
             f"{base_url}:{port}/{test['project']}/{test['version']}?"
