@@ -5,7 +5,7 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -276,11 +276,13 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
-        app.mount(
-            "/",
-            StaticFiles(directory="./inference/landing/out", html=True),
-            name="static",
-        )
+        # @app.get("/")
+        # async def index():
+        #     return FileResponse("./inference/landing/out/index.html")
+
+        # @app.get("/")
+        # async def read_root():
+        #     return RedirectResponse(url="/app")
 
         @app.get(
             "/info",
@@ -940,6 +942,12 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
