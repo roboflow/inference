@@ -107,7 +107,7 @@ class RoboflowInferenceModel(Model):
             api_key (str, optional): API key for authentication. Defaults to None.
         """
         super().__init__()
-        self.load_weights = load_weights or not self.has_model_metadata
+        self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         if not self.api_key and not (
@@ -299,7 +299,7 @@ class RoboflowInferenceModel(Model):
             TensorrtRoboflowAPIError: If an error occurs while fetching data from the Roboflow API.
         """
         infer_bucket_files = self.get_infer_bucket_file_list()
-        if self.load_weights:
+        if self.load_weights or not self.has_model_metadata:
             infer_bucket_files.append(self.weights_file)
         if all([os.path.exists(self.cache_file(f)) for f in infer_bucket_files]):
             self.log("Model artifacts already downloaded, loading model from cache")
@@ -352,7 +352,7 @@ class RoboflowInferenceModel(Model):
                 if "colors" in api_data:
                     self.colors = api_data["colors"]
 
-                if self.load_weights:
+                if self.load_weights or not self.has_model_metadata:
                     t1 = perf_counter()
                     weights_url = ApiUrl(api_data["model"])
                     r = requests.get(weights_url)
@@ -720,7 +720,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(model_id, *args, **kwargs)
-        if self.load_weights:
+        if self.load_weights or not self.has_model_metadata:
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
@@ -749,7 +749,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
         self.log("Creating inference session")
-        if self.load_weights:
+        if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             self.onnx_session = onnxruntime.InferenceSession(
@@ -790,6 +790,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             model_metadata = {"batch_size": self.batch_size, "img_size_h": self.img_size_h, "img_size_w": self.img_size_w}
             self.log(f"Writing model metadata to memcache")
             self.write_model_metadata_to_memcache(model_metadata)
+            if not self.load_weights: # had to load weights to get metadata
+                del self.onnx_session
         else:
             if not self.has_model_metadata:
                 raise ValueError("This should be unreachable, should get weights if we don't have model metadata")
