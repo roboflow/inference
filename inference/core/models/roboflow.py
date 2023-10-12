@@ -796,10 +796,16 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             if not self.has_model_metadata:
                 raise ValueError("This should be unreachable, should get weights if we don't have model metadata")
             self.log(f"Loading model metadata from memcache")
-            metadata = self.model_metadata_from_memcache
+            metadata = self.model_metadata_from_memcache()
             self.batch_size = metadata["batch_size"]
             self.img_size_h = metadata["img_size_h"]
             self.img_size_w = metadata["img_size_w"]
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
+            else:
+                self.batching_enabled = False
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
 
     def load_image(
         self,
