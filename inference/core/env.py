@@ -184,7 +184,11 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
 # Maximum batch size, default is 8
-MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 8))
+MAX_BATCH_SIZE = os.getenv("MAX_BATCH_SIZE", None)
+if MAX_BATCH_SIZE is not None:
+    MAX_BATCH_SIZE = int(MAX_BATCH_SIZE)
+else:
+    MAX_BATCH_SIZE = float("inf")
 
 # Maximum number of candidates, default is 3000
 MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
