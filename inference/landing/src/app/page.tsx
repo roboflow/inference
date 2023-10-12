@@ -8,7 +8,8 @@ import ExampleLink from "./components/exampleLink";
 import classNames from "classnames";
 
 export default function Home() {
-  const [page, setPage] = React.useState("landing");
+  // Will use when we add links to in progress example page
+  // const [page, setPage] = React.useState("landing");
   return (
     <main className="flex min-h-screen flex-col items-stretch gap-0">
       <div
@@ -67,23 +68,6 @@ export default function Home() {
             inference server for computer vision that supports the deployment of
             many popular model architectures and fine-tuned models.
           </div>
-          {/* <div className="flex items-center justify-center gap-2 flex-col sm:flex-row">
-            TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks
-            <HeaderLink
-              href="https://docs.roboflow.com/deploy/inference-api-schema"
-              className="bg-purple-600"
-              label="Documentation"
-              icon="📄"
-              theme="dark"
-            />
-            <HeaderLink
-              href="https://github.com/roboflow/inference"
-              className="bg-gray-900"
-              label="Github Repository"
-              icon="🧑‍💻"
-              theme="dark"
-            />
-          </div> */}
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
               href="https://docs.roboflow.com/deploy/inference-api-schema"
@@ -123,7 +107,6 @@ export default function Home() {
               title="Gaze Detection"
               body="Detects the direction in which someone is looking and the point in a frame at which someone is looking."
               icon="👁️"
-              // className="ml-40"
             />
 
             <ExampleLink
@@ -146,40 +129,17 @@ export default function Home() {
               icon="📊"
             />
             <ExampleLink
-              href="https://github.com/roboflow/inference/tree/main/examples/inference-client"
+              href="https://blog.roboflow.com/clip-image-search-faiss/"
               title="Build Image-to-Image Search"
               body="Build a CLIP powered search that uses images as input to find other similar images."
               icon="🖼️"
             />
           </div>
         </div>
-        {/* <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-8">
-          <HeaderLink
-            href="https://docs.roboflow.com/deploy/inference-api-schema"
-            className=""
-            label="Start with code snippets"
-            icon="💻"
-            theme="light"
-          />
-          <HeaderLink
-            href="https://github.com/roboflow/inference"
-            className=""
-            label="Find interesting models"
-            icon="🔍"
-            theme="light"
-          />
-          <HeaderLink
-            href="https://github.com/roboflow/inference"
-            className=""
-            label="Train your own custom models"
-            icon="💫"
-            theme="light"
-          />
-        </div> */}
         <div className="flex items-center justify-center gap-2 flex-col sm:flex-row">
           {/* TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks */}
           <HeaderLink
-            href="https://docs.roboflow.com/deploy/inference-api-schema"
+            href="https://inference.roboflow.com"
             className="bg-purple-600"
             label="Documentation"
             icon="📄"
@@ -195,9 +155,6 @@ export default function Home() {
       <div id="dividerGradient" className="h-0.5 sm:h-1 w-full">
         {" "}
       </div>
-      {/* <div className="px-14 py-8 flex flex-col">
-        {page === "landing" && <div>Below the fold</div>}
-      </div> */}
     </main>
   );
 }
