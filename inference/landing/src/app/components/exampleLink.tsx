@@ -16,7 +16,7 @@ export default function ExampleLink({
   icon,
 }: ExampleLinkProps) {
   return (
-    <a className={className} href={href}>
+    <a className={className} href={href} target="_blank">
       <div className="group relative flex items-start p-4 gap-4 h-auto sm:h-36 w-auto sm:w-[500px] bg-white rounded-lg border border-gray-300 shadow hover:shadow-xl hover:border-purple-400 transition duration-200 text-left">
         <div className="flex flex-none items-center justify-center w-28 h-28 rounded-lg bg-gray-100 text-3xl border border-gray-300 group-hover:border-purple-400 group-hover:bg-purple-50 group-hover:text-purple-600 transition duration-200">
           {icon}

@@ -18,11 +18,13 @@ export default function Home() {
       >
         <div className="flex flex-col items-center gap-6 px-8 text-center ">
           <div className="flex flex-col gap-1 items-center relative z-10">
-            <img
-              src="/roboflow_full_logo_color.svg"
-              alt="Roboflow Logo"
-              width={200}
-            />
+            <a href="https://roboflow.com" target="_blank">
+              <img
+                src="/roboflow_full_logo_color.svg"
+                alt="Roboflow Logo"
+                width={200}
+              />
+            </a>
             <div className="font-bold text-gray-900 text-5xl md:text-6xl">
               Inference
             </div>
@@ -70,13 +72,13 @@ export default function Home() {
           </div>
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
-              href="https://docs.roboflow.com/deploy/inference-api-schema"
+              href="https://inference.roboflow.com/inference_sdk/http_client/"
               className=""
               label="Start with code snippets"
               icon="💻"
             />
             <HeaderLink
-              href="https://universe.roboflow.com/"
+              href="https://roboflow.com/universe"
               className=""
               label="Find interesting models"
               icon="🔍"
@@ -108,9 +110,8 @@ export default function Home() {
               body="Detects the direction in which someone is looking and the point in a frame at which someone is looking."
               icon="👁️"
             />
-
             <ExampleLink
-              href="https://github.com/roboflow/inference/tree/main/examples/inference-client"
+              href="https://inference.roboflow.com/inference_sdk"
               title="Inference Client"
               body="Quickstart HTTP and UDP clients for use with Inference."
               icon="⚡"
@@ -121,7 +122,6 @@ export default function Home() {
               body="Use computer vision to analyze video streams, extract insights from video frames, and create actionable visualizations and CSV outputs."
               icon="📦"
             />
-
             <ExampleLink
               href="https://github.com/roboflow/inference/tree/main/examples/inference-dashboard-example"
               title="Create an Inference Dashboard"
@@ -141,14 +141,14 @@ export default function Home() {
           <HeaderLink
             href="https://inference.roboflow.com"
             className="bg-purple-600"
-            label="Documentation"
+            label="Read the Documentation"
             icon="📄"
           />
           <HeaderLink
             href="https://github.com/roboflow/inference"
             className="bg-gray-900"
-            label="Github Repository"
-            icon="🧑‍💻"
+            label="Star the Github Repository"
+            icon="⭐"
           />
         </div>
       </div>

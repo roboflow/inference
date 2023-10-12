@@ -20,6 +20,7 @@ export default function HeaderLink({
         "text-gray-700 w-full sm:w-96 bg-white p-3 border border-gray-300 hover:border-purple-400 hover:text-purple-600 group relative flex items-center gap-3 rounded-lg shadow hover:shadow-xl transition duration-200 text-left"
       )}
       href={href}
+      target="_blank"
     >
       {/* TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks */}
 
