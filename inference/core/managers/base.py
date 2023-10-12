@@ -18,13 +18,15 @@ from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
+from inference.core.registries.base import ModelRegistry
 
 
 @dataclass
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
-    _models: Dict[str, Model] = field(default_factory=dict)
+    _models: Dict[str, Model] = field(default_factory=dict, init=False)
+    model_registry: ModelRegistry = field()
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -34,7 +36,7 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
-    def add_model(self, model_id: str, model: Model) -> None:
+    def add_model(self, model_id: str, api_key: str) -> None:
         """Adds a new model to the manager.
 
         Args:
@@ -43,6 +45,10 @@ class ModelManager:
         """
         if model_id in self._models:
             return
+        model = self.model_registry.get_model(model_id, api_key)(
+            model_id=model_id,
+            api_key=api_key,
+        )
         self._models[model_id] = model
 
     def check_for_model(self, model_id: str) -> None:

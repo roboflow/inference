@@ -26,14 +26,14 @@ class ModelManagerDecorator(ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
 
-    def add_model(self, model_id: str, model: Model):
+    def add_model(self, model_id: str, api_key: str):
         """Adds a model to the manager.
 
         Args:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
-        self.model_manager.add_model(model_id, model)
+        self.model_manager.add_model(model_id, api_key)
 
     def infer_from_request(
         self, model_id: str, request: InferenceRequest
