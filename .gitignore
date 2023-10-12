@@ -139,6 +139,7 @@ profile/
 *.pstats
 *.jpeg
 *.png
+!icon.png
 *.mp4
 *.roboflow.txt
 dev_tools/
