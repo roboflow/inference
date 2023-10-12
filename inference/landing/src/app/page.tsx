@@ -111,7 +111,7 @@ export default function Home() {
               icon="👁️"
             />
             <ExampleLink
-              href="https://inference.roboflow.com/inference_sdk"
+              href="https://inference.roboflow.com/inference_sdk/http_client"
               title="Inference Client"
               body="Quickstart HTTP and UDP clients for use with Inference."
               icon="⚡"
