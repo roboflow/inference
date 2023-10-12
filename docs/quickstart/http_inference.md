@@ -34,6 +34,35 @@ To find your project ID and model version number, refer to the Roboflow document
 
 This route works for all supported task types: object detection, classification, and segmentation.
 
+### via CLI
+
+First, [Install the CLI](../index.md#cli).
+
+To run inference, use the `inference infer` command:
+
+```bash
+inference infer {image_path} \
+    --project-id {project_id} \
+    --model-version {model_version} \
+    --api-key {api_key}
+```
+
+You can also specify a host option to run inference on the Roboflow Hosted API.
+
+```bash
+inference infer {image_path} \
+    --project-id {project_id} \
+    --model-version {model_version} \
+    --api-key {api_key} \
+    --host https://detect.roboflow.com
+```
+
+{image_path} can be a local path to an image, or a URL to a hosted image.
+
+E.g. `./image.jpg` or `https://[YOUR_HOSTED_IMAGE_URL]`
+
+### Python script
+
 To run inference, make a HTTP request to the route:
 
 ```python
