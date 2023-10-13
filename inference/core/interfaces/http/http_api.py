@@ -859,8 +859,9 @@ class HttpInterface(BaseInterface):
                             )
                 else:
                     request_model_id = model_id
-
-                self.model_manager.add_model(request_model_id, api_key)
+                self.model_manager.add_model(
+                    request_model_id, api_key, model_id_alias=model_id
+                )
 
                 task_type = self.model_manager.get_task_type(request_model_id)
                 inference_request_type = M.ObjectDetectionInferenceRequest
