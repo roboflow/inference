@@ -5,7 +5,8 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
@@ -275,23 +276,13 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
-        @app.get(
-            "/",
-            response_model=M.ServerVersionInfo,
-            summary="Root",
-            description="Get the server name and version number",
-        )
-        async def root():
-            """Endpoint to get the server name and version number.
+        # @app.get("/")
+        # async def index():
+        #     return FileResponse("./inference/landing/out/index.html")
 
-            Returns:
-                M.ServerVersionInfo: The server version information.
-            """
-            return M.ServerVersionInfo(
-                name="Roboflow Inference Server",
-                version=__version__,
-                uuid=GLOBAL_INFERENCE_SERVER_ID,
-            )
+        # @app.get("/")
+        # async def read_root():
+        #     return RedirectResponse(url="/app")
 
         @app.get(
             "/info",
@@ -868,8 +859,9 @@ class HttpInterface(BaseInterface):
                             )
                 else:
                     request_model_id = model_id
-
-                self.model_manager.add_model(request_model_id, api_key)
+                self.model_manager.add_model(
+                    request_model_id, api_key, model_id_alias=model_id
+                )
 
                 task_type = self.model_manager.get_task_type(request_model_id)
                 inference_request_type = M.ObjectDetectionInferenceRequest
@@ -951,6 +943,12 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
