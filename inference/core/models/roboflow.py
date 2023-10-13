@@ -45,7 +45,7 @@ from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
-from inference.core.utils.url_utils import ApiUrl
+from inference.core.utils.url_utils import wrap_url
 
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     try:
@@ -345,7 +345,7 @@ class RoboflowInferenceModel(Model):
             else:
                 self.log("Downloading model artifacts from Roboflow API")
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = ApiUrl(
+                self.api_url = wrap_url(
                     f"{API_BASE_URL}/ort/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true&dynamic=true"
                 )
                 api_data = get_api_data(self.api_url)
@@ -365,7 +365,7 @@ class RoboflowInferenceModel(Model):
                     self.colors = api_data["colors"]
 
                 t1 = perf_counter()
-                weights_url = ApiUrl(api_data["model"])
+                weights_url = wrap_url(api_data["model"])
                 r = requests.get(weights_url)
                 with self.open_cache(self.weights_file, "wb") as f:
                     f.write(r.content)
@@ -374,7 +374,7 @@ class RoboflowInferenceModel(Model):
                         "Weights download took longer than 120 seconds, refreshing API request"
                     )
                     api_data = get_api_data(self.api_url)
-                env_url = ApiUrl(api_data["environment"])
+                env_url = wrap_url(api_data["environment"])
                 self.environment = requests.get(env_url).json()
                 with open(self.cache_file("environment.json"), "w") as f:
                     json.dump(self.environment, f)
@@ -634,7 +634,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         raise Exception(f"Failed to download model artifacts.")
             else:
                 # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = ApiUrl(
+                self.api_url = wrap_url(
                     f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
                 )
                 api_data = get_api_data(self.api_url)
@@ -646,7 +646,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 weights_url_keys = api_data["weights"].keys()
 
                 for weights_url_key in weights_url_keys:
-                    weights_url = ApiUrl(api_data["weights"][weights_url_key])
+                    weights_url = wrap_url(api_data["weights"][weights_url_key])
                     t1 = perf_counter()
                     attempts = 0
                     success = False

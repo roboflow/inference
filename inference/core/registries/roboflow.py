@@ -8,7 +8,7 @@ from inference.core.exceptions import DatasetLoadError, WorkspaceLoadError
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
-from inference.core.utils.url_utils import ApiUrl
+from inference.core.utils.url_utils import wrap_url
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -74,7 +74,7 @@ def get_model_type(model_id: str, api_key: str) -> str:
             model_type = cache_data["model_type"]
         return project_task_type, model_type
 
-    api_url = ApiUrl("/".join([API_BASE_URL, f"?api_key={api_key}"]))
+    api_url = wrap_url("/".join([API_BASE_URL, f"?api_key={api_key}"]))
     api_key_info = requests.get(api_url)
     try:
         api_key_info.raise_for_status()
@@ -87,13 +87,13 @@ def get_model_type(model_id: str, api_key: str) -> str:
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace, check your API key")
 
-    api_url = ApiUrl(
+    api_url = wrap_url(
         "/".join(
             [API_BASE_URL, workspace_id, dataset_id, f"?api_key={api_key}&nocache=true"]
         )
     )
     dataset_info = requests.get(api_url)
-    api_url = ApiUrl(
+    api_url = wrap_url(
         "/".join(
             [
                 API_BASE_URL,

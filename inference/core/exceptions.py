@@ -61,15 +61,6 @@ class InvalidMaskDecodeArgument(Exception):
         message (str): Optional message describing the error.
     """
 
-
-class InvalidNumpyInput(Exception):
-    """Raised when the input is an invalid NumPy array.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class MissingApiKeyError(Exception):
     """Raised when the API key is missing.
 
@@ -120,6 +111,18 @@ class TensorrtRoboflowAPIError(Exception):
 
 class WorkspaceLoadError(Exception):
     """Raised when there is an error loading the workspace.
+
+    Attributes:
+        message (str): Optional message describing the error.
+    """
+
+
+class InputImageLoadError(Exception):
+    pass
+
+
+class InvalidNumpyInput(InputImageLoadError):
+    """Raised when the input is an invalid NumPy array.
 
     Attributes:
         message (str): Optional message describing the error.

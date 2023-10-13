@@ -9,10 +9,11 @@ import numpy as np
 import pybase64
 import requests
 from PIL import Image
+from requests import RequestException
 
 from inference.core.data_models import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
-from inference.core.exceptions import InvalidNumpyInput
+from inference.core.exceptions import InvalidNumpyInput, InputImageLoadError
 
 
 def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
@@ -48,12 +49,12 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         elif type == "multipart":
             np_image = load_image_multipart(value, cv_imread_flags=cv_imread_flags)
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
-            np_image = load_image_numpy_str(value)
+            np_image = load_image_from_numpy_str(value)
         elif type == "pil":
             np_image = np.asarray(value.convert("RGB"))
             is_bgr = False
         elif type == "url":
-            np_image = load_image_url(value, cv_imread_flags=cv_imread_flags)
+            np_image = load_image_from_url(value, cv_imread_flags=cv_imread_flags)
         else:
             raise NotImplementedError(f"Image type '{type}' is not supported.")
     else:
@@ -91,7 +92,7 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_url(value, cv_imread_flags=cv_imread_flags), True
+        return load_image_from_url(value, cv_imread_flags=cv_imread_flags), True
     elif isinstance(value, str) and os.path.exists(value):
         return cv2.imread(value, cv_imread_flags), True
     elif isinstance(value, str):
@@ -104,7 +105,7 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
         except Exception:
             pass
         try:
-            return load_image_numpy_str(value), True
+            return load_image_from_numpy_str(value), True
         except Exception:
             pass
     raise NotImplementedError(
@@ -147,7 +148,7 @@ def load_image_multipart(value, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     return cv2.imdecode(image_np, cv_imread_flags)
 
 
-def load_image_numpy_str(value: str) -> np.ndarray:
+def load_image_from_numpy_str(value: bytes) -> np.ndarray:
     """Loads an image from a numpy array string.
 
     Args:
@@ -159,31 +160,33 @@ def load_image_numpy_str(value: str) -> np.ndarray:
     Raises:
         InvalidNumpyInput: If the numpy data is invalid.
     """
-    data = pickle.loads(value)
-    assert isinstance(data, np.ndarray)
-    assert len(data.shape) == 3 or len(data.shape) == 2
-    assert data.shape[-1] == 3 or data.shape[-1] == 1
-    assert data.max() <= 255 and data.min() >= 0
     try:
-        return data
-    except Exception as e:
-        if len(data.shape) != 3 and len(data.shape) != 2:
-            raise InvalidNumpyInput(
-                f"Expected 2 or 3 dimensions, got {len(data.shape)} dimensions."
-            )
-        elif data.shape[-1] != 3 and data.shape[-1] != 1:
-            raise InvalidNumpyInput(
-                f"Expected 1 or 3 channels, got {data.shape[-1]} channels."
-            )
-        elif max(data) > 255 or min(data) < 0:
-            raise InvalidNumpyInput(
-                f"Expected values between 0 and 255, got values between {min(data)} and {max(data)}."
-            )
-        else:
-            raise e
+        data = pickle.loads(value)
+    except (EOFError, TypeError, pickle.UnpicklingError) as error:
+        raise InvalidNumpyInput(
+            f"Could not unpickle image data. Cause: {error}"
+        ) from error
+    if not issubclass(type(data), np.ndarray):
+        raise InvalidNumpyInput(
+            f"Data provided as input could not be decoded into np.ndarray object."
+        )
+    if len(data.shape) != 3 and len(data.shape) != 2:
+        raise InvalidNumpyInput(
+            f"For image given as np.ndarray expected 2 or 3 dimensions, got {len(data.shape)} dimensions."
+        )
+    if data.shape[-1] != 3 and data.shape[-1] != 1:
+        raise InvalidNumpyInput(
+            f"For image given as np.ndarray expected 1 or 3 channels, got {data.shape[-1]} channels."
+        )
+    if np.max(data) > 255 or np.min(data) < 0:
+        raise InvalidNumpyInput(
+            f"For image given as np.ndarray expected values between 0 and 255, got values between "
+            f"{np.min(data)} and {np.max(data)}."
+        )
+    return data
 
 
-def load_image_url(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
+def load_image_from_url(value: str, cv_imread_flags: int = cv2.IMREAD_COLOR) -> np.ndarray:
     """Loads an image from a given URL.
 
     Args:
@@ -192,6 +195,17 @@ def load_image_url(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     Returns:
         Image.Image: The loaded PIL image.
     """
-    response = requests.get(value, stream=True)
-    image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
-    return cv2.imdecode(image_np, cv_imread_flags)
+    try:
+        response = requests.get(value, stream=True)
+        response.raise_for_status()
+        image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
+        image = cv2.imdecode(image_np, cv_imread_flags)
+        if image is None:
+            raise InputImageLoadError(
+                f"Could not parse response content from url {value} into image."
+            )
+        return image
+    except (RequestException, ConnectionError) as error:
+        raise InputImageLoadError(
+            f"Error while loading image from url: {value}. Details: {error}"
+        )
