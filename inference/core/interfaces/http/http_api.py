@@ -5,7 +5,8 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import data_models as M
@@ -41,14 +42,12 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.managers.base import ModelManager
-from inference.core.registries.base import ModelRegistry
 
 if LAMBDA:
     from inference.core.usage import trackUsage
 if METLO_KEY:
     from metlo.fastapi import ASGIMiddleware
 
-from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.version import __version__
 
 
@@ -122,13 +121,11 @@ class HttpInterface(BaseInterface):
     Attributes:
         app (FastAPI): The FastAPI application instance.
         model_manager (ModelManager): The manager for handling different models.
-        model_registry (RoboflowModelRegistry): The registry containing the Roboflow models.
     """
 
     def __init__(
         self,
         model_manager: ModelManager,
-        model_registry: RoboflowModelRegistry,
         root_path: Optional[str] = None,
     ):
         """
@@ -136,7 +133,6 @@ class HttpInterface(BaseInterface):
 
         Args:
             model_manager (ModelManager): The manager for handling different models.
-            model_registry (RoboflowModelRegistry): The registry containing the Roboflow models.
             root_path (Optional[str]): The root path for the FastAPI application.
 
         Description:
@@ -204,7 +200,6 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
-        self.model_registry = model_registry
 
         def process_inference_request(
             inference_request: M.InferenceRequest,
@@ -217,14 +212,9 @@ class HttpInterface(BaseInterface):
             Returns:
                 M.InferenceResponse: The response containing the inference results.
             """
-            if inference_request.model_id not in self.model_manager:
-                model = self.model_registry.get_model(
-                    inference_request.model_id, inference_request.api_key
-                )(
-                    model_id=inference_request.model_id,
-                    api_key=inference_request.api_key,
-                )
-                self.model_manager.add_model(inference_request.model_id, model)
+            self.model_manager.add_model(
+                inference_request.model_id, inference_request.api_key
+            )
             return self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request
             )
@@ -250,14 +240,7 @@ class HttpInterface(BaseInterface):
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
             )
-            if core_model_id not in self.model_manager:
-                model = self.model_registry.get_model(
-                    core_model_id, inference_request.api_key
-                )(
-                    model_id=core_model_id,
-                    api_key=inference_request.api_key,
-                )
-                self.model_manager.add_model(core_model_id, model)
+            self.model_manager.add_model(core_model_id, inference_request.api_key)
             return core_model_id
 
         load_clip_model = partial(load_core_model, core_model="clip")
@@ -293,23 +276,13 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
-        @app.get(
-            "/",
-            response_model=M.ServerVersionInfo,
-            summary="Root",
-            description="Get the server name and version number",
-        )
-        async def root():
-            """Endpoint to get the server name and version number.
+        # @app.get("/")
+        # async def index():
+        #     return FileResponse("./inference/landing/out/index.html")
 
-            Returns:
-                M.ServerVersionInfo: The server version information.
-            """
-            return M.ServerVersionInfo(
-                name="Roboflow Inference Server",
-                version=__version__,
-                uuid=GLOBAL_INFERENCE_SERVER_ID,
-            )
+        # @app.get("/")
+        # async def read_root():
+        #     return RedirectResponse(url="/app")
 
         @app.get(
             "/info",
@@ -366,14 +339,7 @@ class HttpInterface(BaseInterface):
                     M.ModelsDescriptions: The object containing models descriptions
                 """
 
-                if request.model_id not in self.model_manager:
-                    model_class = self.model_registry.get_model(
-                        request.model_id, request.api_key
-                    )
-                    model = model_class(
-                        model_id=request.model_id, api_key=request.api_key
-                    )
-                    self.model_manager.add_model(request.model_id, model)
+                self.model_manager.add_model(request.model_id, request.api_key)
                 models_descriptions = self.model_manager.describe_models()
                 return M.ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -893,12 +859,9 @@ class HttpInterface(BaseInterface):
                             )
                 else:
                     request_model_id = model_id
-
-                if request_model_id not in self.model_manager:
-                    model = self.model_registry.get_model(model_id, api_key)(
-                        model_id=request_model_id, api_key=api_key
-                    )
-                    self.model_manager.add_model(request_model_id, model)
+                self.model_manager.add_model(
+                    request_model_id, api_key, model_id_alias=model_id
+                )
 
                 task_type = self.model_manager.get_task_type(request_model_id)
                 inference_request_type = M.ObjectDetectionInferenceRequest
@@ -972,10 +935,7 @@ class HttpInterface(BaseInterface):
                     JSONResponse: A response object containing the status and a success message.
                 """
                 model_id = f"{dataset_id}/{version_id}"
-                model = self.model_registry.get_model(model_id, api_key)(
-                    model_id=model_id, api_key=api_key
-                )
-                self.model_manager.add_model(model_id, model)
+                self.model_manager.add_model(model_id, api_key)
 
                 return JSONResponse(
                     {
@@ -983,6 +943,12 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)

@@ -1,8 +1,10 @@
+from typing import Optional
+
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 
 
-class ModelManagerDecorator(ModelManager):
+class ModelManagerDecorator:
     """Basic decorator, it acts like a `ModelManager` and contains a `ModelManager`.
 
     Args:
@@ -26,14 +28,18 @@ class ModelManagerDecorator(ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
 
-    def add_model(self, model_id: str, model: Model):
+    def add_model(
+        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+    ):
         """Adds a model to the manager.
 
         Args:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
-        self.model_manager.add_model(model_id, model)
+        if model_id in self:
+            return
+        self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias)
 
     def infer_from_request(
         self, model_id: str, request: InferenceRequest

@@ -61,12 +61,12 @@ nav:
   - Add a Model: add_a_model.md
   - Inference SDK - HTTP client: inference_sdk/http_client.md
   - Contributing: contributing.md
-  - Changelog: changelog.md
+  - Changelog: https://github.com/roboflow/inference/releases
 
 theme:
   name: 'material'
   logo: https://media.roboflow.com/inference-icon.png
-  favicon: https://media.roboflow.com/nference-icon.png
+  favicon: https://media.roboflow.com/inference-icon.png
   font:
     text: Roboto
     code: Roboto Mono

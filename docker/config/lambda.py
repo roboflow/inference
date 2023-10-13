@@ -12,6 +12,6 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-model_manager = WithFixedSizeCache(ModelManager(), max_size=MAX_ACTIVE_MODELS)
-interface = HttpInterface(model_manager, model_registry=model_registry)
+model_manager = WithFixedSizeCache(ModelManager(model_registry), max_size=MAX_ACTIVE_MODELS)
+interface = HttpInterface(model_manager)
 handler = Mangum(interface.app, lifespan="off")
