@@ -1,11 +1,14 @@
+import io
 import pickle
 
+import cv2
 import numpy as np
 import pytest
 from requests_mock import Mocker
 
 from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
-from inference.core.utils.image_utils import load_image_from_url, load_image_from_numpy_str
+from inference.core.utils.image_utils import load_image_from_url, load_image_from_numpy_str, load_image_from_buffer, \
+    load_image_base64
 
 
 @pytest.mark.parametrize(
@@ -148,3 +151,79 @@ def test_load_image_from_numpy_str_when_valid_image_given(
     # then
     assert image_as_numpy.shape == result.shape
     assert np.allclose(image_as_numpy, result)
+
+
+def test_load_image_from_buffer_when_valid_input_provided(
+    image_as_jpeg_bytes: bytes,
+    image_as_numpy,
+) -> None:
+    # given
+    with io.BytesIO() as buffer:
+        buffer.write(image_as_jpeg_bytes)
+
+        # when
+        result = load_image_from_buffer(value=buffer)
+
+        # then
+        assert image_as_numpy.shape == result.shape
+        assert np.allclose(image_as_numpy, result)
+
+
+def test_load_image_from_buffer_when_non_image_input_provided() -> None:
+    # given
+    with io.BytesIO() as buffer:
+        buffer.write(b"Non-image")
+
+        # when
+        with pytest.raises(InputImageLoadError):
+            _ = load_image_from_buffer(value=buffer)
+
+
+def test_load_image_base64_when_valid_string_given(
+    image_as_jpeg_base64_bytes: bytes,
+    image_as_numpy: np.ndarray,
+) -> None:
+    # given
+    payload = image_as_jpeg_base64_bytes.decode("utf-8")
+
+    # when
+    result = load_image_base64(value=payload)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+
+
+def test_load_image_base64_when_valid_bytes_given(
+    image_as_jpeg_base64_bytes: bytes,
+    image_as_numpy: np.ndarray,
+) -> None:
+    # when
+    result = load_image_base64(value=image_as_jpeg_base64_bytes)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+
+
+def test_load_image_base64_when_valid_bytes_given_with_type_preamble(
+    image_as_jpeg_base64_bytes: bytes,
+    image_as_numpy: np.ndarray,
+) -> None:
+    # given
+    payload = image_as_jpeg_base64_bytes.decode("utf-8")
+    payload = f"data:image/jpeg;base64, {payload}"
+
+    # when
+    result = load_image_base64(value=payload)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+
+
+def test_load_image_base64_when_invalid_bytes_given() -> None:
+    # when
+    with pytest.raises(InputImageLoadError):
+        _ = load_image_base64(value=b"some")
+

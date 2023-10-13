@@ -1,3 +1,4 @@
+import base64
 import pickle
 
 import cv2
@@ -22,6 +23,14 @@ def image_as_png_bytes() -> bytes:
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".png", image)
     return np.array(encoded_image).tobytes()
+
+
+@fixture(scope="function")
+def image_as_jpeg_base64_bytes() -> bytes:
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    _, encoded_image = cv2.imencode(".jpg", image)
+    payload = np.array(encoded_image).tobytes()
+    return base64.b64encode(payload)
 
 
 @fixture(scope="function")

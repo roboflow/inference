@@ -1,8 +1,8 @@
+import io
 import os
 import pickle
 import re
-import traceback
-from typing import Any
+from typing import Any, Union
 
 import cv2
 import numpy as np
@@ -47,7 +47,7 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         elif type == "file":
             np_image = cv2.imread(value, cv_imread_flags=cv_imread_flags)
         elif type == "multipart":
-            np_image = load_image_multipart(value, cv_imread_flags=cv_imread_flags)
+            np_image = load_image_from_buffer(value, cv_imread_flags=cv_imread_flags)
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
             np_image = load_image_from_numpy_str(value)
         elif type == "pil":
@@ -101,7 +101,7 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
         except Exception:
             pass
         try:
-            return load_image_multipart(value, cv_imread_flags=cv_imread_flags), True
+            return load_image_from_buffer(value, cv_imread_flags=cv_imread_flags), True
         except Exception:
             pass
         try:
@@ -116,7 +116,7 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
 pattern = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
-def load_image_base64(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
+def load_image_base64(value: Union[str, bytes], cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     """Loads an image from a base64 encoded string using OpenCV.
 
     Args:
@@ -131,10 +131,15 @@ def load_image_base64(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarra
     value = pattern.sub("", value)
     value = pybase64.b64decode(value)
     image_np = np.frombuffer(value, np.uint8)
-    return cv2.imdecode(image_np, cv_imread_flags)
+    result = cv2.imdecode(image_np, cv_imread_flags)
+    if result is None:
+        raise InputImageLoadError("Could not load valid image from base64 string.")
+    return result
 
-
-def load_image_multipart(value, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
+def load_image_from_buffer(
+    value: io.BytesIO,
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
+) -> np.ndarray:
     """Loads an image from a multipart-encoded input.
 
     Args:
@@ -145,7 +150,10 @@ def load_image_multipart(value, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     """
     value.seek(0)
     image_np = np.frombuffer(value.read(), np.uint8)
-    return cv2.imdecode(image_np, cv_imread_flags)
+    result = cv2.imdecode(image_np, cv_imread_flags)
+    if result is None:
+        raise InputImageLoadError("Could not load valid image from buffer.")
+    return result
 
 
 def load_image_from_numpy_str(value: bytes) -> np.ndarray:
