@@ -7,12 +7,6 @@ Inference supports running object detection, classification, instance segmentati
 You can [train and deploy your own custom model](https://github.com/roboflow/notebooks) or use one of the 50,000+
 [fine-tuned models shared by the community](https://universe.roboflow.com).
 
-There are three primary `inference` interfaces:
-
-* A Python-native package (`pip install inference`)
-* A self-hosted inference server (`inference server start`)
-* A [fully-managed, auto-scaling API](https://docs.roboflow.com).
-
 
 ## 🎥 Inference in action
 
@@ -180,6 +174,10 @@ inference infer {image_path} \
 ## 🔥 quickstart
 
 **Docker Quickstart**:
+
+>inference-sdk: Using the [`inference-sdk`](./inference_sdk/http_client.md) is the easiest way to interface with a Roboflow `inference` server.
+
+If you prefer to write your own client code:
 
 ```python
 import requests
