@@ -1,11 +1,15 @@
 name: Stop GPU Runner
 
+# on:
+#   workflow_run:
+#     workflows: ["Start GPU Runner"]
+#     branches: [feature/cross-platform-regression-tests]
+#     types:
+#       - completed
+
 on:
-  workflow_run:
-    workflows: ["Start GPU Runner"]
-    branches: [feature/cross-platform-regression-tests]
-    types:
-      - completed
+  pull_request:
+      branches: [main]
 
 jobs:
     start:
