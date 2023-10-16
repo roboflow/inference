@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.core.exceptions import PreProcessingError
 from inference.core.utils.preprocess import (
     static_crop_should_be_applied,
     contrast_adjustments_should_be_applied,
@@ -11,6 +12,7 @@ from inference.core.utils.preprocess import (
     take_static_crop,
     ContrastAdjustmentType,
     apply_contrast_adjustment,
+    prepare,
 )
 from inference.core.utils import preprocess
 
@@ -278,3 +280,19 @@ def test_apply_contrast_adjustment(
 
     # then
     assert result == expected_outcome
+
+
+@mock.patch.object(preprocess, "DISABLE_PREPROC_STATIC_CROP", False)
+@mock.patch.object(preprocess, "take_static_crop")
+def test_prepare_when_misconfiguration_error_is_encountered(
+    take_static_crop_mock: MagicMock,
+) -> None:
+    # given
+    take_static_crop_mock.side_effect = KeyError()
+
+    # when
+    with pytest.raises(PreProcessingError):
+        _ = prepare(
+            image=np.zeros((128, 128, 3), dtype=np.uint8),
+            preproc={"static-crop": {"enabled": True}},
+        )

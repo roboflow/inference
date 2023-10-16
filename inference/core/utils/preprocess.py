@@ -1,9 +1,9 @@
-import functools
 from enum import Enum
 from typing import Dict, Tuple
 
 import cv2
 import numpy as np
+from skimage.exposure import rescale_intensity
 
 from inference.core.env import (
     DISABLE_PREPROC_CONTRAST,
@@ -59,25 +59,34 @@ def prepare(
         The function uses global flags like `DISABLE_PREPROC_AUTO_ORIENT`, `DISABLE_PREPROC_STATIC_CROP`, etc.
         to conditionally enable or disable certain preprocessing steps.
     """
-    h, w = image.shape[0:2]
-    img_dims = (h, w)
-    if static_crop_should_be_applied(
-        preprocessing_config=preproc,
-        disable_preproc_static_crop=disable_preproc_static_crop,
-    ):
-        image = take_static_crop(image=image, crop_parameters=preproc[STATIC_CROP_KEY])
-    if contrast_adjustments_should_be_applied(
-        preprocessing_config=preproc,
-        disable_preproc_contrast=disable_preproc_contrast,
-    ):
-        adjustment_type = ContrastAdjustmentType(preproc[CONTRAST_KEY][TYPE_KEY])
-        image = apply_contrast_adjustment(image=image, adjustment_type=adjustment_type)
-    if grayscale_conversion_should_be_applied(
-        preprocessing_config=preproc,
-        disable_preproc_grayscale=disable_preproc_grayscale,
-    ):
-        image = apply_grayscale_conversion(image=image)
-    return image, img_dims
+    try:
+        h, w = image.shape[0:2]
+        img_dims = (h, w)
+        if static_crop_should_be_applied(
+            preprocessing_config=preproc,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        ):
+            image = take_static_crop(
+                image=image, crop_parameters=preproc[STATIC_CROP_KEY]
+            )
+        if contrast_adjustments_should_be_applied(
+            preprocessing_config=preproc,
+            disable_preproc_contrast=disable_preproc_contrast,
+        ):
+            adjustment_type = ContrastAdjustmentType(preproc[CONTRAST_KEY][TYPE_KEY])
+            image = apply_contrast_adjustment(
+                image=image, adjustment_type=adjustment_type
+            )
+        if grayscale_conversion_should_be_applied(
+            preprocessing_config=preproc,
+            disable_preproc_grayscale=disable_preproc_grayscale,
+        ):
+            image = apply_grayscale_conversion(image=image)
+        return image, img_dims
+    except KeyError as error:
+        raise PreProcessingError(
+            f"Pre-processing of image failed due to misconfiguration. Missing key: {error}."
+        ) from error
 
 
 def static_crop_should_be_applied(
@@ -123,7 +132,7 @@ def apply_contrast_adjustment(
 
 def apply_contrast_stretching(image: np.ndarray) -> np.ndarray:
     p2, p98 = np.percentile(image, (2, 98))
-    return rescale_intensity(image, in_range=(p2, p98))
+    return rescale_intensity(image, in_range=(p2, p98))  # type: ignore
 
 
 def apply_histogram_equalisation(image: np.ndarray) -> np.ndarray:
@@ -161,73 +170,3 @@ def grayscale_conversion_should_be_applied(
 def apply_grayscale_conversion(image: np.ndarray) -> np.ndarray:
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-
-
-### The following functions are included from scikit-image (https://github.com/scikit-image/scikit-image) ###
-### View copyright and license information here: https://github.com/scikit-image/scikit-image/blob/main/LICENSE.txt ###
-
-
-def rescale_intensity(
-    image: np.ndarray, in_range="image", out_range="dtype"
-) -> np.ndarray:
-    """
-    Return image after stretching or shrinking its intensity levels.
-
-    Args:
-        image (array): Image array.
-        in_range (str or 2-tuple, optional): Min and max intensity values of input image. Defaults to 'image'.
-        out_range (str or 2-tuple, optional): Min and max intensity values of output image. Defaults to 'dtype'.
-
-    Returns:
-        array: The rescaled image.
-
-    Note:
-        The possible values for `in_range` and `out_range` are:
-            - 'image': Use image min/max as the intensity range.
-            - 'dtype': Use min/max of the image's dtype as the intensity range.
-            - dtype-name: Use intensity range based on desired `dtype`. Must be valid key in `DTYPE_RANGE`.
-            - 2-tuple: Use `range_values` as explicit min/max intensities.
-    """
-
-    dtype = image.dtype.type
-
-    imin, imax = intensity_range(image, in_range)
-    omin, omax = intensity_range(image, out_range, clip_negative=(imin >= 0))
-
-    image = np.clip(image, imin, imax)
-
-    if imin != imax:
-        image = (image - imin) / float(imax - imin)
-    return np.asarray(image * (omax - omin) + omin, dtype=dtype)
-
-
-def intensity_range(image: np.ndarray, range_values="image", clip_negative=False):
-    """
-    Return image intensity range (min, max) based on the desired value type.
-
-    Args:
-        image (array): Input image.
-        range_values (str or 2-tuple, optional): The image intensity range configuration. Defaults to 'image'.
-            - 'image': Return image min/max as the range.
-            - 'dtype': Return min/max of the image's dtype as the range.
-            - dtype-name: Return intensity range based on desired `dtype`. Must be a valid key in `DTYPE_RANGE`.
-            - 2-tuple: Return `range_values` as min/max intensities.
-        clip_negative (bool, optional): If True, clip the negative range (i.e., return 0 for min intensity)
-                                        even if the image dtype allows negative values. Defaults to False.
-
-    Returns:
-        tuple: The minimum and maximum intensity of the image.
-    """
-    if range_values == "dtype":
-        range_values = image.dtype.type
-
-    if range_values == "image":
-        i_min = np.min(image)
-        i_max = np.max(image)
-    elif range_values in DTYPE_RANGE:
-        i_min, i_max = DTYPE_RANGE[range_values]
-        if clip_negative:
-            i_min = 0
-    else:
-        i_min, i_max = range_values
-    return i_min, i_max
