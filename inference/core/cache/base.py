@@ -1,5 +1,5 @@
-from typing import Optional, Any
 from contextlib import contextmanager
+from typing import Any, Optional
 
 
 class BaseCache:
@@ -92,7 +92,7 @@ class BaseCache:
         raise NotImplementedError()
 
     @contextmanager
-    def lock(self, key: str, expire:float = None) -> Any:
+    def lock(self, key: str, expire: float = None) -> Any:
         l = self.acquire_lock(key, expire=expire)
         try:
             yield l
