@@ -18,6 +18,15 @@ from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
+def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
+    np_image, is_bgr = load_image(
+        value, disable_preproc_auto_orient=disable_preproc_auto_orient
+    )
+    if is_bgr:
+        np_image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
+    return np_image
+
+
 def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
     """Loads an image based on the specified type and value.
 
@@ -66,15 +75,6 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
 
     return np_image, is_bgr
-
-
-def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
-    np_image, is_bgr = load_image(
-        value, disable_preproc_auto_orient=disable_preproc_auto_orient
-    )
-    if is_bgr:
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
-    return np_image
 
 
 def load_image_inferred(
