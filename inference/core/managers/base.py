@@ -256,6 +256,14 @@ class ModelManager:
         """
         return self._models.keys()
 
+    def models(self) -> Dict[str, Model]:
+        """Retrieve the models dictionary from the manager.
+
+        Returns:
+            Dict[str, Model]: The keys of the models in the manager.
+        """
+        return self._models
+
     def describe_models(self) -> List[ModelDescription]:
         return [
             ModelDescription(
