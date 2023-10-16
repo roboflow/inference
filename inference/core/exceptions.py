@@ -132,3 +132,7 @@ class InvalidNumpyInput(InputImageLoadError):
 
 class InvalidImageTypeDeclared(InputImageLoadError):
     pass
+
+
+class PreProcessingError(Exception):
+    pass
