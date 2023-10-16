@@ -4,7 +4,7 @@ from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 
 
-class ModelManagerDecorator:
+class ModelManagerDecorator(ModelManager):
     """Basic decorator, it acts like a `ModelManager` and contains a `ModelManager`.
 
     Args:
@@ -24,6 +24,10 @@ class ModelManagerDecorator:
         keys: Returns the keys (model IDs) from the manager.
     """
 
+    @property
+    def _models(self):
+        raise ValueError("Should only be accessing self.model_manager._models")
+
     def __init__(self, model_manager: ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
@@ -41,7 +45,7 @@ class ModelManagerDecorator:
             return
         self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias)
 
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest
     ) -> InferenceResponse:
         """Processes a complete inference request.
@@ -53,7 +57,7 @@ class ModelManagerDecorator:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        return self.model_manager.infer_from_request(model_id, request)
+        return await self.model_manager.infer_from_request(model_id, request)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request.
