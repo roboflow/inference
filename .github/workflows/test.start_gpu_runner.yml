@@ -1,0 +1,28 @@
+name: Start GPU Runner
+
+on:
+    pull_request:
+        branches: [main]
+
+jobs:
+    start:
+        runs-on: ubuntu-latest
+      # Add "id-token" with the intended permissions.
+        permissions:
+            contents: 'read'
+            id-token: 'write'
+    
+        steps:
+        - id: 'auth'
+          uses: 'google-github-actions/auth@v1'
+          with:
+            workload_identity_provider: 'projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github'
+            service_account: 'github-action@roboflow-staging.iam.gserviceaccount.com'
+    
+        - name: 'Set up Cloud SDK'
+          uses: 'google-github-actions/setup-gcloud@v1'
+          with:
+            version: '>= 363.0.0'
+    
+        - name: 'Use gcloud CLI'
+          run: 'gcloud info'
