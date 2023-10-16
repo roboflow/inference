@@ -13,7 +13,8 @@ from requests_mock import Mocker
 
 from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
 from inference.core.utils.image_utils import load_image_from_url, load_image_from_numpy_str, load_image_from_buffer, \
-    load_image_base64, load_image_inferred, attempt_loading_image_from_string, load_image_from_encoded_bytes
+    load_image_base64, load_image_inferred, attempt_loading_image_from_string, load_image_from_encoded_bytes, \
+    choose_image_decoding_flags
 from inference.core.utils import image_utils
 
 
@@ -374,3 +375,19 @@ def test_attempt_loading_image_from_string_when_parsing_should_fail(
     # when
     with pytest.raises(InputImageLoadError):
         _ = attempt_loading_image_from_string(value=value)
+
+
+def test_choose_image_decoding_flags_when_disabled_auto_orient() -> None:
+    # when
+    result = choose_image_decoding_flags(disable_preproc_auto_orient=True)
+
+    # then
+    assert result == cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+
+
+def test_choose_image_decoding_flags_when_enabled_auto_orient() -> None:
+    # when
+    result = choose_image_decoding_flags(disable_preproc_auto_orient=False)
+
+    # then
+    assert result == cv2.IMREAD_COLOR

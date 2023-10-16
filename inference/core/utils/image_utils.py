@@ -27,7 +27,7 @@ def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
     return np_image
 
 
-def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
+def load_image(value: Any, disable_preproc_auto_orient: bool = False) -> np.ndarray:
     """Loads an image based on the specified type and value.
 
     Args:
@@ -41,9 +41,9 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         NotImplementedError: If the specified image type is not supported.
         InvalidNumpyInput: If the numpy input method is used and the input data is invalid.
     """
-    cv_imread_flags = cv2.IMREAD_COLOR
-    if disable_preproc_auto_orient:
-        cv_imread_flags = cv_imread_flags | cv2.IMREAD_IGNORE_ORIENTATION
+    cv_imread_flags = choose_image_decoding_flags(
+        disable_preproc_auto_orient=disable_preproc_auto_orient
+    )
     type = None
     if isinstance(value, InferenceRequestImage):
         type = value.type
@@ -75,6 +75,13 @@ def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
         np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
 
     return np_image, is_bgr
+
+
+def choose_image_decoding_flags(disable_preproc_auto_orient: bool) -> int:
+    cv_imread_flags = cv2.IMREAD_COLOR
+    if disable_preproc_auto_orient:
+        cv_imread_flags = cv_imread_flags | cv2.IMREAD_IGNORE_ORIENTATION
+    return cv_imread_flags
 
 
 def load_image_inferred(
