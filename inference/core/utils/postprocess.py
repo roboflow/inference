@@ -1,14 +1,18 @@
 from copy import deepcopy
 from time import perf_counter
-from typing import List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
 
-from inference.core.env import DISABLE_PREPROC_STATIC_CROP
+from inference.core.exceptions import PostProcessingError
+from inference.core.utils.preprocess import (
+    STATIC_CROP_KEY,
+    static_crop_should_be_applied,
+)
 
 
-def cosine_similarity(a, b):
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> Union[np.number, np.ndarray]:
     """
     Compute the cosine similarity between two vectors.
 
@@ -22,26 +26,23 @@ def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
-def crop_mask(masks, boxes):
-    """
-    "Crop" predicted masks by zeroing out everything not in the predicted bbox.
-    Vectorized by Chong (thanks Chong).
+def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
+    """Converts binary masks to polygonal segments.
 
     Args:
-        - masks should be a size [h, w, n] tensor of masks
-        - boxes should be a size [n, 4] tensor of bbox coords in relative point form
+        masks (numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
+
+    Returns:
+        list: A list of segments, where each segment is obtained by converting the corresponding mask.
     """
-
-    n, h, w = masks.shape
-    x1, y1, x2, y2 = np.split(boxes[:, :, None], 4, 1)  # x1 shape(1,1,n)
-    r = np.arange(w, dtype=x1.dtype)[None, None, :]  # rows shape(1,w,1)
-    c = np.arange(h, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
-
-    masks = masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
-    return masks
+    segments = []
+    masks = (masks * 255.0).astype(np.uint8)
+    for mask in masks:
+        segments.append(mask2poly(mask))
+    return segments
 
 
-def mask2poly_(mask):
+def mask2poly(mask: np.ndarray) -> np.ndarray:
     """
     Find contours in the mask and return them as a float32 array.
 
@@ -59,66 +60,6 @@ def mask2poly_(mask):
     else:
         contours = np.zeros((0, 2))
     return contours.astype("float32")
-
-
-def mask2poly(masks):
-    """Converts binary masks to polygonal segments.
-
-    Args:
-        masks (numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
-
-    Returns:
-        list: A list of segments, where each segment is obtained by converting the corresponding mask.
-    """
-    segments = []
-    masks = (masks * 255.0).astype(np.uint8)
-    for mask in masks:
-        segments.append(mask2poly_(mask))
-    return segments
-
-
-def generate_transform_from_proc(
-    orig_shape,
-    preproc,
-    disable_preproc_static_crop: bool = False,
-):
-    """
-    Generates a transformation based on preprocessing configuration.
-
-    Args:
-        orig_shape (tuple): The original shape of the object (e.g., image).
-        preproc (dict): Preprocessing configuration dictionary, containing information such as static cropping.
-        disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
-
-    Returns:
-        tuple: A tuple containing the shift in the x and y directions, and the updated original shape after cropping.
-    """
-    if (
-        "static-crop" in preproc.keys()
-        and not DISABLE_PREPROC_STATIC_CROP
-        and not disable_preproc_static_crop
-        and preproc["static-crop"]["enabled"] == True
-    ):
-        x_min = preproc["static-crop"]["x_min"] / 100
-        y_min = preproc["static-crop"]["y_min"] / 100
-        x_max = preproc["static-crop"]["x_max"] / 100
-        y_max = preproc["static-crop"]["y_max"] / 100
-    else:
-        x_min = 0
-        y_min = 0
-        x_max = 1
-        y_max = 1
-    crop_shift_x, crop_shift_y = (
-        int(x_min * orig_shape[0]),
-        int(y_min * orig_shape[1]),
-    )
-    cropped_percent_x = x_max - x_min
-    cropped_percent_y = y_max - y_min
-    orig_shape = (
-        orig_shape[0] * cropped_percent_x,
-        orig_shape[1] * cropped_percent_y,
-    )
-    return (crop_shift_x, crop_shift_y), orig_shape
 
 
 def postprocess_predictions(
@@ -158,7 +99,7 @@ def postprocess_predictions(
         # Shape before resize to infer shape
         orig_shape = img_dims[i][-1::-1]
         # Adjust shape and get shift pased on static crop preproc
-        (crop_shift_x, crop_shift_y), orig_shape = generate_transform_from_proc(
+        (crop_shift_x, crop_shift_y), orig_shape = get_static_crop_dimensions(
             orig_shape, preproc, disable_preproc_static_crop=disable_preproc_static_crop
         )
         if resize_method == "Stretch to":
@@ -336,6 +277,25 @@ def process_mask_fast(protos, masks_in, bboxes, shape):
     return masks
 
 
+def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """
+    "Crop" predicted masks by zeroing out everything not in the predicted bbox.
+    Vectorized by Chong (thanks Chong).
+
+    Args:
+        - masks should be a size [h, w, n] tensor of masks
+        - boxes should be a size [n, 4] tensor of bbox coords in relative point form
+    """
+
+    n, h, w = masks.shape
+    x1, y1, x2, y2 = np.split(boxes[:, :, None], 4, 1)  # x1 shape(1,1,n)
+    r = np.arange(w, dtype=x1.dtype)[None, None, :]  # rows shape(1,w,1)
+    c = np.arange(h, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
+
+    masks = masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
+    return masks
+
+
 def scale_polys(
     img1_shape, polys, img0_shape, preproc, ratio_pad=None, resize_method="Stretch to"
 ):
@@ -355,7 +315,7 @@ def scale_polys(
     Returns:
         list of list of tuple: A list of shifted and scaled polygons.
     """
-    (crop_shift_x, crop_shift_y), img0_shape = generate_transform_from_proc(
+    (crop_shift_x, crop_shift_y), img0_shape = get_static_crop_dimensions(
         img0_shape, preproc
     )
     new_polys = []
@@ -386,6 +346,55 @@ def scale_polys(
         poly = [(p[0] + crop_shift_x, p[1] + crop_shift_y) for p in poly]
         shifted_polys.append(poly)
     return shifted_polys
+
+
+def get_static_crop_dimensions(
+    orig_shape: Tuple[int, int],
+    preproc: dict,
+    disable_preproc_static_crop: bool = False,
+) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    """
+    Generates a transformation based on preprocessing configuration.
+
+    Args:
+        orig_shape (tuple): The original shape of the object (e.g., image).
+        preproc (dict): Preprocessing configuration dictionary, containing information such as static cropping.
+        disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
+
+    Returns:
+        tuple: A tuple containing the shift in the x and y directions, and the updated original shape after cropping.
+    """
+    try:
+        if static_crop_should_be_applied(
+            preprocessing_config=preproc,
+            disable_preproc_static_crop=disable_preproc_static_crop,
+        ):
+            x_min, y_min, x_max, y_max = standardise_static_crop(
+                static_crop_config=preproc[STATIC_CROP_KEY]
+            )
+        else:
+            x_min, y_min, x_max, y_max = 0, 0, 1, 1
+        crop_shift_x, crop_shift_y = (
+            round(x_min * orig_shape[0]),
+            round(y_min * orig_shape[1]),
+        )
+        cropped_percent_x = x_max - x_min
+        cropped_percent_y = y_max - y_min
+        orig_shape = (
+            round(orig_shape[0] * cropped_percent_x),
+            round(orig_shape[1] * cropped_percent_y),
+        )
+        return (crop_shift_x, crop_shift_y), orig_shape
+    except KeyError as error:
+        raise PostProcessingError(
+            f"Could not find a proper configuration key {error} in post-processing."
+        )
+
+
+def standardise_static_crop(
+    static_crop_config: Dict[str, int]
+) -> Tuple[float, float, float, float]:
+    return tuple(static_crop_config[key] / 100 for key in ["x_min", "y_min", "x_max", "y_max"])  # type: ignore
 
 
 def sigmoid(x):

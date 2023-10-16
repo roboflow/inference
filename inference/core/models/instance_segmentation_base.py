@@ -14,7 +14,7 @@ from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
-    mask2poly,
+    masks2poly,
     postprocess_predictions,
     process_mask_accurate,
     process_mask_fast,
@@ -159,7 +159,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     raise InvalidMaskDecodeArgument(
                         f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                     )
-                polys = mask2poly(batch_masks)
+                polys = masks2poly(batch_masks)
                 pred[:, :4] = postprocess_predictions(
                     [pred[:, :4]],
                     infer_shape,

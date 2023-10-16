@@ -14,7 +14,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     crop_mask,
-    mask2poly,
+    masks2poly,
     postprocess_predictions,
     scale_polys,
 )
@@ -179,7 +179,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
                 masks = predictions[batch_idx, :, 7:]
                 proto = proto_data[batch_idx]
                 decoded_masks = self.decode_masks(boxes, masks, proto, img_in_shape[2:])
-                polys = mask2poly(decoded_masks)
+                polys = masks2poly(decoded_masks)
                 infer_shape = (self.img_size_w, self.img_size_h)
                 boxes = postprocess_predictions(
                     [boxes], infer_shape, [img_dim], self.preproc, self.resize_method

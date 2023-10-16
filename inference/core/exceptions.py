@@ -136,3 +136,7 @@ class InvalidImageTypeDeclared(InputImageLoadError):
 
 class PreProcessingError(Exception):
     pass
+
+
+class PostProcessingError(Exception):
+    pass
