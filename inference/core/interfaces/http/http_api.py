@@ -201,7 +201,7 @@ class HttpInterface(BaseInterface):
         self.app = app
         self.model_manager = model_manager
 
-        def process_inference_request(
+        async def process_inference_request(
             inference_request: M.InferenceRequest,
         ) -> M.InferenceResponse:
             """Processes an inference request by calling the appropriate model.
@@ -215,7 +215,7 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 inference_request.model_id, inference_request.api_key
             )
-            return self.model_manager.infer_from_request(
+            return await self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request
             )
 
@@ -411,7 +411,7 @@ class HttpInterface(BaseInterface):
                     Union[M.ObjectDetectionInferenceResponse, List[M.ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
 
-                return process_inference_request(inference_request)
+                return await process_inference_request(inference_request)
 
             @app.post(
                 "/infer/instance_segmentation",
@@ -432,7 +432,7 @@ class HttpInterface(BaseInterface):
                     M.InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
 
-                return process_inference_request(inference_request)
+                return await process_inference_request(inference_request)
 
             @app.post(
                 "/infer/classification",
@@ -456,7 +456,7 @@ class HttpInterface(BaseInterface):
                     Union[M.ClassificationInferenceResponse, M.MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
 
-                return process_inference_request(inference_request)
+                return await process_inference_request(inference_request)
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
@@ -488,7 +488,7 @@ class HttpInterface(BaseInterface):
                         M.ClipEmbeddingResponse: The response containing the embedded image.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -525,7 +525,7 @@ class HttpInterface(BaseInterface):
                         M.ClipEmbeddingResponse: The response containing the embedded text.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -562,7 +562,7 @@ class HttpInterface(BaseInterface):
                         M.ClipCompareResponse: The response containing the similarity scores.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -601,7 +601,7 @@ class HttpInterface(BaseInterface):
                         M.SamEmbeddingResponse or Response: The response containing the embedded image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_from_request(
+                    model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -643,7 +643,7 @@ class HttpInterface(BaseInterface):
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_from_request(
+                    model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -689,7 +689,7 @@ class HttpInterface(BaseInterface):
                         gaze_model_id = load_gaze_model(
                             inference_request, api_key=api_key
                         )
-                        response = self.model_manager.infer_from_request(
+                        response = await self.model_manager.infer_from_request(
                             gaze_model_id, inference_request
                         )
                         if LAMBDA:
@@ -891,7 +891,7 @@ class HttpInterface(BaseInterface):
                     **args,
                 )
 
-                inference_response = self.model_manager.infer_from_request(
+                inference_response = await self.model_manager.infer_from_request(
                     inference_request.model_id, inference_request
                 )
 

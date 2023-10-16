@@ -66,6 +66,10 @@ class ModelManager:
         """
         if model_id not in self:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
+    
+    async def model_infer(self, model_id: str, request: InferenceRequest):
+        self.check_for_model(model_id)
+        return self._models[model_id].infer_from_request(request)
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest
@@ -80,10 +84,7 @@ class ModelManager:
             InferenceResponse: The response from the inference.
         """
         try:
-            self.check_for_model(model_id)
-
-            rtn_val = self._models[model_id].infer_from_request(request)
-
+            rtn_val = await self.model_infer(model_id, request)
             finish_time = time.time()
             if not DISABLE_INFERENCE_CACHE:
                 cache.zadd(
