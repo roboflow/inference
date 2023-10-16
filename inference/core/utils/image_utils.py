@@ -1,19 +1,21 @@
-import io
 import os
 import pickle
 import re
-from typing import Any, Union
+from typing import Any, Tuple, Union
 
 import cv2
 import numpy as np
 import pybase64
 import requests
+from _io import _IOBase
 from PIL import Image
 from requests import RequestException
 
 from inference.core.data_models import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
-from inference.core.exceptions import InvalidNumpyInput, InputImageLoadError
+from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
+
+BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
 def load_image(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
@@ -75,7 +77,10 @@ def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
     return np_image
 
 
-def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.Image:
+def load_image_inferred(
+    value: Any,
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
+) -> Tuple[np.ndarray, bool]:
     """Tries to infer the image type from the value and loads it.
 
     Args:
@@ -92,31 +97,43 @@ def load_image_inferred(value: Any, cv_imread_flags=cv2.IMREAD_COLOR) -> Image.I
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
-        return load_image_from_url(value, cv_imread_flags=cv_imread_flags), True
-    elif isinstance(value, str) and os.path.exists(value):
+        return load_image_from_url(value=value, cv_imread_flags=cv_imread_flags), True
+    elif isinstance(value, str) and os.path.isfile(value):
         return cv2.imread(value, cv_imread_flags), True
-    elif isinstance(value, str):
-        try:
-            return load_image_base64(value, cv_imread_flags=cv_imread_flags), True
-        except Exception:
-            pass
-        try:
-            return load_image_from_buffer(value, cv_imread_flags=cv_imread_flags), True
-        except Exception:
-            pass
-        try:
-            return load_image_from_numpy_str(value), True
-        except Exception:
-            pass
-    raise NotImplementedError(
-        f"Could not infer image type from value of type {type(value)}."
-    )
+    else:
+        return attempt_loading_image_from_string(
+            value=value, cv_imread_flags=cv_imread_flags
+        )
 
 
-pattern = re.compile(r"^data:image\/[a-z]+;base64,")
+def attempt_loading_image_from_string(
+    value: Union[str, bytes, bytearray, _IOBase],
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
+) -> Tuple[np.ndarray, bool]:
+    try:
+        return load_image_base64(value=value, cv_imread_flags=cv_imread_flags), True
+    except:
+        pass
+    try:
+        return (
+            load_image_from_encoded_bytes(value=value, cv_imread_flags=cv_imread_flags),
+            True,
+        )
+    except:
+        pass
+    try:
+        return (
+            load_image_from_buffer(value=value, cv_imread_flags=cv_imread_flags),
+            True,
+        )
+    except:
+        pass
+    return load_image_from_numpy_str(value=value), True
 
 
-def load_image_base64(value: Union[str, bytes], cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
+def load_image_base64(
+    value: Union[str, bytes], cv_imread_flags=cv2.IMREAD_COLOR
+) -> np.ndarray:
     """Loads an image from a base64 encoded string using OpenCV.
 
     Args:
@@ -128,7 +145,7 @@ def load_image_base64(value: Union[str, bytes], cv_imread_flags=cv2.IMREAD_COLOR
     # New routes accept images via json body (str), legacy routes accept bytes which need to be decoded as strings
     if not isinstance(value, str):
         value = value.decode("utf-8")
-    value = pattern.sub("", value)
+    value = BASE64_DATA_TYPE_PATTERN.sub("", value)
     value = pybase64.b64decode(value)
     image_np = np.frombuffer(value, np.uint8)
     result = cv2.imdecode(image_np, cv_imread_flags)
@@ -136,8 +153,9 @@ def load_image_base64(value: Union[str, bytes], cv_imread_flags=cv2.IMREAD_COLOR
         raise InputImageLoadError("Could not load valid image from base64 string.")
     return result
 
+
 def load_image_from_buffer(
-    value: io.BytesIO,
+    value: _IOBase,
     cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> np.ndarray:
     """Loads an image from a multipart-encoded input.
@@ -194,7 +212,9 @@ def load_image_from_numpy_str(value: bytes) -> np.ndarray:
     return data
 
 
-def load_image_from_url(value: str, cv_imread_flags: int = cv2.IMREAD_COLOR) -> np.ndarray:
+def load_image_from_url(
+    value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
+) -> np.ndarray:
     """Loads an image from a given URL.
 
     Args:
@@ -206,14 +226,22 @@ def load_image_from_url(value: str, cv_imread_flags: int = cv2.IMREAD_COLOR) -> 
     try:
         response = requests.get(value, stream=True)
         response.raise_for_status()
-        image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
-        image = cv2.imdecode(image_np, cv_imread_flags)
-        if image is None:
-            raise InputImageLoadError(
-                f"Could not parse response content from url {value} into image."
-            )
-        return image
+        return load_image_from_encoded_bytes(
+            value=response.content, cv_imread_flags=cv_imread_flags
+        )
     except (RequestException, ConnectionError) as error:
         raise InputImageLoadError(
             f"Error while loading image from url: {value}. Details: {error}"
         )
+
+
+def load_image_from_encoded_bytes(
+    value: bytes, cv_imread_flags: int = cv2.IMREAD_COLOR
+) -> np.ndarray:
+    image_np = np.asarray(bytearray(value), dtype=np.uint8)
+    image = cv2.imdecode(image_np, cv_imread_flags)
+    if image is None:
+        raise InputImageLoadError(
+            f"Could not parse response content from url {value} into image."
+        )
+    return image

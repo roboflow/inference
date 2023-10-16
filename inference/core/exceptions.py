@@ -61,6 +61,7 @@ class InvalidMaskDecodeArgument(Exception):
         message (str): Optional message describing the error.
     """
 
+
 class MissingApiKeyError(Exception):
     """Raised when the API key is missing.
 
