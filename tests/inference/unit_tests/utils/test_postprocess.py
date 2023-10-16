@@ -7,11 +7,13 @@ from inference.core.utils.postprocess import (
     crop_mask,
     standardise_static_crop,
     get_static_crop_dimensions,
-    apply_crop_shift_to_boxes,
+    shift_bboxes,
     clip_boxes_coordinates,
     undo_image_padding_for_predicted_boxes,
     stretch_crop_predictions,
     post_process_bboxes,
+    sigmoid,
+    scale_bboxes,
 )
 
 
@@ -143,10 +145,10 @@ def test_apply_crop_shift_to_boxes() -> None:
     )
 
     # when
-    result = apply_crop_shift_to_boxes(
-        predicted_bboxes=predicted_bboxes,
-        crop_shift_x=10,
-        crop_shift_y=20,
+    result = shift_bboxes(
+        bboxes=predicted_bboxes,
+        shift_x=10,
+        shift_y=20,
     )
 
     # then
@@ -325,6 +327,60 @@ def test_post_process_bboxes_when_crop_with_padding_used() -> None:
         },
         resize_method="Fit (black edges) in",
     )
+
     # then
     assert np.array(result).shape == (1, 2, 5)
     assert np.allclose(np.array(result), expected_result)
+
+
+@pytest.mark.parametrize(
+    "x, expected_result",
+    [
+        (0.0, 0.5),
+        (1.0, 0.73105),
+        (-1.0, 0.26894),
+        (np.array([0.0, 1.0, -1.0]), np.array([0.5, 0.73105, 0.26894])),
+    ],
+)
+def test_sigmoid(x: float, expected_result: float) -> None:
+    # when
+    result = sigmoid(x)
+
+    # then
+    assert np.allclose(result, expected_result, rtol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "bboxes, scale_x, scale_y, expected_result",
+    [
+        (
+            np.array([[1.0, 2, 3, 4], [5, 6, 7, 8]]),
+            2.0,
+            4.0,
+            np.array([[2.0, 8, 6, 16], [10, 24, 14, 32]]),
+        ),
+        (
+            np.array([[1.0, 2, 3, 4], [5, 6, 7, 8]]),
+            1.0,
+            1.0,
+            np.array([[1.0, 2, 3, 4], [5, 6, 7, 8]]),
+        ),
+        (
+            np.array([[1.0, 2, 3, 4], [5, 6, 7, 8]]),
+            0.5,
+            0.5,
+            np.array([[0.5, 1.0, 1.5, 2], [2.5, 3, 3.5, 4]]),
+        ),
+    ],
+)
+def test_scale_bboxes(
+    bboxes: np.ndarray,
+    scale_x: float,
+    scale_y: float,
+    expected_result: np.ndarray,
+) -> None:
+    # when
+    result = scale_bboxes(bboxes=bboxes, scale_x=scale_x, scale_y=scale_y)
+
+    # then
+    assert np.allclose(result, expected_result)

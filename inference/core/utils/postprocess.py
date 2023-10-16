@@ -1,6 +1,5 @@
 from copy import deepcopy
-from time import perf_counter
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -120,10 +119,10 @@ def post_process_bboxes(
             predicted_bboxes=predicted_bboxes,
             origin_shape=origin_shape,
         )
-        predicted_bboxes = apply_crop_shift_to_boxes(
-            predicted_bboxes=predicted_bboxes,
-            crop_shift_x=crop_shift_x,
-            crop_shift_y=crop_shift_y,
+        predicted_bboxes = shift_bboxes(
+            bboxes=predicted_bboxes,
+            shift_x=crop_shift_x,
+            shift_y=crop_shift_y,
         )
         np_batch_predictions[:, :4] = predicted_bboxes
         scaled_predictions.append(np_batch_predictions.tolist())
@@ -137,11 +136,11 @@ def stretch_crop_predictions(
 ) -> np.ndarray:
     scale_height = crop_shape[1] / infer_shape[1]
     scale_width = crop_shape[0] / infer_shape[0]
-    predicted_bboxes[:, 0] *= scale_width
-    predicted_bboxes[:, 2] *= scale_width
-    predicted_bboxes[:, 1] *= scale_height
-    predicted_bboxes[:, 3] *= scale_height
-    return predicted_bboxes
+    return scale_bboxes(
+        bboxes=predicted_bboxes,
+        scale_x=scale_width,
+        scale_y=scale_height,
+    )
 
 
 def undo_image_padding_for_predicted_boxes(
@@ -154,10 +153,9 @@ def undo_image_padding_for_predicted_boxes(
     inter_h = round(origin_shape[1] * scale)
     pad_x = (infer_shape[0] - inter_w) / 2
     pad_y = (infer_shape[1] - inter_h) / 2
-    predicted_bboxes[:, 0] -= pad_x
-    predicted_bboxes[:, 2] -= pad_x
-    predicted_bboxes[:, 1] -= pad_y
-    predicted_bboxes[:, 3] -= pad_y
+    predicted_bboxes = shift_bboxes(
+        bboxes=predicted_bboxes, shift_x=-pad_x, shift_y=-pad_y
+    )
     predicted_bboxes /= scale
     return predicted_bboxes
 
@@ -181,19 +179,24 @@ def clip_boxes_coordinates(
     return predicted_bboxes
 
 
-def apply_crop_shift_to_boxes(
-    predicted_bboxes: np.ndarray,
-    crop_shift_x: int,
-    crop_shift_y: int,
+def shift_bboxes(
+    bboxes: np.ndarray,
+    shift_x: Union[int, float],
+    shift_y: Union[int, float],
 ) -> np.ndarray:
-    predicted_bboxes[:, 0] += crop_shift_x
-    predicted_bboxes[:, 2] += crop_shift_x
-    predicted_bboxes[:, 1] += crop_shift_y
-    predicted_bboxes[:, 3] += crop_shift_y
-    return predicted_bboxes
+    bboxes[:, 0] += shift_x
+    bboxes[:, 2] += shift_x
+    bboxes[:, 1] += shift_y
+    bboxes[:, 3] += shift_y
+    return bboxes
 
 
-def process_mask_accurate(protos, masks_in, bboxes, shape):
+def process_mask_accurate(
+    protos: np.ndarray,
+    masks_in: np.ndarray,
+    bboxes: np.ndarray,
+    shape: Tuple[int, int],
+) -> np.ndarray:
     """Returns masks that are the size of the original image.
 
     Args:
@@ -205,17 +208,11 @@ def process_mask_accurate(protos, masks_in, bboxes, shape):
     Returns:
         numpy.ndarray: Processed masks.
     """
-    c, mh, mw = protos.shape  # CHW
-    masks = protos.astype(np.float32)
-    masks = masks.reshape((c, -1))
-    masks = masks_in @ masks
-    masks = sigmoid(masks)
-    masks = masks.reshape((-1, mh, mw))
-    gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
-    pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = int(pad[1]), int(pad[0])  # y, x
-    bottom, right = int(mh - pad[1]), int(mw - pad[0])
-    masks = masks[:, top:bottom, left:right]
+    masks = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
 
     # Order = 1 -> bilinear
     if len(masks.shape) == 2:
@@ -230,7 +227,13 @@ def process_mask_accurate(protos, masks_in, bboxes, shape):
     return masks
 
 
-def process_mask_tradeoff(protos, masks_in, bboxes, shape, tradeoff_factor):
+def process_mask_tradeoff(
+    protos: np.ndarray,
+    masks_in: np.ndarray,
+    bboxes: np.ndarray,
+    shape: Tuple[int, int],
+    tradeoff_factor: float,
+) -> np.ndarray:
     """Returns masks that are the size of the original image with a tradeoff factor applied.
 
     Args:
@@ -244,16 +247,11 @@ def process_mask_tradeoff(protos, masks_in, bboxes, shape, tradeoff_factor):
         numpy.ndarray: Processed masks.
     """
     c, mh, mw = protos.shape  # CHW
-    masks = protos.astype(np.float32)
-    masks = masks.reshape((c, -1))
-    masks = masks_in @ masks
-    masks = sigmoid(masks)
-    masks = masks.reshape((-1, mh, mw))
-    gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
-    pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = int(pad[1]), int(pad[0])  # y, x
-    bottom, right = int(mh - pad[1]), int(mw - pad[0])
-    masks = masks[:, top:bottom, left:right]
+    masks = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
 
     # Order = 1 -> bilinear
     if len(masks.shape) == 2:
@@ -267,20 +265,24 @@ def process_mask_tradeoff(protos, masks_in, bboxes, shape, tradeoff_factor):
         masks = cv2.resize(masks, size, cv2.INTER_LINEAR)
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=2)
-
     masks = masks.transpose((2, 0, 1))
     c, mh, mw = masks.shape
-    downsampled_boxes = deepcopy(bboxes)
-    downsampled_boxes[:, 0] *= mw / iw
-    downsampled_boxes[:, 2] *= mw / iw
-    downsampled_boxes[:, 1] *= mh / ih
-    downsampled_boxes[:, 3] *= mh / ih
-    masks = crop_mask(masks, downsampled_boxes)
+    down_sampled_boxes = scale_bboxes(
+        bboxes=deepcopy(bboxes),
+        scale_x=mw / iw,
+        scale_y=mh / ih,
+    )
+    masks = crop_mask(masks, down_sampled_boxes)
     masks[masks < 0.5] = 0
     return masks
 
 
-def process_mask_fast(protos, masks_in, bboxes, shape):
+def process_mask_fast(
+    protos: np.ndarray,
+    masks_in: np.ndarray,
+    bboxes: np.ndarray,
+    shape: Tuple[int, int],
+) -> np.ndarray:
     """Returns masks in their original size.
 
     Args:
@@ -292,9 +294,29 @@ def process_mask_fast(protos, masks_in, bboxes, shape):
     Returns:
         numpy.ndarray: Processed masks.
     """
-    t1 = perf_counter()
-    c, mh, mw = protos.shape  # CHW
     ih, iw = shape
+    c, mh, mw = protos.shape  # CHW
+    masks = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+    down_sampled_boxes = scale_bboxes(
+        bboxes=deepcopy(bboxes),
+        scale_x=mw / iw,
+        scale_y=mh / ih,
+    )
+    masks = crop_mask(masks, down_sampled_boxes)
+    masks[masks < 0.5] = 0
+    return masks
+
+
+def preprocess_segmentation_masks(
+    protos: np.ndarray,
+    masks_in: np.ndarray,
+    shape: Tuple[int, int],
+) -> np.ndarray:
+    c, mh, mw = protos.shape  # CHW
     masks = protos.astype(np.float32)
     masks = masks.reshape((c, -1))
     masks = masks_in @ masks
@@ -304,17 +326,15 @@ def process_mask_fast(protos, masks_in, bboxes, shape):
     pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
     top, left = int(pad[1]), int(pad[0])  # y, x
     bottom, right = int(mh - pad[1]), int(mw - pad[0])
-    masks = masks[:, top:bottom, left:right]
+    return masks[:, top:bottom, left:right]
 
-    downsampled_boxes = deepcopy(bboxes)
-    downsampled_boxes[:, 0] *= mw / iw
-    downsampled_boxes[:, 2] *= mw / iw
-    downsampled_boxes[:, 1] *= mh / ih
-    downsampled_boxes[:, 3] *= mh / ih
 
-    masks = crop_mask(masks, downsampled_boxes)
-    masks[masks < 0.5] = 0
-    return masks
+def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
+    bboxes[:, 0] *= scale_x
+    bboxes[:, 2] *= scale_x
+    bboxes[:, 1] *= scale_y
+    bboxes[:, 3] *= scale_y
+    return bboxes
 
 
 def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
@@ -337,8 +357,13 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
 
 def scale_polys(
-    img1_shape, polys, img0_shape, preproc, ratio_pad=None, resize_method="Stretch to"
-):
+    img1_shape: Tuple[int, int],
+    polys: List[List[Tuple[float, float]]],
+    img0_shape: Tuple[int, int],
+    preproc: dict,
+    ratio_pad: Optional[Tuple[int, int]] = None,
+    resize_method: str = "Stretch to",
+) -> List[List[Tuple[float, float]]]:
     """Scales and shifts polygons based on the given image shapes and preprocessing method.
 
     This function performs polygon scaling and shifting based on the specified resizing method and
@@ -362,10 +387,12 @@ def scale_polys(
     if resize_method == "Stretch to":
         height_ratio = img0_shape[0] / img1_shape[0]
         width_ratio = img0_shape[1] / img1_shape[1]
-        for poly in polys:
-            poly = [(p[0] * width_ratio, p[1] * height_ratio) for p in poly]
-            new_polys.append(poly)
-    elif resize_method in ["Fit (black edges) in", "Fit (white edges) in"]:
+        new_polys = scale_polygons(
+            polygons=polys,
+            x_scale=width_ratio,
+            y_scale=height_ratio,
+        )
+    elif resize_method in {"Fit (black edges) in", "Fit (white edges) in"}:
         # Rescale boxes (xyxy) from img1_shape to img0_shape
         if ratio_pad is None:  # calculate from img0_shape
             gain = min(
@@ -386,6 +413,18 @@ def scale_polys(
         poly = [(p[0] + crop_shift_x, p[1] + crop_shift_y) for p in poly]
         shifted_polys.append(poly)
     return shifted_polys
+
+
+def scale_polygons(
+    polygons: List[List[Tuple[float, float]]],
+    x_scale: float,
+    y_scale: float,
+) -> List[List[Tuple[float, float]]]:
+    result = []
+    for poly in polygons:
+        poly = [(p[0] * x_scale, p[1] * y_scale) for p in poly]
+        result.append(poly)
+    return result
 
 
 def get_static_crop_dimensions(
@@ -437,7 +476,7 @@ def standardise_static_crop(
     return tuple(static_crop_config[key] / 100 for key in ["x_min", "y_min", "x_max", "y_max"])  # type: ignore
 
 
-def sigmoid(x):
+def sigmoid(x: Union[float, np.ndarray]) -> Union[float, np.number, np.ndarray]:
     """Computes the sigmoid function for the given input.
 
     The sigmoid function is defined as:
