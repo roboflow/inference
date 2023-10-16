@@ -30,7 +30,8 @@ from inference.core.utils.image_utils import (
     ImageType,
     load_image_with_known_type,
     convert_gray_image_to_bgr,
-    load_image, load_image_rgb,
+    load_image,
+    load_image_rgb,
 )
 from inference.core.utils import image_utils
 
@@ -722,11 +723,28 @@ def test_load_image_rgb_on_bgr_image(load_image_mock: MagicMock) -> None:
     result = load_image_rgb(value="some")
 
     # then
-    assert load_image_mock.assert_called_once_with(value="some", disable_preproc_auto_orient=False)
+    load_image_mock.assert_called_once_with(
+        value="some", disable_preproc_auto_orient=False
+    )
     assert result.shape == (128, 128, 3)
     assert np.all(result[:, :, -1] == 1)
+    assert np.all(result[:, :, 0] == 255)
 
 
 @mock.patch.object(image_utils, "load_image")
 def test_load_image_rgb_on_rgb_image(load_image_mock: MagicMock) -> None:
-    pass
+    # given
+    image = np.ones((128, 128, 3), dtype=np.uint8)
+    image[:, :, -1] = 255
+    load_image_mock.return_value = (image, False)
+
+    # when
+    result = load_image_rgb(value="some")
+
+    # then
+    load_image_mock.assert_called_once_with(
+        value="some", disable_preproc_auto_orient=False
+    )
+    assert result.shape == (128, 128, 3)
+    assert np.all(result[:, :, 0] == 1)
+    assert np.all(result[:, :, -1] == 255)
