@@ -15,7 +15,6 @@ import onnxruntime
 import requests
 from PIL import Image
 
-from inference.core.cache import cache
 from inference.core.data_models import (
     InferenceRequest,
     InferenceRequestImage,
@@ -47,6 +46,7 @@ from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import ApiUrl
+from inference.core.cache import cache
 
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     try:
@@ -274,7 +274,7 @@ class RoboflowInferenceModel(Model):
             for c in self.class_names:
                 self.colors[c] = colors_order[i % len(colors_order)]
                 i += 1
-
+    
     @property
     def cache_key(self):
         return f"metadata:{self.endpoint}"
@@ -391,6 +391,7 @@ class RoboflowInferenceModel(Model):
         else:
             self.resize_method = "Stretch to"
         self.log(f"Resize method is '{self.resize_method}'")
+
 
     def initialize_model(self) -> None:
         """Initialize the model.
@@ -782,29 +783,19 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
-                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
-                )
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
             else:
                 self.batching_enabled = False
-                self.log(
-                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
-                )
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
 
-            model_metadata = {
-                "batch_size": self.batch_size,
-                "img_size_h": self.img_size_h,
-                "img_size_w": self.img_size_w,
-            }
+            model_metadata = {"batch_size": self.batch_size, "img_size_h": self.img_size_h, "img_size_w": self.img_size_w}
             self.log(f"Writing model metadata to memcache")
             self.write_model_metadata_to_memcache(model_metadata)
-            if not self.load_weights:  # had to load weights to get metadata
+            if not self.load_weights: # had to load weights to get metadata
                 del self.onnx_session
         else:
             if not self.has_model_metadata:
-                raise ValueError(
-                    "This should be unreachable, should get weights if we don't have model metadata"
-                )
+                raise ValueError("This should be unreachable, should get weights if we don't have model metadata")
             self.log(f"Loading model metadata from memcache")
             metadata = self.model_metadata_from_memcache()
             self.batch_size = metadata["batch_size"]
@@ -812,14 +803,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.img_size_w = metadata["img_size_w"]
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
-                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
-                )
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
             else:
                 self.batching_enabled = False
-                self.log(
-                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
-                )
+                self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
 
     def load_image(
         self,

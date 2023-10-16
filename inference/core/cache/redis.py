@@ -3,10 +3,10 @@ import inspect
 import json
 import threading
 import time
-from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import redis
+from contextlib import asynccontextmanager
 
 from inference.core.cache.base import BaseCache
 from inference.core.data_models import InferenceResponseImage
