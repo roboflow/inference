@@ -238,6 +238,7 @@ class RoboflowInferenceModel(Model):
         )
 
     def load_environment_artifacts_from_cache(self):
+        """Loads artifacts other than weights from disk cache"""
         infer_bucket_files = self.get_infer_bucket_file_list()
         if "environment.json" in infer_bucket_files:
             with self.open_cache("environment.json", "r") as f:
