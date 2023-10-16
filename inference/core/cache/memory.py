@@ -159,4 +159,6 @@ class MemoryCache(BaseCache):
         acquired = lock.acquire(timeout=expire)
         if not acquired:
             raise TimeoutError()
+        # refresh the lock
+        self.set(key, lock, expire=expire)
         return lock

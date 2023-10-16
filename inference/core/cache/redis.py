@@ -147,4 +147,7 @@ class RedisCache(BaseCache):
         acquired = l.acquire(blocking_timeout=expire)
         if not acquired:
             raise TimeoutError("Couldn't get lock")
+        # refresh the lock
+        if expire is not None:
+            l.extend(expire)
         return l
