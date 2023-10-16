@@ -1,10 +1,10 @@
 import threading
 import time
+from threading import Lock
 from typing import Any, Optional
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
-from threading import Lock
 
 
 class MemoryCache(BaseCache):
@@ -151,12 +151,14 @@ class MemoryCache(BaseCache):
             del self.cache[key][k]
         return len(keys_to_delete)
 
-    def acquire_lock(self, key: str) -> Any:
+    def acquire_lock(self, key: str, expire=None) -> Any:
         if key not in self.cache:
-            self.cache[key] = Lock()
+            self.set(key, Lock(), expire=expire)
 
-        lock = self.cache[key]
-        acquired = lock.acquire()
+        lock: Lock = self.get(key)
+        acquired = lock.acquire(timeout=expire)
         if not acquired:
             raise TimeoutError()
+        # refresh the lock
+        self.set(key, lock, expire=expire)
         return lock

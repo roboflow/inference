@@ -3,10 +3,10 @@ import inspect
 import json
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import redis
-from contextlib import asynccontextmanager
 
 from inference.core.cache.base import BaseCache
 from inference.core.data_models import InferenceResponseImage
@@ -142,9 +142,12 @@ class RedisCache(BaseCache):
                     value[k] = v.dict()
         return value
 
-    def acquire_lock(self, key: str) -> Any:
-        l = self.client.lock(key, blocking=True)
-        acquired = l.acquire()
+    def acquire_lock(self, key: str, expire=None) -> Any:
+        l = self.client.lock(key, blocking=True, timeout=expire)
+        acquired = l.acquire(blocking_timeout=expire)
         if not acquired:
             raise TimeoutError("Couldn't get lock")
+        # refresh the lock
+        if expire is not None:
+            l.extend(expire)
         return l
