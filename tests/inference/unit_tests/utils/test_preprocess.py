@@ -1,9 +1,16 @@
 from unittest import mock
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
 
 from inference.core.utils.preprocess import (
     static_crop_should_be_applied,
     contrast_adjustments_should_be_applied,
     grayscale_conversion_should_be_applied,
+    take_static_crop,
+    ContrastAdjustmentType,
+    apply_contrast_adjustment,
 )
 from inference.core.utils import preprocess
 
@@ -212,3 +219,62 @@ def test_grayscale_conversion_should_be_applied_when_preprocessing_should_be_app
 
     # then
     assert result is True
+
+
+def test_take_static_crop_when_config_is_complete() -> None:
+    # given
+    image = np.zeros((100, 200, 3), dtype=np.uint8)
+    image[32:64, 32:96, :] = 255
+    expected_result = np.ones((32, 64, 3), dtype=np.uint8) * 255
+
+    # when
+    result = take_static_crop(
+        image=image,
+        crop_parameters={"x_min": 16, "x_max": 48, "y_min": 32, "y_max": 64},
+    )
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_take_static_crop_when_config_is_not_complete() -> None:
+    # given
+    image = np.zeros((100, 200, 3), dtype=np.uint8)
+
+    # when
+    with pytest.raises(KeyError):
+        _ = take_static_crop(
+            image=image, crop_parameters={"x_min": 16, "x_max": 48, "y_max": 64}
+        )
+
+
+@mock.patch.dict(
+    preprocess.CONTRAST_ADJUSTMENTS_METHODS,
+    {
+        ContrastAdjustmentType.CONTRAST_STRETCHING: lambda i: "A",
+        ContrastAdjustmentType.HISTOGRAM_EQUALISATION: lambda i: "B",
+        ContrastAdjustmentType.ADAPTIVE_EQUALISATION: lambda i: "C",
+    },
+    clear=True,
+)
+@pytest.mark.parametrize(
+    "adjustment_type, expected_outcome",
+    [
+        (ContrastAdjustmentType.CONTRAST_STRETCHING, "A"),
+        (ContrastAdjustmentType.HISTOGRAM_EQUALISATION, "B"),
+        (ContrastAdjustmentType.ADAPTIVE_EQUALISATION, "C"),
+    ],
+)
+def test_apply_contrast_adjustment(
+    adjustment_type: ContrastAdjustmentType,
+    expected_outcome: str,
+) -> None:
+    # given
+    image = np.zeros((100, 200, 3), dtype=np.uint8)
+
+    # when
+    result = apply_contrast_adjustment(image=image, adjustment_type=adjustment_type)
+
+    # then
+    assert result == expected_outcome
