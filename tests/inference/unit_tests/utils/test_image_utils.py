@@ -11,10 +11,11 @@ from PIL import Image
 from _pytest.fixtures import FixtureRequest
 from requests_mock import Mocker
 
-from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
+from inference.core.data_models import InferenceRequestImage
+from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput, InvalidImageTypeDeclared
 from inference.core.utils.image_utils import load_image_from_url, load_image_from_numpy_str, load_image_from_buffer, \
     load_image_base64, load_image_inferred, attempt_loading_image_from_string, load_image_from_encoded_bytes, \
-    choose_image_decoding_flags
+    choose_image_decoding_flags, extract_image_payload_and_type, ValueType
 from inference.core.utils import image_utils
 
 
@@ -391,3 +392,90 @@ def test_choose_image_decoding_flags_when_enabled_auto_orient() -> None:
 
     # then
     assert result == cv2.IMREAD_COLOR
+
+
+def test_extract_image_payload_and_type_when_type_cannot_be_inferred(
+    image_as_jpeg_base64_bytes: bytes,
+) -> None:
+    # when
+    result = extract_image_payload_and_type(value=image_as_jpeg_base64_bytes)
+
+    # then
+    assert result == (image_as_jpeg_base64_bytes, None)
+
+
+@pytest.mark.parametrize(
+    "type_name, expected_type_enum",
+    [
+        ("base64", ValueType.BASE64),
+        ("file", ValueType.FILE),
+        ("multipart", ValueType.MULTIPART),
+        ("numpy", ValueType.NUMPY),
+        ("pil", ValueType.PILLOW),
+        ("url", ValueType.URL),
+        ("BASE64", ValueType.BASE64),
+        ("FILE", ValueType.FILE),
+        ("MULTIPART", ValueType.MULTIPART),
+        ("NUMPY", ValueType.NUMPY),
+        ("PIL", ValueType.PILLOW),
+        ("URL", ValueType.URL),
+    ]
+)
+def test_extract_image_payload_and_type_when_value_is_dict_and_type_is_recognised(
+    type_name: str,
+    expected_type_enum: ValueType,
+) -> None:
+    # given
+    value = {"value": "some", "type": type_name}
+
+    # when
+    result = extract_image_payload_and_type(value=value)
+
+    # then
+    assert result == ("some", expected_type_enum)
+
+
+@pytest.mark.parametrize(
+    "type_name, expected_type_enum",
+    [
+        ("base64", ValueType.BASE64),
+        ("file", ValueType.FILE),
+        ("multipart", ValueType.MULTIPART),
+        ("numpy", ValueType.NUMPY),
+        ("pil", ValueType.PILLOW),
+        ("url", ValueType.URL),
+        ("BASE64", ValueType.BASE64),
+        ("FILE", ValueType.FILE),
+        ("MULTIPART", ValueType.MULTIPART),
+        ("NUMPY", ValueType.NUMPY),
+        ("PIL", ValueType.PILLOW),
+        ("URL", ValueType.URL),
+    ]
+)
+def test_extract_image_payload_and_type_when_value_is_request_and_type_is_recognised(
+    type_name: str,
+    expected_type_enum: ValueType,
+) -> None:
+    # given
+    value = InferenceRequestImage(value="some", type=type_name)
+
+    # when
+    result = extract_image_payload_and_type(value=value)
+
+    # then
+    assert result == ("some", expected_type_enum)
+
+
+def test_extract_image_payload_and_type_when_value_is_dict_and_type_is_not_recognised() -> None:
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = extract_image_payload_and_type(value={"value": "some", "type": "unknown"})
+
+
+def test_extract_image_payload_and_type_when_value_is_request_and_type_is_not_recognised() -> None:
+    # given
+    value = InferenceRequestImage(value="some", type="unknown")
+
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = extract_image_payload_and_type(value=value)

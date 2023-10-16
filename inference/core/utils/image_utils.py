@@ -1,7 +1,8 @@
 import os
 import pickle
 import re
-from typing import Any, Tuple, Union
+from enum import Enum
+from typing import Any, Tuple, Union, Optional
 
 import cv2
 import numpy as np
@@ -13,9 +14,22 @@ from requests import RequestException
 
 from inference.core.data_models import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
-from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput
+from inference.core.exceptions import (
+    InputImageLoadError,
+    InvalidNumpyInput,
+    InvalidImageTypeDeclared,
+)
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
+
+
+class ValueType(Enum):
+    BASE64 = "base64"
+    FILE = "file"
+    MULTIPART = "multipart"
+    NUMPY = "numpy"
+    PILLOW = "pil"
+    URL = "url"
 
 
 def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
@@ -44,19 +58,13 @@ def load_image(value: Any, disable_preproc_auto_orient: bool = False) -> np.ndar
     cv_imread_flags = choose_image_decoding_flags(
         disable_preproc_auto_orient=disable_preproc_auto_orient
     )
-    type = None
-    if isinstance(value, InferenceRequestImage):
-        type = value.type
-        value = value.value
-    elif isinstance(value, dict):
-        type = value.get("type")
-        value = value.get("value")
+    value, payload_type = extract_image_payload_and_type(value=value)
     is_bgr = True
     if type is not None:
         if type == "base64":
             np_image = load_image_base64(value, cv_imread_flags=cv_imread_flags)
         elif type == "file":
-            np_image = cv2.imread(value, cv_imread_flags=cv_imread_flags)
+            np_image = cv2.imread(value, flags=cv_imread_flags)
         elif type == "multipart":
             np_image = load_image_from_buffer(value, cv_imread_flags=cv_imread_flags)
         elif type == "numpy" and ALLOW_NUMPY_INPUT:
@@ -82,6 +90,24 @@ def choose_image_decoding_flags(disable_preproc_auto_orient: bool) -> int:
     if disable_preproc_auto_orient:
         cv_imread_flags = cv_imread_flags | cv2.IMREAD_IGNORE_ORIENTATION
     return cv_imread_flags
+
+
+def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ValueType]]:
+    payload_type = None
+    if issubclass(type(value), InferenceRequestImage):
+        payload_type = value.type
+        value = value.value
+    elif issubclass(type(value), dict):
+        payload_type = value.get("type")
+        value = value.get("value")
+    allowed_payload_types = {e.value for e in ValueType}
+    if payload_type is None:
+        return value, payload_type
+    if payload_type.lower() not in allowed_payload_types:
+        raise InvalidImageTypeDeclared(
+            f"Declared image type: {value} which is not in allowed types: {allowed_payload_types}."
+        )
+    return value, ValueType(payload_type.lower())
 
 
 def load_image_inferred(

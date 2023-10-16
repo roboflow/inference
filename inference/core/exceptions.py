@@ -128,3 +128,7 @@ class InvalidNumpyInput(InputImageLoadError):
     Attributes:
         message (str): Optional message describing the error.
     """
+
+
+class InvalidImageTypeDeclared(InputImageLoadError):
+    pass
