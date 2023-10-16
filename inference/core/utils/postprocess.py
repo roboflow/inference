@@ -361,7 +361,6 @@ def scale_polys(
     polys: List[List[Tuple[float, float]]],
     img0_shape: Tuple[int, int],
     preproc: dict,
-    ratio_pad: Optional[Tuple[int, int]] = None,
     resize_method: str = "Stretch to",
 ) -> List[List[Tuple[float, float]]]:
     """Scales and shifts polygons based on the given image shapes and preprocessing method.
@@ -374,7 +373,6 @@ def scale_polys(
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
         img0_shape (tuple of int): Shape of the source image (height, width).
         preproc (object): Preprocessing details used for generating the transformation.
-        ratio_pad (tuple, optional): Ratio and padding information for resizing. Defaults to None.
         resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
 
     Returns:
@@ -393,21 +391,11 @@ def scale_polys(
             y_scale=height_ratio,
         )
     elif resize_method in {"Fit (black edges) in", "Fit (white edges) in"}:
-        # Rescale boxes (xyxy) from img1_shape to img0_shape
-        if ratio_pad is None:  # calculate from img0_shape
-            gain = min(
-                img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
-            )  # gain  = old / new
-            pad = (
-                (img1_shape[1] - img0_shape[1] * gain) / 2,
-                (img1_shape[0] - img0_shape[0] * gain) / 2,
-            )  # wh padding
-        else:
-            gain = ratio_pad[0][0]
-            pad = ratio_pad[1]
-        for poly in polys:
-            poly = [((p[0] - pad[0]) / gain, (p[1] - pad[1]) / gain) for p in poly]
-            new_polys.append(poly)
+        new_polys = undo_image_padding_for_predicted_polygons(
+            polygons=polys,
+            img0_shape=img0_shape,
+            img1_shape=img1_shape,
+        )
     shifted_polys = []
     for poly in new_polys:
         poly = [(p[0] + crop_shift_x, p[1] + crop_shift_y) for p in poly]
@@ -423,6 +411,26 @@ def scale_polygons(
     result = []
     for poly in polygons:
         poly = [(p[0] * x_scale, p[1] * y_scale) for p in poly]
+        result.append(poly)
+    return result
+
+
+def undo_image_padding_for_predicted_polygons(
+    polygons: List[List[Tuple[float, float]]],
+    img0_shape: Tuple[int, int],
+    img1_shape: Tuple[int, int],
+) -> List[List[Tuple[float, float]]]:
+    gain = min(
+        img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
+    )  # gain  = old / new
+    pad = (
+        (img1_shape[1] - img0_shape[1] * gain) / 2,
+        (img1_shape[0] - img0_shape[0] * gain) / 2,
+    )  # wh padding
+
+    result = []
+    for poly in polygons:
+        poly = [((p[0] - pad[0]) / gain, (p[1] - pad[1]) / gain) for p in poly]
         result.append(poly)
     return result
 

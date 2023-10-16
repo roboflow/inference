@@ -13,7 +13,7 @@ from inference.core.utils.postprocess import (
     stretch_crop_predictions,
     post_process_bboxes,
     sigmoid,
-    scale_bboxes,
+    scale_bboxes, undo_image_padding_for_predicted_polygons,
 )
 
 
@@ -384,3 +384,24 @@ def test_scale_bboxes(
 
     # then
     assert np.allclose(result, expected_result)
+
+
+def test_undo_image_padding_for_predicted_polygons() -> None:
+    # given
+    polygons = [
+        [(64, 20), (74, 30), (84, 40)],
+        [(94, 50), (104, 60), (114, 70)]
+    ]
+    expected_result = np.array([
+        [(0, 20), (10, 30), (20, 40)],
+        [(30, 50), (40, 60), (50, 70)]
+    ])
+
+    # when
+    result = undo_image_padding_for_predicted_polygons(
+        polygons=polygons,
+        img0_shape=(256, 128),
+        img1_shape=(256, 256),
+    )
+
+    assert np.allclose(np.array(result), expected_result)
