@@ -74,4 +74,3 @@ def image_as_local_path() -> Generator[str, None, None]:
         image = np.zeros((128, 128, 3), dtype=np.uint8)
         cv2.imwrite(file_path, image)
         yield file_path
-

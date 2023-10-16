@@ -14,8 +14,10 @@ def test_wrap_url_when_license_server_is_provided() -> None:
     result = wrap_url(url=original_url)
 
     # then
-    assert result == \
-        "http://licence-server.com/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
+    assert (
+        result
+        == "http://licence-server.com/proxy?url=https%3A%2F%2Fdetection.roboflow.com%2Feye-detection%2F1%3Fapi_key%3DX"
+    )
     assert parse_qs(urlparse(result).query)["url"][0] == original_url
 
 
@@ -29,5 +31,3 @@ def test_wrap_url_when_license_server_is_not_provided() -> None:
 
     # then
     assert result == original_url
-
-
