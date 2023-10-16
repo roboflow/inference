@@ -1,0 +1,31 @@
+name: Stop GPU Runner
+
+on:
+  workflow_run:
+    workflows: ["Start GPU Runner"]
+    branches: [feature/cross-platform-regression-tests]
+    types:
+      - completed
+
+jobs:
+    start:
+        runs-on: ubuntu-latest
+      
+        permissions:
+            contents: 'read'
+            id-token: 'write'
+    
+        steps:
+        - id: 'auth'
+          uses: 'google-github-actions/auth@v1'
+          with:
+            workload_identity_provider: 'projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github'
+            service_account: 'github-action@roboflow-staging.iam.gserviceaccount.com'
+    
+        - name: 'Set up Cloud SDK'
+          uses: 'google-github-actions/setup-gcloud@v1'
+          with:
+            version: '>= 363.0.0'
+    
+        - name: 'Use gcloud CLI'
+          run: 'gcloud compute instances stop gh-action-runner-inference'
