@@ -88,12 +88,12 @@ class BaseCache:
         """
         raise NotImplementedError()
 
-    def acquire_lock(self, key: str) -> Any:
+    def acquire_lock(self, key: str, expire: float = None) -> Any:
         raise NotImplementedError()
 
     @contextmanager
-    def lock(self, key: str) -> Any:
-        l = self.acquire_lock(key)
+    def lock(self, key: str, expire:float = None) -> Any:
+        l = self.acquire_lock(key, expire=expire)
         try:
             yield l
         finally:

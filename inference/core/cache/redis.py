@@ -142,9 +142,9 @@ class RedisCache(BaseCache):
                     value[k] = v.dict()
         return value
 
-    def acquire_lock(self, key: str) -> Any:
-        l = self.client.lock(key, blocking=True)
-        acquired = l.acquire()
+    def acquire_lock(self, key: str, expire=None) -> Any:
+        l = self.client.lock(key, blocking=True, timeout=expire)
+        acquired = l.acquire(blocking_timeout=expire)
         if not acquired:
             raise TimeoutError("Couldn't get lock")
         return l

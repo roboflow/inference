@@ -5,5 +5,5 @@ lock_str = lambda z: f"locks:model-load:{z}"
 class LockedLoadModelManagerDecorator(ModelManagerDecorator):
     """Must acquire lock to load model"""
     def add_model(self, model_id: str, api_key: str):
-        with cache.lock(lock_str(model_id)):
+        with cache.lock(lock_str(model_id), expire=180.):
             return super().add_model(model_id, api_key)
