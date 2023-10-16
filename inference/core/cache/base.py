@@ -1,5 +1,5 @@
-from typing import Optional, Any
 from contextlib import contextmanager
+from typing import Any, Optional
 
 
 class BaseCache:
