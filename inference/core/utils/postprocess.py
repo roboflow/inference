@@ -1,6 +1,4 @@
-import multiprocessing
 from copy import deepcopy
-from multiprocessing import Pool, cpu_count
 from time import perf_counter
 from typing import List, Tuple
 
@@ -9,35 +7,36 @@ import numpy as np
 
 from inference.core.env import DISABLE_PREPROC_STATIC_CROP
 
+# TODO: discuss removal
+# def clip_boxes(boxes, shape):
+#     """
+#     Clip the bounding box coordinates to lie within the image dimensions.
+#
+#     Args:
+#         boxes (np.ndarray): An array of bounding boxes, shape (n, 4).
+#         shape (Tuple[int, int]): The shape of the image (height, width).
+#     """
+#     boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
+#     boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
 
-def clip_boxes(boxes, shape):
-    """
-    Clip the bounding box coordinates to lie within the image dimensions.
 
-    Args:
-        boxes (np.ndarray): An array of bounding boxes, shape (n, 4).
-        shape (Tuple[int, int]): The shape of the image (height, width).
-    """
-    boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
-    boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
-
-
-def clip_point(point, shape):
-    """
-    Clip a point to lie within the given shape.
-
-    Args:
-        point (Tuple[int, int]): The coordinates of the point (x, y).
-        shape (Tuple[int, int]): The shape of the region (width, height).
-
-    Returns:
-        Tuple[int, int]: The clipped coordinates of the point.
-    """
-    x = min(point[0], shape[0])
-    x = max(x, 0)
-    y = min(point[1], shape[1])
-    y = max(y, 0)
-    return (x, y)
+# TODO: discuss removal
+# def clip_point(point, shape):
+#     """
+#     Clip a point to lie within the given shape.
+#
+#     Args:
+#         point (Tuple[int, int]): The coordinates of the point (x, y).
+#         shape (Tuple[int, int]): The shape of the region (width, height).
+#
+#     Returns:
+#         Tuple[int, int]: The clipped coordinates of the point.
+#     """
+#     x = min(point[0], shape[0])
+#     x = max(x, 0)
+#     y = min(point[1], shape[1])
+#     y = max(y, 0)
+#     return (x, y)
 
 
 def cosine_similarity(a, b):
@@ -368,45 +367,46 @@ def process_mask_fast(protos, masks_in, bboxes, shape):
     return masks
 
 
-def scale_boxes(
-    img1_shape, boxes, img0_shape, ratio_pad=None, resize_method="Stretch to"
-):
-    """Scales boxes according to a specified resize method.
-
-    Args:
-        img1_shape (tuple): Shape of the first image.
-        boxes (numpy.ndarray): Bounding boxes to scale.
-        img0_shape (tuple): Shape of the second image.
-        ratio_pad (tuple, optional): Padding ratio. Defaults to None.
-        resize_method (str, optional): Resize method for image. Defaults to "Stretch to".
-
-    Returns:
-        numpy.ndarray: Scaled boxes.
-    """
-    if resize_method == "Stretch to":
-        height_ratio = img0_shape[0] / img1_shape[0]
-        width_ratio = img0_shape[1] / img1_shape[1]
-        boxes[:, [0, 2]] *= width_ratio
-        boxes[:, [1, 3]] *= height_ratio
-    elif resize_method in ["Fit (black edges) in", "Fit (white edges) in"]:
-        # Rescale boxes (xyxy) from img1_shape to img0_shape
-        if ratio_pad is None:  # calculate from img0_shape
-            gain = min(
-                img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
-            )  # gain  = old / new
-            pad = (
-                (img1_shape[1] - img0_shape[1] * gain) / 2,
-                (img1_shape[0] - img0_shape[0] * gain) / 2,
-            )  # wh padding
-        else:
-            gain = ratio_pad[0][0]
-            pad = ratio_pad[1]
-
-        boxes[:, [0, 2]] -= pad[0]  # x padding
-        boxes[:, [1, 3]] -= pad[1]  # y padding
-        boxes[:, :4] /= gain
-    clip_boxes(boxes, img0_shape)
-    return boxes
+# TODO: Discuss removal
+# def scale_boxes(
+#     img1_shape, boxes, img0_shape, ratio_pad=None, resize_method="Stretch to"
+# ):
+#     """Scales boxes according to a specified resize method.
+#
+#     Args:
+#         img1_shape (tuple): Shape of the first image.
+#         boxes (numpy.ndarray): Bounding boxes to scale.
+#         img0_shape (tuple): Shape of the second image.
+#         ratio_pad (tuple, optional): Padding ratio. Defaults to None.
+#         resize_method (str, optional): Resize method for image. Defaults to "Stretch to".
+#
+#     Returns:
+#         numpy.ndarray: Scaled boxes.
+#     """
+#     if resize_method == "Stretch to":
+#         height_ratio = img0_shape[0] / img1_shape[0]
+#         width_ratio = img0_shape[1] / img1_shape[1]
+#         boxes[:, [0, 2]] *= width_ratio
+#         boxes[:, [1, 3]] *= height_ratio
+#     elif resize_method in ["Fit (black edges) in", "Fit (white edges) in"]:
+#         # Rescale boxes (xyxy) from img1_shape to img0_shape
+#         if ratio_pad is None:  # calculate from img0_shape
+#             gain = min(
+#                 img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
+#             )  # gain  = old / new
+#             pad = (
+#                 (img1_shape[1] - img0_shape[1] * gain) / 2,
+#                 (img1_shape[0] - img0_shape[0] * gain) / 2,
+#             )  # wh padding
+#         else:
+#             gain = ratio_pad[0][0]
+#             pad = ratio_pad[1]
+#
+#         boxes[:, [0, 2]] -= pad[0]  # x padding
+#         boxes[:, [1, 3]] -= pad[1]  # y padding
+#         boxes[:, :4] /= gain
+#     clip_boxes(boxes, img0_shape)
+#     return boxes
 
 
 def scale_polys(

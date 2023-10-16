@@ -1,12 +1,11 @@
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple
 
 import cv2
 import numpy as np
 
 from inference.core.data_models import (
     InferenceResponseImage,
-    InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
 )
@@ -17,7 +16,6 @@ from inference.core.utils.postprocess import (
     crop_mask,
     mask2poly,
     postprocess_predictions,
-    scale_boxes,
     scale_polys,
 )
 
