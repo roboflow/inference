@@ -7,6 +7,11 @@ from inference.core.utils.postprocess import (
     crop_mask,
     standardise_static_crop,
     get_static_crop_dimensions,
+    apply_crop_shift_to_boxes,
+    clip_boxes_coordinates,
+    undo_image_padding_for_predicted_boxes,
+    stretch_crop_predictions,
+    post_process_bboxes,
 )
 
 
@@ -120,3 +125,206 @@ def test_get_static_crop_dimensions_when_crop_should_be_applied() -> None:
 
     # then
     assert result == ((15, 40), (35, 110))
+
+
+def test_apply_crop_shift_to_boxes() -> None:
+    # given
+    predicted_bboxes = np.array(
+        [
+            [20, 20, 40, 40],
+            [30, 60, 90, 120],
+        ]
+    )
+    expected_result = np.array(
+        [
+            [30, 40, 50, 60],
+            [40, 80, 100, 140],
+        ]
+    )
+
+    # when
+    result = apply_crop_shift_to_boxes(
+        predicted_bboxes=predicted_bboxes,
+        crop_shift_x=10,
+        crop_shift_y=20,
+    )
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_clip_boxes_coordinates() -> None:
+    # given
+    predicted_bboxes = np.array(
+        [
+            [-0.1, 20, 40, 40.1, 0.9],
+            [30, 60.1, 90, 120.1, 0.9],
+        ]
+    )
+    expected_result = np.array(
+        [
+            [0, 20, 40, 40, 0.9],
+            [30, 60, 80, 120, 0.9],
+        ]
+    )
+
+    # when
+    result = clip_boxes_coordinates(
+        predicted_bboxes=predicted_bboxes,
+        origin_shape=(80, 120),
+    )
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_undo_image_padding_for_predicted_boxes() -> None:
+    # given
+    predicted_bboxes = np.array(
+        [
+            [20, 32, 40, 64],
+            [30, 64, 90, 128],
+        ],
+        dtype=np.float32,
+    )
+    # scaling factor for inference is 0.5, padding of 16px along OY axis added
+    expected_result = np.array(
+        [
+            [8, 64, 48, 128],
+            [28, 128, 148, 256],
+        ],
+        dtype=np.float32,
+    )
+
+    # when
+    result = undo_image_padding_for_predicted_boxes(
+        predicted_bboxes=predicted_bboxes,
+        infer_shape=(128, 128),
+        origin_shape=(192, 256),
+    )
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_stretch_crop_predictions() -> None:
+    # given
+    predicted_bboxes = np.array(
+        [
+            [20, 32, 40, 64],
+            [30, 64, 90, 128],
+        ],
+        dtype=np.float32,
+    )
+    expected_result = np.array(
+        [
+            [5, 16, 10, 32],
+            [7.5, 32, 22.5, 64],
+        ],
+        dtype=np.float32,
+    )
+
+    # when
+    result = stretch_crop_predictions(
+        predicted_bboxes=predicted_bboxes,
+        infer_shape=(128, 128),
+        crop_shape=(32, 64),
+    )
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_post_process_bboxes_when_crop_with_stretch_used() -> None:
+    # given
+    predicted_bboxes = [
+        np.array(
+            [
+                [20, 32, 40, 64, 0.9],
+                [30, 64, 88, 128, 0.85],
+            ],
+            dtype=np.float32,
+        ).tolist()
+    ]
+    # there is a crop from (x=40, y=40) to (x=72, y=104)
+    # compared to inference size (128, 128) - OX axis prediction is 4x smaller in the origin
+    # and OY prediction is 2x smaller in the origin
+    # crop shift +40, +40 in each axis
+    expected_result = np.expand_dims(
+        np.array(
+            [
+                [45, 56, 50, 72, 0.9],
+                [48, 72, 62, 104, 0.85],
+            ],
+            dtype=np.float32,
+        ),
+        axis=0,
+    )
+
+    # when
+    result = post_process_bboxes(
+        predictions=predicted_bboxes,
+        infer_shape=(128, 128),
+        img_dims=[(200, 200)],
+        preproc={
+            "static-crop": {
+                "enabled": True,
+                "x_min": 20,
+                "y_min": 20,
+                "x_max": 36,
+                "y_max": 52,
+            }
+        },
+    )
+    # then
+    assert np.array(result).shape == (1, 2, 5)
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_post_process_bboxes_when_crop_with_padding_used() -> None:
+    # given
+    predicted_bboxes = [
+        np.array(
+            [
+                [32, 32, 40, 64, 0.9],
+                [32, 64, 88, 128, 0.85],
+            ],
+            dtype=np.float32,
+        ).tolist()
+    ]
+    # there is a crop from (x=40, y=40) to (x=72, y=104) of size(h=64, w=32)
+    # compared to inference size (128, 128) - crop will be given 32 padding on OX axis each side
+    # we need to upscale 2x prediction coordinates
+    # crop shift +40, +40 in each axis
+    expected_result = np.expand_dims(
+        np.array(
+            [
+                [40, 56, 44, 72, 0.9],
+                [40, 72, 68, 104, 0.85],
+            ],
+            dtype=np.float32,
+        ),
+        axis=0,
+    )
+
+    # when
+    result = post_process_bboxes(
+        predictions=predicted_bboxes,
+        infer_shape=(128, 128),
+        img_dims=[(200, 200)],
+        preproc={
+            "static-crop": {
+                "enabled": True,
+                "x_min": 20,
+                "y_min": 20,
+                "x_max": 36,
+                "y_max": 52,
+            }
+        },
+        resize_method="Fit (black edges) in",
+    )
+    # then
+    assert np.array(result).shape == (1, 2, 5)
+    assert np.allclose(np.array(result), expected_result)

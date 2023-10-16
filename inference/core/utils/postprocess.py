@@ -62,7 +62,7 @@ def mask2poly(mask: np.ndarray) -> np.ndarray:
     return contours.astype("float32")
 
 
-def postprocess_predictions(
+def post_process_bboxes(
     predictions: List[List[List[float]]],
     infer_shape: Tuple[int, int],
     img_dims: List[Tuple[int, int]],
@@ -93,64 +93,104 @@ def postprocess_predictions(
             scaled_predictions.append([])
             continue
         np_batch_predictions = np.array(batch_predictions)
-        # Get coords from predictions (x1,y1,x2,y2)
-        coords = np_batch_predictions[:, :4]
-
-        # Shape before resize to infer shape
-        orig_shape = img_dims[i][-1::-1]
-        # Adjust shape and get shift pased on static crop preproc
-        (crop_shift_x, crop_shift_y), orig_shape = get_static_crop_dimensions(
-            orig_shape, preproc, disable_preproc_static_crop=disable_preproc_static_crop
+        # Get bboxes from predictions (x1,y1,x2,y2)
+        predicted_bboxes = np_batch_predictions[:, :4]
+        origin_shape = img_dims[i][-1::-1]
+        (crop_shift_x, crop_shift_y), origin_shape = get_static_crop_dimensions(
+            origin_shape,
+            preproc,
+            disable_preproc_static_crop=disable_preproc_static_crop,
         )
         if resize_method == "Stretch to":
-            scale_height = orig_shape[1] / infer_shape[1]
-            scale_width = orig_shape[0] / infer_shape[0]
-            coords[:, 0] *= scale_width
-            coords[:, 2] *= scale_width
-            coords[:, 1] *= scale_height
-            coords[:, 3] *= scale_height
-
+            predicted_bboxes = stretch_crop_predictions(
+                predicted_bboxes=predicted_bboxes,
+                infer_shape=infer_shape,
+                crop_shape=origin_shape,
+            )
         elif (
             resize_method == "Fit (black edges) in"
             or resize_method == "Fit (white edges) in"
         ):
-            # Undo scaling and padding from letterbox resize preproc operation
-            scale = min(infer_shape[0] / orig_shape[0], infer_shape[1] / orig_shape[1])
-            inter_w = int(orig_shape[0] * scale)
-            inter_h = int(orig_shape[1] * scale)
-
-            pad_x = (infer_shape[0] - inter_w) / 2
-            pad_y = (infer_shape[1] - inter_h) / 2
-
-            coords[:, 0] -= pad_x
-            coords[:, 2] -= pad_x
-            coords[:, 1] -= pad_y
-            coords[:, 3] -= pad_y
-
-            coords /= scale
-
-        coords[:, 0] = np.round_(
-            np.clip(coords[:, 0], a_min=0, a_max=orig_shape[0])
-        ).astype(int)
-        coords[:, 2] = np.round_(
-            np.clip(coords[:, 2], a_min=0, a_max=orig_shape[0])
-        ).astype(int)
-        coords[:, 1] = np.round_(
-            np.clip(coords[:, 1], a_min=0, a_max=orig_shape[1])
-        ).astype(int)
-        coords[:, 3] = np.round_(
-            np.clip(coords[:, 3], a_min=0, a_max=orig_shape[1])
-        ).astype(int)
-
-        # Apply static crop prostproc shift
-        coords[:, 0] += crop_shift_x
-        coords[:, 2] += crop_shift_x
-        coords[:, 1] += crop_shift_y
-        coords[:, 3] += crop_shift_y
-
-        np_batch_predictions[:, :4] = coords
+            predicted_bboxes = undo_image_padding_for_predicted_boxes(
+                predicted_bboxes=predicted_bboxes,
+                infer_shape=infer_shape,
+                origin_shape=origin_shape,
+            )
+        predicted_bboxes = clip_boxes_coordinates(
+            predicted_bboxes=predicted_bboxes,
+            origin_shape=origin_shape,
+        )
+        predicted_bboxes = apply_crop_shift_to_boxes(
+            predicted_bboxes=predicted_bboxes,
+            crop_shift_x=crop_shift_x,
+            crop_shift_y=crop_shift_y,
+        )
+        np_batch_predictions[:, :4] = predicted_bboxes
         scaled_predictions.append(np_batch_predictions.tolist())
     return scaled_predictions
+
+
+def stretch_crop_predictions(
+    predicted_bboxes: np.ndarray,
+    infer_shape: Tuple[int, int],
+    crop_shape: Tuple[int, int],
+) -> np.ndarray:
+    scale_height = crop_shape[1] / infer_shape[1]
+    scale_width = crop_shape[0] / infer_shape[0]
+    predicted_bboxes[:, 0] *= scale_width
+    predicted_bboxes[:, 2] *= scale_width
+    predicted_bboxes[:, 1] *= scale_height
+    predicted_bboxes[:, 3] *= scale_height
+    return predicted_bboxes
+
+
+def undo_image_padding_for_predicted_boxes(
+    predicted_bboxes: np.ndarray,
+    infer_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
+) -> np.ndarray:
+    scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
+    inter_w = round(origin_shape[0] * scale)
+    inter_h = round(origin_shape[1] * scale)
+    pad_x = (infer_shape[0] - inter_w) / 2
+    pad_y = (infer_shape[1] - inter_h) / 2
+    predicted_bboxes[:, 0] -= pad_x
+    predicted_bboxes[:, 2] -= pad_x
+    predicted_bboxes[:, 1] -= pad_y
+    predicted_bboxes[:, 3] -= pad_y
+    predicted_bboxes /= scale
+    return predicted_bboxes
+
+
+def clip_boxes_coordinates(
+    predicted_bboxes: np.ndarray,
+    origin_shape: Tuple[int, int],
+) -> np.ndarray:
+    predicted_bboxes[:, 0] = np.round(
+        np.clip(predicted_bboxes[:, 0], a_min=0, a_max=origin_shape[0])
+    )
+    predicted_bboxes[:, 2] = np.round(
+        np.clip(predicted_bboxes[:, 2], a_min=0, a_max=origin_shape[0])
+    )
+    predicted_bboxes[:, 1] = np.round(
+        np.clip(predicted_bboxes[:, 1], a_min=0, a_max=origin_shape[1])
+    )
+    predicted_bboxes[:, 3] = np.round(
+        np.clip(predicted_bboxes[:, 3], a_min=0, a_max=origin_shape[1])
+    )
+    return predicted_bboxes
+
+
+def apply_crop_shift_to_boxes(
+    predicted_bboxes: np.ndarray,
+    crop_shift_x: int,
+    crop_shift_y: int,
+) -> np.ndarray:
+    predicted_bboxes[:, 0] += crop_shift_x
+    predicted_bboxes[:, 2] += crop_shift_x
+    predicted_bboxes[:, 1] += crop_shift_y
+    predicted_bboxes[:, 3] += crop_shift_y
+    return predicted_bboxes
 
 
 def process_mask_accurate(protos, masks_in, bboxes, shape):
