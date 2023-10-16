@@ -30,7 +30,7 @@ from inference.core.utils.image_utils import (
     ImageType,
     load_image_with_known_type,
     convert_gray_image_to_bgr,
-    discard_alpha_channel,
+    load_image,
 )
 from inference.core.utils import image_utils
 
@@ -585,38 +585,6 @@ def test_load_image_with_known_type_when_numpy_load_disabled_and_numpy_value_giv
         )
 
 
-@pytest.mark.parametrize(
-    "image",
-    [
-        np.zeros((128, 128), dtype=np.uint8),
-        np.zeros((128, 128, 1), dtype=np.uint8),
-        np.zeros((128, 128, 3), dtype=np.uint8),
-    ],
-)
-def test_discard_alpha_channel_when_image_should_not_be_changed(
-    image: np.ndarray,
-) -> None:
-    # when
-    result = discard_alpha_channel(image=image)
-    print(image.shape)
-    # then
-    assert result is image
-
-
-def test_discard_alpha_channel_when_image_has_alpha_channel() -> None:
-    # given
-    image = np.zeros((128, 128, 4), dtype=np.uint8)
-    image[:, :, -1] = 255
-    expected_result = np.zeros((128, 128, 3), dtype=np.uint8)
-
-    # when
-    result = discard_alpha_channel(image=image)
-
-    # then
-    assert result.shape == expected_result.shape
-    assert np.allclose(expected_result, result)
-
-
 def test_convert_gray_image_to_bgr_when_three_chanel_input_submitted(
     image_as_numpy: np.ndarray,
 ) -> None:
@@ -653,3 +621,91 @@ def test_convert_gray_image_to_bgr_when_2d_input_submitted(
     # then
     assert image_as_numpy.shape == result.shape
     assert np.allclose(image_as_numpy, result)
+
+
+@pytest.mark.parametrize(
+    "fixture_name, is_bgr",
+    [
+        ("image_as_jpeg_base64_bytes", True),
+        ("image_as_jpeg_base64_string", True),
+        ("image_as_local_path", True),
+        ("image_as_buffer", True),
+        ("image_as_rgba_buffer", True),  # works due to cv load flags
+        ("image_as_gray_buffer", True),
+        ("image_as_pickled_bytes", True),
+        ("image_as_pickled_bytes_gray", True),
+        ("image_as_pillow", False),
+    ],
+)
+def test_load_image_when_load_should_succeed_from_inferred_type(
+    fixture_name: str,
+    is_bgr: bool,
+    image_as_numpy: np.ndarray,
+    request: FixtureRequest,
+) -> None:
+    # given
+    value = request.getfixturevalue(fixture_name)
+
+    # when
+    result = load_image(value=value)
+
+    # then
+    assert result[1] is is_bgr
+    assert image_as_numpy.shape == result[0].shape
+    assert np.allclose(image_as_numpy, result[0])
+
+
+def test_load_image_when_load_should_fail_on_rgba_numpy_input(
+    image_as_pickled_bytes_rgba: bytes,
+) -> None:
+    # when
+    with pytest.raises(InvalidNumpyInput):
+        _ = load_image(value=image_as_pickled_bytes_rgba)
+
+
+@pytest.mark.parametrize(
+    "value", ["", b"", "NOT AN IMAGE", [1, 2, 3], np.zeros((2, 3, 4))]
+)
+def test_load_image_when_load_should_fail_on_invalid_input(value: Any) -> None:
+    # when
+    with pytest.raises(InputImageLoadError):
+        _ = load_image(value=value)
+
+
+@pytest.mark.parametrize(
+    "fixture_name, image_type, is_bgr",
+    [
+        ("image_as_jpeg_base64_bytes", ImageType.BASE64, True),
+        ("image_as_jpeg_base64_string", ImageType.BASE64, True),
+        ("image_as_local_path", ImageType.FILE, True),
+        ("image_as_buffer", ImageType.MULTIPART, True),
+        (
+            "image_as_rgba_buffer",
+            ImageType.MULTIPART,
+            True,
+        ),  # works due to cv load flags
+        ("image_as_gray_buffer", ImageType.MULTIPART, True),
+        ("image_as_pickled_bytes", ImageType.NUMPY, True),
+        ("image_as_pickled_bytes_gray", ImageType.NUMPY, True),
+        ("image_as_pillow", ImageType.PILLOW, False),
+    ],
+)
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
+def test_load_image_when_load_should_succeed_from_known_type(
+    fixture_name: str,
+    image_type: ImageType,
+    is_bgr: bool,
+    image_as_numpy: np.ndarray,
+    request: FixtureRequest,
+) -> None:
+    # given
+    value = request.getfixturevalue(fixture_name)
+    request = InferenceRequestImage(value=value, type=image_type.value)
+
+    # when
+    result = load_image(value=request)
+
+    # then
+    assert result[1] is is_bgr
+    assert image_as_numpy.shape == result[0].shape
+    assert np.allclose(image_as_numpy, result[0])

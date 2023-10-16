@@ -72,7 +72,6 @@ def load_image(
         np_image, is_bgr = load_image_with_inferred_type(
             value, cv_imread_flags=cv_imread_flags
         )
-    np_image = discard_alpha_channel(image=np_image)
     np_image = convert_gray_image_to_bgr(image=np_image)
     return np_image, is_bgr
 
@@ -133,6 +132,7 @@ def load_image_with_inferred_type(
         NotImplementedError: If the image type could not be inferred.
     """
     if isinstance(value, (np.ndarray, np.generic)):
+        validate_numpy_image(data=value)
         return value, True
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
@@ -232,6 +232,11 @@ def load_image_from_numpy_str(value: bytes) -> np.ndarray:
         raise InvalidNumpyInput(
             f"Could not unpickle image data. Cause: {error}"
         ) from error
+    validate_numpy_image(data=data)
+    return data
+
+
+def validate_numpy_image(data: np.ndarray) -> None:
     if not issubclass(type(data), np.ndarray):
         raise InvalidNumpyInput(
             f"Data provided as input could not be decoded into np.ndarray object."
@@ -249,7 +254,6 @@ def load_image_from_numpy_str(value: bytes) -> np.ndarray:
             f"For image given as np.ndarray expected values between 0 and 255, got values between "
             f"{np.min(data)} and {np.max(data)}."
         )
-    return data
 
 
 def load_image_from_url(
@@ -295,12 +299,6 @@ IMAGE_LOADERS = {
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
     ImageType.URL: load_image_from_url,
 }
-
-
-def discard_alpha_channel(image: np.ndarray) -> np.ndarray:
-    if len(image.shape) == 3 and image.shape[2] == 4:
-        image = image[:, :, :3]
-    return image
 
 
 def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:

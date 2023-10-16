@@ -57,8 +57,42 @@ def image_as_buffer() -> Generator[io.BytesIO, None, None]:
 
 
 @fixture(scope="function")
+def image_as_rgba_buffer() -> Generator[io.BytesIO, None, None]:
+    image = np.zeros((128, 128, 4), dtype=np.uint8)
+    image[:, :, -1] = 255
+    _, encoded_image = cv2.imencode(".png", image)
+    payload = np.array(encoded_image).tobytes()
+    with io.BytesIO() as buffer:
+        buffer.write(payload)
+        yield buffer
+
+
+@fixture(scope="function")
+def image_as_gray_buffer() -> Generator[io.BytesIO, None, None]:
+    image = np.zeros((128, 128, 1), dtype=np.uint8)
+    _, encoded_image = cv2.imencode(".jpg", image)
+    payload = np.array(encoded_image).tobytes()
+    with io.BytesIO() as buffer:
+        buffer.write(payload)
+        yield buffer
+
+
+@fixture(scope="function")
 def image_as_pickled_bytes() -> bytes:
     image = np.zeros((128, 128, 3), dtype=np.uint8)
+    return pickle.dumps(image)
+
+
+@fixture(scope="function")
+def image_as_pickled_bytes_rgba() -> bytes:
+    image = np.zeros((128, 128, 4), dtype=np.uint8)
+    image[:, :, -1] = 255
+    return pickle.dumps(image)
+
+
+@fixture(scope="function")
+def image_as_pickled_bytes_gray() -> bytes:
+    image = np.zeros((128, 128, 1), dtype=np.uint8)
     return pickle.dumps(image)
 
 
