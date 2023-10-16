@@ -28,6 +28,10 @@ class ModelManagerDecorator(ModelManager):
     def _models(self):
         raise ValueError("Should only be accessing self.model_manager._models")
 
+    @property
+    def model_registry(self):
+        raise ValueError("Should only be accessing self.model_manager.model_registry")
+
     def __init__(self, model_manager: ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
