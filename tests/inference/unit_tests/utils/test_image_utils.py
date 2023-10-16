@@ -1,6 +1,6 @@
 import io
 import pickle
-from typing import Any
+from typing import Any, Dict, Callable
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -14,8 +14,9 @@ from requests_mock import Mocker
 from inference.core.data_models import InferenceRequestImage
 from inference.core.exceptions import InputImageLoadError, InvalidNumpyInput, InvalidImageTypeDeclared
 from inference.core.utils.image_utils import load_image_from_url, load_image_from_numpy_str, load_image_from_buffer, \
-    load_image_base64, load_image_inferred, attempt_loading_image_from_string, load_image_from_encoded_bytes, \
-    choose_image_decoding_flags, extract_image_payload_and_type, ValueType
+    load_image_base64, load_image_with_inferred_type, attempt_loading_image_from_string, load_image_from_encoded_bytes, \
+    choose_image_decoding_flags, extract_image_payload_and_type, ImageType, load_image_with_known_type, \
+    convert_gray_image_to_bgr, discard_alpha_channel
 from inference.core.utils import image_utils
 
 
@@ -238,20 +239,20 @@ def test_load_image_base64_when_invalid_bytes_given() -> None:
         _ = load_image_base64(value=b"some")
 
 
-def test_load_image_inferred_when_value_is_np_array(image_as_numpy: np.ndarray) -> None:
+def test_load_image_with_inferred_type_when_value_is_np_array(image_as_numpy: np.ndarray) -> None:
     # when
-    result = load_image_inferred(value=image_as_numpy)
+    result = load_image_with_inferred_type(value=image_as_numpy)
 
     # then
     assert result == (image_as_numpy, True)
 
 
-def test_load_image_inferred_when_value_is_pillow_image(
+def test_load_image_with_inferred_type_when_value_is_pillow_image(
     image_as_pillow: Image.Image,
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = load_image_inferred(value=image_as_pillow)
+    result = load_image_with_inferred_type(value=image_as_pillow)
 
     # then
     assert result[1] is False
@@ -261,12 +262,12 @@ def test_load_image_inferred_when_value_is_pillow_image(
 
 @mock.patch.object(image_utils, "load_image_from_url")
 @pytest.mark.parametrize("url", ["http://some/image.jpg", "https://some/image.jpg"])
-def test_load_image_inferred_when_value_is_url(
+def test_load_image_with_inferred_type_when_value_is_url(
     load_image_from_url_mock: MagicMock,
     url: str,
 ) -> None:
     # when
-    result = load_image_inferred(value=url, cv_imread_flags=cv2.IMREAD_COLOR)
+    result = load_image_with_inferred_type(value=url, cv_imread_flags=cv2.IMREAD_COLOR)
 
     # then
     assert result[0] is load_image_from_url_mock.return_value
@@ -274,12 +275,12 @@ def test_load_image_inferred_when_value_is_url(
     load_image_from_url_mock.assert_called_once_with(value=url, cv_imread_flags=cv2.IMREAD_COLOR)
 
 
-def test_load_image_inferred_when_value_is_local_image_path(
+def test_load_image_with_inferred_type_when_value_is_local_image_path(
     image_as_local_path: str,
     image_as_numpy: np.ndarray,
 ) -> None:
     # when
-    result = load_image_inferred(value=image_as_local_path)
+    result = load_image_with_inferred_type(value=image_as_local_path)
 
     # then
     assert result[1] is True
@@ -289,12 +290,12 @@ def test_load_image_inferred_when_value_is_local_image_path(
 
 @mock.patch.object(image_utils, "attempt_loading_image_from_string")
 @pytest.mark.parametrize("value", ["aaa", b"some", io.BytesIO(), [1, 2, 3]])
-def test_load_image_inferred_when_value_is_unknown_and_should_be_tried_against_set_of_methods(
+def test_load_image_with_inferred_type_when_value_is_unknown_and_should_be_tried_against_set_of_methods(
     attempt_loading_image_from_string_mock: MagicMock,
     value: Any,
 ) -> None:
     # when
-    result = load_image_inferred(value=value, cv_imread_flags=cv2.IMREAD_COLOR)
+    result = load_image_with_inferred_type(value=value, cv_imread_flags=cv2.IMREAD_COLOR)
 
     # then
     assert result is attempt_loading_image_from_string_mock.return_value
@@ -407,23 +408,23 @@ def test_extract_image_payload_and_type_when_type_cannot_be_inferred(
 @pytest.mark.parametrize(
     "type_name, expected_type_enum",
     [
-        ("base64", ValueType.BASE64),
-        ("file", ValueType.FILE),
-        ("multipart", ValueType.MULTIPART),
-        ("numpy", ValueType.NUMPY),
-        ("pil", ValueType.PILLOW),
-        ("url", ValueType.URL),
-        ("BASE64", ValueType.BASE64),
-        ("FILE", ValueType.FILE),
-        ("MULTIPART", ValueType.MULTIPART),
-        ("NUMPY", ValueType.NUMPY),
-        ("PIL", ValueType.PILLOW),
-        ("URL", ValueType.URL),
+        ("base64", ImageType.BASE64),
+        ("file", ImageType.FILE),
+        ("multipart", ImageType.MULTIPART),
+        ("numpy", ImageType.NUMPY),
+        ("pil", ImageType.PILLOW),
+        ("url", ImageType.URL),
+        ("BASE64", ImageType.BASE64),
+        ("FILE", ImageType.FILE),
+        ("MULTIPART", ImageType.MULTIPART),
+        ("NUMPY", ImageType.NUMPY),
+        ("PIL", ImageType.PILLOW),
+        ("URL", ImageType.URL),
     ]
 )
 def test_extract_image_payload_and_type_when_value_is_dict_and_type_is_recognised(
     type_name: str,
-    expected_type_enum: ValueType,
+    expected_type_enum: ImageType,
 ) -> None:
     # given
     value = {"value": "some", "type": type_name}
@@ -438,23 +439,23 @@ def test_extract_image_payload_and_type_when_value_is_dict_and_type_is_recognise
 @pytest.mark.parametrize(
     "type_name, expected_type_enum",
     [
-        ("base64", ValueType.BASE64),
-        ("file", ValueType.FILE),
-        ("multipart", ValueType.MULTIPART),
-        ("numpy", ValueType.NUMPY),
-        ("pil", ValueType.PILLOW),
-        ("url", ValueType.URL),
-        ("BASE64", ValueType.BASE64),
-        ("FILE", ValueType.FILE),
-        ("MULTIPART", ValueType.MULTIPART),
-        ("NUMPY", ValueType.NUMPY),
-        ("PIL", ValueType.PILLOW),
-        ("URL", ValueType.URL),
+        ("base64", ImageType.BASE64),
+        ("file", ImageType.FILE),
+        ("multipart", ImageType.MULTIPART),
+        ("numpy", ImageType.NUMPY),
+        ("pil", ImageType.PILLOW),
+        ("url", ImageType.URL),
+        ("BASE64", ImageType.BASE64),
+        ("FILE", ImageType.FILE),
+        ("MULTIPART", ImageType.MULTIPART),
+        ("NUMPY", ImageType.NUMPY),
+        ("PIL", ImageType.PILLOW),
+        ("URL", ImageType.URL),
     ]
 )
 def test_extract_image_payload_and_type_when_value_is_request_and_type_is_recognised(
     type_name: str,
-    expected_type_enum: ValueType,
+    expected_type_enum: ImageType,
 ) -> None:
     # given
     value = InferenceRequestImage(value="some", type=type_name)
@@ -479,3 +480,146 @@ def test_extract_image_payload_and_type_when_value_is_request_and_type_is_not_re
     # when
     with pytest.raises(InvalidImageTypeDeclared):
         _ = extract_image_payload_and_type(value=value)
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
+@pytest.mark.parametrize(
+    "fixture_name, image_type, is_bgr",
+    [
+        ("image_as_jpeg_base64_bytes", ImageType.BASE64, True),
+        ("image_as_jpeg_base64_string", ImageType.BASE64, True),
+        ("image_as_local_path", ImageType.FILE, True),
+        ("image_as_buffer", ImageType.MULTIPART, True),
+        ("image_as_pickled_bytes", ImageType.NUMPY, True),
+        ("image_as_pillow", ImageType.PILLOW, False),
+    ]
+)
+def test_load_image_with_known_type_when_load_should_succeed(
+    fixture_name: str,
+    image_type: ImageType,
+    is_bgr: bool,
+    image_as_numpy: np.ndarray,
+    request: FixtureRequest,
+) -> None:
+    # given
+    value = request.getfixturevalue(fixture_name)
+
+    # when
+    result = load_image_with_known_type(value=value, image_type=image_type)
+
+    # then
+    assert result[1] is is_bgr
+    assert image_as_numpy.shape == result[0].shape
+    assert np.allclose(image_as_numpy, result[0])
+
+
+@mock.patch.object(image_utils, "IMAGE_LOADERS")
+def test_load_image_with_known_type_when_load_from_url_succeeds(
+    image_loaders_mock: MagicMock,
+) -> None:
+    # given
+    url_loader_mock = MagicMock()
+    image_loaders_mock.__getitem__.return_value = url_loader_mock
+
+    # when
+    result = load_image_with_known_type(
+        value="http://some/image.jpg",
+        image_type=ImageType.URL,
+        cv_imread_flags=cv2.IMREAD_COLOR,
+    )
+
+    # then
+    assert result[1] is True
+    assert result[0] == url_loader_mock.return_value
+    url_loader_mock.assert_called_once_with("http://some/image.jpg", cv2.IMREAD_COLOR)
+
+
+@mock.patch.object(image_utils, "IMAGE_LOADERS")
+def test_load_image_with_known_type_when_load_from_url_fails(
+    image_loaders_mock: MagicMock,
+) -> None:
+    # given
+    url_loader_mock = MagicMock()
+    url_loader_mock.side_effect = InputImageLoadError("")
+    image_loaders_mock.__getitem__.return_value = url_loader_mock
+
+    # when
+    with pytest.raises(InputImageLoadError):
+        _ = load_image_with_known_type(
+            value="http://some/image.jpg",
+            image_type=ImageType.URL,
+            cv_imread_flags=cv2.IMREAD_COLOR,
+        )
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
+def test_load_image_with_known_type_when_numpy_load_disabled_and_numpy_value_given() -> None:
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = load_image_with_known_type(
+            value=np.array([1, 2, 3]),
+            image_type=ImageType.NUMPY,
+        )
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        np.zeros((128, 128), dtype=np.uint8),
+        np.zeros((128, 128, 1), dtype=np.uint8),
+        np.zeros((128, 128, 3), dtype=np.uint8),
+    ]
+)
+def test_discard_alpha_channel_when_image_should_not_be_changed(image: np.ndarray) -> None:
+    # when
+    result = discard_alpha_channel(image=image)
+    print(image.shape)
+    # then
+    assert result is image
+
+
+def test_discard_alpha_channel_when_image_has_alpha_channel() -> None:
+    # given
+    image = np.zeros((128, 128, 4), dtype=np.uint8)
+    image[:, :, -1] = 255
+    expected_result = np.zeros((128, 128, 3), dtype=np.uint8)
+
+    # when
+    result = discard_alpha_channel(image=image)
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(expected_result, result)
+
+
+def test_convert_gray_image_to_bgr_when_three_chanel_input_submitted(image_as_numpy: np.ndarray) -> None:
+    # when
+    result = convert_gray_image_to_bgr(image=image_as_numpy)
+
+    # then
+    assert result is image_as_numpy
+
+
+def test_convert_gray_image_to_bgr_when_single_chanel_input_submitted(image_as_numpy: np.ndarray) -> None:
+    # given
+    image = np.zeros((128, 128, 1), dtype=np.uint8)
+
+    # when
+    result = convert_gray_image_to_bgr(image=image)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+
+
+def test_convert_gray_image_to_bgr_when_2d_input_submitted(image_as_numpy: np.ndarray) -> None:
+    # given
+    image = np.zeros((128, 128), dtype=np.uint8)
+
+    # when
+    result = convert_gray_image_to_bgr(image=image)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+

@@ -2,7 +2,7 @@ import os
 import pickle
 import re
 from enum import Enum
-from typing import Any, Tuple, Union, Optional
+from typing import Any, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -16,14 +16,14 @@ from inference.core.data_models import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
 from inference.core.exceptions import (
     InputImageLoadError,
-    InvalidNumpyInput,
     InvalidImageTypeDeclared,
+    InvalidNumpyInput,
 )
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
 
-class ValueType(Enum):
+class ImageType(Enum):
     BASE64 = "base64"
     FILE = "file"
     MULTIPART = "multipart"
@@ -41,7 +41,10 @@ def load_image_rgb(value: Any, disable_preproc_auto_orient=False) -> np.ndarray:
     return np_image
 
 
-def load_image(value: Any, disable_preproc_auto_orient: bool = False) -> np.ndarray:
+def load_image(
+    value: Any,
+    disable_preproc_auto_orient: bool = False,
+) -> Tuple[np.ndarray, bool]:
     """Loads an image based on the specified type and value.
 
     Args:
@@ -58,30 +61,19 @@ def load_image(value: Any, disable_preproc_auto_orient: bool = False) -> np.ndar
     cv_imread_flags = choose_image_decoding_flags(
         disable_preproc_auto_orient=disable_preproc_auto_orient
     )
-    value, payload_type = extract_image_payload_and_type(value=value)
-    is_bgr = True
-    if type is not None:
-        if type == "base64":
-            np_image = load_image_base64(value, cv_imread_flags=cv_imread_flags)
-        elif type == "file":
-            np_image = cv2.imread(value, flags=cv_imread_flags)
-        elif type == "multipart":
-            np_image = load_image_from_buffer(value, cv_imread_flags=cv_imread_flags)
-        elif type == "numpy" and ALLOW_NUMPY_INPUT:
-            np_image = load_image_from_numpy_str(value)
-        elif type == "pil":
-            np_image = np.asarray(value.convert("RGB"))
-            is_bgr = False
-        elif type == "url":
-            np_image = load_image_from_url(value, cv_imread_flags=cv_imread_flags)
-        else:
-            raise NotImplementedError(f"Image type '{type}' is not supported.")
+    value, image_type = extract_image_payload_and_type(value=value)
+    if image_type is not None:
+        np_image, is_bgr = load_image_with_known_type(
+            value=value,
+            image_type=image_type,
+            cv_imread_flags=cv_imread_flags,
+        )
     else:
-        np_image, is_bgr = load_image_inferred(value, cv_imread_flags=cv_imread_flags)
-
-    if len(np_image.shape) == 2 or np_image.shape[2] == 1:
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_GRAY2BGR)
-
+        np_image, is_bgr = load_image_with_inferred_type(
+            value, cv_imread_flags=cv_imread_flags
+        )
+    np_image = discard_alpha_channel(image=np_image)
+    np_image = convert_gray_image_to_bgr(image=np_image)
     return np_image, is_bgr
 
 
@@ -92,25 +84,40 @@ def choose_image_decoding_flags(disable_preproc_auto_orient: bool) -> int:
     return cv_imread_flags
 
 
-def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ValueType]]:
-    payload_type = None
+def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]]:
+    image_type = None
     if issubclass(type(value), InferenceRequestImage):
-        payload_type = value.type
+        image_type = value.type
         value = value.value
     elif issubclass(type(value), dict):
-        payload_type = value.get("type")
+        image_type = value.get("type")
         value = value.get("value")
-    allowed_payload_types = {e.value for e in ValueType}
-    if payload_type is None:
-        return value, payload_type
-    if payload_type.lower() not in allowed_payload_types:
+    allowed_payload_types = {e.value for e in ImageType}
+    if image_type is None:
+        return value, image_type
+    if image_type.lower() not in allowed_payload_types:
         raise InvalidImageTypeDeclared(
             f"Declared image type: {value} which is not in allowed types: {allowed_payload_types}."
         )
-    return value, ValueType(payload_type.lower())
+    return value, ImageType(image_type.lower())
 
 
-def load_image_inferred(
+def load_image_with_known_type(
+    value: Any,
+    image_type: ImageType,
+    cv_imread_flags: int = cv2.IMREAD_COLOR,
+) -> Tuple[np.ndarray, bool]:
+    if image_type is ImageType.NUMPY and not ALLOW_NUMPY_INPUT:
+        raise InvalidImageTypeDeclared(
+            f"NumPy image type is not supported in this configuration of `inference`."
+        )
+    loader = IMAGE_LOADERS[image_type]
+    is_bgr = True if image_type is not ImageType.PILLOW else False
+    image = loader(value, cv_imread_flags)
+    return image, is_bgr
+
+
+def load_image_with_inferred_type(
     value: Any,
     cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> Tuple[np.ndarray, bool]:
@@ -277,4 +284,26 @@ def load_image_from_encoded_bytes(
         raise InputImageLoadError(
             f"Could not parse response content from url {value} into image."
         )
+    return image
+
+
+IMAGE_LOADERS = {
+    ImageType.BASE64: load_image_base64,
+    ImageType.FILE: cv2.imread,
+    ImageType.MULTIPART: load_image_from_buffer,
+    ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
+    ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
+    ImageType.URL: load_image_from_url,
+}
+
+
+def discard_alpha_channel(image: np.ndarray) -> np.ndarray:
+    if len(image.shape) == 3 and image.shape[2] == 4:
+        image = image[:, :, :3]
+    return image
+
+
+def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
+    if len(image.shape) == 2 or image.shape[2] == 1:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image
