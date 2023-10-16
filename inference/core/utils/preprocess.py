@@ -1,6 +1,6 @@
 import functools
 from enum import Enum
-from typing import Tuple, Dict
+from typing import Dict, Tuple
 
 import cv2
 import numpy as np
@@ -11,7 +11,6 @@ from inference.core.env import (
     DISABLE_PREPROC_STATIC_CROP,
 )
 from inference.core.exceptions import PreProcessingError
-
 
 STATIC_CROP_KEY = "static-crop"
 CONTRAST_KEY = "contrast"
@@ -47,7 +46,7 @@ def prepare(
                 "grayscale": {"enabled": true},
                 "contrast": {"enabled": true, "type": "Adaptive Equalization"}
             }
-        disable_preproc_auto_orient (bool, optional): If true, the auto-orient preprocessing step is disabled for this call. Default is False.
+        disable_preproc_auto_orient (bool, optional): NOT USED AND DEPRECATED.
         disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
         disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
         disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
