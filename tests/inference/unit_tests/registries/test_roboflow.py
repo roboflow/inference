@@ -6,10 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests.exceptions
+from requests_mock import Mocker
 
+from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     InvalidModelIDError,
     MalformedRoboflowAPIResponseError,
+    WorkspaceLoadError,
 )
 from inference.core.registries.roboflow import (
     get_model_id_chunks,
@@ -18,8 +21,10 @@ from inference.core.registries.roboflow import (
     save_model_metadata_in_cache,
     wrap_roboflow_api_errors,
     raise_from_lambda,
+    get_roboflow_workspace,
 )
 from inference.core.registries import roboflow
+from inference.core.utils.url_utils import wrap_url
 
 
 @pytest.mark.parametrize("value", ["some", "some/2/invalid", "another-2"])
@@ -267,3 +272,75 @@ def test_wrap_roboflow_api_errors_when_connection_json_parsing_error_occurs() ->
     # when
     with pytest.raises(MalformedRoboflowAPIResponseError):
         _ = my_fun(2, 3)
+
+
+def test_get_roboflow_workspace_when_http_error_occurs(requests_mock: Mocker) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/"),
+        status_code=403,
+    )
+
+    # when
+    with pytest.raises(WorkspaceLoadError):
+        _ = get_roboflow_workspace(api_key="my_api_key")
+
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+@mock.patch.object(roboflow.requests, "get")
+def test_get_roboflow_workspace_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(WorkspaceLoadError):
+        _ = get_roboflow_workspace(api_key="my_api_key")
+
+
+def test_get_roboflow_workspace_when_response_parsing_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/"),
+        content=b"For sure not a JSON payload",
+    )
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_roboflow_workspace(api_key="my_api_key")
+
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_get_roboflow_workspace_when_workspace_id_is_empty(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/"),
+        json={"some": "payload"},
+    )
+
+    # when
+    with pytest.raises(WorkspaceLoadError):
+        _ = get_roboflow_workspace(api_key="my_api_key")
+
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/"),
+        json={"workspace": "my_workspace"},
+    )
+
+    # when
+    result = get_roboflow_workspace(api_key="my_api_key")
+
+    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert result == "my_workspace"
