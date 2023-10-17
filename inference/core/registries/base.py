@@ -1,4 +1,4 @@
-from inference.core.exceptions import ModelRegistryMissError
+from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
 
 
@@ -31,7 +31,7 @@ class ModelRegistry:
             KeyError: If the model_type is not found in the registry_dict.
         """
         if model_type not in self.registry_dict:
-            raise ModelRegistryMissError(
+            raise ModelNotRecognisedError(
                 f"Could not find model of type: {model_type} in configured registry."
             )
         return self.registry_dict[model_type]

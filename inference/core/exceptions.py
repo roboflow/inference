@@ -142,5 +142,21 @@ class PostProcessingError(Exception):
     pass
 
 
-class ModelRegistryMissError(Exception):
+class InvalidModelIDError(Exception):
+    pass
+
+
+class MalformedRoboflowAPIResponseError(Exception):
+    pass
+
+
+class ServiceConfigurationError(Exception):
+    pass
+
+
+class MissingDefaultModelError(ServiceConfigurationError):
+    pass
+
+
+class ModelNotRecognisedError(ServiceConfigurationError):
     pass
