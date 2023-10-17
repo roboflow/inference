@@ -76,6 +76,7 @@ def test_dump_json_when_parent_dir_does_not_exist(empty_local_dir: str) -> None:
     # then
     assert result == {"some": "key"}
 
+
 def test_dump_json_when_parent_dir_exists(empty_local_dir: str) -> None:
     # given
     file_path = os.path.join(empty_local_dir, "some.json")
