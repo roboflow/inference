@@ -12,7 +12,7 @@ from _io import _IOBase
 from PIL import Image
 from requests import RequestException
 
-from inference.core.data_models import InferenceRequestImage
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
 from inference.core.exceptions import (
     InputImageLoadError,

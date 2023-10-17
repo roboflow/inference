@@ -4,7 +4,7 @@ from typing import Any, List, Tuple
 import cv2
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,

@@ -14,13 +14,12 @@ from mediapipe.tasks.python.components.containers.category import Category
 from mediapipe.tasks.python.components.containers.detections import Detection
 from torchvision import transforms
 
-from inference.core.data_models import (
-    FaceDetectionPrediction,
-    GazeDetectionInferenceRequest,
+from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
+from inference.core.entities.responses.gaze import (
     GazeDetectionInferenceResponse,
     GazeDetectionPrediction,
-    Point,
 )
+from inference.core.entities.responses.inference import FaceDetectionPrediction, Point
 from inference.core.env import (
     GAZE_MAX_BATCH_SIZE,
     REQUIRED_ONNX_PROVIDERS,

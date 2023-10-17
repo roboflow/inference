@@ -5,8 +5,8 @@ from typing import Any, List, Tuple, Union
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from inference.core.data_models import (
-    ClassificationInferenceRequest,
+from inference.core.entities.requests.inference import ClassificationInferenceRequest
+from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,

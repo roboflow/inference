@@ -15,12 +15,12 @@ import onnxruntime
 import requests
 from PIL import Image
 
-from inference.core.data_models import (
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.entities.requests.inference import (
     InferenceRequest,
     InferenceRequestImage,
-    InferenceResponse,
 )
-from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_BASE_URL,
     API_KEY,

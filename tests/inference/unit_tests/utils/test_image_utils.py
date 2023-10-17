@@ -11,7 +11,7 @@ from PIL import Image
 from _pytest.fixtures import FixtureRequest
 from requests_mock import Mocker
 
-from inference.core.data_models import InferenceRequestImage
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.exceptions import (
     InputImageLoadError,
     InvalidNumpyInput,

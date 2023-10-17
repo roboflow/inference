@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
