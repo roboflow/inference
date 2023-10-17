@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
     DatasetLoadError,
     MissingDefaultModelError,
+    RoboflowAPIConnectionError,
 )
 from inference.core import roboflow_api
 from inference.core.roboflow_api import (
@@ -116,7 +117,7 @@ def test_get_roboflow_workspace_when_connection_error_occurs(
     get_mock.side_effect = ConnectionError()
 
     # when
-    with pytest.raises(WorkspaceLoadError):
+    with pytest.raises(RoboflowAPIConnectionError):
         _ = get_roboflow_workspace(api_key="my_api_key")
 
 
@@ -200,7 +201,7 @@ def test_get_roboflow_dataset_type_when_connection_error_occurs(
     get_mock.side_effect = ConnectionError()
 
     # when
-    with pytest.raises(DatasetLoadError):
+    with pytest.raises(RoboflowAPIConnectionError):
         _ = get_roboflow_dataset_type(
             api_key="my_api_key",
             workspace_id="my_workspace",
@@ -306,7 +307,7 @@ def test_get_roboflow_model_type_when_connection_error_occurs(
     get_mock.side_effect = ConnectionError()
 
     # when
-    with pytest.raises(DatasetLoadError):
+    with pytest.raises(RoboflowAPIConnectionError):
         _ = get_roboflow_model_type(
             api_key="my_api_key",
             workspace_id="my_workspace",

@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any, Callable, Type, Union
 
 import requests
@@ -15,6 +16,8 @@ from inference.core.exceptions import (
     DatasetLoadError,
     MalformedRoboflowAPIResponseError,
     MissingDefaultModelError,
+    ModelDataFetchingError,
+    RoboflowAPIConnectionError,
     WorkspaceLoadError,
 )
 from inference.core.utils.url_utils import wrap_url
@@ -67,7 +70,7 @@ def raise_from_lambda(
 
 @wrap_roboflow_api_errors(
     on_connection_error=lambda e: raise_from_lambda(
-        e, WorkspaceLoadError, "Could not connect to Roboflow API."
+        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
     ),
     on_http_error=lambda e: raise_from_lambda(
         e, WorkspaceLoadError, "Could not load workspace, check your API key"
@@ -85,7 +88,7 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 
 @wrap_roboflow_api_errors(
     on_connection_error=lambda e: raise_from_lambda(
-        e, DatasetLoadError, "Could not connect to Roboflow API."
+        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
     ),
     on_http_error=lambda e: raise_from_lambda(
         e,
@@ -114,7 +117,7 @@ def get_roboflow_dataset_type(
 
 @wrap_roboflow_api_errors(
     on_connection_error=lambda e: raise_from_lambda(
-        e, DatasetLoadError, "Could not connect to Roboflow API."
+        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
     ),
     on_http_error=lambda e: raise_from_lambda(
         e,
@@ -152,3 +155,39 @@ def get_roboflow_model_type(
             f"Model type not defined - using default for {project_task_type} task."
         )
     return model_type.get("modelType", MODEL_TYPE_DEFAULTS[project_task_type])
+
+
+class ModelEndpointType(Enum):
+    ORT = "ort"
+    CORE_MODEL = "core_model"
+
+
+def handle_model_data_fetching_error(error: requests.exceptions.HTTPError) -> None:
+    message = f"An error occurred when calling the Roboflow API to acquire the model artifacts."
+    try:
+        response_error = error.response.json().get("error")
+        if response_error is not None:
+            message = f"{message} The error was: {error}."
+    except Exception:
+        pass
+    raise ModelDataFetchingError(message) from error
+
+
+@wrap_roboflow_api_errors(
+    on_connection_error=lambda e: raise_from_lambda(
+        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
+    ),
+    on_http_error=handle_model_data_fetching_error,
+)
+def get_roboflow_model_data(
+    api_key: str,
+    model_id: str,
+    endpoint_type: ModelEndpointType,
+    device_id: str,
+) -> dict:
+    api_url = wrap_url(
+        f"{API_BASE_URL}/{endpoint_type.value}/{model_id}?api_key={api_key}&device={device_id}&nocache=true&dynamic=true"
+    )
+    model_data = requests.get(api_url)
+    model_data.raise_for_status()
+    return model_data.json()

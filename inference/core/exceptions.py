@@ -160,3 +160,11 @@ class MissingDefaultModelError(ServiceConfigurationError):
 
 class ModelNotRecognisedError(ServiceConfigurationError):
     pass
+
+
+class RoboflowAPIConnectionError(Exception):
+    pass
+
+
+class ModelDataFetchingError(Exception):
+    pass
