@@ -35,7 +35,7 @@ jobs:
           tags: roboflow/roboflow-inference-server-jetson-4.6.1:test
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:test-cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:test-cache,mode=max
-          platforms: linux/amd64
+          platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.6.1
       - name: 🔋 Start Test Docker - Jetson 4.6.1
         run: |
