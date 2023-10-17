@@ -195,7 +195,7 @@ class HttpInterface(BaseInterface):
                 """
                 response = await call_next(request)
                 if response.status_code >= 400:
-                    model_manager.model_manager.num_errors += 1
+                    model_manager.num_errors += 1
                 return response
 
         self.app = app
@@ -863,7 +863,7 @@ class HttpInterface(BaseInterface):
                     request_model_id, api_key, model_id_alias=model_id
                 )
 
-                task_type = self.model_manager.get_task_type(request_model_id)
+                task_type = self.model_manager.get_task_type(request_model_id, api_key=api_key)
                 inference_request_type = M.ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":
@@ -876,6 +876,7 @@ class HttpInterface(BaseInterface):
                     inference_request_type = M.ClassificationInferenceRequest
 
                 inference_request = inference_request_type(
+                    api_key=api_key,
                     model_id=request_model_id,
                     image=request_image,
                     confidence=confidence,

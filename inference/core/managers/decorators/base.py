@@ -1,7 +1,10 @@
-from typing import Optional
+from typing import List, Optional, Tuple
+
+import numpy as np
 
 from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.managers.base import Model, ModelManager
+from inference.core.models.types import PreprocessReturnMetadata
 
 
 class ModelManagerDecorator(ModelManager):
@@ -162,3 +165,12 @@ class ModelManagerDecorator(ModelManager):
 
     def models(self):
         return self.model_manager.models()
+
+    def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
+        return self.model_manager.predict(model_id, *args, **kwargs)
+
+    def postprocess(self, model_id: str, predictions: Tuple[np.ndarray, ...], preprocess_return_metadata: PreprocessReturnMetadata, *args, **kwargs) -> List[List[float]]:
+        return self.model_manager.postprocess(model_id, predictions, preprocess_return_metadata, *args, **kwargs)
+
+    def make_response(self, model_id: str, predictions: List[List[float]], *args, **kwargs) -> InferenceResponse:
+        return self.model_manager.make_response(model_id, predictions, *args, **kwargs)

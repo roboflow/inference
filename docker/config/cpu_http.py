@@ -11,7 +11,7 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = WithFixedSizeCache(ModelManager(model_registry))
-model_manager.model_manager.init_pingback()
+model_manager.init_pingback()
 interface = HttpInterface(model_manager)
 app = interface.app
 

@@ -43,7 +43,7 @@ class BaseInference:
         """Runs inference on a request
 
         Args:
-            request (CVInferenceRequest): The request object.
+            request (InferenceRequest): The request object.
 
         Returns:
             Union[CVInferenceResponse, List[CVInferenceResponse]]: The response object(s).

@@ -752,9 +752,12 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
+            providers = self.onnxruntime_execution_providers
+            if not self.load_weights:
+                providers = ["CPUExecutionProvider"]
             self.onnx_session = onnxruntime.InferenceSession(
                 self.cache_file(self.weights_file),
-                providers=self.onnxruntime_execution_providers,
+                providers=providers,
             )
             self.log(f"Session created in {perf_counter() - t1_session} seconds")
 
