@@ -162,9 +162,17 @@ class ModelNotRecognisedError(ServiceConfigurationError):
     pass
 
 
+class RoboflowAPIRequestError(Exception):
+    pass
+
+
 class RoboflowAPIConnectionError(Exception):
     pass
 
 
 class ModelDataFetchingError(Exception):
+    pass
+
+
+class ModelArtefactError(Exception):
     pass

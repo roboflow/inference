@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Any, Callable, Type, Union
 
 import requests
+from requests import Response
 
 from inference.core import logger
 from inference.core.entities.types import (
@@ -19,6 +20,7 @@ from inference.core.exceptions import (
     ModelDataFetchingError,
     RoboflowAPIConnectionError,
     WorkspaceLoadError,
+    RoboflowAPIRequestError,
 )
 from inference.core.utils.url_utils import wrap_url
 
@@ -191,3 +193,20 @@ def get_roboflow_model_data(
     model_data = requests.get(api_url)
     model_data.raise_for_status()
     return model_data.json()
+
+
+@wrap_roboflow_api_errors(
+    on_connection_error=lambda e: raise_from_lambda(
+        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
+    ),
+    on_http_error=lambda e: raise_from_lambda(
+        e, RoboflowAPIRequestError, "Could not execute GET request to Roboflow API."
+    ),
+)
+def get_from_roboflow_api(
+    url: str, json_response: bool = False
+) -> Union[Response, dict]:
+    response = requests.get(wrap_url(url))
+    if json_response:
+        return response.json()
+    return response

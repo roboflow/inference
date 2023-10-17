@@ -1,13 +1,12 @@
 import json
 import os
-import shutil
 import traceback
-import urllib
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
 from time import perf_counter, sleep
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, Union, Optional, Dict
 
 import cv2
 import numpy as np
@@ -15,6 +14,18 @@ import onnxruntime
 import requests
 from PIL import Image
 
+from inference.core.cache.model_artefacts import (
+    initialise_cache,
+    get_cache_file_path,
+    clear_cache,
+    are_all_files_cached,
+    load_text_file_from_cache,
+    load_json_from_cache,
+    get_cache_dir,
+    save_bytes_in_cache,
+    save_json_in_cache,
+    save_text_lines_in_cache,
+)
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -39,52 +50,50 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     OnnxProviderNotAvailable,
     TensorrtRoboflowAPIError,
+    ModelArtefactError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
+from inference.core.roboflow_api import (
+    get_roboflow_model_data,
+    ModelEndpointType,
+    get_from_roboflow_api,
+)
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import wrap_url
 
+
+NUM_S3_RETRY = 5
+SLEEP_SECONDS_BETWEEN_RETRIES = 3
+
+
+S3_CLIENT = None
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     try:
         import boto3
+        from botocore.config import Config
 
-        s3 = boto3.client("s3")
+        from inference.core.utils.s3 import download_s3_files_to_directory
+
+        config = Config(retries={"max_attempts": NUM_S3_RETRY, "mode": "standard"})
+        S3_CLIENT = boto3.client("s3", config=config)
     except:
         logger.debug("Error loading boto3")
         pass
 
-NUM_S3_RETRY = 3
-SLEEP_SECONDS_BETWEEN_RETRIES = 3
-
-
-def get_api_data(api_url):
-    """Fetch API data from a given URL.
-
-    Args:
-        api_url (str): The URL to fetch data from.
-
-    Raises:
-        TensorrtRoboflowAPIError: If an error occurs while fetching the data.
-
-    Returns:
-        dict: JSON response from the API.
-    """
-    try:
-        r = requests.get(api_url)
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        if "error" in r.json():
-            raise TensorrtRoboflowAPIError(
-                f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {api_url}. The error was: {r.json()['error']}."
-            )
-        raise TensorrtRoboflowAPIError(
-            f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {api_url}. The error was: {e}."
-        )
-    api_data = r.json()
-    return api_data
+DEFAULT_COLOR_PALETTE = [
+    "#4892EA",
+    "#00EEC3",
+    "#FE4EF0",
+    "#F4004E",
+    "#FA7200",
+    "#EEEE17",
+    "#90FF00",
+    "#78C1D2",
+    "#8C29FF",
+]
 
 
 class RoboflowInferenceModel(Model):
@@ -117,9 +126,8 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
-        os.makedirs(self.cache_dir, exist_ok=True)
+        initialise_cache(model_id=self.endpoint)
 
     def cache_file(self, f: str) -> str:
         """Get the cache file path for a given file.
@@ -130,12 +138,11 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: Full path to the cached file.
         """
-        return os.path.join(self.cache_dir, f)
+        return get_cache_file_path(file=f, model_id=self.endpoint)
 
     def clear_cache(self) -> None:
         """Clear the cache directory."""
-
-        shutil.rmtree(self.cache_dir)
+        clear_cache(model_id=self.endpoint)
 
     def draw_predictions(
         self,
@@ -238,158 +245,108 @@ class RoboflowInferenceModel(Model):
         """Fetch or load the model artifacts.
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
-
-        Raises:
-            Exception: If it fails to download the model artifacts from S3.
-            TensorrtRoboflowAPIError: If an error occurs while fetching data from the Roboflow API.
         """
+        self.cache_model_artefacts()
+        self.load_model_artefacts_from_cache()
+
+    def cache_model_artefacts(self) -> None:
+        infer_bucket_files = self.get_all_required_infer_bucket_file()
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            return None
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+        self.download_model_artefacts_from_roboflow_api()
+
+    def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
-        if all([os.path.exists(self.cache_file(f)) for f in infer_bucket_files]):
-            self.log("Model artifacts already downloaded, loading model from cache")
-            if "environment.json" in infer_bucket_files:
-                with self.open_cache("environment.json", "r") as f:
-                    self.environment = json.load(f)
+        return infer_bucket_files
 
-            if "class_names.txt" in infer_bucket_files:
-                self.class_names = []
-                with self.open_cache("class_names.txt", "r") as f:
-                    for l in f.readlines():
-                        self.class_names.append(l.strip("\n"))
-            elif "CLASS_MAP" in self.environment:
-                self.class_names = []
-                for i in range(len(self.environment["CLASS_MAP"].keys())):
-                    self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-            if "COLORS" in self.environment.keys():
-                self.colors = json.loads(self.environment["COLORS"])
-            else:
-                # then no colors have been saved to S3
-                colors_order = [
-                    "#4892EA",
-                    "#00EEC3",
-                    "#FE4EF0",
-                    "#F4004E",
-                    "#FA7200",
-                    "#EEEE17",
-                    "#90FF00",
-                    "#78C1D2",
-                    "#8C29FF",
-                ]
+    def download_model_artefacts_from_s3(self) -> None:
+        try:
+            logger.debug("Downloading model artifacts from S3")
+            infer_bucket_files = self.get_all_required_infer_bucket_file()
+            cache_directory = get_cache_dir(model_id=self.endpoint)
+            s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
+            download_s3_files_to_directory(
+                bucket=INFER_BUCKET,
+                keys=s3_keys,
+                target_dir=cache_directory,
+                s3_client=S3_CLIENT,
+            )
+        except Exception as error:
+            raise ModelArtefactError(
+                f"Could not obtain model artefacts from S3. Cause: {error}"
+            ) from error
 
-                self.colors = {}
-                i = 1
-                for c in self.class_names:
-                    self.colors[c] = colors_order[i % len(colors_order)]
-                    i += 1
+    def download_model_artefacts_from_roboflow_api(self) -> None:
+        self.log("Downloading model artifacts from Roboflow API")
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=self.device_id,
+        )
+        if "ort" not in api_data.keys():
+            raise ModelArtefactError(
+                "Could not find `ort` key in roboflow API model description response."
+            )
+        api_data = api_data["ort"]
+        if "classes" in api_data:
+            save_text_lines_in_cache(
+                content=api_data["classes"], file="class_names.txt"
+            )
+        if "model" not in api_data:
+            raise ModelArtefactError(
+                "Could not find `model` key in roboflow API model description response."
+            )
+        if "environment" not in api_data:
+            raise ModelArtefactError(
+                "Could not find `environment` key in roboflow API model description response."
+            )
+        environment = get_from_roboflow_api(api_data["environment"], json_response=True)
+        model_weights_response = get_from_roboflow_api(api_data["model"])
+        save_bytes_in_cache(
+            content=model_weights_response.content,
+            file=self.weights_file,
+            model_id=self.endpoint,
+        )
+        if "colors" in api_data:
+            environment["COLORS"] = api_data["colors"]
+        save_json_in_cache(
+            content=environment,
+            file="environment.json",
+        )
+
+    def load_model_artefacts_from_cache(self) -> None:
+        self.log("Model artifacts already downloaded, loading model from cache")
+        infer_bucket_files = self.get_all_required_infer_bucket_file()
+        if "environment.json" in infer_bucket_files:
+            self.environment = load_json_from_cache(
+                file="environment.json",
+                model_id=self.endpoint,
+                object_pairs_hook=OrderedDict,
+            )
+        if "class_names.txt" in infer_bucket_files:
+            self.class_names = load_text_file_from_cache(
+                file="class_names.txt",
+                model_id=self.endpoint,
+            )
         else:
-            # If AWS keys are available, then we can download model artifacts directly
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
-                logger.debug("Downloading model artifacts from S3")
-                for f in infer_bucket_files:
-                    success = False
-                    attempts = 0
-                    while not success and attempts < NUM_S3_RETRY:
-                        try:
-                            s3.download_file(
-                                INFER_BUCKET,
-                                f"{self.endpoint}/{f}",
-                                self.cache_file(f),
-                            )
-                            success = True
-                        except Exception as e:
-                            attempts += 1
-                            logger.error(
-                                f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f} | Weights File = {self.weights_file}",
-                                traceback.format_exc(),
-                            )
-                            sleep(SLEEP_SECONDS_BETWEEN_RETRIES)
-                    if not success:
-                        raise Exception(f"Failed to download model artifacts.")
-
-                if "environment.json" in infer_bucket_files:
-                    with self.open_cache("environment.json", "r") as f:
-                        self.environment = json.load(f)
-
-                if "class_names.txt" in infer_bucket_files:
-                    self.class_names = []
-                    with self.open_cache("class_names.txt", "r") as f:
-                        for l in f.readlines():
-                            self.class_names.append(l.strip("\n"))
-                elif "CLASS_MAP" in self.environment:
-                    self.class_names = []
-                    for i in range(len(self.environment["CLASS_MAP"].keys())):
-                        self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-
-                if "COLORS" in self.environment.keys():
-                    self.colors = json.loads(self.environment["COLORS"])
-                else:
-                    # then no colors have been saved to S3
-                    colors_order = [
-                        "#4892EA",
-                        "#00EEC3",
-                        "#FE4EF0",
-                        "#F4004E",
-                        "#FA7200",
-                        "#EEEE17",
-                        "#90FF00",
-                        "#78C1D2",
-                        "#8C29FF",
-                    ]
-
-                    self.colors = {}
-                    i = 1
-                    for c in self.class_names:
-                        self.colors[c] = colors_order[i % len(colors_order)]
-                        i += 1
-
-            else:
-                self.log("Downloading model artifacts from Roboflow API")
-                # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = wrap_url(
-                    f"{API_BASE_URL}/ort/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true&dynamic=true"
-                )
-                api_data = get_api_data(self.api_url)
-                if "ort" not in api_data.keys():
-                    raise TensorrtRoboflowAPIError(
-                        f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {self.api_url}. The error was: Key 'tensorrt' not in api_data."
-                    )
-
-                api_data = api_data["ort"]
-
-                if "classes" in api_data:
-                    self.class_names = api_data["classes"]
-                else:
-                    self.class_names = None
-
-                if "colors" in api_data:
-                    self.colors = api_data["colors"]
-
-                t1 = perf_counter()
-                weights_url = wrap_url(api_data["model"])
-                r = requests.get(weights_url)
-                with self.open_cache(self.weights_file, "wb") as f:
-                    f.write(r.content)
-                if perf_counter() - t1 > 120:
-                    self.log(
-                        "Weights download took longer than 120 seconds, refreshing API request"
-                    )
-                    api_data = get_api_data(self.api_url)
-                env_url = wrap_url(api_data["environment"])
-                self.environment = requests.get(env_url).json()
-                with open(self.cache_file("environment.json"), "w") as f:
-                    json.dump(self.environment, f)
-                if not self.class_names and "CLASS_MAP" in self.environment:
-                    self.class_names = []
-                    for i in range(len(self.environment["CLASS_MAP"].keys())):
-                        self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-
-        if not os.path.exists(self.cache_file("class_names.txt")):
-            with self.open_cache("class_names.txt", "w") as f:
-                for c in self.class_names:
-                    f.write(f"{c}\n")
+            self.class_names = get_class_names_from_environment_file(
+                environment=self.environment
+            )
+        self.colors = get_color_mapping_from_environment(
+            environment=self.environment,
+            class_names=self.class_names,
+        )
         self.num_classes = len(self.class_names)
+        if "PREPROCESSING" not in self.environment:
+            raise ModelArtefactError(
+                "Could not find `PREPROCESSING` key in environment file."
+            )
         self.preproc = json.loads(self.environment["PREPROCESSING"])
-
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
             if self.resize_method not in [
@@ -608,7 +565,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     while not success and attempts < NUM_S3_RETRY:
                         try:
                             local_file_path = self.cache_file(f)
-                            s3.download_file(
+                            S3_CLIENT.download_file(
                                 CORE_MODEL_BUCKET,
                                 f"{self.endpoint}/{f}",
                                 local_file_path,
@@ -637,7 +594,12 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 self.api_url = wrap_url(
                     f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
                 )
-                api_data = get_api_data(self.api_url)
+                api_data = get_roboflow_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    endpoint_type=ModelEndpointType.CORE_MODEL,
+                    device_id=self.device_id,
+                )
                 if "weights" not in api_data.keys():
                     raise TensorrtRoboflowAPIError(
                         f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {self.api_url}. The error was: Key 'tensorrt' not in api_data."
@@ -673,7 +635,12 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         self.log(
                             "Weights download took longer than 120 seconds, refreshing API request"
                         )
-                        api_data = get_api_data(self.api_url)
+                        api_data = get_roboflow_model_data(
+                            api_key=self.api_key,
+                            model_id=self.endpoint,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            device_id=self.device_id,
+                        )
         else:
             self.log("Model artifacts already downloaded, loading from cache")
 
@@ -839,3 +806,40 @@ class OnnxRoboflowCoreModel(RoboflowCoreModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
     pass
+
+
+def get_class_names_from_environment_file(environment: Optional[dict]) -> List[str]:
+    if environment is None:
+        raise ModelArtefactError(
+            f"Missing environment while attempting to get model class names."
+        )
+    if "CLASS_MAP" not in environment or not issubclass(
+        type(environment["CLASS_MAP"]), dict
+    ):
+        raise ModelArtefactError(
+            f"Missing `CLASS_MAP` in environment or `CLASS_MAP` is not dict."
+        )
+    return [
+        environment["CLASS_MAP"][key] for key in sorted(environment["CLASS_MAP"].keys())
+    ]
+
+
+def get_color_mapping_from_environment(
+    environment: Optional[dict], class_names: List[str]
+) -> Dict[str, str]:
+    if (
+        environment is not None
+        and "COLORS" in environment
+        and issubclass(type(environment["COLORS"]), dict)
+    ):
+        return json.loads(environment["COLORS"])
+    return {
+        class_name: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+        for i, class_name in enumerate(class_names)
+    }
+
+
+def is_model_artefacts_bucket_available() -> bool:
+    return (
+        AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA and S3_CLIENT is not None
+    )
