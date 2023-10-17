@@ -30,5 +30,6 @@ jobs:
         - name: 'Run Tests'
           run: exit 1
 
-        -name: 'Shutdown T4 Instance'
+        - name: 'Shutdown T4 Instance'
+          if: success() || failure()
           run: 'gcloud compute instances stop gh-action-runner-inference --zone us-central1-a'
