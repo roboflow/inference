@@ -25,15 +25,11 @@ jobs:
           with:
             workload_identity_provider: 'projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github'
             service_account: 'github-action@roboflow-staging.iam.gserviceaccount.com'
-            token_format: 'access_token'
     
         - name: 'Set up Cloud SDK'
           uses: 'google-github-actions/setup-gcloud@v1'
           with:
             version: '>= 363.0.0'
-    
-        - name: 'Set Account'
-          run: 'gcloud config set account roboflow-staging'
         
         - name: 'Use gcloud CLI'
-          run: 'gcloud compute instances stop gh-action-runner-inference'
+          run: 'gcloud compute instances stop gh-action-runner-inference --zone us-central1-a'
