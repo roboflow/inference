@@ -1,16 +1,10 @@
-import base64
-import time
 from dataclasses import dataclass
 from datetime import datetime
 
 import requests
 
 import docker
-from inference.core.cache import cache
-from inference.core.env import METRICS_INTERVAL
 from inference.core.logger import logger
-from inference.core.utils.image_utils import load_image_rgb
-from inference.enterprise.device_manager.helpers import get_cache_model_items
 
 
 @dataclass
@@ -77,76 +71,7 @@ class InferServerContainer:
             return False, None
 
     def snapshot(self):
-        try:
-            snapshot = self.get_latest_inferred_images()
-            snapshot.update({"container_id": self.id})
-            return True, snapshot
-        except Exception as e:
-            logger.error(e)
-            return False, None
-
-    def get_latest_inferred_images(self, max=4):
-        """
-        Retrieve the latest inferred images and associated information for this container.
-
-        This method fetches the most recent inferred images within the time interval defined by METRICS_INTERVAL.
-
-        Args:
-            max (int, optional): The maximum number of inferred images to retrieve.
-                Defaults to 4.
-
-        Returns:
-            dict: A dictionary where each key represents a model ID associated with this
-            container, and the corresponding value is a list of dictionaries containing
-            information about the latest inferred images. Each dictionary has the following keys:
-            - "image" (str): The base64-encoded image data.
-            - "dimensions" (dict): Image dimensions (width and height).
-            - "predictions" (list): A list of predictions or results associated with the image.
-
-        Notes:
-            - This method uses the global constant METRICS_INTERVAL to specify the time interval.
-        """
-
-        now = time.time()
-        start = now - METRICS_INTERVAL
-        api_keys = get_cache_model_items().get(self.id, dict()).keys()
-        model_ids = []
-        for api_key in api_keys:
-            mids = get_cache_model_items().get(self.id, dict()).get(api_key, [])
-            model_ids.extend(mids)
-        num_images = 0
-        latest_inferred_images = dict()
-        for model_id in model_ids:
-            if num_images >= max:
-                break
-            latest_reqs = cache.zrangebyscore(
-                f"inference:{self.id}:{model_id}", min=start, max=now
-            )
-            for req in latest_reqs:
-                images = req["request"]["image"]
-                image_dims = req.get("response", {}).get("image", dict())
-                predictions = req.get("response", {}).get("predictions", [])
-                if images is None or len(images) == 0:
-                    continue
-                if type(images) is not list:
-                    images = [images]
-                for image in images:
-                    value = None
-                    if image["type"] == "base64":
-                        value = image["value"]
-                    else:
-                        loaded_image = load_image_rgb(image)
-                        image_bytes = loaded_image.tobytes()
-                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                        value = image_base64
-                    if latest_inferred_images.get(model_id) is None:
-                        latest_inferred_images[model_id] = []
-                    inference = dict(
-                        image=value, dimensions=image_dims, predictions=predictions
-                    )
-                    latest_inferred_images[model_id].append(inference)
-                    num_images += 1
-        return latest_inferred_images
+        return True, None
 
     def get_startup_config(self):
         """

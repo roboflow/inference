@@ -1,18 +1,18 @@
 import time
-
-import requests
+import uuid
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.env import API_KEY, METRICS_INTERVAL, METRICS_URL, TAGS
+from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.version import __version__
-from inference.enterprise.device_manager.command_handler import handle_command
 from inference.enterprise.device_manager.container_service import (
     get_container_by_id,
     get_container_ids,
 )
 from inference.enterprise.device_manager.helpers import get_cache_model_items
+
+from inference.enterprise.device_manager import pubsub
 
 
 def aggregate_model_stats(container_id):
@@ -85,16 +85,23 @@ def build_container_stats():
             container_stats["version"] = container.version
             container_stats["startup_time"] = container.startup_time
             container_stats["models"] = models
-            if container.status == "running" or container.status == "restarting":
+            if container.status == "running":
                 container_stats["status"] = "running"
             elif container.status == "exited":
                 container_stats["status"] = "stopped"
             elif container.status == "paused":
                 container_stats["status"] = "idle"
-            else:
+            elif container.status == "restarting" or container.status == "stopping":
                 container_stats["status"] = "processing"
+            else:
+                container_stats["status"] = "unknown"
             containers.append(container_stats)
     return containers
+
+
+def get_device_id():
+    s = hex(uuid.getnode())
+    return f"{s[2:10]}-{s[10:14]}-{s[14:18]}-{s[18:22]}-{s[22:]}"
 
 
 def aggregate_device_stats():
@@ -106,9 +113,9 @@ def aggregate_device_stats():
         "api_key": API_KEY,
         "timestamp": window_start_timestamp,
         "device": {
-            "id": GLOBAL_DEVICE_ID,
+            "id": hex(uuid.getnode()),
             "name": GLOBAL_DEVICE_ID,
-            "type": f"roboflow-device-manager=={__version__}",
+            "type": f"roboflow-inference-server=={__version__}",
             "tags": TAGS,
             "system_info": get_system_info(),
             "containers": build_container_stats(),
@@ -117,19 +124,14 @@ def aggregate_device_stats():
     return all_data
 
 
-def report_metrics_and_handle_commands():
+def send_metrics():
     """
     Report metrics to Roboflow.
 
     This function aggregates statistics for the device and its containers and
-    sends them to Roboflow. If Roboflow sends back any commands, they are
-    handled by the `handle_command` function.
+    sends them to Roboflow.
     """
     all_data = aggregate_device_stats()
-    logger.info(f"Sending metrics to Roboflow {str(all_data)}.")
-    res = requests.post(METRICS_URL, json=all_data)
-    res.raise_for_status()
-    response = res.json()
-    for cmd in response.get("data", []):
-        if cmd:
-            handle_command(cmd)
+    logger.info(str(all_data))
+    if pubsub.is_connected():
+        pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)

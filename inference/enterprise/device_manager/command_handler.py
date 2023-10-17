@@ -1,13 +1,9 @@
 from typing import Literal, Optional
 
-import requests
 from pydantic import BaseModel
 
 import docker
-from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.env import API_BASE_URL, API_KEY
 from inference.core.logger import logger
-from inference.core.utils.url_utils import ApiUrl
 from inference.enterprise.device_manager.container_service import get_container_by_id
 
 
@@ -17,15 +13,6 @@ class Command(BaseModel):
     command: Literal["restart", "stop", "ping", "snapshot", "update_version"]
     deviceId: str
     requested_on: Optional[int] = None
-
-
-def fetch_commands():
-    url = ApiUrl(
-        f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands?api_key={API_KEY}"
-    )
-    resp = requests.get(url).json()
-    for cmd in resp.get("data", []):
-        handle_command(cmd)
 
 
 def handle_command(cmd_payload: dict):
@@ -53,18 +40,11 @@ def handle_command(cmd_payload: dict):
             was_processed, data = handle_version_update(container)
         case _:
             logger.error("Unknown command: {}".format(cmd))
-    return ack_command(cmd_payload.get("id"), was_processed, data=data)
+    return ack_command(was_processed, data=data)
 
 
-def ack_command(command_id, was_processed, data=None):
-    post_body = dict()
-    post_body["api_key"] = API_KEY
-    post_body["commandId"] = command_id
-    post_body["wasProcessed"] = was_processed
-    if data:
-        post_body["data"] = data
-    url = ApiUrl(f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands/ack")
-    requests.post(url, json=post_body)
+def ack_command(was_processed, data=None):
+    result = {"processed": was_processed, "data": data}
 
 
 def handle_version_update(container):
