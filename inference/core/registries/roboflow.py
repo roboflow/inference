@@ -128,7 +128,7 @@ def get_model_metadata_from_cache(
     try:
         model_metadata = read_json(path=model_type_cache_path)
         if model_metadata_content_is_invalid(content=model_metadata):
-            pass
+            return None
         return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
     except ValueError as e:
         logger.warning(

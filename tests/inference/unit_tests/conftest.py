@@ -102,6 +102,12 @@ def image_as_pillow() -> Image.Image:
 
 
 @fixture(scope="function")
+def empty_local_dir() -> Generator[str, None, None]:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        yield tmp_dir
+
+
+@fixture(scope="function")
 def image_as_local_path() -> Generator[str, None, None]:
     with tempfile.TemporaryDirectory() as tmp_dir:
         file_path = os.path.join(tmp_dir, "some_image.jpg")
