@@ -14,6 +14,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     WorkspaceLoadError,
     DatasetLoadError,
+    MissingDefaultModelError,
 )
 from inference.core.registries.roboflow import (
     get_model_id_chunks,
@@ -24,6 +25,7 @@ from inference.core.registries.roboflow import (
     raise_from_lambda,
     get_roboflow_workspace,
     get_roboflow_dataset_type,
+    get_roboflow_model_type,
 )
 from inference.core.registries import roboflow
 from inference.core.utils.url_utils import wrap_url
@@ -454,3 +456,146 @@ def test_get_roboflow_dataset_type_when_response_is_valid(
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
     assert result == "classification"
+
+
+def test_get_roboflow_model_type_when_http_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(
+            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
+        ),
+        status_code=403,
+    )
+
+    # when
+    with pytest.raises(DatasetLoadError):
+        _ = get_roboflow_model_type(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+            version_id="1",
+            project_task_type="object-detection",
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+
+
+@mock.patch.object(roboflow.requests, "get")
+def test_get_roboflow_model_type_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(DatasetLoadError):
+        _ = get_roboflow_model_type(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+            version_id="1",
+            project_task_type="object-detection",
+        )
+
+
+def test_get_roboflow_model_type_when_response_parsing_error_occurs(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(
+            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
+        ),
+        content=b"For sure not a JSON payload",
+    )
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_roboflow_model_type(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+            version_id="1",
+            project_task_type="object-detection",
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+
+
+def test_get_roboflow_model_type_when_default_model_can_be_chosen(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(
+            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
+        ),
+        json={"version": {}},
+    )
+
+    # when
+    result = get_roboflow_model_type(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        dataset_id="coins_detection",
+        version_id="1",
+        project_task_type="object-detection",
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    assert result == "yolov5v2s"
+
+
+def test_get_roboflow_model_type_when_default_model_canot_be_chosen(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(
+            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
+        ),
+        json={"version": {}},
+    )
+
+    # when
+    with pytest.raises(MissingDefaultModelError):
+        _ = get_roboflow_model_type(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+            version_id="1",
+            project_task_type="unknown",
+        )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+
+
+def test_get_roboflow_model_type_when_response_is_valid(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(
+            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
+        ),
+        json={"version": {"modelType": "yolov8n"}},
+    )
+
+    # when
+    result = get_roboflow_model_type(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        dataset_id="coins_detection",
+        version_id="1",
+        project_task_type="object-detection",
+    )
+
+    # then
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+    assert result == "yolov8n"
