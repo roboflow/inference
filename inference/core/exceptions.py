@@ -140,3 +140,7 @@ class PreProcessingError(Exception):
 
 class PostProcessingError(Exception):
     pass
+
+
+class ModelRegistryMissError(Exception):
+    pass
