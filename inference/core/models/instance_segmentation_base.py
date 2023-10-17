@@ -16,10 +16,10 @@ from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     masks2poly,
     post_process_bboxes,
+    post_process_polygons,
     process_mask_accurate,
     process_mask_fast,
     process_mask_tradeoff,
-    scale_polys,
 )
 
 DEFAULT_CONFIDENCE = 0.5
@@ -170,7 +170,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                         "disable_preproc_static_crop"
                     ],
                 )[0]
-                polys = scale_polys(
+                polys = post_process_polygons(
                     output_mask_shape,
                     polys,
                     img_dim,

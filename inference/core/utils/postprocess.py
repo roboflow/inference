@@ -356,7 +356,7 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     return masks
 
 
-def scale_polys(
+def post_process_polygons(
     img1_shape: Tuple[int, int],
     polys: List[List[Tuple[float, float]]],
     img0_shape: Tuple[int, int],
@@ -369,9 +369,9 @@ def scale_polys(
     pre-processing steps. The polygons are transformed according to the ratio and padding between two images.
 
     Args:
-        img1_shape (tuple of int): Shape of the target image (height, width).
+        img1_shape (tuple of int): Shape of the target image (height, width). <- here probably (width, high)
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
-        img0_shape (tuple of int): Shape of the source image (height, width).
+        img0_shape (tuple of int): Shape of the source image (height, width). <- here probably (width, high)
         preproc (object): Preprocessing details used for generating the transformation.
         resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
 
@@ -383,8 +383,8 @@ def scale_polys(
     )
     new_polys = []
     if resize_method == "Stretch to":
-        height_ratio = img0_shape[0] / img1_shape[0]
-        width_ratio = img0_shape[1] / img1_shape[1]
+        width_ratio = img0_shape[0] / img1_shape[0]
+        height_ratio = img0_shape[1] / img1_shape[1]
         new_polys = scale_polygons(
             polygons=polys,
             x_scale=width_ratio,
@@ -424,8 +424,8 @@ def undo_image_padding_for_predicted_polygons(
         img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
     )  # gain  = old / new
     pad = (
-        (img1_shape[1] - img0_shape[1] * gain) / 2,
         (img1_shape[0] - img0_shape[0] * gain) / 2,
+        (img1_shape[1] - img0_shape[1] * gain) / 2,
     )  # wh padding
 
     result = []

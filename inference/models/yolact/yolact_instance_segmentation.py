@@ -16,7 +16,7 @@ from inference.core.utils.postprocess import (
     crop_mask,
     masks2poly,
     post_process_bboxes,
-    scale_polys,
+    post_process_polygons,
 )
 
 
@@ -184,7 +184,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
                 boxes = post_process_bboxes(
                     [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
                 )[0]
-                polys = scale_polys(
+                polys = post_process_polygons(
                     img_in_shape[2:],
                     polys,
                     img_dim,
