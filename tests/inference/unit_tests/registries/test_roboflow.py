@@ -1,6 +1,6 @@
 import json
 import os.path
-from typing import Any, Type
+from typing import Any, Type, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -8,6 +8,7 @@ import pytest
 import requests.exceptions
 from requests_mock import Mocker
 
+from inference.core.entities.types import TaskType, ModelType
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     InvalidModelIDError,
@@ -26,6 +27,7 @@ from inference.core.registries.roboflow import (
     get_roboflow_workspace,
     get_roboflow_dataset_type,
     get_roboflow_model_type,
+    get_model_type,
 )
 from inference.core.registries import roboflow
 from inference.core.utils.url_utils import wrap_url
@@ -599,3 +601,50 @@ def test_get_roboflow_model_type_when_response_is_valid(
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
     assert result == "yolov8n"
+
+
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_cache_is_utilised(
+    construct_model_type_cache_path: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path.return_value = metadata_path
+    with open(metadata_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "project_task_type": "object-detection",
+                    "model_type": "yolov8n",
+                }
+            )
+        )
+
+    # when
+    result = get_model_type(model_id="some/1", api_key="my_api_key")
+
+    # then
+    construct_model_type_cache_path.assert_called_once_with(
+        dataset_id="some", version_id="1"
+    )
+    assert result == ("object-detection", "yolov8n")
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_result",
+    [
+        ("clip/1", ("embed", "clip")),
+        ("sam/1", ("embed", "sam")),
+        ("gaze/1", ("gaze", "l2cs")),
+    ],
+)
+def test_get_model_type_when_generic_model_is_utilised(
+    model_id: str,
+    expected_result: Tuple[TaskType, ModelType],
+) -> None:
+    # when
+    result = get_model_type(model_id=model_id, api_key="my_api_key")
+
+    # then
+    assert result == expected_result
