@@ -18,6 +18,9 @@ check_code_quality:
 start_test_docker:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/roboflow-inference-server-cpu:test
 
+stop_test_docker:
+	docker rm -f inference-test
+
 create_wheels:
 	rm -f dist/*
 	python .release/pypi/inference.core.setup.py bdist_wheel

@@ -1,4 +1,4 @@
-name: NVIDIA T4 Tests
+name: Start NVIDIA T4 Instance
 
 on:
   pull_request:
