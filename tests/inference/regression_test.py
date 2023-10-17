@@ -20,6 +20,12 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
 def model_add(test, port=9001, api_key="", base_url="http://localhost"):
     return requests.post(
         f"{base_url}:{port}/{test['project']}/{test['version']}?"
@@ -432,12 +438,13 @@ def test_detection(test, res_function):
             raise ValueError(
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
-        compare_detection_response(
-            data,
-            test["expected_response"][image_type],
-            type=test["type"],
-            multilabel=test.get("multi_label", False),
-        )
+        if not bool_env(os.getenv("FUNCTIONAL", False)):
+            compare_detection_response(
+                data,
+                test["expected_response"][image_type],
+                type=test["type"],
+                multilabel=test.get("multi_label", False),
+            )
         print(
             "\u2713"
             + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."

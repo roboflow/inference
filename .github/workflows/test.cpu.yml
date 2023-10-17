@@ -1,4 +1,4 @@
-name: Code Quality & Regression Tests
+name: Code Quality & Regression Tests - CPU
 
 on:
   pull_request:
