@@ -15,7 +15,8 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     WorkspaceLoadError,
     DatasetLoadError,
-    MissingDefaultModelError, ModelNotRecognisedError,
+    MissingDefaultModelError,
+    ModelNotRecognisedError,
 )
 from inference.core.registries.roboflow import (
     get_model_id_chunks,
@@ -27,7 +28,8 @@ from inference.core.registries.roboflow import (
     get_roboflow_workspace,
     get_roboflow_dataset_type,
     get_roboflow_model_type,
-    get_model_type, RoboflowModelRegistry,
+    get_model_type,
+    RoboflowModelRegistry,
 )
 from inference.core.registries import roboflow
 from inference.core.utils.url_utils import wrap_url
@@ -714,9 +716,9 @@ def test_roboflow_model_registry_get_model_on_cache_ht(
 ) -> None:
     # given
     get_model_type_mock.return_value = ("object-detection", "yolov8n")
-    registry = RoboflowModelRegistry(registry_dict={
-        ("object-detection", "yolov8n"): "some"
-    })
+    registry = RoboflowModelRegistry(
+        registry_dict={("object-detection", "yolov8n"): "some"}
+    )
 
     # when
     result = registry.get_model(model_id="some/1", api_key="my_api_key")
