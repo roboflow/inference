@@ -15,7 +15,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     WorkspaceLoadError,
     DatasetLoadError,
-    MissingDefaultModelError,
+    MissingDefaultModelError, ModelNotRecognisedError,
 )
 from inference.core.registries.roboflow import (
     get_model_id_chunks,
@@ -27,7 +27,7 @@ from inference.core.registries.roboflow import (
     get_roboflow_workspace,
     get_roboflow_dataset_type,
     get_roboflow_model_type,
-    get_model_type,
+    get_model_type, RoboflowModelRegistry,
 )
 from inference.core.registries import roboflow
 from inference.core.utils.url_utils import wrap_url
@@ -693,3 +693,33 @@ def test_get_model_type_when_roboflow_api_is_called(
         dataset_id="some",
     )
     get_roboflow_workspace_mock.assert_called_once_with(api_key="my_api_key")
+
+
+@mock.patch.object(roboflow, "get_model_type")
+def test_roboflow_model_registry_get_model_on_cache_miss(
+    get_model_type_mock: MagicMock,
+) -> None:
+    # given
+    get_model_type_mock.return_value = ("object-detection", "yolov8n")
+    registry = RoboflowModelRegistry(registry_dict={})
+
+    # when
+    with pytest.raises(ModelNotRecognisedError):
+        _ = registry.get_model(model_id="some/1", api_key="my_api_key")
+
+
+@mock.patch.object(roboflow, "get_model_type")
+def test_roboflow_model_registry_get_model_on_cache_ht(
+    get_model_type_mock: MagicMock,
+) -> None:
+    # given
+    get_model_type_mock.return_value = ("object-detection", "yolov8n")
+    registry = RoboflowModelRegistry(registry_dict={
+        ("object-detection", "yolov8n"): "some"
+    })
+
+    # when
+    result = registry.get_model(model_id="some/1", api_key="my_api_key")
+
+    # then
+    assert result == "some"
