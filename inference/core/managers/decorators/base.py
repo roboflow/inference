@@ -169,8 +169,19 @@ class ModelManagerDecorator(ModelManager):
     def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
         return self.model_manager.predict(model_id, *args, **kwargs)
 
-    def postprocess(self, model_id: str, predictions: Tuple[np.ndarray, ...], preprocess_return_metadata: PreprocessReturnMetadata, *args, **kwargs) -> List[List[float]]:
-        return self.model_manager.postprocess(model_id, predictions, preprocess_return_metadata, *args, **kwargs)
+    def postprocess(
+        self,
+        model_id: str,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        *args,
+        **kwargs
+    ) -> List[List[float]]:
+        return self.model_manager.postprocess(
+            model_id, predictions, preprocess_return_metadata, *args, **kwargs
+        )
 
-    def make_response(self, model_id: str, predictions: List[List[float]], *args, **kwargs) -> InferenceResponse:
+    def make_response(
+        self, model_id: str, predictions: List[List[float]], *args, **kwargs
+    ) -> InferenceResponse:
         return self.model_manager.make_response(model_id, predictions, *args, **kwargs)

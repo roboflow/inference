@@ -1,13 +1,18 @@
-from typing import Any, Coroutine, Optional
-from inference.core.data_models import InferenceRequest, InferenceResponse, response_from_type
-from inference.core.managers.base import ModelManager
 import asyncio
 import json
-from redis import Redis
-from inference.core.env import REDIS_HOST, REDIS_PORT
-from time import time, perf_counter
 from dataclasses import dataclass
+from time import perf_counter, time
+from typing import Any, Coroutine, Optional
 
+from redis import Redis
+
+from inference.core.data_models import (
+    InferenceRequest,
+    InferenceResponse,
+    response_from_type,
+)
+from inference.core.env import REDIS_HOST, REDIS_PORT
+from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess
 from inference.core.registries.roboflow import get_model_type
 
@@ -82,7 +87,9 @@ class DispatchModelManager(ModelManager):
         self.checker.add_task(request.id)
         preprocess.s(request.dict()).delay()
         response_json_string = await self.checker.wait_for_response(request.id)
-        response = response_from_type(self.get_task_type(model_id))(**json.loads(response_json_string))
+        response = response_from_type(self.get_task_type(model_id))(
+            **json.loads(response_json_string)
+        )
         response.time = perf_counter() - t
         return response
 

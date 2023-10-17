@@ -1,21 +1,23 @@
-from multiprocessing import shared_memory
+import base64
+import io
+import json
 import logging
+import time
+from multiprocessing import shared_memory
+from time import perf_counter
+from typing import Tuple
+
 import numpy as np
 from PIL import Image
-import io
-import base64
-from redis import Redis, ConnectionPool
-import json
-import time
-from typing import Tuple
-from inference.core.parallel.tasks import postprocess
-from time import perf_counter
-from inference.models.utils import get_roboflow_model
+from redis import ConnectionPool, Redis
+
 from inference.core.cache import cache
-from inference.core.managers.base import ModelManager
-from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.data_models import request_from_type
+from inference.core.managers.base import ModelManager
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.parallel.tasks import postprocess
+from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.models.utils import get_roboflow_model
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 r = Redis(connection_pool=pool, decode_responses=True)
@@ -47,7 +49,7 @@ class InferServer:
         r.zrem(f"infer:{selected_model}", *[b[0] for b in batch])
         r.hincrby(f"requests", selected_model, -len(batch))
         batch = [json.loads(b[0]) for b in batch]
-        model_id = selected_model 
+        model_id = selected_model
         model_manager.add_model(model_id, batch[0]["request"]["api_key"])
         model_type = model_manager.get_task_type(model_id)
         for b in batch:

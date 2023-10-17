@@ -137,7 +137,12 @@ class ModelManager:
         return self._models[model_id].make_response(predictions, *args, **kwargs)
 
     def postprocess(
-        self, model_id: str, predictions: Tuple[np.ndarray, ...], preprocess_return_metadata: PreprocessReturnMetadata, *args, **kwargs
+        self,
+        model_id: str,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        *args,
+        **kwargs,
     ) -> List[List[float]]:
         """Processes the model's predictions after inference.
 
@@ -149,7 +154,9 @@ class ModelManager:
             List[List[float]]: The post-processed predictions.
         """
         self.check_for_model(model_id)
-        return self._models[model_id].postprocess(predictions, preprocess_return_metadata, *args, **kwargs)
+        return self._models[model_id].postprocess(
+            predictions, preprocess_return_metadata, *args, **kwargs
+        )
 
     def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
         """Runs prediction on the specified model.

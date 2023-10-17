@@ -859,6 +859,7 @@ class GazeDetectionInferenceResponse(BaseModel):
         description="The gaze detection time (second)"
     )
 
+
 def request_from_type(model_type):
     if model_type == "classification":
         return ClassificationInferenceRequest
@@ -868,6 +869,7 @@ def request_from_type(model_type):
         return ObjectDetectionInferenceRequest
     else:
         raise ValueError(f"Uknown task type {model_type}")
+
 
 def response_from_type(model_type):
     if model_type == "classification":

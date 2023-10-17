@@ -1,29 +1,28 @@
-from celery import Celery
-from multiprocessing import shared_memory
-import numpy as np
-from PIL import Image
-import io
 import base64
-from redis import Redis, ConnectionPool
+import io
 import json
 import time
-from inference.models.utils import get_roboflow_model
+from contextlib import contextmanager
+from multiprocessing import shared_memory
+
+import numpy as np
+from celery import Celery
+from PIL import Image
+from redis import ConnectionPool, Redis
+
 from inference.core.data_models import (
     InferenceRequest,
     InferenceResponse,
     request_from_type,
 )
-from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
-from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.models.types import PreprocessReturnMetadata
-
-from inference.models.utils import ROBOFLOW_MODEL_TYPES
-from contextlib import contextmanager
-
+from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_roboflow_model
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 app = Celery("tasks", broker="redis://localhost:6379")
@@ -84,7 +83,7 @@ def postprocess(arg_list, request, metadata):
         tuple(outputs),
         metadata,
         **request_dict,
-        return_image_dims=True
+        return_image_dims=True,
     )
 
     dim = metadata["img_dims"]
