@@ -1,13 +1,13 @@
-name: Start GPU Runner
+name: NVIDIA T4 Tests
 
 on:
-    pull_request:
-        branches: [main]
+  pull_request:
+      branches: [main]
 
 jobs:
     start:
         runs-on: ubuntu-latest
-      # Add "id-token" with the intended permissions.
+      
         permissions:
             contents: 'read'
             id-token: 'write'
@@ -23,6 +23,12 @@ jobs:
           uses: 'google-github-actions/setup-gcloud@v1'
           with:
             version: '>= 363.0.0'
-    
-        - name: 'Use gcloud CLI'
-          run: 'gcloud info'
+        
+        - name: 'Start T4 Instance'
+          run: 'gcloud compute instances start gh-action-runner-inference --zone us-central1-a'
+
+        - name: 'Run Tests'
+          run: exit 1
+
+        -name: 'Shutdown T4 Instance'
+          run: 'gcloud compute instances stop gh-action-runner-inference --zone us-central1-a'
