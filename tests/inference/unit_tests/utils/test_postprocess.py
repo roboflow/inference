@@ -13,7 +13,9 @@ from inference.core.utils.postprocess import (
     stretch_crop_predictions,
     post_process_bboxes,
     sigmoid,
-    scale_bboxes, undo_image_padding_for_predicted_polygons,
+    scale_bboxes,
+    undo_image_padding_for_predicted_polygons,
+    scale_polygons,
 )
 
 
@@ -388,14 +390,10 @@ def test_scale_bboxes(
 
 def test_undo_image_padding_for_predicted_polygons() -> None:
     # given
-    polygons = [
-        [(64, 20), (74, 30), (84, 40)],
-        [(94, 50), (104, 60), (114, 70)]
-    ]
-    expected_result = np.array([
-        [(0, 20), (10, 30), (20, 40)],
-        [(30, 50), (40, 60), (50, 70)]
-    ])
+    polygons = [[(64, 20), (74, 30), (84, 40)], [(94, 50), (104, 60), (114, 70)]]
+    expected_result = np.array(
+        [[(0, 20), (10, 30), (20, 40)], [(30, 50), (40, 60), (50, 70)]]
+    )
 
     # when
     result = undo_image_padding_for_predicted_polygons(
@@ -404,4 +402,23 @@ def test_undo_image_padding_for_predicted_polygons() -> None:
         img1_shape=(256, 256),
     )
 
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_scale_polygons() -> None:
+    # given
+    polygons = [[(10, 20), (20, 30), (30, 40)], [(40, 50), (50, 60), (60, 70)]]
+    expected_result = np.array(
+        [[(20, 10), (40, 15), (60, 20)], [(80, 25), (100, 30), (120, 35)]]
+    )
+
+    # when
+    result = scale_polygons(
+        polygons=polygons,
+        x_scale=2.0,
+        y_scale=0.5,
+    )
+
+    # then
     assert np.allclose(np.array(result), expected_result)
