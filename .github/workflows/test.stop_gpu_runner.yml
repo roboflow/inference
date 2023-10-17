@@ -33,6 +33,9 @@ jobs:
     
         - name: 'Set Account'
           run: 'gcloud config set account roboflow-staging'
+
+        - name: 'Login via gcloud CLI'
+          run: 'gcloud auth login'
         
         - name: 'Use gcloud CLI'
           run: 'gcloud compute instances stop gh-action-runner-inference'
