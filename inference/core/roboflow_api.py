@@ -19,8 +19,8 @@ from inference.core.exceptions import (
     MissingDefaultModelError,
     ModelDataFetchingError,
     RoboflowAPIConnectionError,
-    WorkspaceLoadError,
     RoboflowAPIRequestError,
+    WorkspaceLoadError,
 )
 from inference.core.utils.url_utils import wrap_url
 

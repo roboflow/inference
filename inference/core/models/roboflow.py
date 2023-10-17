@@ -1,27 +1,25 @@
 import json
 import os
-import traceback
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from io import BytesIO
-from time import perf_counter, sleep
-from typing import Any, List, Tuple, Union, Optional, Dict
+from time import perf_counter
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import onnxruntime
-import requests
 from PIL import Image
 
 from inference.core.cache.model_artefacts import (
-    initialise_cache,
-    get_cache_file_path,
-    clear_cache,
     are_all_files_cached,
-    load_text_file_from_cache,
-    load_json_from_cache,
+    clear_cache,
     get_cache_dir,
+    get_cache_file_path,
+    initialise_cache,
+    load_json_from_cache,
+    load_text_file_from_cache,
     save_bytes_in_cache,
     save_json_in_cache,
     save_text_lines_in_cache,
@@ -37,7 +35,6 @@ from inference.core.env import (
     API_KEY,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     LAMBDA,
@@ -48,22 +45,21 @@ from inference.core.env import (
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
+    ModelArtefactError,
     OnnxProviderNotAvailable,
     TensorrtRoboflowAPIError,
-    ModelArtefactError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.roboflow_api import (
-    get_roboflow_model_data,
     ModelEndpointType,
     get_from_roboflow_api,
+    get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import prepare
 from inference.core.utils.url_utils import wrap_url
-
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -550,49 +546,39 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
         This method includes handling for AWS access keys and error handling.
         """
-        if any(
-            [
-                not os.path.exists(self.cache_file(f))
-                for f in self.get_infer_bucket_file_list()
-            ]
-        ):
-            self.log("Downloading model artifacts")
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
-                infer_bucket_files = self.get_infer_bucket_file_list()
-                for f in infer_bucket_files:
-                    success = False
-                    attempts = 0
-                    while not success and attempts < NUM_S3_RETRY:
-                        try:
-                            local_file_path = self.cache_file(f)
-                            S3_CLIENT.download_file(
-                                CORE_MODEL_BUCKET,
-                                f"{self.endpoint}/{f}",
-                                local_file_path,
-                            )
+        infer_bucket_files = self.get_infer_bucket_file_list()
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            self.log("Model artifacts already downloaded, loading from cache")
+            return None
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+        self.download_mode_from_roboflow_api()
 
-                            # Check file size
-                            if (
-                                os.path.getsize(local_file_path) <= 4096
-                                and attempts < 2
-                            ):
-                                attempts += 1
-                                continue
-
-                            success = True
-                        except Exception as e:
-                            attempts += 1
-                            logger.error(
-                                f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f}",
-                                traceback.format_exc(),
-                            )
-                            sleep(SLEEP_SECONDS_BETWEEN_RETRIES)
-                    if not success:
-                        raise Exception(f"Failed to download model artifacts.")
-            else:
-                # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = wrap_url(
-                    f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
+    def download_mode_from_roboflow_api(self) -> None:
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.CORE_MODEL,
+            device_id=self.device_id,
+        )
+        if "weights" not in api_data:
+            raise ModelArtefactError(
+                f"`weights` key not available in Roboflow API response while downloading model weights."
+            )
+        for weights_url_key in api_data["weights"]:
+            weights_url = wrap_url(api_data["weights"][weights_url_key])
+            t1 = perf_counter()
+            model_weights_response = get_from_roboflow_api(weights_url)
+            filename = weights_url.split("?")[0].split("/")[-1]
+            save_bytes_in_cache(
+                content=model_weights_response.content,
+                file=filename,
+                model_id=self.endpoint,
+            )
+            if perf_counter() - t1 > 120:
+                self.log(
+                    "Weights download took longer than 120 seconds, refreshing API request"
                 )
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,
@@ -600,49 +586,6 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     endpoint_type=ModelEndpointType.CORE_MODEL,
                     device_id=self.device_id,
                 )
-                if "weights" not in api_data.keys():
-                    raise TensorrtRoboflowAPIError(
-                        f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {self.api_url}. The error was: Key 'tensorrt' not in api_data."
-                    )
-
-                weights_url_keys = api_data["weights"].keys()
-
-                for weights_url_key in weights_url_keys:
-                    weights_url = wrap_url(api_data["weights"][weights_url_key])
-                    t1 = perf_counter()
-                    attempts = 0
-                    success = False
-                    while attempts < 3 and not success:
-                        r = requests.get(weights_url)
-                        filename = weights_url.split("?")[0].split("/")[-1]
-                        file_path = self.open_cache(f"{filename}", "wb")
-                        with file_path as f:
-                            f.write(r.content)
-
-                        # Check file size
-                        if os.path.getsize(file_path.name) <= 4096:
-                            if attempts < 2:
-                                attempts += 1
-                                continue
-                            else:
-                                raise Exception(
-                                    f"Failed to download model artifacts from API after 2 attempts."
-                                )
-                        else:
-                            success = True
-
-                    if perf_counter() - t1 > 120:
-                        self.log(
-                            "Weights download took longer than 120 seconds, refreshing API request"
-                        )
-                        api_data = get_roboflow_model_data(
-                            api_key=self.api_key,
-                            model_id=self.endpoint,
-                            endpoint_type=ModelEndpointType.CORE_MODEL,
-                            device_id=self.device_id,
-                        )
-        else:
-            self.log("Model artifacts already downloaded, loading from cache")
 
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.
@@ -813,9 +756,7 @@ def get_class_names_from_environment_file(environment: Optional[dict]) -> List[s
         raise ModelArtefactError(
             f"Missing environment while attempting to get model class names."
         )
-    if "CLASS_MAP" not in environment or not issubclass(
-        type(environment["CLASS_MAP"]), dict
-    ):
+    if class_mapping_not_available_in_environment(environment=environment):
         raise ModelArtefactError(
             f"Missing `CLASS_MAP` in environment or `CLASS_MAP` is not dict."
         )
@@ -824,19 +765,29 @@ def get_class_names_from_environment_file(environment: Optional[dict]) -> List[s
     ]
 
 
+def class_mapping_not_available_in_environment(environment: dict) -> bool:
+    return "CLASS_MAP" not in environment or not issubclass(
+        type(environment["CLASS_MAP"]), dict
+    )
+
+
 def get_color_mapping_from_environment(
     environment: Optional[dict], class_names: List[str]
 ) -> Dict[str, str]:
-    if (
-        environment is not None
-        and "COLORS" in environment
-        and issubclass(type(environment["COLORS"]), dict)
-    ):
+    if color_mapping_available_in_environment(environment=environment):
         return json.loads(environment["COLORS"])
     return {
         class_name: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
         for i, class_name in enumerate(class_names)
     }
+
+
+def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
+    return (
+        environment is not None
+        and "COLORS" in environment
+        and issubclass(type(environment["COLORS"]), dict)
+    )
 
 
 def is_model_artefacts_bucket_available() -> bool:

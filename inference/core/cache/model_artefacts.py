@@ -1,14 +1,14 @@
 import os.path
 import shutil
-from typing import Optional, List, Union
+from typing import List, Optional, Union
 
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.utils.file_system import (
-    read_text_file,
-    read_json,
     dump_bytes,
     dump_json,
     dump_text_lines,
+    read_json,
+    read_text_file,
 )
 
 
