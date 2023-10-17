@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import docker
 from inference.core.logger import logger
 from inference.enterprise.device_manager.container_service import get_container_by_id
+from inference.enterprise.device_manager.helpers import get_device_id
 
 
 class Command(BaseModel):
@@ -17,12 +18,12 @@ class Command(BaseModel):
 
 def handle_command(cmd_payload: dict):
     was_processed = False
+    if get_device_id() != cmd_payload.get("deviceId"):
+        return was_processed, None
     container_id = cmd_payload.get("containerId")
     container = get_container_by_id(container_id)
     if not container:
-        logger.warn(f"Container with id {container_id} not found")
-        ack_command(cmd_payload.get("id"), was_processed)
-        return
+        return was_processed, None
     cmd = cmd_payload.get("command")
     data = None
     match cmd:
@@ -40,11 +41,12 @@ def handle_command(cmd_payload: dict):
             was_processed, data = handle_version_update(container)
         case _:
             logger.error("Unknown command: {}".format(cmd))
-    return ack_command(was_processed, data=data)
+    if was_processed:
+        from inference.enterprise.device_manager.metrics_service import (
+            send_metrics,
+        )  # isort: skip
 
-
-def ack_command(was_processed, data=None):
-    result = {"processed": was_processed, "data": data}
+        send_metrics()
 
 
 def handle_version_update(container):

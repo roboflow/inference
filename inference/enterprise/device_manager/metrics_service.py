@@ -1,5 +1,4 @@
 import time
-import uuid
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS
@@ -10,7 +9,10 @@ from inference.enterprise.device_manager.container_service import (
     get_container_by_id,
     get_container_ids,
 )
-from inference.enterprise.device_manager.helpers import get_cache_model_items
+from inference.enterprise.device_manager.helpers import (
+    get_cache_model_items,
+    get_device_id,
+)
 
 from inference.enterprise.device_manager import pubsub
 
@@ -99,11 +101,6 @@ def build_container_stats():
     return containers
 
 
-def get_device_id():
-    s = hex(uuid.getnode())
-    return f"{s[2:10]}-{s[10:14]}-{s[14:18]}-{s[18:22]}-{s[22:]}"
-
-
 def aggregate_device_stats():
     """
     Aggregate statistics for the device.
@@ -113,7 +110,7 @@ def aggregate_device_stats():
         "api_key": API_KEY,
         "timestamp": window_start_timestamp,
         "device": {
-            "id": hex(uuid.getnode()),
+            "id": get_device_id(),
             "name": GLOBAL_DEVICE_ID,
             "type": f"roboflow-inference-server=={__version__}",
             "tags": TAGS,
@@ -133,5 +130,4 @@ def send_metrics():
     """
     all_data = aggregate_device_stats()
     logger.info(str(all_data))
-    if pubsub.is_connected():
-        pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)
+    pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)

@@ -10,6 +10,7 @@ from inference.enterprise.device_manager.command_handler import (
 from inference.enterprise.device_manager.metrics_service import (
     send_metrics,
 )
+from inference.enterprise.device_manager.pubsub import connect_mqtt
 
 app = FastAPI(
     title="Roboflow Device Manager",
@@ -56,3 +57,4 @@ async def exec_command(command: Command):
 scheduler = BackgroundScheduler(job_defaults={"coalesce": True})
 scheduler.add_job(send_metrics, "interval", seconds=METRICS_INTERVAL)
 scheduler.start()
+connect_mqtt()

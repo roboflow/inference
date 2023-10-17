@@ -1,7 +1,13 @@
 import time
+import uuid
 
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL
+
+
+def get_device_id():
+    return hex(uuid.getnode())
+    # return f"{s[2:10]}:{s[10:14]}:{s[14:18]}:{s[18:22]}:{s[22:]}"
 
 
 def get_cache_model_items():

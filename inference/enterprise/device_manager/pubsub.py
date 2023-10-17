@@ -1,6 +1,7 @@
 import time
 import random
 import uuid
+import json
 
 from paho.mqtt import client as mqtt_client
 from inference.enterprise.device_manager.command_handler import handle_command
@@ -55,34 +56,30 @@ def on_message(client, userdata, msg):
     logger.info(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
     if msg.topic == COMMANDS_TOPIC:
         logger.info(f"Received `{msg.payload.decode()}` from `{msg.topic}` topic")
-        handle_command(msg.payload.decode())
+        payload = json.loads(msg.payload.decode())
+        handle_command(payload)
 
 
 def connect_mqtt():
-    client = mqtt_client.Client(CLIENT_ID)
-    client.tls_set(ca_certs="./inference/enterprise/device_manager/serverless.crt")
+    client = mqtt_client.Client(CLIENT_ID, clean_session=False)
+    client.tls_set(ca_certs="./inference/enterprise/device_manager/broker.crt")
     client.username_pw_set(MESSAGE_BROKER_USER, MESSAGE_BROKER_PASSWORD)
+    client.enable_logger()
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(MESSAGE_BROKER_HOST, 8883, keepalive=120)
     client.on_disconnect = on_disconnect
+    client.connect(MESSAGE_BROKER_HOST, 8883, keepalive=120)
     return client
 
 
-client = connect_mqtt()
-
-
-def dispatch(topic, message):
+def dispatch(topic, message, qos=0, retain=False):
+    client = connect_mqtt()
     client.loop_start()
     time.sleep(1)
     if client.is_connected():
         logger.info("Connection to broker established")
-        result = client.publish(topic, str(message))
+        result = client.publish(topic, json.dumps(message), qos=qos, retain=retain)
         logger.info(f"Message published result: {result}")
     else:
         logger.error("Failed to connect to message broker")
         client.loop_stop()
-
-
-def is_connected():
-    return client.is_connected()
