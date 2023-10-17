@@ -31,7 +31,6 @@ from inference.core.entities.requests.inference import (
 )
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
-    API_BASE_URL,
     API_KEY,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
@@ -47,7 +46,6 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
     OnnxProviderNotAvailable,
-    TensorrtRoboflowAPIError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
@@ -58,8 +56,9 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image, load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
-from inference.core.utils.preprocess import prepare
+from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.url_utils import wrap_url
+from inference.core.utils.visualisation import draw_detection_predictions
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -144,7 +143,7 @@ class RoboflowInferenceModel(Model):
         self,
         inference_request: InferenceRequest,
         inference_response: InferenceResponse,
-    ) -> str:
+    ) -> bytes:
         """Draw predictions from an inference response onto the original image provided by an inference request
 
         Args:
@@ -154,62 +153,11 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: A base64 encoded image string
         """
-        image = load_image_rgb(inference_request.image)
-
-        for box in inference_response.predictions:
-            color = tuple(
-                int(self.colors.get(box.class_name, "#4892EA")[i : i + 2], 16)
-                for i in (1, 3, 5)
-            )
-            x1 = int(box.x - box.width / 2)
-            x2 = int(box.x + box.width / 2)
-            y1 = int(box.y - box.height / 2)
-            y2 = int(box.y + box.height / 2)
-
-            cv2.rectangle(
-                image,
-                (x1, y1),
-                (x2, y2),
-                color=color,
-                thickness=inference_request.visualization_stroke_width,
-            )
-            if hasattr(box, "points"):
-                points = np.array([(int(p.x), int(p.y)) for p in box.points], np.int32)
-                if len(points) > 2:
-                    cv2.polylines(
-                        image,
-                        [points],
-                        isClosed=True,
-                        color=color,
-                        thickness=inference_request.visualization_stroke_width,
-                    )
-            if inference_request.visualization_labels:
-                text = f"{box.class_name} {box.confidence:.2f}"
-                (text_width, text_height), _ = cv2.getTextSize(
-                    text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-                )
-                button_size = (text_width + 20, text_height + 20)
-                button_img = np.full(
-                    (button_size[1], button_size[0], 3), color[::-1], dtype=np.uint8
-                )
-                cv2.putText(
-                    button_img,
-                    text,
-                    (10, 10 + text_height),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1,
-                )
-                end_x = min(x1 + button_size[0], image.shape[1])
-                end_y = min(y1 + button_size[1], image.shape[0])
-                image[y1:end_y, x1:end_x] = button_img[: end_y - y1, : end_x - x1]
-
-        image = Image.fromarray(image)
-        buffered = BytesIO()
-        image = image.convert("RGB")
-        image.save(buffered, format="JPEG")
-        return buffered.getvalue()
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=self.colors,
+        )
 
     @property
     def get_class_names(self):
@@ -363,67 +311,6 @@ class RoboflowInferenceModel(Model):
         """
         raise NotImplementedError(self.__class__.__name__ + ".initialize_model")
 
-    @staticmethod
-    def letterbox_image(img, desired_size, c=(0, 0, 0)):
-        """
-        Resize and pad image to fit the desired size, preserving its aspect ratio.
-
-        Parameters:
-        - img: numpy array representing the image.
-        - desired_size: tuple (width, height) representing the target dimensions.
-        - color: tuple (B, G, R) representing the color to pad with.
-
-        Returns:
-        - letterboxed image.
-        """
-        # Calculate the ratio of the old dimensions compared to the new desired dimensions
-        img_ratio = img.shape[1] / img.shape[0]
-        desired_ratio = desired_size[0] / desired_size[1]
-
-        # Determine the new dimensions
-        if img_ratio >= desired_ratio:
-            # Resize by width
-            new_width = desired_size[0]
-            new_height = int(desired_size[0] / img_ratio)
-        else:
-            # Resize by height
-            new_height = desired_size[1]
-            new_width = int(desired_size[1] * img_ratio)
-
-        # Resize the image to new dimensions
-        resized_img = cv2.resize(img, (new_width, new_height))
-
-        # Pad the image to fit the desired size
-        top_padding = (desired_size[1] - new_height) // 2
-        bottom_padding = desired_size[1] - new_height - top_padding
-        left_padding = (desired_size[0] - new_width) // 2
-        right_padding = desired_size[0] - new_width - left_padding
-
-        letterboxed_img = cv2.copyMakeBorder(
-            resized_img,
-            top_padding,
-            bottom_padding,
-            left_padding,
-            right_padding,
-            cv2.BORDER_CONSTANT,
-            value=c,
-        )
-
-        return letterboxed_img
-
-    def open_cache(self, f: str, mode: str, encoding: str = None):
-        """Opens a cache file with the given filename, mode, and encoding.
-
-        Args:
-            f (str): Filename to open from cache.
-            mode (str): Mode in which to open the file (e.g., 'r' for read, 'w' for write).
-            encoding (str, optional): Encoding to use when opening the file. Defaults to None.
-
-        Returns:
-            file object: The opened file object.
-        """
-        return open(self.cache_file(f), mode, encoding=encoding)
-
     def preproc_image(
         self,
         image: Union[Any, InferenceRequestImage],
@@ -464,14 +351,14 @@ class RoboflowInferenceModel(Model):
                 preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
-            resized = self.letterbox_image(
+            resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
             )
         elif self.resize_method == "Fit (white edges) in":
-            resized = self.letterbox_image(
+            resized = letterbox_image(
                 preprocessed_image,
                 (self.img_size_w, self.img_size_h),
-                c=(255, 255, 255),
+                color=(255, 255, 255),
             )
 
         if is_bgr:

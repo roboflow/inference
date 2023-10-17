@@ -170,3 +170,52 @@ def grayscale_conversion_should_be_applied(
 def apply_grayscale_conversion(image: np.ndarray) -> np.ndarray:
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+
+def letterbox_image(
+    image: np.ndarray,
+    desired_size: Tuple[int, int],
+    color: Tuple[int, int, int],
+) -> np.ndarray:
+    """
+    Resize and pad image to fit the desired size, preserving its aspect ratio.
+
+    Parameters:
+    - image: numpy array representing the image.
+    - desired_size: tuple (width, height) representing the target dimensions.
+    - color: tuple (B, G, R) representing the color to pad with.
+
+    Returns:
+    - letterboxed image.
+    """
+    img_ratio = image.shape[1] / image.shape[0]
+    desired_ratio = desired_size[0] / desired_size[1]
+
+    # Determine the new dimensions
+    if img_ratio >= desired_ratio:
+        # Resize by width
+        new_width = desired_size[0]
+        new_height = int(desired_size[0] / img_ratio)
+    else:
+        # Resize by height
+        new_height = desired_size[1]
+        new_width = int(desired_size[1] * img_ratio)
+
+    # Resize the image to new dimensions
+    resized_img = cv2.resize(image, (new_width, new_height))
+
+    # Pad the image to fit the desired size
+    top_padding = (desired_size[1] - new_height) // 2
+    bottom_padding = desired_size[1] - new_height - top_padding
+    left_padding = (desired_size[0] - new_width) // 2
+    right_padding = desired_size[0] - new_width - left_padding
+
+    return cv2.copyMakeBorder(
+        resized_img,
+        top_padding,
+        bottom_padding,
+        left_padding,
+        right_padding,
+        cv2.BORDER_CONSTANT,
+        value=color,
+    )

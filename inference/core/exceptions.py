@@ -176,3 +176,7 @@ class ModelDataFetchingError(Exception):
 
 class ModelArtefactError(Exception):
     pass
+
+
+class InferenceVisualisationError(Exception):
+    pass

@@ -2,6 +2,7 @@ import os
 import pickle
 import re
 from enum import Enum
+from io import BytesIO
 from typing import Any, Optional, Tuple, Union
 
 import cv2
@@ -305,3 +306,12 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
     if len(image.shape) == 2 or image.shape[2] == 1:
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image
+
+
+def np_image_to_base64(image: np.ndarray) -> bytes:
+    image = Image.fromarray(image)
+    with BytesIO() as buffer:
+        image = image.convert("RGB")
+        image.save(buffer, format="JPEG")
+        buffer.seek(0)
+        return buffer.getvalue()
