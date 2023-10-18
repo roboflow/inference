@@ -19,6 +19,7 @@ from inference.core.exceptions import (
     InputImageLoadError,
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
+    InputFormatInferenceFailed,
 )
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
@@ -169,7 +170,12 @@ def attempt_loading_image_from_string(
         )
     except:
         pass
-    return load_image_from_numpy_str(value=value), True
+    try:
+        return load_image_from_numpy_str(value=value), True
+    except InvalidNumpyInput as error:
+        raise InputFormatInferenceFailed(
+            "Input image format could not be inferred from string."
+        ) from error
 
 
 def load_image_base64(

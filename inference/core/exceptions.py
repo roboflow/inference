@@ -94,6 +94,10 @@ class InvalidImageTypeDeclared(InputImageLoadError):
     pass
 
 
+class InputFormatInferenceFailed(InputImageLoadError):
+    pass
+
+
 class PreProcessingError(Exception):
     pass
 
