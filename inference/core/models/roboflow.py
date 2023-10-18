@@ -54,10 +54,9 @@ from inference.core.roboflow_api import (
     get_from_roboflow_api,
     get_roboflow_model_data,
 )
-from inference.core.utils.image_utils import load_image, load_image_rgb
+from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
-from inference.core.utils.url_utils import wrap_url
 from inference.core.utils.visualisation import draw_detection_predictions
 
 NUM_S3_RETRY = 5
