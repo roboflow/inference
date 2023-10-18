@@ -10,7 +10,6 @@ from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     WorkspaceLoadError,
-    DatasetLoadError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorisedError,
