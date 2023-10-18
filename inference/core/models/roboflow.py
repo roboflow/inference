@@ -208,7 +208,7 @@ class RoboflowInferenceModel(Model):
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
         """
         self.cache_model_artefacts()
-        self.load_model_artefacts_from_cache()
+        self.load_model_artifacts_from_cache()
 
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
@@ -217,12 +217,12 @@ class RoboflowInferenceModel(Model):
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
-        self.download_model_artefacts_from_roboflow_api()
+        self.download_model_artifacts_from_roboflow_api()
 
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
-        logger.info(f"List of files required to load model: {infer_bucket_files}")
+        logger.debug(f"List of files required to load model: {infer_bucket_files}")
         return infer_bucket_files
 
     def download_model_artefacts_from_s3(self) -> None:
@@ -242,8 +242,8 @@ class RoboflowInferenceModel(Model):
                 f"Could not obtain model artefacts from S3. Cause: {error}"
             ) from error
 
-    def download_model_artefacts_from_roboflow_api(self) -> None:
-        self.log("Downloading model artifacts from Roboflow API")
+    def download_model_artifacts_from_roboflow_api(self) -> None:
+        logger.debug("Downloading model artifacts from Roboflow API")
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
@@ -284,8 +284,8 @@ class RoboflowInferenceModel(Model):
             model_id=self.endpoint,
         )
 
-    def load_model_artefacts_from_cache(self) -> None:
-        self.log("Model artifacts already downloaded, loading model from cache")
+    def load_model_artifacts_from_cache(self) -> None:
+        logger.debug("Model artifacts already downloaded, loading model from cache")
         infer_bucket_files = self.get_all_required_infer_bucket_file()
         if "environment.json" in infer_bucket_files:
             self.environment = load_json_from_cache(
@@ -456,14 +456,14 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         """
         infer_bucket_files = self.get_infer_bucket_file_list()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
-            self.log("Model artifacts already downloaded, loading from cache")
+            logger.debug("Model artifacts already downloaded, loading from cache")
             return None
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
-        self.download_mode_from_roboflow_api()
+        self.download_model_from_roboflow_api()
 
-    def download_mode_from_roboflow_api(self) -> None:
+    def download_model_from_roboflow_api(self) -> None:
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,

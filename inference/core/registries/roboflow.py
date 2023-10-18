@@ -39,7 +39,7 @@ class RoboflowModelRegistry(ModelRegistry):
             Model: The model class corresponding to the given model ID and type.
 
         Raises:
-            DatasetLoadError: If the model type is not supported or found.
+            ModelNotRecognisedError: If the model type is not supported or found.
         """
         model_type = get_model_type(model_id, api_key)
         if model_type not in self.registry_dict:
@@ -65,7 +65,7 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
     """
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     if dataset_id in GENERIC_MODELS:
-        logger.info(f"Loading generic model: {dataset_id}.")
+        logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id

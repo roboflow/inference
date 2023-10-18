@@ -12,7 +12,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
-    RoboflowAPINotAuthorisedError,
+    RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIUnsuccessfulRequestError,
 )
@@ -74,7 +74,7 @@ def test_wrap_roboflow_api_errors_when_http_401_error_occurs_and_default_handler
         raise requests.exceptions.HTTPError("some", response=response)
 
     # when
-    with pytest.raises(RoboflowAPINotAuthorisedError):
+    with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = my_fun(2, 3)
 
 
@@ -160,7 +160,7 @@ def test_get_roboflow_workspace_when_wrong_api_key_used(requests_mock: Mocker) -
     )
 
     # when
-    with pytest.raises(RoboflowAPINotAuthorisedError):
+    with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
@@ -240,7 +240,7 @@ def test_get_roboflow_dataset_type_when_wrong_key_used(
     )
 
     # when
-    with pytest.raises(RoboflowAPINotAuthorisedError):
+    with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = get_roboflow_dataset_type(
             api_key="my_api_key",
             workspace_id="my_workspace",
@@ -367,7 +367,7 @@ def test_get_roboflow_model_type_when_wrong_api_key_used(
     )
 
     # when
-    with pytest.raises(RoboflowAPINotAuthorisedError):
+    with pytest.raises(RoboflowAPINotAuthorizedError):
         _ = get_roboflow_model_type(
             api_key="my_api_key",
             workspace_id="my_workspace",

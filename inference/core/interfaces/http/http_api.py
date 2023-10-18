@@ -80,7 +80,7 @@ from inference.core.exceptions import (
     PostProcessingError,
     PreProcessingError,
     RoboflowAPIConnectionError,
-    RoboflowAPINotAuthorisedError,
+    RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
@@ -123,7 +123,7 @@ def with_route_exceptions(route):
         ) as e:
             resp = JSONResponse(status_code=400, content={"message": str(e)})
             traceback.print_exc()
-        except RoboflowAPINotAuthorisedError as e:
+        except RoboflowAPINotAuthorizedError as e:
             resp = JSONResponse(status_code=401, content={"message": str(e)})
             traceback.print_exc()
         except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as e:

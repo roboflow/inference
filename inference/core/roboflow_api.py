@@ -17,7 +17,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
-    RoboflowAPINotAuthorisedError,
+    RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
@@ -32,6 +32,11 @@ MODEL_TYPE_DEFAULTS = {
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
 
+NOT_FOUND_ERROR_MESSAGE = (
+    "Could not find requested Roboflow resource. Check that the provided dataset and "
+    "version are correct, and check that the provided Roboflow API key has the correct permissions."
+)
+
 
 def raise_from_lambda(
     inner_error: Exception, exception_type: Type[Exception], message: str
@@ -42,13 +47,11 @@ def raise_from_lambda(
 DEFAULT_ERROR_HANDLERS = {
     401: lambda e: raise_from_lambda(
         e,
-        RoboflowAPINotAuthorisedError,
-        "Unauthorised access to roboflow API - check API key.",
+        RoboflowAPINotAuthorizedError,
+        "Unauthorized access to roboflow API - check API key.",
     ),
     404: lambda e: raise_from_lambda(
-        e,
-        RoboflowAPINotNotFoundError,
-        "Could not find requested Roboflow resource. Check for correctness of workspace name, dataset or version.",
+        e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE
     ),
 }
 
@@ -129,10 +132,9 @@ def get_roboflow_dataset_type(
 @wrap_roboflow_api_errors(
     http_errors_handlers={
         500: lambda e: raise_from_lambda(
-            e,
-            RoboflowAPINotNotFoundError,
-            "Could not find requested Roboflow resource. Check for correctness of workspace name, dataset or version",
-        )  # this is temporary solution, empirically checked that backend API responds HTTP 500 on incorrect version.
+            e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE
+        )
+        # this is temporary solution, empirically checked that backend API responds HTTP 500 on incorrect version.
         # TO BE FIXED at backend, otherwise this error handling may overshadow existing backend problems.
     }
 )

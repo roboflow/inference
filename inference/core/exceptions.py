@@ -130,7 +130,7 @@ class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
     pass
 
 
-class RoboflowAPINotAuthorisedError(RoboflowAPIUnsuccessfulRequestError):
+class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
