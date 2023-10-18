@@ -16,6 +16,7 @@ from inference.core.exceptions import (
     InputImageLoadError,
     InvalidNumpyInput,
     InvalidImageTypeDeclared,
+    InputFormatInferenceFailed,
 )
 from inference.core.utils.image_utils import (
     load_image_from_url,
@@ -660,7 +661,7 @@ def test_load_image_when_load_should_fail_on_rgba_numpy_input(
     image_as_pickled_bytes_rgba: bytes,
 ) -> None:
     # when
-    with pytest.raises(InvalidNumpyInput):
+    with pytest.raises(InputFormatInferenceFailed):
         _ = load_image(value=image_as_pickled_bytes_rgba)
 
 

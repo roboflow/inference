@@ -733,5 +733,8 @@ def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
 
 def is_model_artefacts_bucket_available() -> bool:
     return (
-        AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA and S3_CLIENT is not None
+        AWS_ACCESS_KEY_ID is not None
+        and AWS_SECRET_ACCESS_KEY is not None
+        and LAMBDA
+        and S3_CLIENT is not None
     )

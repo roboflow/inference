@@ -16,10 +16,10 @@ from requests import RequestException
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
 from inference.core.exceptions import (
+    InputFormatInferenceFailed,
     InputImageLoadError,
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
-    InputFormatInferenceFailed,
 )
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
