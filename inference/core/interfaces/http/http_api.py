@@ -24,6 +24,7 @@ from inference.core.env import (
     METRICS_ENABLED,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    CORE_MODEL_GROUNDINGDINO_ENABLED
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -570,6 +571,45 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(clip_model_id, actor, n=2)
+                    return response
+
+            if CORE_MODEL_GROUNDINGDINO_ENABLED:
+
+                @app.post(
+                    "/clip/embed_image",
+                    response_model=M.ClipEmbeddingResponse,
+                    summary="CLIP Image Embeddings",
+                    description="Run the Open AI CLIP model to embed image data.",
+                )
+                @with_route_exceptions
+                async def clip_embed_image(
+                    inference_request: M.ClipImageEmbeddingRequest,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    request: Request = Body(),
+                ):
+                    """
+                    Embeds image data using the Grounding DINO model.
+
+                    Args:
+                        inference_request (M.ClipImageEmbeddingRequest): The request containing the image to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.ClipEmbeddingResponse: The response containing the embedded image.
+                    """
+                    clip_model_id = load_clip_model(inference_request, api_key=api_key)
+                    response = self.model_manager.infer_from_request(
+                        clip_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(clip_model_id, actor)
                     return response
 
             if CORE_MODEL_SAM_ENABLED:

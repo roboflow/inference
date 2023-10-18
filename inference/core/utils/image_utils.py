@@ -195,3 +195,19 @@ def load_image_url(value: str, cv_imread_flags=cv2.IMREAD_COLOR) -> np.ndarray:
     response = requests.get(value, stream=True)
     image_np = np.asarray(bytearray(response.content), dtype=np.uint8)
     return cv2.imdecode(image_np, cv_imread_flags)
+
+def xyxy_to_xywh(xyxy):
+    """Converts xyxy coordinates to xywh.
+
+    Args:
+        xyxy (list): xyxy coordinates.
+    
+    Returns:
+        list: The coordinates in xywh format.
+    """
+    x_temp = (xyxy[0] + xyxy[2]) / 2
+    y_temp = (xyxy[1] + xyxy[3]) / 2
+    w_temp = abs(xyxy[0] - xyxy[2])
+    h_temp = abs(xyxy[1] - xyxy[3])
+    
+    return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]

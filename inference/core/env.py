@@ -115,6 +115,11 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
+# Flag to enable GROUNDINGDINO core model, default is True
+CORE_MODEL_GROUNDINGDINO_ENABLED = bool_env(
+    os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
+)
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

@@ -14,7 +14,10 @@ from inference.core.data_models import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
     InferenceResponseImage,
+    InferenceRequestImage,
+    GroundingDINOInferenceRequest
 )
+from inference.core.utils.image_utils import load_image_rgb
 
 from inference.core.utils.image_utils import xyxy_to_xywh
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -38,11 +41,9 @@ class GroundingDINO(RoboflowCoreModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        super().__init__(*args, model_id="groundingdino/groundingdino_swint_ogc", **kwargs)
+        print('t')
+        # super().__init__(*args, model_id="groundingdino/groundingdino_swint_ogc", **kwargs)
 
-        self._load_model()
-
-    def _load_model(self):
         GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, "groundingdino")
 
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
@@ -59,20 +60,33 @@ class GroundingDINO(RoboflowCoreModel):
             url = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
             urllib.request.urlretrieve(url, GROUNDING_DINO_CONFIG_PATH)
 
-        self.get_infer_bucket_file_list()
+        # if not os.path.exists(GROUNDING_DINO_CHECKPOINT_PATH):
+        #     url = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
+        #     urllib.request.urlretrieve(url, GROUNDING_DINO_CHECKPOINT_PATH)
 
-        # TODO: move weights if required here
+        self.get_infer_bucket_file_list()
 
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,
-            model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH,
+                model_checkpoint_path=os.path.join(
+                GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
+            ),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 
-    def preprocess_image(self, image: Image.Image) -> Image.Image:
-        pass
+    def preproc_image(self, image: InferenceRequestImage):
+        """Preprocesses an image.
 
-    def infer(self, request: CVInferenceRequest):
+        Args:
+            image (InferenceRequestImage): The image to preprocess.
+
+        Returns:
+            np.array: The preprocessed image.
+        """
+        np_image = load_image_rgb(image)
+        return np_image
+
+    def infer(self, request: GroundingDINOInferenceRequest):
         """
         Run inference on a provided image.
 
@@ -85,21 +99,21 @@ class GroundingDINO(RoboflowCoreModel):
         """
         t1 = perf_counter()
 
-        image = self.load_image(request.image.type, request.image.value)
+        image = self.preproc_image(request["image"])
         img_dims = image.shape
 
-        detections = self.grounding_dino_model.predict_with_classes(
+        detections = self.model.predict_with_classes(
             image=image,
-            classes=[request.classes],
+            classes=request.get("text", []),
             box_threshold=0.5,
             text_threshold=0.5,
         )
 
-        xywh_bboxes = [xyxy_to_xywh(detection.xyxy) for detection in detections.xyxy]
+        self.class_names = request.get("text", [])
+
+        xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
         t2 = perf_counter() - t1
-
-        # detections has .xyxy, confidence, and class_id
 
         responses = ObjectDetectionInferenceResponse(
             predictions=[
@@ -109,14 +123,14 @@ class GroundingDINO(RoboflowCoreModel):
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
-                        "confidence": pred.confidence[i],
-                        "class": self.class_names[int(pred.class_id[i])],
-                        "class_id": int(pred.class_id[i]),
+                        "confidence": detections.confidence[i],
+                        "class": self.class_names[int(detections.class_id[i])],
+                        "class_id": int(detections.class_id[i]),
                     }
                 )
-                for pred, i in enumerate(detections)
-                if not request.class_filter
-                or self.class_names[int(pred[6])] in request.class_filter
+                for i, pred in enumerate(detections.xyxy)
+                if not request.get("class_filter")
+                or self.class_names[int(pred[6])] in request["class_filter"]
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2

@@ -117,6 +117,17 @@ class ClipTextEmbeddingRequest(ClipInferenceRequest):
         description="A string or list of strings",
     )
 
+class GroundingDINOInferenceRequest(InferenceRequest):
+    """Request for Grounding DINO zero-shot predictions.
+    
+    Attributes:
+        text (List[str]): A list of strings.
+    """
+
+    text: List[str] = Field(
+        example=["person", "dog", "cat"],
+        description="A list of strings",
+    )
 
 class ClipCompareRequest(ClipInferenceRequest):
     """Request for CLIP comparison.
