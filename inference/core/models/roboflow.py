@@ -12,7 +12,7 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.cache import cache
-from inference.core.cache.model_artefacts import (
+from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
     get_cache_dir,
