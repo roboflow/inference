@@ -53,7 +53,8 @@ class InferServer:
         model_manager.add_model(model_id, batch[0]["request"]["api_key"])
         model_type = model_manager.get_task_type(model_id)
         for b in batch:
-            request = request_from_type(model_type)(**b["request"])
+            request = request_from_type(model_type, b["request"])
+            print(model_type)
             b["request"] = request
         return batch
 
@@ -85,12 +86,13 @@ class InferServer:
             for shm in shms:
                 shm.close()
                 shm.unlink()
-            for output, b, metadata in zip(outputs, batch, metadatas):
+            for output, b, metadata in zip(zip(*outputs), batch, metadatas):
                 info = self.write_response(output)
                 postprocess.s(info, b["request"].dict(), metadata).delay()
 
     def write_response(self, im_arrs: Tuple[np.ndarray, ...]):
         returns = list()
+        print(len(im_arrs))
         for im_arr in im_arrs:
             shm2 = shared_memory.SharedMemory(create=True, size=im_arr.nbytes)
             shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm2.buf)

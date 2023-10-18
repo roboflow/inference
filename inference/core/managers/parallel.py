@@ -87,9 +87,7 @@ class DispatchModelManager(ModelManager):
         self.checker.add_task(request.id)
         preprocess.s(request.dict()).delay()
         response_json_string = await self.checker.wait_for_response(request.id)
-        response = response_from_type(self.get_task_type(model_id))(
-            **json.loads(response_json_string)
-        )
+        response = response_from_type(self.get_task_type(model_id), json.loads(response_json_string))
         response.time = perf_counter() - t
         return response
 

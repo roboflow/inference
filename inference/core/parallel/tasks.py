@@ -37,7 +37,7 @@ model_manager = WithFixedSizeCache(
 def preprocess(request):
     model_manager.add_model(request["model_id"], request["api_key"])
     model_type = model_manager.get_task_type(request["model_id"])
-    request = request_from_type(model_type)(**request)
+    request = request_from_type(model_type, request)
     image, preprocess_return_metadata = model_manager.preprocess(
         request.model_id, request
     )
@@ -47,6 +47,7 @@ def preprocess(request):
     shared = np.ndarray(image.shape, dtype=image.dtype, buffer=shm.buf)
     shared[:] = image[:]
     shm.close()
+    request.image.value = None
     return_vals = {
         "chunk_name": shm.name,
         "image_shape": image.shape,
@@ -67,15 +68,17 @@ def preprocess(request):
 def postprocess(arg_list, request, metadata):
     model_manager.add_model(request["model_id"], request["api_key"])
     model_type = model_manager.get_task_type(request["model_id"])
-    request = request_from_type(model_type)(**request)
+    request = request_from_type(model_type, request)
     outputs = []
+    print(len(arg_list))
+    shms = []
     for args in arg_list:
         shm = shared_memory.SharedMemory(name=args["chunk_name"])
         output = np.ndarray(
             [1] + args["image_shape"], dtype=args["image_dtype"], buffer=shm.buf
         )
         outputs.append(output)
-    print(metadata)
+        shms.append(shm)
     request_dict = dict(**request.dict())
     del request_dict["model_id"]
     results = model_manager.postprocess(
@@ -94,5 +97,6 @@ def postprocess(arg_list, request, metadata):
     pipe.set(f"results:{request.id}", results)
     pipe.set(f"status:{request.id}", 1)
     pipe.execute()
-    shm.close()
-    shm.unlink()
+    for shm in shms:
+        shm.close()
+        shm.unlink()

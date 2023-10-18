@@ -3,7 +3,7 @@ from doctest import Example
 from typing import Any, Dict, List, Optional, Set, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from inference.core.env import CLIP_VERSION_ID, GAZE_VERSION_ID, SAM_VERSION_ID
 from inference.core.managers.entities import ModelDescription
@@ -860,23 +860,26 @@ class GazeDetectionInferenceResponse(BaseModel):
     )
 
 
-def request_from_type(model_type):
+def request_from_type(model_type, request_dict):
     if model_type == "classification":
-        return ClassificationInferenceRequest
+        return ClassificationInferenceRequest(**request_dict)
     elif model_type == "instance-segmentation":
-        return InstanceSegmentationInferenceRequest
+        return InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
-        return ObjectDetectionInferenceRequest
+        return ObjectDetectionInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Uknown task type {model_type}")
 
 
-def response_from_type(model_type):
+def response_from_type(model_type, response_dict):
     if model_type == "classification":
-        return ClassificationInferenceResponse
+        try:
+            return ClassificationInferenceResponse(**response_dict)
+        except ValidationError:
+            return MultiLabelClassificationInferenceResponse(**response_dict)
     elif model_type == "instance-segmentation":
-        return InstanceSegmentationInferenceResponse
+        return InstanceSegmentationInferenceResponse(**response_dict)
     elif model_type == "object-detection":
-        return ObjectDetectionInferenceResponse
+        return ObjectDetectionInferenceResponse(**response_dict)
     else:
         raise ValueError(f"Uknown task type {model_type}")

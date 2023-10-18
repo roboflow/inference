@@ -96,7 +96,7 @@ class ModelManager:
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
-                        "request": request.dict(),
+                        "request": jsonable_encoder(request.dict()),
                         "response": jsonable_encoder(rtn_val),
                     },
                     score=finish_time,
@@ -115,7 +115,7 @@ class ModelManager:
                 )
                 cache.zadd(
                     f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                    value={"request": request.dict(), "error": str(e)},
+                    value={"request": jsonable_encoder(request.dict()), "error": str(e)},
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
                 )

@@ -1,4 +1,5 @@
 import traceback
+import base64
 from functools import partial, wraps
 from typing import Any, List, Optional, Union
 
@@ -820,9 +821,10 @@ class HttpInterface(BaseInterface):
                         )
                     if "multipart/form-data" in request.headers["Content-Type"]:
                         form_data = await request.form()
-                        base64_image_str = form_data["file"].file
+                        base64_image_str = await form_data["file"].read()
+                        base64_image_str = base64.b64encode(base64_image_str)
                         request_image = M.InferenceRequestImage(
-                            type="multipart", value=base64_image_str
+                            type="base64", value=base64_image_str.decode("ascii")
                         )
                     elif (
                         "application/x-www-form-urlencoded"
