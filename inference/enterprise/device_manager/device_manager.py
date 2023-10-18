@@ -54,7 +54,7 @@ async def exec_command(command: Command):
     return {"status": "ok"}
 
 
-scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "max_instances": 3})
+scheduler = BackgroundScheduler(job_defaults={"coalesce": True})
 scheduler.add_job(send_metrics, "interval", seconds=METRICS_INTERVAL)
 scheduler.add_job(send_latest_inferences, "interval", seconds=5)
 scheduler.start()

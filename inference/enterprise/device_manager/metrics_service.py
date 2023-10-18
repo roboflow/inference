@@ -131,6 +131,7 @@ def send_metrics():
     """
     all_data = aggregate_device_stats()
     logger.info(str(all_data))
+    # TODO: also send to regular pingback
     pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)
 
 

@@ -72,14 +72,15 @@ def connect_mqtt():
     return client
 
 
-def dispatch(topic, message, qos=0, retain=False):
-    client = connect_mqtt()
+client = connect_mqtt()
+
+
+def dispatch(topic, message, qos=0):
     client.loop_start()
     time.sleep(1)
     if client.is_connected():
-        logger.info("Connection to broker established")
-        result = client.publish(topic, json.dumps(message), qos=qos, retain=retain)
-        logger.info(f"Message published result: {result}")
+        result = client.publish(topic, json.dumps(message), qos=qos)
+        logger.info(f"Message published result: {topic} {result}")
     else:
         logger.error("Failed to connect to message broker")
         client.loop_stop()
