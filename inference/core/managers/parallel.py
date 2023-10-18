@@ -10,6 +10,7 @@ from inference.core.data_models import (
     InferenceRequest,
     InferenceResponse,
     response_from_type,
+    request_from_type,
 )
 from inference.core.env import REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
@@ -35,6 +36,7 @@ class ResultsChecker:
 
     def add_task(self, t):
         self.tasks.append(t)
+        self.r.set(TASK_STATUS_KEY.format(t), INITIAL_STATE)
 
     def check_task(self, t):
         if t in self.dones:
@@ -83,13 +85,36 @@ class DispatchModelManager(ModelManager):
         assert request.api_key is not None
         request.start = time()
         t = perf_counter()
-        self.redis.set(TASK_STATUS_KEY.format(request.id), INITIAL_STATE)
-        self.checker.add_task(request.id)
-        preprocess.s(request.dict()).delay()
-        response_json_string = await self.checker.wait_for_response(request.id)
-        response = response_from_type(self.get_task_type(model_id), json.loads(response_json_string))
-        response.time = perf_counter() - t
-        return response
+        task_type = self.get_task_type(model_id, request.api_key)
+        list_mode = False
+        if isinstance(request.image, list):
+            list_mode = True
+            request_dict = request.dict()
+            images = request_dict.pop("image")
+            del request_dict["id"]
+            requests = [
+                request_from_type(task_type, dict(**request_dict, image=image))
+                for image in images
+            ]
+        else:
+            requests = [request]
+
+        awaitables = []
+        for r in requests:
+            self.checker.add_task(r.id)
+            preprocess.s(r.dict()).delay()
+            awaitables.append(self.checker.wait_for_response(r.id))
+
+        response_strings = await asyncio.gather(*awaitables)
+        responses = []
+        for response_json_string in response_strings:
+            response = response_from_type(task_type, json.loads(response_json_string))
+            response.time = perf_counter() - t
+            responses.append(response)
+
+        if list_mode:
+            return responses
+        return responses[0]
 
     def add_checker(self, checker):
         self._checker = checker

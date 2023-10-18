@@ -54,7 +54,6 @@ class InferServer:
         model_type = model_manager.get_task_type(model_id)
         for b in batch:
             request = request_from_type(model_type, b["request"])
-            print(model_type)
             b["request"] = request
         return batch
 
