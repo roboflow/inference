@@ -8,6 +8,7 @@ from inference.core.version import __version__
 from inference.enterprise.device_manager.container_service import (
     get_container_by_id,
     get_container_ids,
+    get_latest_inferences,
 )
 from inference.enterprise.device_manager.helpers import (
     get_cache_model_items,
@@ -131,3 +132,8 @@ def send_metrics():
     all_data = aggregate_device_stats()
     logger.info(str(all_data))
     pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)
+
+
+def send_latest_inferences():
+    inferences = get_latest_inferences()
+    pubsub.dispatch(pubsub.STREAM_TOPIC, inferences)

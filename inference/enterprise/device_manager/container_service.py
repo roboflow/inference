@@ -1,3 +1,5 @@
+import time
+import base64
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -5,12 +7,17 @@ import requests
 
 import docker
 from inference.core.logger import logger
+from inference.core.env import METRICS_INTERVAL
+from inference.core.cache import cache
+from inference.core.utils.image_utils import load_image_rgb
+from inference.enterprise.device_manager.helpers import get_cache_model_items
 
 
 @dataclass
 class InferServerContainer:
     status: str
     id: str
+    name: str
     port: int
     host: str
     startup_time: float
@@ -19,7 +26,8 @@ class InferServerContainer:
     def __init__(self, docker_container, details):
         self.container = docker_container
         self.status = details.get("status")
-        self.id = details.get("uuid")
+        self.name = details.get("uuid")
+        self.id = details.get("container_id")
         self.port = details.get("port")
         self.host = details.get("host")
         self.version = details.get("version")
@@ -71,7 +79,8 @@ class InferServerContainer:
             return False, None
 
     def snapshot(self):
-        return True, None
+        latest_inferences = get_latest_inferences(self.id)
+        return True, latest_inferences
 
     def get_startup_config(self):
         """
@@ -205,3 +214,65 @@ def get_container_ids():
     """
     containers = get_inference_containers()
     return [c.id for c in containers]
+
+
+def get_latest_inferences(container_id=None, max=1):
+    container = None
+    containers = get_inference_containers()
+    if container_id is None:
+        container = containers[0]
+    else:
+        for c in containers:
+            if c.id == container_id:
+                container = c
+                break
+
+    if container is None:
+        return {}
+
+    now = time.time()
+    start = now - (METRICS_INTERVAL * 2)
+    cached_models = get_cache_model_items()
+    api_keys = cached_models.get(container.name, {}).keys()
+    model_ids = []
+    for api_key in api_keys:
+        mids = cached_models.get(container.name, {}).get(api_key, [])
+        model_ids.extend(mids)
+
+    num_images = 0
+    latest_inferred_images = {}
+    for model_id in model_ids:
+        if num_images >= max:
+            break
+        latest_reqs = cache.zrangebyscore(
+            f"inference:{container.name}:{model_id}", min=start, max=now
+        )
+        for req in latest_reqs:
+            images = req["request"].get("image")
+            response = req.get("response", [])[0]
+            if response is None:
+                continue
+            image_dims = response.get("image")
+            predictions = response.get("predictions", [])
+            logger.info(f"Got predictions {predictions}")
+            if images is None or len(images) == 0:
+                continue
+            if type(images) is not list:
+                images = [images]
+            for image in images:
+                value = None
+                if image["type"] == "base64":
+                    value = image["value"]
+                else:
+                    loaded_image = load_image_rgb(image)
+                    image_bytes = loaded_image.tobytes()
+                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                    value = image_base64
+                if latest_inferred_images.get(model_id) is None:
+                    latest_inferred_images[model_id] = []
+                inference = dict(
+                    image=value, dimensions=image_dims, predictions=predictions
+                )
+                latest_inferred_images[model_id].append(inference)
+                num_images += 1
+    return latest_inferred_images
