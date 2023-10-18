@@ -62,9 +62,12 @@ def save_json_in_cache(
     file: str,
     model_id: Optional[str] = None,
     allow_override: bool = True,
+    **kwargs,
 ) -> None:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    dump_json(path=cached_file_path, content=content, allow_override=allow_override)
+    dump_json(
+        path=cached_file_path, content=content, allow_override=allow_override, **kwargs
+    )
 
 
 def save_text_lines_in_cache(
