@@ -50,6 +50,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             bytes: The bytes of the visualized image in JPEG format.
         """
         image = load_image_rgb(inference_request.image)
+        image = Image.fromarray(image)
         draw = ImageDraw.Draw(image)
         font = ImageFont.load_default()
         if isinstance(inference_response.predictions, list):

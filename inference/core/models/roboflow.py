@@ -3,7 +3,6 @@ import os
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from io import BytesIO
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -205,6 +204,7 @@ class RoboflowInferenceModel(Model):
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
+        logger.info(f"List of files required to load model: {infer_bucket_files}")
         return infer_bucket_files
 
     def download_model_artefacts_from_s3(self) -> None:
@@ -239,7 +239,9 @@ class RoboflowInferenceModel(Model):
         api_data = api_data["ort"]
         if "classes" in api_data:
             save_text_lines_in_cache(
-                content=api_data["classes"], file="class_names.txt"
+                content=api_data["classes"],
+                file="class_names.txt",
+                model_id=self.endpoint,
             )
         if "model" not in api_data:
             raise ModelArtefactError(
@@ -257,10 +259,11 @@ class RoboflowInferenceModel(Model):
             model_id=self.endpoint,
         )
         if "colors" in api_data:
-            environment["COLORS"] = api_data["colors"]
+            environment["COLORS"] = json.dumps(api_data["colors"])
         save_json_in_cache(
             content=environment,
             file="environment.json",
+            model_id=self.endpoint,
         )
 
     def load_model_artefacts_from_cache(self) -> None:

@@ -378,6 +378,8 @@ def post_process_polygons(
     Returns:
         list of list of tuple: A list of shifted and scaled polygons.
     """
+    img0_shape = img0_shape[1], img0_shape[0]
+    img1_shape = img1_shape[1], img1_shape[0]
     (crop_shift_x, crop_shift_y), img0_shape = get_static_crop_dimensions(
         img0_shape, preproc
     )

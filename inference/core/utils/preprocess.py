@@ -175,7 +175,7 @@ def apply_grayscale_conversion(image: np.ndarray) -> np.ndarray:
 def letterbox_image(
     image: np.ndarray,
     desired_size: Tuple[int, int],
-    color: Tuple[int, int, int],
+    color: Tuple[int, int, int] = (0, 0, 0),
 ) -> np.ndarray:
     """
     Resize and pad image to fit the desired size, preserving its aspect ratio.

@@ -162,11 +162,23 @@ class ModelNotRecognisedError(ServiceConfigurationError):
     pass
 
 
-class RoboflowAPIRequestError(Exception):
+class RoboflowAPIError(Exception):
     pass
 
 
-class RoboflowAPIConnectionError(Exception):
+class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIError):
+    pass
+
+
+class RoboflowAPINotAuthorisedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPIConnectionError(RoboflowAPIError):
     pass
 
 

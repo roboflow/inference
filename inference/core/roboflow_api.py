@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Callable, Type, Union
+from typing import Any, Callable, Dict, Optional, Type, Union
 
 import requests
 from requests import Response
@@ -14,12 +14,12 @@ from inference.core.entities.types import (
 )
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
-    DatasetLoadError,
     MalformedRoboflowAPIResponseError,
     MissingDefaultModelError,
-    ModelDataFetchingError,
     RoboflowAPIConnectionError,
-    RoboflowAPIRequestError,
+    RoboflowAPINotAuthorisedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
 from inference.core.utils.url_utils import wrap_url
@@ -33,11 +33,30 @@ PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
 
 
+def raise_from_lambda(
+    inner_error: Exception, exception_type: Type[Exception], message: str
+) -> None:
+    raise exception_type(message) from inner_error
+
+
+DEFAULT_ERROR_HANDLERS = {
+    401: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPINotAuthorisedError,
+        "Unauthorised access to roboflow API - check API key.",
+    ),
+    404: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPINotNotFoundError,
+        "Could not find requested Roboflow resource. Check for correctness of workspace name, dataset or version.",
+    ),
+}
+
+
 def wrap_roboflow_api_errors(
-    on_connection_error: Callable[
-        [Union[requests.exceptions.ConnectionError, ConnectionError]], None
-    ],
-    on_http_error: Callable[[Union[requests.exceptions.HTTPError]], None],
+    http_errors_handlers: Optional[
+        Dict[int, Callable[[Union[requests.exceptions.HTTPError]], None]]
+    ] = None,
 ) -> callable:
     def decorator(function: callable) -> callable:
         def wrapper(*args, **kwargs) -> Any:
@@ -45,12 +64,24 @@ def wrap_roboflow_api_errors(
                 return function(*args, **kwargs)
             except (requests.exceptions.ConnectionError, ConnectionError) as error:
                 logger.error(f"Could not connect to Roboflow API. Error: {error}")
-                on_connection_error(error)
+                raise RoboflowAPIConnectionError(
+                    "Could not connect to Roboflow API."
+                ) from error
             except requests.exceptions.HTTPError as error:
                 logger.error(
                     f"HTTP error encountered while requesting Roboflow API response: {error}"
                 )
-                on_http_error(error)
+                user_handler_override = (
+                    http_errors_handlers if http_errors_handlers is not None else {}
+                )
+                status_code = error.response.status_code
+                default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
+                error_handler = user_handler_override.get(status_code, default_handler)
+                if error_handler is not None:
+                    error_handler(error)
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    f"Unsuccessful request to Roboflow API with response code: {status_code}"
+                ) from error
             except requests.exceptions.InvalidJSONError as error:
                 logger.error(
                     f"Could not decode JSON response from Roboflow API. Error: {error}."
@@ -64,20 +95,7 @@ def wrap_roboflow_api_errors(
     return decorator
 
 
-def raise_from_lambda(
-    inner_error: Exception, exception_type: Type[Exception], message: str
-) -> None:
-    raise exception_type(message) from inner_error
-
-
-@wrap_roboflow_api_errors(
-    on_connection_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
-    ),
-    on_http_error=lambda e: raise_from_lambda(
-        e, WorkspaceLoadError, "Could not load workspace, check your API key"
-    ),
-)
+@wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_url = wrap_url("/".join([API_BASE_URL, f"?api_key={api_key}"]))
     api_key_info = requests.get(api_url)
@@ -88,16 +106,7 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     return workspace_id
 
 
-@wrap_roboflow_api_errors(
-    on_connection_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
-    ),
-    on_http_error=lambda e: raise_from_lambda(
-        e,
-        DatasetLoadError,
-        "Could not load dataset info, check your API key and workspace.",
-    ),
-)
+@wrap_roboflow_api_errors()
 def get_roboflow_dataset_type(
     api_key: str, workspace_id: WorkspaceID, dataset_id: DatasetID
 ) -> TaskType:
@@ -118,14 +127,14 @@ def get_roboflow_dataset_type(
 
 
 @wrap_roboflow_api_errors(
-    on_connection_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
-    ),
-    on_http_error=lambda e: raise_from_lambda(
-        e,
-        DatasetLoadError,
-        "Could not load version info, check your API key and workspace.",
-    ),
+    http_errors_handlers={
+        500: lambda e: raise_from_lambda(
+            e,
+            RoboflowAPINotNotFoundError,
+            "Could not find requested Roboflow resource. Check for correctness of workspace name, dataset or version",
+        )  # this is temporary solution, empirically checked that backend API responds HTTP 500 on incorrect version.
+        # TO BE FIXED at backend, otherwise this error handling may overshadow existing backend problems.
+    }
 )
 def get_roboflow_model_type(
     api_key: str,
@@ -164,23 +173,7 @@ class ModelEndpointType(Enum):
     CORE_MODEL = "core_model"
 
 
-def handle_model_data_fetching_error(error: requests.exceptions.HTTPError) -> None:
-    message = f"An error occurred when calling the Roboflow API to acquire the model artifacts."
-    try:
-        response_error = error.response.json().get("error")
-        if response_error is not None:
-            message = f"{message} The error was: {error}."
-    except Exception:
-        pass
-    raise ModelDataFetchingError(message) from error
-
-
-@wrap_roboflow_api_errors(
-    on_connection_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
-    ),
-    on_http_error=handle_model_data_fetching_error,
-)
+@wrap_roboflow_api_errors()
 def get_roboflow_model_data(
     api_key: str,
     model_id: str,
@@ -195,14 +188,7 @@ def get_roboflow_model_data(
     return model_data.json()
 
 
-@wrap_roboflow_api_errors(
-    on_connection_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIConnectionError, "Could not connect to Roboflow API."
-    ),
-    on_http_error=lambda e: raise_from_lambda(
-        e, RoboflowAPIRequestError, "Could not execute GET request to Roboflow API."
-    ),
-)
+@wrap_roboflow_api_errors()
 def get_from_roboflow_api(
     url: str, json_response: bool = False
 ) -> Union[Response, dict]:

@@ -71,11 +71,16 @@ from inference.core.exceptions import (
     EngineIgnitionFailure,
     InferenceModelNotFound,
     InvalidEnvironmentVariableError,
+    InvalidModelIDError,
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelArtifactsRetrievalError,
     ModelCompilationFailure,
     OnnxProviderNotAvailable,
+    RoboflowAPIConnectionError,
+    RoboflowAPINotAuthorisedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIUnsuccessfulRequestError,
     TensorrtRoboflowAPIError,
     WorkspaceLoadError,
 )
@@ -112,6 +117,21 @@ def with_route_exceptions(route):
         except ContentTypeMissing as e:
             resp = JSONResponse(status_code=400, content={"message": str(e)})
             traceback.print_exc()
+        except RoboflowAPINotAuthorisedError as e:
+            resp = JSONResponse(status_code=401, content={"message": str(e)})
+            traceback.print_exc()
+        except RoboflowAPINotNotFoundError as e:
+            resp = JSONResponse(status_code=404, content={"message": str(e)})
+            traceback.print_exc()
+        except RoboflowAPIConnectionError as e:
+            resp = JSONResponse(status_code=503, content={"message": str(e)})
+            traceback.print_exc()
+        except RoboflowAPIUnsuccessfulRequestError as e:
+            resp = JSONResponse(status_code=500, content={"message": str(e)})
+            traceback.print_exc()
+        except InvalidModelIDError as e:
+            resp = JSONResponse(status_code=400, content={"message": str(e)})
+            traceback.print_exc()
         except DatasetLoadError as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
@@ -142,10 +162,9 @@ def with_route_exceptions(route):
         except WorkspaceLoadError as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
-        except Exception as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
+        except Exception:
+            resp = JSONResponse(status_code=500, content={"message": "Internal error."})
             traceback.print_exc()
-
         return resp
 
     return wrapped_route
@@ -314,14 +333,6 @@ class HttpInterface(BaseInterface):
         Returns:
         The GAZE model ID.
         """
-
-        # @app.get("/")
-        # async def index():
-        #     return FileResponse("./inference/landing/out/index.html")
-
-        # @app.get("/")
-        # async def read_root():
-        #     return RedirectResponse(url="/app")
 
         @app.get(
             "/info",

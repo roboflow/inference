@@ -38,7 +38,7 @@ def test_wrap_roboflow_api_errors_when_no_error_occurs() -> None:
 
     @wrap_roboflow_api_errors(
         on_connection_error=lambda e: raise_from_lambda(e, TestException1, "some"),
-        on_http_error=lambda e: raise_from_lambda(e, TestException2, "other"),
+        http_errors_handlers=lambda e: raise_from_lambda(e, TestException2, "other"),
     )
     def my_fun(a: int, b: int) -> int:
         return a + b
@@ -58,7 +58,7 @@ def test_wrap_roboflow_api_errors_when_connection_error_occurs(
 ) -> None:
     @wrap_roboflow_api_errors(
         on_connection_error=lambda e: raise_from_lambda(e, TestException1, "some"),
-        on_http_error=lambda e: raise_from_lambda(e, TestException2, "other"),
+        http_errors_handlers=lambda e: raise_from_lambda(e, TestException2, "other"),
     )
     def my_fun(a: int, b: int) -> int:
         raise exception_class("some")
@@ -71,7 +71,7 @@ def test_wrap_roboflow_api_errors_when_connection_error_occurs(
 def test_wrap_roboflow_api_errors_when_connection_http_error_occurs() -> None:
     @wrap_roboflow_api_errors(
         on_connection_error=lambda e: raise_from_lambda(e, TestException1, "some"),
-        on_http_error=lambda e: raise_from_lambda(e, TestException2, "other"),
+        http_errors_handlers=lambda e: raise_from_lambda(e, TestException2, "other"),
     )
     def my_fun(a: int, b: int) -> int:
         raise requests.exceptions.HTTPError("some")
@@ -84,7 +84,7 @@ def test_wrap_roboflow_api_errors_when_connection_http_error_occurs() -> None:
 def test_wrap_roboflow_api_errors_when_connection_json_parsing_error_occurs() -> None:
     @wrap_roboflow_api_errors(
         on_connection_error=lambda e: raise_from_lambda(e, TestException1, "some"),
-        on_http_error=lambda e: raise_from_lambda(e, TestException2, "other"),
+        http_errors_handlers=lambda e: raise_from_lambda(e, TestException2, "other"),
     )
     def my_fun(a: int, b: int) -> int:
         raise requests.exceptions.InvalidJSONError("some")
