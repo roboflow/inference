@@ -130,6 +130,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models import GroundingDINO
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding_dino")] = GroundingDINO
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=None, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)

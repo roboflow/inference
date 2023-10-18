@@ -64,6 +64,8 @@ def get_model_type(model_id: str, api_key: str) -> str:
         return "embed", "sam"
     elif dataset_id == "gaze":
         return "gaze", "l2cs"
+    elif dataset_id == "grounding_dino":
+        return "object-detection", "grounding_dino"
 
     cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id)
     model_type_cache_path = os.path.join(cache_dir, "model_type.json")
