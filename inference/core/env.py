@@ -111,6 +111,9 @@ CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
+# Flag to enable DocTR core model, default is True
+CORE_MODEL_DOCTR_ENABLED = bool_env(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
+
 # Device ID, default is "sample-device-id"
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

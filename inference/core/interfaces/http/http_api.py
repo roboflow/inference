@@ -22,6 +22,7 @@ from inference.core.env import (
     PINGBACK_ENABLED,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    CORE_MODEL_DOCTR_ENABLED
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -575,6 +576,44 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(clip_model_id, actor, n=2)
+                    return response
+
+            if CORE_MODEL_DOCTR_ENABLED:
+                @app.post(
+                    "/doctr/ocr",
+                    response_model=M.DoctrOCRInferenceResponse,
+                    summary="DocTR OCR response",
+                    description="Run the DocTR OCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                async def doctr_retrieve_text(
+                    inference_request: M.DoctrOCRInferenceRequest,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    request: Request = Body(),
+                ):
+                    """
+                    Embeds image data using the DocTR model.
+
+                    Args:
+                        inference_request (M.DoctrOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.DoctrOCRInferenceResponse: The response containing the embedded image.
+                    """
+                    doctr_model_id = load_clip_model(inference_request, api_key=api_key)
+                    response = self.model_manager.infer_from_request(
+                        doctr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(doctr_model_id, actor)
                     return response
 
             if CORE_MODEL_SAM_ENABLED:
