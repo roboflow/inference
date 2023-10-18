@@ -75,7 +75,7 @@ def post_process_bboxes(
     Args:
         predictions (List[List[List[float]]]): The predictions output from NMS, indices are: batch x prediction x [x1, y1, x2, y2, ...].
         infer_shape (Tuple[int, int]): The shape of the inference image.
-        img_dims (List[Tuple[int, int]]): The dimensions of the original image for each batch, indices are: batch x [ width, height ].
+        img_dims (List[Tuple[int, int]]): The dimensions of the original image for each batch, indices are: batch x [height, width].
         preproc (dict): Preprocessing configuration dictionary.
         disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
         resize_method (str, optional): Resize method for image. Defaults to "Stretch to".
@@ -94,9 +94,8 @@ def post_process_bboxes(
         np_batch_predictions = np.array(batch_predictions)
         # Get bboxes from predictions (x1,y1,x2,y2)
         predicted_bboxes = np_batch_predictions[:, :4]
-        origin_shape = img_dims[i][-1::-1]
         (crop_shift_x, crop_shift_y), origin_shape = get_static_crop_dimensions(
-            origin_shape,
+            img_dims[i],
             preproc,
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
@@ -369,17 +368,15 @@ def post_process_polygons(
     pre-processing steps. The polygons are transformed according to the ratio and padding between two images.
 
     Args:
-        img1_shape (tuple of int): Shape of the target image (height, width). <- here probably (width, high)
+        img1_shape (tuple of int): Shape of the target image (height, width).
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
-        img0_shape (tuple of int): Shape of the source image (height, width). <- here probably (width, high)
+        img0_shape (tuple of int): Shape of the source image (height, width).
         preproc (object): Preprocessing details used for generating the transformation.
         resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
 
     Returns:
         list of list of tuple: A list of shifted and scaled polygons.
     """
-    img0_shape = img0_shape[1], img0_shape[0]
-    img1_shape = img1_shape[1], img1_shape[0]
     (crop_shift_x, crop_shift_y), img0_shape = get_static_crop_dimensions(
         img0_shape, preproc
     )
@@ -446,7 +443,7 @@ def get_static_crop_dimensions(
     Generates a transformation based on preprocessing configuration.
 
     Args:
-        orig_shape (tuple): The original shape of the object (e.g., image).
+        orig_shape (tuple): The original shape of the object (e.g., image) - (height, width).
         preproc (dict): Preprocessing configuration dictionary, containing information such as static cropping.
         disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
 
@@ -464,14 +461,14 @@ def get_static_crop_dimensions(
         else:
             x_min, y_min, x_max, y_max = 0, 0, 1, 1
         crop_shift_x, crop_shift_y = (
-            round(x_min * orig_shape[0]),
-            round(y_min * orig_shape[1]),
+            round(x_min * orig_shape[1]),
+            round(y_min * orig_shape[0]),
         )
         cropped_percent_x = x_max - x_min
         cropped_percent_y = y_max - y_min
         orig_shape = (
-            round(orig_shape[0] * cropped_percent_x),
-            round(orig_shape[1] * cropped_percent_y),
+            round(orig_shape[1] * cropped_percent_x),
+            round(orig_shape[0] * cropped_percent_y),
         )
         return (crop_shift_x, crop_shift_y), orig_shape
     except KeyError as error:
