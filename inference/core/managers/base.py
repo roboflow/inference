@@ -239,6 +239,7 @@ class ModelManager:
         Returns:
             Model: The model corresponding to the key.
         """
+        self.check_for_model(model_id=key)
         return self._models[key]
 
     def __len__(self) -> int:
