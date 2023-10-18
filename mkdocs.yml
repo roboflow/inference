@@ -58,6 +58,7 @@ nav:
       - Base Interface: library/interfaces/base.md
       - HTTP Interface: library/interfaces/http.md
       - UDP Stream Interface: library/interfaces/udp.md
+    - Docker Configuration Options: library/docker_configuration_options.md
   - Add a Model: add_a_model.md
   - Inference SDK - HTTP client: inference_sdk/http_client.md
   - Contributing: contributing.md
