@@ -33,7 +33,7 @@ jobs:
           make check_code_quality
       - name: 🧪 Unit Tests of Inference
         run: |
-          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt
+          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.hosted.txt
           python -m pytest tests/inference/unit_tests
       - name: 🔨 Build and Push Test Docker
         uses: docker/build-push-action@v4
