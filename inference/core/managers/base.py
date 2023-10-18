@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -37,7 +37,9 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
-    def add_model(self, model_id: str, api_key: str) -> None:
+    def add_model(
+        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+    ) -> None:
         """Adds a new model to the manager.
 
         Args:
@@ -46,7 +48,9 @@ class ModelManager:
         """
         if model_id in self._models:
             return
-        model = self.model_registry.get_model(model_id, api_key)(
+        model = self.model_registry.get_model(
+            model_id if model_id_alias is None else model_id_alias, api_key
+        )(
             model_id=model_id,
             api_key=api_key,
         )
@@ -252,6 +256,14 @@ class ModelManager:
             List[str]: The keys of the models in the manager.
         """
         return self._models.keys()
+
+    def models(self) -> Dict[str, Model]:
+        """Retrieve the models dictionary from the manager.
+
+        Returns:
+            Dict[str, Model]: The keys of the models in the manager.
+        """
+        return self._models
 
     def describe_models(self) -> List[ModelDescription]:
         return [

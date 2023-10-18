@@ -24,6 +24,7 @@ from inference.core.cache.model_artefacts import (
     save_text_lines_in_cache,
 )
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.cache import cache
 from inference.core.entities.requests.inference import (
     InferenceRequest,
     InferenceRequestImage,
@@ -98,6 +99,7 @@ class RoboflowInferenceModel(Model):
         model_id: str,
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
+        load_weights=True,
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -108,6 +110,7 @@ class RoboflowInferenceModel(Model):
             api_key (str, optional): API key for authentication. Defaults to None.
         """
         super().__init__()
+        self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         if not self.api_key and not (
@@ -183,6 +186,21 @@ class RoboflowInferenceModel(Model):
         raise NotImplementedError(
             self.__class__.__name__ + ".get_infer_bucket_file_list"
         )
+
+    @property
+    def cache_key(self):
+        return f"metadata:{self.endpoint}"
+
+    def model_metadata_from_memcache(self):
+        model_metadata = cache.get(self.cache_key)
+        return model_metadata
+
+    def write_model_metadata_to_memcache(self, metadata):
+        cache.set(self.cache_key, metadata)
+
+    @property
+    def has_model_metadata(self):
+        return self.model_metadata_from_memcache() is not None
 
     def get_model_artifacts(self) -> None:
         """Fetch or load the model artifacts.
@@ -457,7 +475,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 f"`weights` key not available in Roboflow API response while downloading model weights."
             )
         for weights_url_key in api_data["weights"]:
-            weights_url = wrap_url(api_data["weights"][weights_url_key])
+            weights_url = api_data["weights"][weights_url_key]
             t1 = perf_counter()
             model_weights_response = get_from_roboflow_api(weights_url)
             filename = weights_url.split("?")[0].split("/")[-1]
@@ -530,19 +548,20 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(model_id, *args, **kwargs)
-        self.onnxruntime_execution_providers = onnxruntime_execution_providers
-        for ep in self.onnxruntime_execution_providers:
-            if ep == "TensorrtExecutionProvider":
-                ep = (
-                    "TensorrtExecutionProvider",
-                    {
-                        "trt_engine_cache_enable": True,
-                        "trt_engine_cache_path": os.path.join(
-                            TENSORRT_CACHE_PATH, self.endpoint
-                        ),
-                        "trt_fp16_enable": True,
-                    },
-                )
+        if self.load_weights or not self.has_model_metadata:
+            self.onnxruntime_execution_providers = onnxruntime_execution_providers
+            for ep in self.onnxruntime_execution_providers:
+                if ep == "TensorrtExecutionProvider":
+                    ep = (
+                        "TensorrtExecutionProvider",
+                        {
+                            "trt_engine_cache_enable": True,
+                            "trt_engine_cache_path": os.path.join(
+                                TENSORRT_CACHE_PATH, self.endpoint
+                            ),
+                            "trt_fp16_enable": True,
+                        },
+                    )
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
 
@@ -558,42 +577,77 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
         self.log("Creating inference session")
-        t1_session = perf_counter()
-        # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
-        self.onnx_session = onnxruntime.InferenceSession(
-            self.cache_file(self.weights_file),
-            providers=self.onnxruntime_execution_providers,
-        )
-        self.log(f"Session created in {perf_counter() - t1_session} seconds")
+        if self.load_weights or not self.has_model_metadata:
+            t1_session = perf_counter()
+            # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
+            self.onnx_session = onnxruntime.InferenceSession(
+                self.cache_file(self.weights_file),
+                providers=self.onnxruntime_execution_providers,
+            )
+            self.log(f"Session created in {perf_counter() - t1_session} seconds")
 
-        if REQUIRED_ONNX_PROVIDERS:
-            available_providers = onnxruntime.get_available_providers()
-            for provider in REQUIRED_ONNX_PROVIDERS:
-                if provider not in available_providers:
-                    raise OnnxProviderNotAvailable(
-                        f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
-                    )
+            if REQUIRED_ONNX_PROVIDERS:
+                available_providers = onnxruntime.get_available_providers()
+                for provider in REQUIRED_ONNX_PROVIDERS:
+                    if provider not in available_providers:
+                        raise OnnxProviderNotAvailable(
+                            f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
+                        )
 
-        inputs = self.onnx_session.get_inputs()[0]
-        input_shape = inputs.shape
-        self.batch_size = input_shape[0]
-        self.img_size_h = input_shape[2]
-        self.img_size_w = input_shape[3]
-        self.input_name = inputs.name
-        if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
-            if "resize" in self.preproc:
-                self.img_size_h = int(self.preproc["resize"]["height"])
-                self.img_size_w = int(self.preproc["resize"]["width"])
+            inputs = self.onnx_session.get_inputs()[0]
+            input_shape = inputs.shape
+            self.batch_size = input_shape[0]
+            self.img_size_h = input_shape[2]
+            self.img_size_w = input_shape[3]
+            self.input_name = inputs.name
+            if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
+                if "resize" in self.preproc:
+                    self.img_size_h = int(self.preproc["resize"]["height"])
+                    self.img_size_w = int(self.preproc["resize"]["width"])
+                else:
+                    self.img_size_h = 640
+                    self.img_size_w = 640
+
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
             else:
-                self.img_size_h = 640
-                self.img_size_w = 640
+                self.batching_enabled = False
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
 
-        if isinstance(self.batch_size, str):
-            self.batching_enabled = True
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
+            model_metadata = {
+                "batch_size": self.batch_size,
+                "img_size_h": self.img_size_h,
+                "img_size_w": self.img_size_w,
+            }
+            self.log(f"Writing model metadata to memcache")
+            self.write_model_metadata_to_memcache(model_metadata)
+            if not self.load_weights:  # had to load weights to get metadata
+                del self.onnx_session
         else:
-            self.batching_enabled = False
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
+            if not self.has_model_metadata:
+                raise ValueError(
+                    "This should be unreachable, should get weights if we don't have model metadata"
+                )
+            self.log(f"Loading model metadata from memcache")
+            metadata = self.model_metadata_from_memcache()
+            self.batch_size = metadata["batch_size"]
+            self.img_size_h = metadata["img_size_h"]
+            self.img_size_w = metadata["img_size_w"]
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
+            else:
+                self.batching_enabled = False
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
 
     def load_image(
         self,
