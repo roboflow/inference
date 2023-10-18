@@ -9,8 +9,8 @@ from redis import Redis
 from inference.core.data_models import (
     InferenceRequest,
     InferenceResponse,
-    response_from_type,
     request_from_type,
+    response_from_type,
 )
 from inference.core.env import REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
