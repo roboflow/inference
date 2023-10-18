@@ -116,7 +116,7 @@ def test_get_static_crop_dimensions_when_no_crop_should_be_applied() -> None:
 def test_get_static_crop_dimensions_when_crop_should_be_applied() -> None:
     # when
     result = get_static_crop_dimensions(
-        orig_shape=(100, 200),
+        orig_shape=(200, 100),
         preproc={
             "static-crop": {
                 "enabled": True,
@@ -253,15 +253,15 @@ def test_post_process_bboxes_when_crop_with_stretch_used() -> None:
             dtype=np.float32,
         ).tolist()
     ]
-    # there is a crop from (x=40, y=40) to (x=72, y=104)
-    # compared to inference size (128, 128) - OX axis prediction is 4x smaller in the origin
-    # and OY prediction is 2x smaller in the origin
-    # crop shift +40, +40 in each axis
+    # there is a crop from (x=20, y=40) to (x=84, y=104) (box size - h=64, w=64)
+    # compared to inference size (128, 128) and we stretch, such that OX scale is 2.0,
+    # OY scale is 2.0, then we shift by crop (OX +20, OY +40)
+    # for OX coord we take input ox / 2 + 20, for OY: input oy / 2 +  40
     expected_result = np.expand_dims(
         np.array(
             [
-                [45, 56, 50, 72, 0.9],
-                [48, 72, 62, 104, 0.85],
+                [30, 56, 40, 72, 0.9],
+                [35, 72, 64, 104, 0.85],
             ],
             dtype=np.float32,
         ),
@@ -272,17 +272,18 @@ def test_post_process_bboxes_when_crop_with_stretch_used() -> None:
     result = post_process_bboxes(
         predictions=predicted_bboxes,
         infer_shape=(128, 128),
-        img_dims=[(200, 200)],
+        img_dims=[(200, 100)],
         preproc={
             "static-crop": {
                 "enabled": True,
                 "x_min": 20,
                 "y_min": 20,
-                "x_max": 36,
+                "x_max": 84,
                 "y_max": 52,
             }
         },
     )
+
     # then
     assert np.array(result).shape == (1, 2, 5)
     assert np.allclose(np.array(result), expected_result)
@@ -441,7 +442,7 @@ def test_post_process_polygons_when_stretching_resize_used() -> None:
     result = post_process_polygons(
         img1_shape=(100, 100),
         polys=polygons,
-        img0_shape=(100, 200),
+        img0_shape=(200, 100),
         preproc={
             "static-crop": {
                 "enabled": True,
@@ -475,7 +476,7 @@ def test_post_process_polygons_when_fit_resize_used() -> None:
     result = post_process_polygons(
         img1_shape=(100, 100),
         polys=polygons,
-        img0_shape=(100, 200),
+        img0_shape=(200, 100),
         preproc={
             "static-crop": {
                 "enabled": True,
