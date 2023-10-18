@@ -297,6 +297,8 @@ class RoboflowInferenceModel(Model):
             self.class_names = load_text_file_from_cache(
                 file="class_names.txt",
                 model_id=self.endpoint,
+                split_lines=True,
+                strip_white_chars=True,
             )
         else:
             self.class_names = get_class_names_from_environment_file(

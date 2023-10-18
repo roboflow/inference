@@ -29,8 +29,8 @@ def is_file_cached(file: str, model_id: Optional[str] = None) -> bool:
 def load_text_file_from_cache(
     file: str,
     model_id: Optional[str] = None,
-    split_lines: bool = True,
-    strip_white_chars: bool = True,
+    split_lines: bool = False,
+    strip_white_chars: bool = False,
 ) -> Union[str, List[str]]:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
     return read_text_file(

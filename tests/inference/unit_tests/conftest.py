@@ -10,6 +10,8 @@ import numpy as np
 from PIL import Image
 from _pytest.fixtures import fixture
 
+ASSETS_DIR_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
+
 
 @fixture(scope="function")
 def image_as_numpy() -> np.ndarray:
@@ -114,3 +116,8 @@ def image_as_local_path() -> Generator[str, None, None]:
         image = np.zeros((128, 128, 3), dtype=np.uint8)
         cv2.imwrite(file_path, image)
         yield file_path
+
+
+@fixture(scope="function")
+def example_text_file() -> str:
+    return os.path.join(ASSETS_DIR_PATH, "example_text_file.txt")

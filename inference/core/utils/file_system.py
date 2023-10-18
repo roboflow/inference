@@ -5,8 +5,8 @@ from typing import List, Optional, Union
 
 def read_text_file(
     path: str,
-    split_lines: bool = True,
-    strip_white_chars: bool = True,
+    split_lines: bool = False,
+    strip_white_chars: bool = False,
 ) -> Union[str, List[str]]:
     with open(path) as f:
         if split_lines:
