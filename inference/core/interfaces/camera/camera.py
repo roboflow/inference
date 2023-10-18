@@ -34,7 +34,7 @@ class WebcamStream:
         self.enforce_fps = enforce_fps
         self.frame_id = 0
         if not self.init_video():
-          exit(0)
+            exit(0)
         self.stopped = True
         self.t = Thread(target=self.update, args=())
         self.t.daemon = True
