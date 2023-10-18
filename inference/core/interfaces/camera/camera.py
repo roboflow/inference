@@ -33,13 +33,20 @@ class WebcamStream:
         self.stream_id = stream_id
         self.enforce_fps = enforce_fps
         self.frame_id = 0
+        if not self.init_video():
+          exit(0)
+        self.stopped = True
+        self.t = Thread(target=self.update, args=())
+        self.t.daemon = True
+
+    def init_video(self):
         self.vcap = cv2.VideoCapture(self.stream_id)
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.max_fps = 30
         if self.vcap.isOpened() is False:
             logger.debug("[Exiting]: Error accessing webcam stream.")
-            exit(0)
+            return False
         self.fps_input_stream = int(self.vcap.get(5))
         logger.debug(
             "FPS of webcam hardware/input stream: {}".format(self.fps_input_stream)
@@ -48,10 +55,8 @@ class WebcamStream:
         self.pil_image = Image.fromarray(cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB))
         if self.grabbed is False:
             logger.debug("[Exiting] No more frames to read")
-            exit(0)
-        self.stopped = True
-        self.t = Thread(target=self.update, args=())
-        self.t.daemon = True
+            return False
+        return True
 
     def start(self):
         """Start the thread for reading frames."""
@@ -72,9 +77,13 @@ class WebcamStream:
                 )
 
             if self.grabbed is False:
-                logger.debug("[Exiting] No more frames to read")
-                self.stopped = True
-                break
+                logger.debug("No frame read, attempting to reinitialize video stream")
+                self.vcap.release()
+                if not self.init_video():
+                    logger.debug("[Exiting] No more frames to read")
+                    self.stopped = True
+                    break
+
             if self.enforce_fps:
                 t2 = time.perf_counter()
                 time.sleep(
