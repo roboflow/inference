@@ -67,21 +67,23 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
-    DatasetLoadError,
-    EngineIgnitionFailure,
     InferenceModelNotFound,
+    InputImageLoadError,
     InvalidEnvironmentVariableError,
+    InvalidMaskDecodeArgument,
     InvalidModelIDError,
+    MalformedRoboflowAPIResponseError,
     MissingApiKeyError,
     MissingServiceSecretError,
-    ModelArtifactsRetrievalError,
-    ModelCompilationFailure,
+    ModelArtefactError,
     OnnxProviderNotAvailable,
+    PostProcessingError,
+    PreProcessingError,
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorisedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIUnsuccessfulRequestError,
-    TensorrtRoboflowAPIError,
+    ServiceConfigurationError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
@@ -111,56 +113,44 @@ def with_route_exceptions(route):
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
-        except ContentTypeInvalid as e:
-            resp = JSONResponse(status_code=400, content={"message": str(e)})
-            traceback.print_exc()
-        except ContentTypeMissing as e:
+        except (
+            ContentTypeInvalid,
+            ContentTypeMissing,
+            InputImageLoadError,
+            InvalidModelIDError,
+            InvalidMaskDecodeArgument,
+            MissingApiKeyError,
+        ) as e:
             resp = JSONResponse(status_code=400, content={"message": str(e)})
             traceback.print_exc()
         except RoboflowAPINotAuthorisedError as e:
             resp = JSONResponse(status_code=401, content={"message": str(e)})
             traceback.print_exc()
-        except RoboflowAPINotNotFoundError as e:
+        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as e:
             resp = JSONResponse(status_code=404, content={"message": str(e)})
             traceback.print_exc()
-        except RoboflowAPIConnectionError as e:
-            resp = JSONResponse(status_code=503, content={"message": str(e)})
-            traceback.print_exc()
-        except RoboflowAPIUnsuccessfulRequestError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
-            traceback.print_exc()
-        except InvalidModelIDError as e:
-            resp = JSONResponse(status_code=400, content={"message": str(e)})
-            traceback.print_exc()
-        except DatasetLoadError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
-            traceback.print_exc()
-        except EngineIgnitionFailure as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
-            traceback.print_exc()
-        except InferenceModelNotFound as e:
-            resp = JSONResponse(status_code=404, content={"message": str(e)})
-            traceback.print_exc()
-        except InvalidEnvironmentVariableError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
-            traceback.print_exc()
-        except MissingApiKeyError as e:
-            resp = JSONResponse(status_code=400, content={"message": str(e)})
-            traceback.print_exc()
-        except ModelArtifactsRetrievalError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
-            traceback.print_exc()
-        except ModelCompilationFailure as e:
+        except (
+            InvalidEnvironmentVariableError,
+            MissingServiceSecretError,
+            WorkspaceLoadError,
+            PreProcessingError,
+            PostProcessingError,
+            ServiceConfigurationError,
+            ModelArtefactError,
+        ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
         except OnnxProviderNotAvailable as e:
             resp = JSONResponse(status_code=501, content={"message": str(e)})
             traceback.print_exc()
-        except TensorrtRoboflowAPIError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
+        except (
+            MalformedRoboflowAPIResponseError,
+            RoboflowAPIUnsuccessfulRequestError,
+        ) as e:
+            resp = JSONResponse(status_code=502, content={"message": str(e)})
             traceback.print_exc()
-        except WorkspaceLoadError as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
+        except RoboflowAPIConnectionError as e:
+            resp = JSONResponse(status_code=503, content={"message": str(e)})
             traceback.print_exc()
         except Exception:
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})

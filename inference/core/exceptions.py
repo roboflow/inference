@@ -14,14 +14,6 @@ class ContentTypeMissing(Exception):
     """
 
 
-class DatasetLoadError(Exception):
-    """Raised when there is an error loading the dataset.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class EngineIgnitionFailure(Exception):
     """Raised when the engine fails to ignite.
 
@@ -32,14 +24,6 @@ class EngineIgnitionFailure(Exception):
 
 class InferenceModelNotFound(Exception):
     """Raised when the inference model is not found.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class InputMethodNotAllowed(Exception):
-    """Raised when the input method is not allowed.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -78,32 +62,8 @@ class MissingServiceSecretError(Exception):
     """
 
 
-class ModelArtifactsRetrievalError(Exception):
-    """Raised when there is an error retrieving the model artifacts.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class ModelCompilationFailure(Exception):
-    """Raised when the model fails to compile.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class OnnxProviderNotAvailable(Exception):
     """Raised when the ONNX provider is not available.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class TensorrtRoboflowAPIError(Exception):
-    """Raised when there is an error with the TensorRT Roboflow API.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -162,11 +122,11 @@ class ModelNotRecognisedError(ServiceConfigurationError):
     pass
 
 
-class RoboflowAPIError(Exception):
+class RoboflowAPIRequestError(Exception):
     pass
 
 
-class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIError):
+class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
     pass
 
 
@@ -178,17 +138,9 @@ class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
-class RoboflowAPIConnectionError(RoboflowAPIError):
-    pass
-
-
-class ModelDataFetchingError(Exception):
+class RoboflowAPIConnectionError(RoboflowAPIRequestError):
     pass
 
 
 class ModelArtefactError(Exception):
-    pass
-
-
-class InferenceVisualisationError(Exception):
     pass
