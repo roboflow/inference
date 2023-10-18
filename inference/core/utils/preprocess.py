@@ -28,7 +28,6 @@ class ContrastAdjustmentType(Enum):
 def prepare(
     image: np.ndarray,
     preproc,
-    disable_preproc_auto_orient: bool = False,
     disable_preproc_contrast: bool = False,
     disable_preproc_grayscale: bool = False,
     disable_preproc_static_crop: bool = False,
@@ -46,7 +45,6 @@ def prepare(
                 "grayscale": {"enabled": true},
                 "contrast": {"enabled": true, "type": "Adaptive Equalization"}
             }
-        disable_preproc_auto_orient (bool, optional): NOT USED AND DEPRECATED.
         disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
         disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
         disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.

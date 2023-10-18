@@ -363,7 +363,6 @@ class RoboflowInferenceModel(Model):
         )
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
@@ -394,7 +393,6 @@ class RoboflowInferenceModel(Model):
     def preprocess_image(
         self,
         image: np.ndarray,
-        disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
@@ -404,7 +402,6 @@ class RoboflowInferenceModel(Model):
 
         Args:
             image (Image.Image): The PIL image to preprocess.
-            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
             disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
             disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
@@ -415,7 +412,6 @@ class RoboflowInferenceModel(Model):
         return prepare(
             image,
             self.preproc,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
