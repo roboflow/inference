@@ -276,7 +276,7 @@ class RoboflowInferenceModel(Model):
             model_id=self.endpoint,
         )
         if "colors" in api_data:
-            environment["COLORS"] = json.dumps(api_data["colors"])
+            environment["COLORS"] = api_data["colors"]
         save_json_in_cache(
             content=environment,
             file="environment.json",
@@ -716,7 +716,7 @@ def get_color_mapping_from_environment(
     environment: Optional[dict], class_names: List[str]
 ) -> Dict[str, str]:
     if color_mapping_available_in_environment(environment=environment):
-        return json.loads(environment["COLORS"])
+        return environment["COLORS"]
     return {
         class_name: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
         for i, class_name in enumerate(class_names)
