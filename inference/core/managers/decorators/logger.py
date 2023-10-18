@@ -1,7 +1,7 @@
-from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
 from typing import Optional
 
+from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.logger import logger
 from inference.core.managers.base import Model
 from inference.core.managers.decorators.base import ModelManagerDecorator

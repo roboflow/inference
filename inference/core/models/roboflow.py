@@ -11,6 +11,7 @@ import numpy as np
 import onnxruntime
 from PIL import Image
 
+from inference.core.cache import cache
 from inference.core.cache.model_artefacts import (
     are_all_files_cached,
     clear_cache,
@@ -24,7 +25,6 @@ from inference.core.cache.model_artefacts import (
     save_text_lines_in_cache,
 )
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.cache import cache
 from inference.core.entities.requests.inference import (
     InferenceRequest,
     InferenceRequestImage,
