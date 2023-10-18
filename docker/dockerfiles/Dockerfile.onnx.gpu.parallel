@@ -47,9 +47,13 @@ ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
-ENV NUM_CELERY_WORKERS=16
+ENV NUM_CELERY_WORKERS=12
 ENV PYTHONPATH=/app/
 ENV REDIS_HOST="localhost"
 
 
-ENTRYPOINT redis-server & celery -A inference.core.parallel.tasks worker --prefetch-multiplier 3 --concurrency $NUM_CELERY_WORKERS -Q pre,post --loglevel=INFO & python3 inference/core/parallel/infer.py & uvicorn parallel_http:app --workers $NUM_WORKERS --host $HOST --port $PORT && fg
+ENTRYPOINT redis-server & \
+    celery -A inference.core.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \
+    celery -A inference.core.parallel.tasks worker --prefetch-multiplier 8 --concurrency $NUM_CELERY_WORKERS -Q post --loglevel=WARNING & \
+    python3 inference/core/parallel/infer.py & \
+    uvicorn parallel_http:app --workers $NUM_WORKERS --host $HOST --port $PORT && fg

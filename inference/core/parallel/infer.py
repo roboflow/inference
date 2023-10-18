@@ -18,18 +18,20 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.parallel.tasks import postprocess
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import get_roboflow_model
+from inference.core.env import MAX_BATCH_SIZE, MAX_ACTIVE_MODELS
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 r = Redis(connection_pool=pool, decode_responses=True)
-BATCH_SIZE = 64
 logging.basicConfig(level=logging.INFO)
 
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = ModelManager(model_registry)
-model_manager = WithFixedSizeCache(model_manager, max_size=8)
+model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
 
+
+BATCH_SIZE = min(MAX_BATCH_SIZE, 128)
 
 class InferServer:
     def get_batch(self, model_names):
@@ -82,16 +84,15 @@ class InferServer:
                 shms.append(shm)
             outputs = model_manager.predict(batch[0]["request"].model_id, images)
             del images
-            for shm in shms:
-                shm.close()
-                shm.unlink()
             for output, b, metadata in zip(zip(*outputs), batch, metadatas):
                 info = self.write_response(output)
                 postprocess.s(info, b["request"].dict(), metadata).delay()
+            for shm in shms:
+                shm.close()
+                shm.unlink()
 
     def write_response(self, im_arrs: Tuple[np.ndarray, ...]):
         returns = list()
-        print(len(im_arrs))
         for im_arr in im_arrs:
             shm2 = shared_memory.SharedMemory(create=True, size=im_arr.nbytes)
             shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm2.buf)

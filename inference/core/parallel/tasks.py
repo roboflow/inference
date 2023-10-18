@@ -70,7 +70,6 @@ def postprocess(arg_list, request, metadata):
     model_type = model_manager.get_task_type(request["model_id"])
     request = request_from_type(model_type, request)
     outputs = []
-    print(len(arg_list))
     shms = []
     for args in arg_list:
         shm = shared_memory.SharedMemory(name=args["chunk_name"])
