@@ -192,9 +192,7 @@ class ModelManager:
             Tuple[np.ndarray, List[Tuple[int, int]]]: The preprocessed data.
         """
         self.check_for_model(model_id)
-        return self._models[model_id].preprocess(
-            **request.dict(), return_image_dims=True
-        )
+        return self._models[model_id].preprocess(**request.dict())
 
     def get_class_names(self, model_id):
         """Retrieves the class names for a given model.
