@@ -9,7 +9,7 @@ from typing import Any, Optional
 import redis
 
 from inference.core.cache.base import BaseCache
-from inference.core.data_models import InferenceResponseImage
+from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
 
 
