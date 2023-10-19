@@ -27,7 +27,7 @@ jobs:
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest requests pillow requests_toolbelt black isort flake8 "requests-mock==1.11.0"
+          python -m pip install -r requirements/requirements.test.txt
       - name: 🧹 Lint with flake8
         run: |
           make check_code_quality

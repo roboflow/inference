@@ -27,7 +27,7 @@ jobs:
       - name: 🦾 Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install pytest requests pillow requests_toolbelt "requests-mock==1.11.0"
+          python3 -m pip install -r requirements/requirements.test.txt
       - name: 🔨 Build and Push Test Docker - Jetson 4.6.1
         uses: docker/build-push-action@v4
         with:
