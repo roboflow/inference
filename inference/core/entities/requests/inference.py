@@ -21,6 +21,7 @@ class InferenceRequest(BaseModel):
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
     api_key: Optional[str] = ApiKey
+    start: Optional[float] = None
 
 
 class InferenceRequestImage(BaseModel):
