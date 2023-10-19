@@ -93,7 +93,7 @@ class ModelManagerDecorator(ModelManager):
         """
         return self.model_manager.preprocess(model_id, request)
 
-    def get_task_type(self, model_id: str) -> str:
+    def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Gets the task type associated with a model.
 
         Args:
@@ -102,7 +102,7 @@ class ModelManagerDecorator(ModelManager):
         Returns:
             str: The task type.
         """
-        return self.model_manager.get_task_type(model_id)
+        return self.model_manager.get_task_type(model_id, api_key=api_key)
 
     def get_class_names(self, model_id):
         """Gets the class names for a given model.
