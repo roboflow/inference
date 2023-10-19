@@ -121,7 +121,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_candidate_detections=kwargs["max_candidates"],
             num_masks=32,
         )
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         predictions = np.array(predictions)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]

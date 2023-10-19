@@ -181,7 +181,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_candidate_detections=max_candidates,
         )
 
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preproc_return_metadata["img_dims"]
         predictions = post_process_bboxes(
             predictions,

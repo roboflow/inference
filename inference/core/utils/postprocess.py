@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -99,11 +99,12 @@ def post_process_bboxes(
             preproc,
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
+        print((crop_shift_x, crop_shift_y), origin_shape)
         if resize_method == "Stretch to":
-            predicted_bboxes = stretch_crop_predictions(
+            predicted_bboxes = stretch_bboxes(
                 predicted_bboxes=predicted_bboxes,
                 infer_shape=infer_shape,
-                crop_shape=origin_shape,
+                origin_shape=origin_shape,
             )
         elif (
             resize_method == "Fit (black edges) in"
@@ -128,13 +129,13 @@ def post_process_bboxes(
     return scaled_predictions
 
 
-def stretch_crop_predictions(
+def stretch_bboxes(
     predicted_bboxes: np.ndarray,
     infer_shape: Tuple[int, int],
-    crop_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
 ) -> np.ndarray:
-    scale_height = crop_shape[1] / infer_shape[1]
-    scale_width = crop_shape[0] / infer_shape[0]
+    scale_height = origin_shape[0] / infer_shape[0]
+    scale_width = origin_shape[1] / infer_shape[1]
     return scale_bboxes(
         bboxes=predicted_bboxes,
         scale_x=scale_width,
@@ -148,8 +149,8 @@ def undo_image_padding_for_predicted_boxes(
     origin_shape: Tuple[int, int],
 ) -> np.ndarray:
     scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
-    inter_w = round(origin_shape[0] * scale)
-    inter_h = round(origin_shape[1] * scale)
+    inter_h = round(origin_shape[0] * scale)
+    inter_w = round(origin_shape[1] * scale)
     pad_x = (infer_shape[0] - inter_w) / 2
     pad_y = (infer_shape[1] - inter_h) / 2
     predicted_bboxes = shift_bboxes(
@@ -164,16 +165,16 @@ def clip_boxes_coordinates(
     origin_shape: Tuple[int, int],
 ) -> np.ndarray:
     predicted_bboxes[:, 0] = np.round(
-        np.clip(predicted_bboxes[:, 0], a_min=0, a_max=origin_shape[0])
+        np.clip(predicted_bboxes[:, 0], a_min=0, a_max=origin_shape[1])
     )
     predicted_bboxes[:, 2] = np.round(
-        np.clip(predicted_bboxes[:, 2], a_min=0, a_max=origin_shape[0])
+        np.clip(predicted_bboxes[:, 2], a_min=0, a_max=origin_shape[1])
     )
     predicted_bboxes[:, 1] = np.round(
-        np.clip(predicted_bboxes[:, 1], a_min=0, a_max=origin_shape[1])
+        np.clip(predicted_bboxes[:, 1], a_min=0, a_max=origin_shape[0])
     )
     predicted_bboxes[:, 3] = np.round(
-        np.clip(predicted_bboxes[:, 3], a_min=0, a_max=origin_shape[1])
+        np.clip(predicted_bboxes[:, 3], a_min=0, a_max=origin_shape[0])
     )
     return predicted_bboxes
 
@@ -356,9 +357,9 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
 
 def post_process_polygons(
-    img1_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
     polys: List[List[Tuple[float, float]]],
-    img0_shape: Tuple[int, int],
+    infer_shape: Tuple[int, int],
     preproc: dict,
     resize_method: str = "Stretch to",
 ) -> List[List[Tuple[float, float]]]:
@@ -368,22 +369,22 @@ def post_process_polygons(
     pre-processing steps. The polygons are transformed according to the ratio and padding between two images.
 
     Args:
-        img1_shape (tuple of int): Shape of the target image (height, width).
+        infer_shape (tuple of int): Shape of the target image (height, width).
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
-        img0_shape (tuple of int): Shape of the source image (height, width).
+        origin_shape (tuple of int): Shape of the source image (height, width).
         preproc (object): Preprocessing details used for generating the transformation.
         resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
 
     Returns:
         list of list of tuple: A list of shifted and scaled polygons.
     """
-    (crop_shift_x, crop_shift_y), img0_shape = get_static_crop_dimensions(
-        img0_shape, preproc
+    (crop_shift_x, crop_shift_y), origin_shape = get_static_crop_dimensions(
+        origin_shape, preproc
     )
     new_polys = []
     if resize_method == "Stretch to":
-        width_ratio = img0_shape[0] / img1_shape[0]
-        height_ratio = img0_shape[1] / img1_shape[1]
+        width_ratio = origin_shape[1] / infer_shape[1]
+        height_ratio = origin_shape[0] / infer_shape[0]
         new_polys = scale_polygons(
             polygons=polys,
             x_scale=width_ratio,
@@ -392,8 +393,8 @@ def post_process_polygons(
     elif resize_method in {"Fit (black edges) in", "Fit (white edges) in"}:
         new_polys = undo_image_padding_for_predicted_polygons(
             polygons=polys,
-            img0_shape=img0_shape,
-            img1_shape=img1_shape,
+            infer_shape=infer_shape,
+            origin_shape=origin_shape,
         )
     shifted_polys = []
     for poly in new_polys:
@@ -416,20 +417,18 @@ def scale_polygons(
 
 def undo_image_padding_for_predicted_polygons(
     polygons: List[List[Tuple[float, float]]],
-    img0_shape: Tuple[int, int],
-    img1_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
+    infer_shape: Tuple[int, int],
 ) -> List[List[Tuple[float, float]]]:
-    gain = min(
-        img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1]
-    )  # gain  = old / new
-    pad = (
-        (img1_shape[0] - img0_shape[0] * gain) / 2,
-        (img1_shape[1] - img0_shape[1] * gain) / 2,
-    )  # wh padding
-
+    scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
+    inter_w = int(origin_shape[1] * scale)
+    inter_h = int(origin_shape[0] * scale)
+    pad_x = (infer_shape[1] - inter_w) / 2
+    pad_y = (infer_shape[0] - inter_h) / 2
+    print(pad_x, pad_y, scale)
     result = []
     for poly in polygons:
-        poly = [((p[0] - pad[0]) / gain, (p[1] - pad[1]) / gain) for p in poly]
+        poly = [((p[0] - pad_x) / scale, (p[1] - pad_y) / scale) for p in poly]
         result.append(poly)
     return result
 
@@ -467,8 +466,8 @@ def get_static_crop_dimensions(
         cropped_percent_x = x_max - x_min
         cropped_percent_y = y_max - y_min
         orig_shape = (
-            round(orig_shape[1] * cropped_percent_x),
             round(orig_shape[0] * cropped_percent_y),
+            round(orig_shape[1] * cropped_percent_x),
         )
         return (crop_shift_x, crop_shift_y), orig_shape
     except KeyError as error:
@@ -500,53 +499,94 @@ def post_process_keypoints(
             scaled_predictions.append([])
             continue
         np_batch_predictions = np.array(batch_predictions)
-        coords = np_batch_predictions[:, keypoints_start_index:]
-        (crop_shift_x, crop_shift_y), orig_shape = get_static_crop_dimensions(
+        keypoints = np_batch_predictions[:, keypoints_start_index:]
+        (crop_shift_x, crop_shift_y), origin_shape = get_static_crop_dimensions(
             img_dims[i],
             preproc,
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
         if resize_method == "Stretch to":
-            scale_height = orig_shape[1] / infer_shape[1]
-            scale_width = orig_shape[0] / infer_shape[0]
-            for coord_id in range(coords.shape[1] // 3):
-                coords[:, coord_id * 3] *= scale_width
-                coords[:, coord_id * 3 + 1] *= scale_height
-
+            keypoints = stretch_keypoints(
+                keypoints=keypoints,
+                infer_shape=infer_shape,
+                origin_shape=origin_shape,
+            )
         elif (
             resize_method == "Fit (black edges) in"
             or resize_method == "Fit (white edges) in"
         ):
-            # Undo scaling and padding from letterbox resize preproc operation
-            scale = min(infer_shape[0] / orig_shape[0], infer_shape[1] / orig_shape[1])
-            inter_w = int(orig_shape[0] * scale)
-            inter_h = int(orig_shape[1] * scale)
-
-            pad_x = (infer_shape[0] - inter_w) / 2
-            pad_y = (infer_shape[1] - inter_h) / 2
-            for coord_id in range(coords.shape[1] // 3):
-                coords[:, coord_id * 3] -= pad_x
-                coords[:, coord_id * 3] /= scale
-                coords[:, coord_id * 3 + 1] -= pad_y
-                coords[:, coord_id * 3 + 1] /= scale
-
-        for coord_id in range(coords.shape[1] // 3):
-            coords[:, i * 3] = (
-                np.round_(
-                    np.clip(coords[:, coord_id * 3], a_min=0, a_max=orig_shape[0])
-                ).astype(int)
-                + crop_shift_x
+            keypoints = undo_image_padding_for_predicted_keypoints(
+                keypoints=keypoints,
+                infer_shape=infer_shape,
+                origin_shape=origin_shape,
             )
-            coords[:, coord_id * 3 + 1] = (
-                np.round_(
-                    np.clip(coords[:, coord_id * 3 + 1], a_min=0, a_max=orig_shape[1])
-                ).astype(int)
-                + crop_shift_y
-            )
-
-        np_batch_predictions[:, keypoints_start_index:] = coords
+        keypoints = clip_keypoints_coordinates(
+            keypoints=keypoints, origin_shape=origin_shape
+        )
+        keypoints = shift_keypoints(
+            keypoints=keypoints, shift_x=crop_shift_x, shift_y=crop_shift_y
+        )
+        np_batch_predictions[:, keypoints_start_index:] = keypoints
         scaled_predictions.append(np_batch_predictions.tolist())
     return scaled_predictions
+
+
+def stretch_keypoints(
+    keypoints: np.ndarray,
+    infer_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
+) -> np.ndarray:
+    scale_height = origin_shape[1] / infer_shape[1]
+    scale_width = origin_shape[0] / infer_shape[0]
+    for keypoint_id in range(keypoints.shape[1] // 3):
+        keypoints[:, keypoint_id * 3] *= scale_width
+        keypoints[:, keypoint_id * 3 + 1] *= scale_height
+    return keypoints
+
+
+def undo_image_padding_for_predicted_keypoints(
+    keypoints: np.ndarray,
+    infer_shape: Tuple[int, int],
+    origin_shape: Tuple[int, int],
+) -> np.ndarray:
+    # Undo scaling and padding from letterbox resize preproc operation
+    scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
+    inter_w = int(origin_shape[1] * scale)
+    inter_h = int(origin_shape[0] * scale)
+
+    pad_x = (infer_shape[1] - inter_w) / 2
+    pad_y = (infer_shape[0] - inter_h) / 2
+    for coord_id in range(keypoints.shape[1] // 3):
+        keypoints[:, coord_id * 3] -= pad_x
+        keypoints[:, coord_id * 3] /= scale
+        keypoints[:, coord_id * 3 + 1] -= pad_y
+        keypoints[:, coord_id * 3 + 1] /= scale
+    return keypoints
+
+
+def clip_keypoints_coordinates(
+    keypoints: np.ndarray,
+    origin_shape: Tuple[int, int],
+) -> np.ndarray:
+    for keypoint_id in range(keypoints.shape[1] // 3):
+        keypoints[:, keypoint_id * 3] = np.round(
+            np.clip(keypoints[:, keypoint_id * 3], a_min=0, a_max=origin_shape[1])
+        )
+        keypoints[:, keypoint_id * 3 + 1] = np.round(
+            np.clip(keypoints[:, keypoint_id * 3 + 1], a_min=0, a_max=origin_shape[0])
+        )
+    return keypoints
+
+
+def shift_keypoints(
+    keypoints: np.ndarray,
+    shift_x: Union[int, float],
+    shift_y: Union[int, float],
+) -> np.ndarray:
+    for keypoint_id in range(keypoints.shape[1] // 3):
+        keypoints[:, keypoint_id * 3] += shift_x
+        keypoints[:, keypoint_id * 3 + 1] += shift_y
+    return keypoints
 
 
 def sigmoid(x: Union[float, np.ndarray]) -> Union[float, np.number, np.ndarray]:

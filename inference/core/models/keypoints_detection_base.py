@@ -79,7 +79,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             num_masks=num_masks,
         )
 
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preproc_return_metadata["img_dims"]
         predictions = post_process_bboxes(
             predictions=predictions,

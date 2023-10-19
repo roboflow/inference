@@ -10,7 +10,7 @@ from inference.core.utils.postprocess import (
     shift_bboxes,
     clip_boxes_coordinates,
     undo_image_padding_for_predicted_boxes,
-    stretch_crop_predictions,
+    stretch_bboxes,
     post_process_bboxes,
     sigmoid,
     scale_bboxes,
@@ -129,7 +129,7 @@ def test_get_static_crop_dimensions_when_crop_should_be_applied() -> None:
     )
 
     # then
-    assert result == ((15, 40), (35, 110))
+    assert result == ((15, 40), (110, 35))
 
 
 def test_apply_crop_shift_to_boxes() -> None:
@@ -170,7 +170,7 @@ def test_clip_boxes_coordinates() -> None:
     expected_result = np.array(
         [
             [0, 20, 40, 40, 0.9],
-            [30, 60, 80, 120, 0.9],
+            [30, 60, 90, 80, 0.9],
         ]
     )
 
@@ -188,15 +188,16 @@ def test_undo_image_padding_for_predicted_boxes() -> None:
     predicted_bboxes = np.array(
         [
             [20, 32, 40, 64],
-            [30, 64, 90, 128],
+            [30, 64, 90, 112],
         ],
         dtype=np.float32,
     )
     # scaling factor for inference is 0.5, padding of 16px along OY axis added
+    # so out(OX) = in(OX) / 0.5, out(OY) = (in(OY) - 16) / 0.5
     expected_result = np.array(
         [
-            [8, 64, 48, 128],
-            [28, 128, 148, 256],
+            [40, 32, 80, 96],
+            [60, 96, 180, 192],
         ],
         dtype=np.float32,
     )
@@ -213,7 +214,7 @@ def test_undo_image_padding_for_predicted_boxes() -> None:
     assert np.allclose(result, expected_result)
 
 
-def test_stretch_crop_predictions() -> None:
+def test_stretch_bboxes_when_downscaling_occurred() -> None:
     # given
     predicted_bboxes = np.array(
         [
@@ -222,19 +223,52 @@ def test_stretch_crop_predictions() -> None:
         ],
         dtype=np.float32,
     )
+    # OY axis is scaled 4x for inference, OX is scaled 2x
+    # so out(OX) = in(OX) / 2 and out(OY) = in(OY) / 4
     expected_result = np.array(
         [
-            [5, 16, 10, 32],
-            [7.5, 32, 22.5, 64],
+            [10, 8, 20, 16],
+            [15, 16, 45, 32],
         ],
         dtype=np.float32,
     )
 
     # when
-    result = stretch_crop_predictions(
+    result = stretch_bboxes(
         predicted_bboxes=predicted_bboxes,
         infer_shape=(128, 128),
-        crop_shape=(32, 64),
+        origin_shape=(32, 64),
+    )
+
+    # then
+    assert result.shape == expected_result.shape
+    assert np.allclose(result, expected_result)
+
+
+def test_stretch_bboxes_when_up_scaling_occurred() -> None:
+    # given
+    predicted_bboxes = np.array(
+        [
+            [10, 8, 20, 16],
+            [15, 16, 45, 32],
+        ],
+        dtype=np.float32,
+    )
+    # OY axis is scaled 4x for inference, OX is scaled 2x
+    # so out(OX) = in(OX) / 2 and out(OY) = in(OY) / 4
+    expected_result = np.array(
+        [
+            [20, 32, 40, 64],
+            [30, 64, 90, 128],
+        ],
+        dtype=np.float32,
+    )
+
+    # when
+    result = stretch_bboxes(
+        predicted_bboxes=predicted_bboxes,
+        infer_shape=(32, 64),
+        origin_shape=(128, 128),
     )
 
     # then
@@ -302,8 +336,8 @@ def test_post_process_bboxes_when_crop_with_padding_used() -> None:
     ]
     # there is a crop from (x=40, y=40) to (x=72, y=104) of size(h=64, w=32)
     # compared to inference size (128, 128) - crop will be given 32 padding on OX axis each side
-    # we need to upscale 2x prediction coordinates
-    # crop shift +40, +40 in each axis
+    # we need to upscale 2x prediction coordinates, then crop shift +40, +40 in each axis
+    # so out(OX) = (in(OX) - 32) / 2 + 40, out(OY) = in(OY) / 2 + 40
     expected_result = np.expand_dims(
         np.array(
             [
@@ -333,6 +367,7 @@ def test_post_process_bboxes_when_crop_with_padding_used() -> None:
     )
 
     # then
+    print(np.array(result))
     assert np.array(result).shape == (1, 2, 5)
     assert np.allclose(np.array(result), expected_result)
 
@@ -392,19 +427,21 @@ def test_scale_bboxes(
 
 def test_undo_image_padding_for_predicted_polygons() -> None:
     # given
-    polygons = [[(64, 20), (74, 30), (84, 40)], [(94, 50), (104, 60), (114, 70)]]
-    # there is OX padding of size 64 each side, so effectively 64 to be deduced from x coordinates
-    expected_result = np.array(
-        [[(0, 20), (10, 30), (20, 40)], [(30, 50), (40, 60), (50, 70)]]
-    )
+    polygons = [[(32, 32), (64, 64), (48, 48)]]
+    # inference size is smaller than origin and aspect ratio is mismatched
+    # for inference, 32 OX padding each side was added, and we need to scale up results 4x
+    # along each axis to revert back the original coordinates of input image
+    # So, out(OX) = (in(OX) - 32) * 4, out(OY) = in(OY) * 4
+    expected_result = np.array([[(0, 128), (128, 256), (64, 192)]])
 
     # when
     result = undo_image_padding_for_predicted_polygons(
         polygons=polygons,
-        img0_shape=(128, 256),
-        img1_shape=(256, 256),
+        origin_shape=(256, 256),
+        infer_shape=(64, 128),
     )
 
+    print(np.array(result))
     # then
     assert np.allclose(np.array(result), expected_result)
 
@@ -440,9 +477,9 @@ def test_post_process_polygons_when_stretching_resize_used() -> None:
 
     # when
     result = post_process_polygons(
-        img1_shape=(100, 100),
+        infer_shape=(100, 100),
         polys=polygons,
-        img0_shape=(200, 100),
+        origin_shape=(200, 100),
         preproc={
             "static-crop": {
                 "enabled": True,
@@ -462,21 +499,18 @@ def test_post_process_polygons_when_fit_resize_used() -> None:
     # given
     polygons = [[(25, 20), (35, 30), (45, 40)], [(55, 50), (65, 60), (75, 70)]]
     # there is a crop from (x=10, y=20) to (x=90, y=180) (box size - h=160, w=80)
-    # compared to inference size (100, 100) and we add padding - initially 40px on OX,
-    # but after that we resize to (100, 100), so effective padding is 25px
-    # Any valid prediction starts from 25 on OX and end at 75.
-    # up-scaling to original crops coordinates - multiplying by 1.6
-    # At the end - crop shift to be applied: (OX +10, OY +20)
-    # for OX coord we take input (ox - 25) * 1.6 + 10, for OY: input oy * 1.6 +  20
+    # for inference, we scale 0.626, making 25px padding OX each side
+    # then the crop shift is ox=10, oy=20
+    # so effectively out(OX) = (in(OX) - 25) * 1.6 + 10, out(OY) = in(OY) * 1.6 + 20
     expected_result = np.array(
         [[(10, 52), (26, 68), (42, 84)], [(58, 100), (74, 116), (90, 132)]]
     )
 
     # when
     result = post_process_polygons(
-        img1_shape=(100, 100),
+        infer_shape=(100, 100),
         polys=polygons,
-        img0_shape=(200, 100),
+        origin_shape=(200, 100),
         preproc={
             "static-crop": {
                 "enabled": True,
@@ -490,4 +524,5 @@ def test_post_process_polygons_when_fit_resize_used() -> None:
     )
 
     # then
+    print(np.array(result))
     assert np.allclose(np.array(result), expected_result)
