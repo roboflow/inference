@@ -12,7 +12,7 @@ from PIL import Image
 from redis import ConnectionPool, Redis
 
 from inference.core.cache import cache
-from inference.core.data_models import request_from_type
+from inference.core.entities.requests.inference import request_from_type
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.parallel.tasks import postprocess
@@ -32,6 +32,7 @@ model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
 
 
 BATCH_SIZE = min(MAX_BATCH_SIZE, 128)
+
 
 class InferServer:
     def get_batch(self, model_names):

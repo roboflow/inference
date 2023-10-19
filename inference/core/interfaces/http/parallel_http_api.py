@@ -1,5 +1,4 @@
 import asyncio
-from typing import Optional
 
 from redis import ConnectionPool, Redis
 

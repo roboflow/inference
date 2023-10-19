@@ -6,12 +6,11 @@ from typing import Any, Coroutine, Optional
 
 from redis import Redis
 
-from inference.core.data_models import (
+from inference.core.entities.requests.inference import (
     InferenceRequest,
-    InferenceResponse,
     request_from_type,
-    response_from_type,
 )
+from inference.core.entities.responses.inference import response_from_type
 from inference.core.env import REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess

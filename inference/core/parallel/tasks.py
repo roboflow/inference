@@ -10,11 +10,11 @@ from celery import Celery
 from PIL import Image
 from redis import ConnectionPool, Redis
 
-from inference.core.data_models import (
+from inference.core.entities.requests.inference import (
     InferenceRequest,
-    InferenceResponse,
     request_from_type,
 )
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
