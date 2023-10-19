@@ -6,16 +6,18 @@ import numpy as np
 import onnxruntime
 from PIL import Image
 
-from inference.core.data_models import (
+from inference.core.entities.requests.clip import (
     ClipCompareRequest,
-    ClipCompareResponse,
-    ClipEmbeddingResponse,
     ClipImageEmbeddingRequest,
     ClipInferenceRequest,
     ClipTextEmbeddingRequest,
-    InferenceRequestImage,
-    InferenceResponse,
 )
+from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.clip import (
+    ClipCompareResponse,
+    ClipEmbeddingResponse,
+)
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     CLIP_MAX_BATCH_SIZE,
     CLIP_MODEL_ID,

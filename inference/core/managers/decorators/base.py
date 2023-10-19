@@ -1,6 +1,7 @@
 from typing import Optional
 
-from inference.core.data_models import InferenceRequest, InferenceResponse
+from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 
 
@@ -151,3 +152,6 @@ class ModelManagerDecorator:
             List of keys (model IDs).
         """
         return self.model_manager.keys()
+
+    def models(self):
+        return self.model_manager.models()

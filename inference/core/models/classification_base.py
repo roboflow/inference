@@ -5,8 +5,8 @@ from typing import Any, List, Tuple, Union
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from inference.core.data_models import (
-    ClassificationInferenceRequest,
+from inference.core.entities.requests.inference import ClassificationInferenceRequest
+from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InferenceResponseImage,
@@ -50,6 +50,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             bytes: The bytes of the visualized image in JPEG format.
         """
         image = load_image_rgb(inference_request.image)
+        image = Image.fromarray(image)
         draw = ImageDraw.Draw(image)
         font = ImageFont.load_default()
         if isinstance(inference_response.predictions, list):

@@ -3,7 +3,7 @@ from typing import Any, List, Tuple, Union
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
@@ -14,12 +14,12 @@ from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
-    mask2poly,
-    postprocess_predictions,
+    masks2poly,
+    post_process_bboxes,
+    post_process_polygons,
     process_mask_accurate,
     process_mask_fast,
     process_mask_tradeoff,
-    scale_polys,
 )
 
 DEFAULT_CONFIDENCE = 0.5
@@ -159,8 +159,8 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     raise InvalidMaskDecodeArgument(
                         f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                     )
-                polys = mask2poly(batch_masks)
-                pred[:, :4] = postprocess_predictions(
+                polys = masks2poly(batch_masks)
+                pred[:, :4] = post_process_bboxes(
                     [pred[:, :4]],
                     infer_shape,
                     [img_dim],
@@ -170,7 +170,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                         "disable_preproc_static_crop"
                     ],
                 )[0]
-                polys = scale_polys(
+                polys = post_process_polygons(
                     output_mask_shape,
                     polys,
                     img_dim,

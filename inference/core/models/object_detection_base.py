@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -12,7 +12,7 @@ from inference.core.logger import logger
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
-from inference.core.utils.postprocess import postprocess_predictions
+from inference.core.utils.postprocess import post_process_bboxes
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -183,7 +183,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         infer_shape = (self.img_size_w, self.img_size_h)
         img_dims = preproc_return_metadata["img_dims"]
-        predictions = postprocess_predictions(
+        predictions = post_process_bboxes(
             predictions,
             infer_shape,
             img_dims,
@@ -252,7 +252,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 height_padding = 32 - (img_in.shape[3] % 32)
             else:
                 height_padding = 0
-            print(width_padding, height_padding, batch_padding)
             img_in = np.pad(
                 img_in,
                 ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),

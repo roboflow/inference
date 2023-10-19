@@ -1,5 +1,6 @@
 import threading
 import time
+from threading import Lock
 from typing import Any, Optional
 
 from inference.core.cache.base import BaseCache
@@ -149,3 +150,15 @@ class MemoryCache(BaseCache):
         for k in keys_to_delete:
             del self.cache[key][k]
         return len(keys_to_delete)
+
+    def acquire_lock(self, key: str, expire=None) -> Any:
+        if key not in self.cache:
+            self.set(key, Lock(), expire=expire)
+
+        lock: Lock = self.get(key)
+        acquired = lock.acquire(timeout=expire)
+        if not acquired:
+            raise TimeoutError()
+        # refresh the lock
+        self.set(key, lock, expire=expire)
+        return lock
