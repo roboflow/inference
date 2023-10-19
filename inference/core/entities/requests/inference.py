@@ -1,9 +1,9 @@
 from typing import Any, List, Optional, Union
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
-from uuid import uuid4
 
 
 class InferenceRequest(BaseModel):
@@ -183,6 +183,7 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         example=False,
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
+
 
 def request_from_type(model_type, request_dict):
     if model_type == "classification":

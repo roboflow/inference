@@ -13,12 +13,12 @@ from redis import ConnectionPool, Redis
 
 from inference.core.cache import cache
 from inference.core.entities.requests.inference import request_from_type
+from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.parallel.tasks import postprocess
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import get_roboflow_model
-from inference.core.env import MAX_BATCH_SIZE, MAX_ACTIVE_MODELS
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 r = Redis(connection_pool=pool, decode_responses=True)

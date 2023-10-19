@@ -255,6 +255,7 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     )
     landmarks: Union[List[Point], List[Point3D]]
 
+
 def response_from_type(model_type, response_dict):
     if model_type == "classification":
         try:
