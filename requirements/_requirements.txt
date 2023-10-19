@@ -13,4 +13,4 @@ rich<=13.5.2
 shapely<=2.0.1
 supervision<1.0.0
 pybase64<2.0.0
-scikit-image>=0.20.0
+scikit-image>=0.19.3
