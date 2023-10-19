@@ -8,6 +8,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
 )
+from inference.core.exceptions import ModelArtefactError
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
@@ -171,7 +172,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
         keypoint_confidence_threshold: float,
     ) -> List[Keypoint]:
         if self.keypoints_metadata is None:
-            raise RuntimeError("Keypoints metadata not available.")
+            raise ModelArtefactError("Keypoints metadata not available.")
         keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
         results = []
         for keypoint_id in range(len(keypoints) // 3):

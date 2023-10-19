@@ -17,6 +17,11 @@ from inference.core.utils.postprocess import (
     undo_image_padding_for_predicted_polygons,
     scale_polygons,
     post_process_polygons,
+    shift_keypoints,
+    clip_keypoints_coordinates,
+    undo_image_padding_for_predicted_keypoints,
+    stretch_keypoints,
+    post_process_keypoints,
 )
 
 
@@ -518,6 +523,143 @@ def test_post_process_polygons_when_fit_resize_used() -> None:
                 "y_min": 10,
                 "x_max": 90,
                 "y_max": 90,
+            }
+        },
+        resize_method="Fit (black edges) in",
+    )
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_shift_keypoints() -> None:
+    # given
+    keypoints = np.array([[0, 0, 0.9, 10, 10, 0.9, 20, 25, 0.8]])
+    expected_result = np.array([[5, 10, 0.9, 15, 20, 0.9, 25, 35, 0.8]])
+
+    # when
+    result = shift_keypoints(
+        keypoints=keypoints,
+        shift_x=5,
+        shift_y=10,
+    )
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_clip_keypoints_coordinates() -> None:
+    # given
+    keypoints = np.array([[-5, 0.1, 0.9, 10, 10, 0.9, 22, 25, 0.8]])
+    expected_result = np.array([[0, 0, 0.9, 10, 10, 0.9, 18, 20, 0.8]])
+
+    # when
+    result = clip_keypoints_coordinates(keypoints=keypoints, origin_shape=(20, 18))
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_undo_image_padding_for_predicted_keypoints() -> None:
+    # given
+    keypoints = np.array([[32, 32, 0.8, 48, 48, 0.9, 96, 64, 0.8]])
+    # For inference - image was scaled 0.25x, leaving 32px padding on OX each side
+    # as a result: out(OX) = (in(OX) - 32) * 4, out(OY) = in(OY) * 4
+    expected_result = np.array([[0, 128, 0.8, 64, 192, 0.9, 256, 256, 0.8]])
+
+    # when
+    result = undo_image_padding_for_predicted_keypoints(
+        keypoints=keypoints,
+        infer_shape=(64, 128),
+        origin_shape=(256, 256),
+    )
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_stretch_keypoints() -> None:
+    # given
+    keypoints = np.array([[32, 32, 0.8, 48, 48, 0.9, 96, 64, 0.8]])
+    # For inference - image was scaled 0.25x OY axis and 0.5x OX axis,
+    # so - out(OX) = in(OX) * 2, out(OY) = in(OY) * 4
+    expected_result = np.array([[64, 128, 0.8, 96, 192, 0.9, 192, 256, 0.8]])
+
+    # when
+    result = stretch_keypoints(
+        keypoints=keypoints,
+        infer_shape=(64, 128),
+        origin_shape=(256, 256),
+    )
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_post_process_keypoints_when_crop_was_taken_and_stretching_method_used() -> (
+    None
+):
+    # given
+    predictions = np.array(
+        [[[0, 1, 2, 3, 4, 5, 6, 32, 32, 0.8, 48, 48, 0.9, 96, 64, 0.8]]]
+    ).tolist()
+    # static crop was taken from (x=256, y=0) to (x=512, y=256) - of size (256, 256)
+    # For inference - image was scaled 0.25x OY axis and 0.5x OX axis,
+    # crop shift OX = 256, OY = 0
+    # so - out(OX) = (in(OX) * 2) + 256, out(OY) = in(OY) * 4
+    expected_result = np.array(
+        [[[0, 1, 2, 3, 4, 5, 6, 320, 128, 0.8, 352, 192, 0.9, 448, 256, 0.8]]]
+    )
+
+    # when
+    result = post_process_keypoints(
+        predictions=predictions,
+        keypoints_start_index=7,
+        infer_shape=(64, 128),
+        img_dims=[(512, 512)],
+        preproc={
+            "static-crop": {
+                "enabled": True,
+                "x_min": 50,
+                "y_min": 0,
+                "x_max": 100,
+                "y_max": 50,
+            }
+        },
+    )
+
+    # then
+    assert np.allclose(np.array(result), expected_result)
+
+
+def test_post_process_keypoints_when_crop_was_taken_and_fit_to_padding_method_used() -> (
+    None
+):
+    # given
+    predictions = np.array(
+        [[[0, 1, 2, 3, 4, 5, 6, 32, 32, 0.8, 48, 48, 0.9, 96, 64, 0.8]]]
+    ).tolist()
+    # static crop was taken from (x=256, y=0) to (x=512, y=256) - of size (256, 256)
+    # For inference - image was scaled 0.25x, leaving 32px padding on OX each side
+    # crop shift OX = 256, OY = 0
+    # as a result: out(OX) = (in(OX) - 32) * 4 + 256, out(OY) = in(OY) * 4
+    expected_result = np.array(
+        [[[0, 1, 2, 3, 4, 5, 6, 256, 128, 0.8, 320, 192, 0.9, 512, 256, 0.8]]]
+    )
+
+    # when
+    result = post_process_keypoints(
+        predictions=predictions,
+        keypoints_start_index=7,
+        infer_shape=(64, 128),
+        img_dims=[(512, 512)],
+        preproc={
+            "static-crop": {
+                "enabled": True,
+                "x_min": 50,
+                "y_min": 0,
+                "x_max": 100,
+                "y_max": 50,
             }
         },
         resize_method="Fit (black edges) in",
