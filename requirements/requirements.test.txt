@@ -7,3 +7,4 @@ requests-mock==1.11.0
 black
 isort
 flake8
+rich
