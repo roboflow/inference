@@ -1,0 +1,1136 @@
+[
+    {
+        "description": "YOLOv5n Object Detection",
+        "type": "object_detection",
+        "image_url": "https://source.roboflow.com/ACrZ7Hz8DRUB1NBMMtDoQK84Hf22/z5Kg76baWgoZXQPnNmry/original.jpg",
+        "project": "melee",
+        "version": 6,
+        "confidence": 0.4,
+        "iou_threshold": 0.3,
+        "batch_size": 8,
+        "expected_response": {
+            "url": [
+                {
+                    "time": 0.604194245999679,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.604205911000463,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.6042078200007381,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.6042093209998711,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.6042107169996598,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.6042120680012886,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.6042134689996601,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.604214848999618,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                }
+            ],
+            "base64": [
+                {
+                    "time": 0.2873647369997343,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2873739040005603,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2873755849996087,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2873769979996723,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2873783640006877,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2873797310003283,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28738109999903827,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28738245199929224,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 784.5,
+                            "y": 397.5,
+                            "width": 187.0,
+                            "height": 309.0,
+                            "confidence": 0.955079197883606,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 939.5,
+                            "y": 453.5,
+                            "width": 229.0,
+                            "height": 211.0,
+                            "confidence": 0.8664125204086304,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                }
+            ],
+            "base64_diffsize": [
+                {
+                    "time": 2.348157808999531,
+                    "image": {
+                        "width": 155,
+                        "height": 73
+                    },
+                    "predictions": [
+                        {
+                            "x": 95.5,
+                            "y": 38.5,
+                            "width": 25.0,
+                            "height": 25.0,
+                            "confidence": 0.6548313498497009,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 114.0,
+                            "y": 47.5,
+                            "width": 32.0,
+                            "height": 27.0,
+                            "confidence": 0.6333827972412109,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 2.348184095999386,
+                    "image": {
+                        "width": 125,
+                        "height": 43
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 2.348185855000338,
+                    "image": {
+                        "width": 165,
+                        "height": 82
+                    },
+                    "predictions": [
+                        {
+                            "x": 102.0,
+                            "y": 43.5,
+                            "width": 26.0,
+                            "height": 31.0,
+                            "confidence": 0.8824400901794434,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 122.0,
+                            "y": 53.5,
+                            "width": 34.0,
+                            "height": 29.0,
+                            "confidence": 0.753905177116394,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 2.348187308998604,
+                    "image": {
+                        "width": 115,
+                        "height": 36
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 2.348188684998604,
+                    "image": {
+                        "width": 134,
+                        "height": 58
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 2.348190060998604,
+                    "image": {
+                        "width": 115,
+                        "height": 40
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 2.348191412998858,
+                    "image": {
+                        "width": 164,
+                        "height": 91
+                    },
+                    "predictions": [
+                        {
+                            "x": 101.0,
+                            "y": 48.5,
+                            "width": 26.0,
+                            "height": 31.0,
+                            "confidence": 0.7929763793945312,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 120.0,
+                            "y": 57.5,
+                            "width": 32.0,
+                            "height": 31.0,
+                            "confidence": 0.7832989692687988,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 2.3481928259989218,
+                    "image": {
+                        "width": 200,
+                        "height": 88
+                    },
+                    "predictions": [
+                        {
+                            "x": 122.5,
+                            "y": 47.5,
+                            "width": 31.0,
+                            "height": 35.0,
+                            "confidence": 0.8701050281524658,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 146.5,
+                            "y": 56.0,
+                            "width": 39.0,
+                            "height": 28.0,
+                            "confidence": 0.8193432092666626,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    {
+        "description": "YOLOv8n Object Detection",
+        "type": "object_detection",
+        "image_url": "https://source.roboflow.com/ACrZ7Hz8DRUB1NBMMtDoQK84Hf22/z5Kg76baWgoZXQPnNmry/original.jpg",
+        "project": "melee",
+        "version": 7,
+        "confidence": 0.4,
+        "iou_threshold": 0.3,
+        "batch_size": 8,
+        "expected_response": {
+            "url": [
+                {
+                    "time": 0.5419635529997322,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419732040008967,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419750130004104,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.541976448999776,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419778510004107,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419792669999879,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419806690006226,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.5419822080002632,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                }
+            ],
+            "base64": [
+                {
+                    "time": 0.2864223439992202,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2864315529986925,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28643339299924264,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28643481499966583,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28643618099886226,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.28643752499920083,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2864388689995394,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                },
+                {
+                    "time": 0.2864402559989685,
+                    "image": {
+                        "width": 1280,
+                        "height": 720
+                    },
+                    "predictions": [
+                        {
+                            "x": 790.0,
+                            "y": 409.0,
+                            "width": 204.0,
+                            "height": 314.0,
+                            "confidence": 0.8599653244018555,
+                            "class": "marth",
+                            "class_id": 1
+                        },
+                        {
+                            "x": 940.5,
+                            "y": 454.5,
+                            "width": 231.0,
+                            "height": 217.0,
+                            "confidence": 0.7245640158653259,
+                            "class": "fox",
+                            "class_id": 0
+                        }
+                    ]
+                }
+            ],
+            "base64_diffsize": [
+                {
+                    "time": 1.2678778230001626,
+                    "image": {
+                        "width": 155,
+                        "height": 73
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 1.267886923998958,
+                    "image": {
+                        "width": 125,
+                        "height": 43
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 1.2678886379999312,
+                    "image": {
+                        "width": 165,
+                        "height": 82
+                    },
+                    "predictions": [
+                        {
+                            "x": 101.0,
+                            "y": 42.0,
+                            "width": 28.0,
+                            "height": 46.0,
+                            "confidence": 0.4983046054840088,
+                            "class": "marth",
+                            "class_id": 1
+                        }
+                    ]
+                },
+                {
+                    "time": 1.2678900529990642,
+                    "image": {
+                        "width": 115,
+                        "height": 36
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 1.2678914689986414,
+                    "image": {
+                        "width": 134,
+                        "height": 58
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 1.2678928749992338,
+                    "image": {
+                        "width": 115,
+                        "height": 40
+                    },
+                    "predictions": []
+                },
+                {
+                    "time": 1.2678943409991916,
+                    "image": {
+                        "width": 164,
+                        "height": 91
+                    },
+                    "predictions": [
+                        {
+                            "x": 101.0,
+                            "y": 46.5,
+                            "width": 28.0,
+                            "height": 51.0,
+                            "confidence": 0.404007226228714,
+                            "class": "marth",
+                            "class_id": 1
+                        }
+                    ]
+                },
+                {
+                    "time": 1.267895736000355,
+                    "image": {
+                        "width": 200,
+                        "height": 88
+                    },
+                    "predictions": [
+                        {
+                            "x": 123.0,
+                            "y": 45.5,
+                            "width": 34.0,
+                            "height": 49.0,
+                            "confidence": 0.541096031665802,
+                            "class": "marth",
+                            "class_id": 1
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+]

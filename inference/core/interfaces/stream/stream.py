@@ -1,6 +1,4 @@
 import json
-import socket
-import sys
 import threading
 import time
 from typing import Callable, Union
@@ -9,7 +7,7 @@ import numpy as np
 import supervision as sv
 from PIL import Image
 
-from inference.core import data_models as M
+import inference.core.entities.requests.inference
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -26,7 +24,6 @@ from inference.core.env import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
-from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
 
@@ -111,7 +108,9 @@ class Stream(BaseInterface):
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
 
-        self.inference_request_type = M.ObjectDetectionInferenceRequest
+        self.inference_request_type = (
+            inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
+        )
 
         self.webcam_stream = WebcamStream(
             stream_id=self.stream_id, enforce_fps=enforce_fps

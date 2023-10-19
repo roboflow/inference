@@ -1,12 +1,11 @@
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple
 
 import cv2
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
-    InstanceSegmentationInferenceRequest,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
 )
@@ -15,10 +14,9 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     crop_mask,
-    mask2poly,
-    postprocess_predictions,
-    scale_boxes,
-    scale_polys,
+    masks2poly,
+    post_process_bboxes,
+    post_process_polygons,
 )
 
 
@@ -181,12 +179,12 @@ class YOLACT(OnnxRoboflowInferenceModel):
                 masks = predictions[batch_idx, :, 7:]
                 proto = proto_data[batch_idx]
                 decoded_masks = self.decode_masks(boxes, masks, proto, img_in_shape[2:])
-                polys = mask2poly(decoded_masks)
+                polys = masks2poly(decoded_masks)
                 infer_shape = (self.img_size_w, self.img_size_h)
-                boxes = postprocess_predictions(
+                boxes = post_process_bboxes(
                     [boxes], infer_shape, [img_dim], self.preproc, self.resize_method
                 )[0]
-                polys = scale_polys(
+                polys = post_process_polygons(
                     img_in_shape[2:],
                     polys,
                     img_dim,

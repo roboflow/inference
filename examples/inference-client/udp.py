@@ -7,7 +7,7 @@ import argparse
 parser = argparse.ArgumentParser(description="Receive stream detections over UDP.")
 
 parser.add_argument(
-    "--port", type=str, required=True, help="Port to listen on.", default=12345
+    "--port", type=int, required=True, help="Port to listen on.", default=12345
 )
 
 arguments = parser.parse_args()

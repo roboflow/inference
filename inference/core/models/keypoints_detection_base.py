@@ -1,22 +1,19 @@
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     Keypoint,
     KeypointsDetectionInferenceResponse,
     KeypointsPrediction,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
 )
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
-from inference.core.utils.postprocess import postprocess_predictions, scale_keypoints
+from inference.core.utils.postprocess import post_process_bboxes, post_process_keypoints
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -84,7 +81,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
 
         infer_shape = (self.img_size_w, self.img_size_h)
         img_dims = preproc_return_metadata["img_dims"]
-        predictions = postprocess_predictions(
+        predictions = post_process_bboxes(
             predictions=predictions,
             infer_shape=infer_shape,
             img_dims=img_dims,
@@ -94,7 +91,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                 "disable_preproc_static_crop"
             ],
         )
-        predictions = scale_keypoints(
+        predictions = post_process_keypoints(
             predictions=predictions,
             keypoints_start_index=-num_masks,
             infer_shape=infer_shape,

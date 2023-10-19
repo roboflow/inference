@@ -1,5 +1,5 @@
 site_name: Roboflow Inference
-site_url: https://roboflow.github.io/inference/
+site_url: https://inference.roboflow.com/
 site_author: Roboflow
 site_description: With no prior knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments using the Roboflow Inference Server.
 repo_name: roboflow/inference
@@ -58,18 +58,20 @@ nav:
       - Base Interface: library/interfaces/base.md
       - HTTP Interface: library/interfaces/http.md
       - UDP Stream Interface: library/interfaces/udp.md
+    - Docker Configuration Options: library/docker_configuration_options.md
   - Add a Model: add_a_model.md
   - Inference SDK - HTTP client: inference_sdk/http_client.md
   - Contributing: contributing.md
-  - Changelog: changelog.md
+  - Changelog: https://github.com/roboflow/inference/releases
 
 theme:
   name: 'material'
   logo: https://media.roboflow.com/inference-icon.png
-  favicon: https://media.roboflow.com/nference-icon.png
+  favicon: https://media.roboflow.com/inference-icon.png
   font:
     text: Roboto
     code: Roboto Mono
+  custom_dir: 'custom_theme'
 
 plugins:
   - mkdocstrings

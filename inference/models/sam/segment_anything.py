@@ -10,18 +10,20 @@ import torch
 from segment_anything import SamPredictor, sam_model_registry
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from inference.core.data_models import (
-    InferenceRequestImage,
+from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
-    SamEmbeddingResponse,
     SamInferenceRequest,
     SamSegmentationRequest,
+)
+from inference.core.entities.responses.sam import (
+    SamEmbeddingResponse,
     SamSegmentationResponse,
 )
 from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.utils.postprocess import mask2poly
+from inference.core.utils.postprocess import masks2poly
 
 
 class SegmentAnything(RoboflowCoreModel):
@@ -144,9 +146,9 @@ class SegmentAnything(RoboflowCoreModel):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
                 masks = masks > self.predictor.model.mask_threshold
-                masks = mask2poly(masks)
+                masks = masks2poly(masks)
                 low_res_masks = low_res_masks > self.predictor.model.mask_threshold
-                low_res_masks = mask2poly(low_res_masks)
+                low_res_masks = masks2poly(low_res_masks)
             elif request.format == "binary":
                 binary_vector = BytesIO()
                 np.savez_compressed(

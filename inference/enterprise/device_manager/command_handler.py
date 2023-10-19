@@ -7,7 +7,7 @@ import docker
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_BASE_URL, API_KEY
 from inference.core.logger import logger
-from inference.core.utils.url_utils import ApiUrl
+from inference.core.utils.url_utils import wrap_url
 from inference.enterprise.device_manager.container_service import get_container_by_id
 
 
@@ -20,7 +20,7 @@ class Command(BaseModel):
 
 
 def fetch_commands():
-    url = ApiUrl(
+    url = wrap_url(
         f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands?api_key={API_KEY}"
     )
     resp = requests.get(url).json()
@@ -63,7 +63,7 @@ def ack_command(command_id, was_processed, data=None):
     post_body["wasProcessed"] = was_processed
     if data:
         post_body["data"] = data
-    url = ApiUrl(f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands/ack")
+    url = wrap_url(f"{API_BASE_URL}/devices/{GLOBAL_DEVICE_ID}/commands/ack")
     requests.post(url, json=post_body)
 
 
