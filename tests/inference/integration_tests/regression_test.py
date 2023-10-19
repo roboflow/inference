@@ -397,11 +397,13 @@ INFER_RESPONSE_FUNCTIONS = [
     legacy_infer_with_multipart_form_image,
 ]
 
+SKIP_YOLOV8_TEST = bool_env(os.getenv("SKIP_YOLOV8_TEST", False))
 DETECTION_TEST_PARAMS = []
 for test in TESTS:
     if "expected_response" in test:
-        for res_func in INFER_RESPONSE_FUNCTIONS:
-            DETECTION_TEST_PARAMS.append((test, res_func))
+        if not SKIP_YOLOV8_TEST or "YOLOv8" not in test["description"]:
+            for res_func in INFER_RESPONSE_FUNCTIONS:
+                DETECTION_TEST_PARAMS.append((test, res_func))
 
 
 @pytest.mark.parametrize("test,res_function", DETECTION_TEST_PARAMS)
