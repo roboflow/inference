@@ -524,5 +524,4 @@ def test_post_process_polygons_when_fit_resize_used() -> None:
     )
 
     # then
-    print(np.array(result))
     assert np.allclose(np.array(result), expected_result)

@@ -170,9 +170,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     ],
                 )[0]
                 polys = post_process_polygons(
-                    output_mask_shape,
-                    polys,
                     img_dim,
+                    polys,
+                    output_mask_shape,
                     self.preproc,
                     resize_method=self.resize_method,
                 )

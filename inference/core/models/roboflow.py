@@ -316,10 +316,12 @@ class RoboflowInferenceModel(Model):
             class_names=self.class_names,
         )
         if "keypoints_metadata.json" in infer_bucket_files:
-            self.keypoints_metadata = load_json_from_cache(
-                file="keypoints_metadata.json",
-                model_id=self.endpoint,
-                object_pairs_hook=OrderedDict,
+            self.keypoints_metadata = parse_keypoints_metadata(
+                load_json_from_cache(
+                    file="keypoints_metadata.json",
+                    model_id=self.endpoint,
+                    object_pairs_hook=OrderedDict,
+                )
             )
         self.num_classes = len(self.class_names)
         if "PREPROCESSING" not in self.environment:

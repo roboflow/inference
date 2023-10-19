@@ -99,7 +99,6 @@ def post_process_bboxes(
             preproc,
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
-        print((crop_shift_x, crop_shift_y), origin_shape)
         if resize_method == "Stretch to":
             predicted_bboxes = stretch_bboxes(
                 predicted_bboxes=predicted_bboxes,
@@ -369,9 +368,9 @@ def post_process_polygons(
     pre-processing steps. The polygons are transformed according to the ratio and padding between two images.
 
     Args:
+        origin_shape (tuple of int): Shape of the source image (height, width).
         infer_shape (tuple of int): Shape of the target image (height, width).
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
-        origin_shape (tuple of int): Shape of the source image (height, width).
         preproc (object): Preprocessing details used for generating the transformation.
         resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
 
@@ -425,7 +424,6 @@ def undo_image_padding_for_predicted_polygons(
     inter_h = int(origin_shape[0] * scale)
     pad_x = (infer_shape[1] - inter_w) / 2
     pad_y = (infer_shape[0] - inter_h) / 2
-    print(pad_x, pad_y, scale)
     result = []
     for poly in polygons:
         poly = [((p[0] - pad_x) / scale, (p[1] - pad_y) / scale) for p in poly]
@@ -491,6 +489,22 @@ def post_process_keypoints(
     disable_preproc_static_crop: bool = False,
     resize_method: str = "Stretch to",
 ) -> List[List[List[float]]]:
+    """Scales and shifts keypoints based on the given image shapes and preprocessing method.
+
+    This function performs polygon scaling and shifting based on the specified resizing method and
+    pre-processing steps. The polygons are transformed according to the ratio and padding between two images.
+
+    Args:
+        predictions: predictions from model
+        keypoints_start_index: offset in the 3rd dimension pointing where in the prediction start keypoints [(x, y, cfg), ...] for each keypoint class
+        img_dims list of (tuple of int): Shape of the source image (height, width).
+        infer_shape (tuple of int): Shape of the target image (height, width).
+        preproc (object): Preprocessing details used for generating the transformation.
+        resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
+        disable_preproc_static_crop: flag to disable static crop
+    Returns:
+        list of list of list: predictions with post-processed keypoints
+    """
     # Get static crop params
     scaled_predictions = []
     # Loop through batches
@@ -536,8 +550,8 @@ def stretch_keypoints(
     infer_shape: Tuple[int, int],
     origin_shape: Tuple[int, int],
 ) -> np.ndarray:
-    scale_height = origin_shape[1] / infer_shape[1]
-    scale_width = origin_shape[0] / infer_shape[0]
+    scale_width = origin_shape[1] / infer_shape[1]
+    scale_height = origin_shape[0] / infer_shape[0]
     for keypoint_id in range(keypoints.shape[1] // 3):
         keypoints[:, keypoint_id * 3] *= scale_width
         keypoints[:, keypoint_id * 3 + 1] *= scale_height
