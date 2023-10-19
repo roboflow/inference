@@ -14,14 +14,6 @@ class ContentTypeMissing(Exception):
     """
 
 
-class DatasetLoadError(Exception):
-    """Raised when there is an error loading the dataset.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class EngineIgnitionFailure(Exception):
     """Raised when the engine fails to ignite.
 
@@ -32,14 +24,6 @@ class EngineIgnitionFailure(Exception):
 
 class InferenceModelNotFound(Exception):
     """Raised when the inference model is not found.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class InputMethodNotAllowed(Exception):
-    """Raised when the input method is not allowed.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -62,14 +46,6 @@ class InvalidMaskDecodeArgument(Exception):
     """
 
 
-class InvalidNumpyInput(Exception):
-    """Raised when the input is an invalid NumPy array.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class MissingApiKeyError(Exception):
     """Raised when the API key is missing.
 
@@ -86,32 +62,8 @@ class MissingServiceSecretError(Exception):
     """
 
 
-class ModelArtifactsRetrievalError(Exception):
-    """Raised when there is an error retrieving the model artifacts.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class ModelCompilationFailure(Exception):
-    """Raised when the model fails to compile.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class OnnxProviderNotAvailable(Exception):
     """Raised when the ONNX provider is not available.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class TensorrtRoboflowAPIError(Exception):
-    """Raised when there is an error with the TensorRT Roboflow API.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -124,3 +76,75 @@ class WorkspaceLoadError(Exception):
     Attributes:
         message (str): Optional message describing the error.
     """
+
+
+class InputImageLoadError(Exception):
+    pass
+
+
+class InvalidNumpyInput(InputImageLoadError):
+    """Raised when the input is an invalid NumPy array.
+
+    Attributes:
+        message (str): Optional message describing the error.
+    """
+
+
+class InvalidImageTypeDeclared(InputImageLoadError):
+    pass
+
+
+class InputFormatInferenceFailed(InputImageLoadError):
+    pass
+
+
+class PreProcessingError(Exception):
+    pass
+
+
+class PostProcessingError(Exception):
+    pass
+
+
+class InvalidModelIDError(Exception):
+    pass
+
+
+class MalformedRoboflowAPIResponseError(Exception):
+    pass
+
+
+class ServiceConfigurationError(Exception):
+    pass
+
+
+class MissingDefaultModelError(ServiceConfigurationError):
+    pass
+
+
+class ModelNotRecognisedError(ServiceConfigurationError):
+    pass
+
+
+class RoboflowAPIRequestError(Exception):
+    pass
+
+
+class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
+    pass
+
+
+class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
+class RoboflowAPIConnectionError(RoboflowAPIRequestError):
+    pass
+
+
+class ModelArtefactError(Exception):
+    pass

@@ -4,7 +4,36 @@ Before you begin, ensure that you have Docker installed on your machine. Docker 
 allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If 
 you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
 
-## Pull
+
+## via CLI
+
+Another easy way to run the Roboflow Inference Server with Docker is via the command line.
+
+First, [Install the CLI](../index.md#cli).
+
+Running the Inference Server is as simple as running the following command:
+
+```bash
+inference server start
+```
+
+This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [HTTP Inference](http_inference.md).
+
+Once you have your inference server running, you can check its status with the following command:
+
+```bash
+inference server status
+```
+
+Roboflow Inference CLI currently supports the following device targets:
+
+- x86 CPU
+- ARM64 CPU
+- NVIDIA GPU
+
+For Jetson or TensorRT Runtime inference server images, pull the images directly following the [instructions below](#pull-from-docker-hub).
+
+## Pull from Docker Hub
 
 If you don't wish to build the Docker image locally or prefer to use the official releases, you can directly pull the 
 pre-built images from the Docker Hub. These images are maintained by the Roboflow team and are optimized for various 

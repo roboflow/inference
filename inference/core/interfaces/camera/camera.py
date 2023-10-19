@@ -4,6 +4,8 @@ from threading import Thread
 import cv2
 from PIL import Image
 
+from inference.core.logger import logger
+
 
 class WebcamStream:
     """Class to handle webcam streaming using a separate thread.
@@ -34,15 +36,18 @@ class WebcamStream:
         self.vcap = cv2.VideoCapture(self.stream_id)
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.max_fps = 30
         if self.vcap.isOpened() is False:
-            print("[Exiting]: Error accessing webcam stream.")
+            logger.debug("[Exiting]: Error accessing webcam stream.")
             exit(0)
         self.fps_input_stream = int(self.vcap.get(5))
-        print("FPS of webcam hardware/input stream: {}".format(self.fps_input_stream))
+        logger.debug(
+            "FPS of webcam hardware/input stream: {}".format(self.fps_input_stream)
+        )
         self.grabbed, self.frame = self.vcap.read()
         self.pil_image = Image.fromarray(cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB))
         if self.grabbed is False:
-            print("[Exiting] No more frames to read")
+            logger.debug("[Exiting] No more frames to read")
             exit(0)
         self.stopped = True
         self.t = Thread(target=self.update, args=())
@@ -67,12 +72,14 @@ class WebcamStream:
                 )
 
             if self.grabbed is False:
-                print("[Exiting] No more frames to read")
+                logger.debug("[Exiting] No more frames to read")
                 self.stopped = True
                 break
             if self.enforce_fps:
                 t2 = time.perf_counter()
-                time.sleep(max(0, 1 / self.fps_input_stream - (t2 - t1)))
+                time.sleep(
+                    max(1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1))
+                )
         self.vcap.release()
 
     def read(self):

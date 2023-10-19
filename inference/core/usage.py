@@ -4,6 +4,7 @@ import elasticache_auto_discovery
 from pymemcache.client.hash import HashClient
 
 from inference.core.env import ELASTICACHE_ENDPOINT
+from inference.core.logger import logger
 
 nodes = elasticache_auto_discovery.discover(ELASTICACHE_ENDPOINT)
 
@@ -58,5 +59,5 @@ def trackUsage(endpoint, actor, n=1):
                 memcache_client.set("ACTOR_KEYS", json.dumps(actor_keys))
 
     except Exception as e:
-        print("WARNING: there was an error in counting this inference")
-        print(e)
+        logger.debug("WARNING: there was an error in counting this inference")
+        logger.debug(e)

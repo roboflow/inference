@@ -26,7 +26,7 @@ class YOLOv5InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         """
         return "yolov5s_weights.onnx"
 
-    def infer_onnx(self, img_in: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """Performs inference on the given image using the ONNX session.
 
         Args:

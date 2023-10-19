@@ -28,16 +28,13 @@ RUN pip install --upgrade pip  && pip install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip uninstall pillow -y \
-    && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd \
-    && rm -rf ~/.cache/pip
-
 RUN conda install -c anaconda libstdcxx-ng
 
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/trt_http.py trt_http.py
 
+ENV VERSION_CHECK_MODE=continuous
 ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
 ENV REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider
 ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1

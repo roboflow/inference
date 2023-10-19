@@ -1,7 +1,7 @@
 .PHONY: style check_code_quality
 
 export PYTHONPATH = .
-check_dirs := inference
+check_dirs := inference inference_sdk
 
 style:
 	black  $(check_dirs)
@@ -16,7 +16,7 @@ check_code_quality:
 	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics
 
 start_test_docker:
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) --name inference-test roboflow/roboflow-inference-server-cpu:test
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/roboflow-inference-server-cpu:test
 
 create_wheels:
 	rm -f dist/*
@@ -24,6 +24,8 @@ create_wheels:
 	python .release/pypi/inference.cpu.setup.py bdist_wheel
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
 	python .release/pypi/inference.setup.py bdist_wheel
+	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 upload_wheels:
 	twine upload dist/*.whl

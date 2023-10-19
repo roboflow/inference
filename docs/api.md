@@ -2,4 +2,4 @@ The Roboflow Inference Server provides OpenAPI documentation at the `/docs` endp
 
 Below is the OpenAPI specification for the Inference Server, rendered with Swagger.
 
-<swagger-ui src="https://detect.roboflow.com/openapi.json"/>
+<swagger-ui src="./openapi.json"/>

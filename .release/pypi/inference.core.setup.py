@@ -12,8 +12,13 @@ with open("README.md", "r") as fh:
 
 
 def read_requirements(path):
-    with open(path) as fh:
-        return [line.strip() for line in fh]
+    if not isinstance(path, list):
+        path = [path]
+    requirements = []
+    for p in path:
+        with open(p) as fh:
+            requirements.extend([line.strip() for line in fh])
+    return requirements
 
 
 setuptools.setup(
@@ -31,10 +36,23 @@ setuptools.setup(
             "docker",
             "docs",
             "requirements",
-            "test",
+            "tests",
+            "tests.*",
+            "inference_sdk",
+            "inference_sdk.*",
         ),
     ),
-    install_requires=read_requirements("requirements/_requirements.txt"),
+    entry_points={
+        "console_scripts": [
+            "inference=inference_cli.main:app",
+        ],
+    },
+    install_requires=read_requirements(
+        [
+            "requirements/_requirements.txt",
+            "requirements/requirements.cli.txt",
+        ]
+    ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "cpu": read_requirements("requirements/requirements.cpu.txt"),

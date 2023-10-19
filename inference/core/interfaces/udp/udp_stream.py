@@ -8,7 +8,7 @@ from typing import Union
 import supervision as sv
 from PIL import Image
 
-from inference.core import data_models as M
+import inference.core.entities.requests.inference
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -26,6 +26,7 @@ from inference.core.env import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
+from inference.core.logger import logger
 from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
@@ -75,7 +76,7 @@ class UdpStream(BaseInterface):
         """Initialize the UDP stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
         """
-        print("Initializing server")
+        logger.info("Initializing server")
 
         self.frame_count = 0
         self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
@@ -102,7 +103,9 @@ class UdpStream(BaseInterface):
         self.ip_broadcast_port = ip_broadcast_port
         self.json_response = json_response
 
-        self.inference_request_type = M.ObjectDetectionInferenceRequest
+        self.inference_request_type = (
+            inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
+        )
 
         self.UDPServerSocket = socket.socket(
             family=socket.AF_INET, type=socket.SOCK_DGRAM
@@ -110,12 +113,12 @@ class UdpStream(BaseInterface):
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
-        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1)
+        self.UDPServerSocket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
 
         self.webcam_stream = WebcamStream(
             stream_id=self.stream_id, enforce_fps=enforce_fps
         )
-        print(
+        logger.info(
             f"Streaming from device with resolution: {self.webcam_stream.width} x {self.webcam_stream.height}"
         )
 
@@ -129,14 +132,14 @@ class UdpStream(BaseInterface):
         self.frame = None
         self.frame_cv = None
         self.frame_id = None
-        print("Server initialized with settings:")
-        print(f"Stream ID: {self.stream_id}")
-        print(f"Model ID: {self.model_id}")
-        print(f"Confidence: {self.confidence}")
-        print(f"Class Agnostic NMS: {self.class_agnostic_nms}")
-        print(f"IOU Threshold: {self.iou_threshold}")
-        print(f"Max Candidates: {self.max_candidates}")
-        print(f"Max Detections: {self.max_detections}")
+        logger.info("Server initialized with settings:")
+        logger.info(f"Stream ID: {self.stream_id}")
+        logger.info(f"Model ID: {self.model_id}")
+        logger.info(f"Confidence: {self.confidence}")
+        logger.info(f"Class Agnostic NMS: {self.class_agnostic_nms}")
+        logger.info(f"IOU Threshold: {self.iou_threshold}")
+        logger.info(f"Max Candidates: {self.max_candidates}")
+        logger.info(f"Max Detections: {self.max_detections}")
 
     def init_infer(self):
         """Initialize the inference with a test frame.
@@ -170,7 +173,7 @@ class UdpStream(BaseInterface):
                         self.queue_control = True
 
         except Exception as e:
-            print(e)
+            logger.error(e)
 
     def inference_request_thread(self):
         """Manage the inference requests.
@@ -251,7 +254,7 @@ class UdpStream(BaseInterface):
             try:
                 time.sleep(10)
             except KeyboardInterrupt:
-                print("Stopping server...")
+                logger.info("Stopping server...")
                 self.stop = True
                 time.sleep(3)
                 sys.exit(0)

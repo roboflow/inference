@@ -1,0 +1,7 @@
+requests>=2.0.0
+dataclasses-json>=0.6.0
+opencv-python>=4.8.0.0
+pillow>=9.0.0
+requests>=2.27.0
+supervision<1.0.0
+numpy>=1.20.0
