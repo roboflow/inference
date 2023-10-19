@@ -26,6 +26,7 @@ jobs:
       
       - name: 🦾 Install dependencies
         run: |
+          python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.txt
       - name: 🔨 Build and Push Test Docker - GPU
         uses: docker/build-push-action@v4

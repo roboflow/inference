@@ -25,4 +25,4 @@ jobs:
             version: '>= 363.0.0'
         
         - name: 'Start T4 Instance'
-          run: 'gcloud compute instances start gh-action-runner-inference --zone us-central1-a'
+          run: 'gcloud compute instances start gh-actions-runner-t4 --zone us-central1-a'
