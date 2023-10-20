@@ -1,25 +1,14 @@
 from groundingdino.util.inference import Model
 
-import numpy as np
-import onnxruntime
 import torch
 from time import perf_counter
 
-
-from PIL import Image
 import urllib.request
+from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
+from inference.core.entities.responses.inference import InferenceResponseImage, ObjectDetectionInferenceResponse, ObjectDetectionPrediction
+from inference.core.entities.requests.inference import InferenceRequestImage
 
-from inference.core.data_models import (
-    CVInferenceRequest,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
-    InferenceResponseImage,
-    InferenceRequestImage,
-    GroundingDINOInferenceRequest
-)
-from inference.core.utils.image_utils import load_image_rgb
-
-from inference.core.utils.image_utils import xyxy_to_xywh
+from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
 from inference.core.models.roboflow import RoboflowCoreModel
 
 import os
