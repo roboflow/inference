@@ -2,8 +2,11 @@
 
 ## Roboflow Inference
 
-[Roboflow](https://roboflow.com) Inference is an opinionated tool for running inference on state-of-the-art computer vision models. With no prior
-knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
+[Roboflow](https://roboflow.com) Inference is the easiest way to use and deploy computer vision models.
+Inference supports running object detection, classification, instance segmentation, and even foundation models (like CLIP and SAM).
+You can [train and deploy your own custom model](https://github.com/roboflow/notebooks) or use one of the 50,000+
+[fine-tuned models shared by the community](https://universe.roboflow.com).
+
 
 ## 🎥 Inference in action
 
@@ -16,7 +19,7 @@ Check out Inference running on a video of a football game:
 
 ## 👩‍🏫 Examples
 
-The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
+The [`/examples` directory](https://github.com/roboflow/inference/tree/main/examples) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
 
 ## 💻 Why Inference?
 
@@ -78,19 +81,21 @@ Alternatively, you can take advantage of some advanced execution providers using
 ### Extras:
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
+
 | extra | description |
 |:-------|:-------------------------------------------------|
 | `clip` | Ability to use the core `CLIP` model (by OpenAI) |
 | `gaze` | Ability to use the core `Gaze` model |
 | `http` | Ability to run the http interface |
 | `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
+| `doctr` | Ability to use the core `doctr` model (by [Mindee](https://github.com/mindee/doctr)) |
 
-**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependencies however pytorch installs can be highly environment dependent. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
+**_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the [official PyTorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
 
-Example install with http dependencies:
+Example install with CLIP dependencies:
 
 ```bash
-pip install inference[http]
+pip install inference[clip]
 ```
 
 ## 🐋 docker
@@ -170,6 +175,10 @@ inference infer {image_path} \
 ## 🔥 quickstart
 
 **Docker Quickstart**:
+
+>inference-sdk: Using the [`inference-sdk`](./inference_sdk/http_client.md) is the easiest way to interface with a Roboflow `inference` server.
+
+If you prefer to write your own client code:
 
 ```python
 import requests

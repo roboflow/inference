@@ -139,6 +139,7 @@ profile/
 *.pstats
 *.jpeg
 *.png
+!icon.png
 *.mp4
 *.roboflow.txt
 dev_tools/
@@ -151,4 +152,8 @@ export_api_keys.sh
 inference_cli/version.py
 inference_sdk/version.py
 
+<<<<<<< HEAD
 .DS_store
+=======
+**/.DS_Store
+>>>>>>> main

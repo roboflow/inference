@@ -11,6 +11,7 @@ This folder contains examples of projects built with Inference.
 - [Gaze Detection](./gaze-detection/): Detects the direction in which someone is looking and the point in a frame at which someone is looking.
 - [CLIP Image-to-Image Search Engine](./clip-search-engine): Find images similar to a given image in a dataset with CLIP. Served as a web application.
 - [SAM Client](./sam-client): Use Segment Anything to segment objects in an image. Served as a command line application.
+- [Stream Examples](./stream-examples/): Run computer vision models on frames from webcam and RTSP streams. Includes examples using models hosted on Roboflow and deployed locally with Inference and CLIP.
 
 ## Community Examples
 

@@ -15,8 +15,17 @@ check_code_quality:
 	# exit-zero treats all errors as warnings. E203 for black, E501 for docstring, W503 for line breaks before logical operators 
 	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics
 
-start_test_docker:
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) --name inference-test roboflow/roboflow-inference-server-cpu:test
+start_test_docker_cpu:
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+
+start_test_docker_gpu:
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+
+start_test_docker_jetson:
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+
+stop_test_docker:
+	docker rm -f inference-test
 
 create_wheels:
 	rm -f dist/*

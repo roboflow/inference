@@ -110,8 +110,8 @@ class PingbackInfo:
             }
             now = time.time()
             start = now - METRICS_INTERVAL
-            for key in model_manager._models:
-                model = model_manager._models[key]
+            for key in model_manager.models():
+                model = model_manager.models()[key]
                 if all_data["api_key"] is None and model.api_key is not None:
                     all_data["api_key"] = model.api_key
                 model_data = {

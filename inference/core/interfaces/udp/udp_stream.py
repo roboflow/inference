@@ -5,10 +5,11 @@ import threading
 import time
 from typing import Union
 
+import cv2
 import supervision as sv
 from PIL import Image
 
-from inference.core import data_models as M
+import inference.core.entities.requests.inference
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -103,7 +104,9 @@ class UdpStream(BaseInterface):
         self.ip_broadcast_port = ip_broadcast_port
         self.json_response = json_response
 
-        self.inference_request_type = M.ObjectDetectionInferenceRequest
+        self.inference_request_type = (
+            inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
+        )
 
         self.UDPServerSocket = socket.socket(
             family=socket.AF_INET, type=socket.SOCK_DGRAM
@@ -163,9 +166,10 @@ class UdpStream(BaseInterface):
                 if webcam_stream.stopped is True or self.stop:
                     break
                 else:
-                    self.frame, self.frame_cv, frame_id = webcam_stream.read()
+                    self.frame_cv, frame_id = webcam_stream.read_opencv()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
+                        self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
                         self.preproc_result = self.model.preprocess(self.frame)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True

@@ -1,32 +1,39 @@
 import json
 import os
-import shutil
-import traceback
-import urllib
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from io import BytesIO
-from time import perf_counter, sleep
-from typing import Any, List, Tuple, Union
+from time import perf_counter
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import onnxruntime
-import requests
 from PIL import Image
 
-from inference.core.data_models import (
-    InferenceRequest,
-    InferenceRequestImage,
-    InferenceResponse,
+from inference.core.cache import cache
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    clear_cache,
+    get_cache_dir,
+    get_cache_file_path,
+    initialise_cache,
+    load_json_from_cache,
+    load_text_file_from_cache,
+    save_bytes_in_cache,
+    save_json_in_cache,
+    save_text_lines_in_cache,
 )
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
+from inference.core.entities.requests.inference import (
+    InferenceRequest,
+    InferenceRequestImage,
+)
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
-    API_BASE_URL,
     API_KEY,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     LAMBDA,
@@ -37,54 +44,50 @@ from inference.core.env import (
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
+    ModelArtefactError,
     OnnxProviderNotAvailable,
-    TensorrtRoboflowAPIError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
-from inference.core.utils.image_utils import load_image, load_image_rgb
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_roboflow_api,
+    get_roboflow_model_data,
+)
+from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
-from inference.core.utils.preprocess import prepare
-from inference.core.utils.url_utils import ApiUrl
+from inference.core.utils.preprocess import letterbox_image, prepare
+from inference.core.utils.visualisation import draw_detection_predictions
 
+NUM_S3_RETRY = 5
+SLEEP_SECONDS_BETWEEN_RETRIES = 3
+
+
+S3_CLIENT = None
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
     try:
         import boto3
+        from botocore.config import Config
 
-        s3 = boto3.client("s3")
+        from inference.core.utils.s3 import download_s3_files_to_directory
+
+        config = Config(retries={"max_attempts": NUM_S3_RETRY, "mode": "standard"})
+        S3_CLIENT = boto3.client("s3", config=config)
     except:
         logger.debug("Error loading boto3")
         pass
 
-NUM_S3_RETRY = 3
-SLEEP_SECONDS_BETWEEN_RETRIES = 3
-
-
-def get_api_data(api_url):
-    """Fetch API data from a given URL.
-
-    Args:
-        api_url (str): The URL to fetch data from.
-
-    Raises:
-        TensorrtRoboflowAPIError: If an error occurs while fetching the data.
-
-    Returns:
-        dict: JSON response from the API.
-    """
-    try:
-        r = requests.get(api_url)
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        if "error" in r.json():
-            raise TensorrtRoboflowAPIError(
-                f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {api_url}. The error was: {r.json()['error']}."
-            )
-        raise TensorrtRoboflowAPIError(
-            f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {api_url}. The error was: {e}."
-        )
-    api_data = r.json()
-    return api_data
+DEFAULT_COLOR_PALETTE = [
+    "#4892EA",
+    "#00EEC3",
+    "#FE4EF0",
+    "#F4004E",
+    "#FA7200",
+    "#EEEE17",
+    "#90FF00",
+    "#78C1D2",
+    "#8C29FF",
+]
 
 
 class RoboflowInferenceModel(Model):
@@ -95,6 +98,7 @@ class RoboflowInferenceModel(Model):
         model_id: str,
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
+        load_weights=True,
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -105,6 +109,7 @@ class RoboflowInferenceModel(Model):
             api_key (str, optional): API key for authentication. Defaults to None.
         """
         super().__init__()
+        self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         if not self.api_key and not (
@@ -117,9 +122,9 @@ class RoboflowInferenceModel(Model):
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
-
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
-        os.makedirs(self.cache_dir, exist_ok=True)
+        self.keypoints_metadata: Optional[dict] = None
+        initialise_cache(model_id=self.endpoint)
 
     def cache_file(self, f: str) -> str:
         """Get the cache file path for a given file.
@@ -130,18 +135,17 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: Full path to the cached file.
         """
-        return os.path.join(self.cache_dir, f)
+        return get_cache_file_path(file=f, model_id=self.endpoint)
 
     def clear_cache(self) -> None:
         """Clear the cache directory."""
-
-        shutil.rmtree(self.cache_dir)
+        clear_cache(model_id=self.endpoint)
 
     def draw_predictions(
         self,
         inference_request: InferenceRequest,
         inference_response: InferenceResponse,
-    ) -> str:
+    ) -> bytes:
         """Draw predictions from an inference response onto the original image provided by an inference request
 
         Args:
@@ -151,62 +155,11 @@ class RoboflowInferenceModel(Model):
         Returns:
             str: A base64 encoded image string
         """
-        image = load_image_rgb(inference_request.image)
-
-        for box in inference_response.predictions:
-            color = tuple(
-                int(self.colors.get(box.class_name, "#4892EA")[i : i + 2], 16)
-                for i in (1, 3, 5)
-            )
-            x1 = int(box.x - box.width / 2)
-            x2 = int(box.x + box.width / 2)
-            y1 = int(box.y - box.height / 2)
-            y2 = int(box.y + box.height / 2)
-
-            cv2.rectangle(
-                image,
-                (x1, y1),
-                (x2, y2),
-                color=color,
-                thickness=inference_request.visualization_stroke_width,
-            )
-            if hasattr(box, "points"):
-                points = np.array([(int(p.x), int(p.y)) for p in box.points], np.int32)
-                if len(points) > 2:
-                    cv2.polylines(
-                        image,
-                        [points],
-                        isClosed=True,
-                        color=color,
-                        thickness=inference_request.visualization_stroke_width,
-                    )
-            if inference_request.visualization_labels:
-                text = f"{box.class_name} {box.confidence:.2f}"
-                (text_width, text_height), _ = cv2.getTextSize(
-                    text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-                )
-                button_size = (text_width + 20, text_height + 20)
-                button_img = np.full(
-                    (button_size[1], button_size[0], 3), color[::-1], dtype=np.uint8
-                )
-                cv2.putText(
-                    button_img,
-                    text,
-                    (10, 10 + text_height),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1,
-                )
-                end_x = min(x1 + button_size[0], image.shape[1])
-                end_y = min(y1 + button_size[1], image.shape[0])
-                image[y1:end_y, x1:end_x] = button_img[: end_y - y1, : end_x - x1]
-
-        image = Image.fromarray(image)
-        buffered = BytesIO()
-        image = image.convert("RGB")
-        image.save(buffered, format="JPEG")
-        return buffered.getvalue()
+        return draw_detection_predictions(
+            inference_request=inference_request,
+            inference_response=inference_response,
+            colors=self.colors,
+        )
 
     @property
     def get_class_names(self):
@@ -234,162 +187,151 @@ class RoboflowInferenceModel(Model):
             self.__class__.__name__ + ".get_infer_bucket_file_list"
         )
 
+    @property
+    def cache_key(self):
+        return f"metadata:{self.endpoint}"
+
+    def model_metadata_from_memcache(self):
+        model_metadata = cache.get(self.cache_key)
+        return model_metadata
+
+    def write_model_metadata_to_memcache(self, metadata):
+        cache.set(self.cache_key, metadata)
+
+    @property
+    def has_model_metadata(self):
+        return self.model_metadata_from_memcache() is not None
+
     def get_model_artifacts(self) -> None:
         """Fetch or load the model artifacts.
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
-
-        Raises:
-            Exception: If it fails to download the model artifacts from S3.
-            TensorrtRoboflowAPIError: If an error occurs while fetching data from the Roboflow API.
         """
+        self.cache_model_artefacts()
+        self.load_model_artifacts_from_cache()
+
+    def cache_model_artefacts(self) -> None:
+        infer_bucket_files = self.get_all_required_infer_bucket_file()
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            return None
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+        self.download_model_artifacts_from_roboflow_api()
+
+    def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
-        if all([os.path.exists(self.cache_file(f)) for f in infer_bucket_files]):
-            self.log("Model artifacts already downloaded, loading model from cache")
-            if "environment.json" in infer_bucket_files:
-                with self.open_cache("environment.json", "r") as f:
-                    self.environment = json.load(f)
+        logger.debug(f"List of files required to load model: {infer_bucket_files}")
+        return infer_bucket_files
 
-            if "class_names.txt" in infer_bucket_files:
-                self.class_names = []
-                with self.open_cache("class_names.txt", "r") as f:
-                    for l in f.readlines():
-                        self.class_names.append(l.strip("\n"))
-            elif "CLASS_MAP" in self.environment:
-                self.class_names = []
-                for i in range(len(self.environment["CLASS_MAP"].keys())):
-                    self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-            if "COLORS" in self.environment.keys():
-                self.colors = json.loads(self.environment["COLORS"])
-            else:
-                # then no colors have been saved to S3
-                colors_order = [
-                    "#4892EA",
-                    "#00EEC3",
-                    "#FE4EF0",
-                    "#F4004E",
-                    "#FA7200",
-                    "#EEEE17",
-                    "#90FF00",
-                    "#78C1D2",
-                    "#8C29FF",
-                ]
+    def download_model_artefacts_from_s3(self) -> None:
+        try:
+            logger.debug("Downloading model artifacts from S3")
+            infer_bucket_files = self.get_all_required_infer_bucket_file()
+            cache_directory = get_cache_dir(model_id=self.endpoint)
+            s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
+            download_s3_files_to_directory(
+                bucket=INFER_BUCKET,
+                keys=s3_keys,
+                target_dir=cache_directory,
+                s3_client=S3_CLIENT,
+            )
+        except Exception as error:
+            raise ModelArtefactError(
+                f"Could not obtain model artefacts from S3. Cause: {error}"
+            ) from error
 
-                self.colors = {}
-                i = 1
-                for c in self.class_names:
-                    self.colors[c] = colors_order[i % len(colors_order)]
-                    i += 1
+    def download_model_artifacts_from_roboflow_api(self) -> None:
+        logger.debug("Downloading model artifacts from Roboflow API")
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=self.device_id,
+        )
+        if "ort" not in api_data.keys():
+            raise ModelArtefactError(
+                "Could not find `ort` key in roboflow API model description response."
+            )
+        api_data = api_data["ort"]
+        if "classes" in api_data:
+            save_text_lines_in_cache(
+                content=api_data["classes"],
+                file="class_names.txt",
+                model_id=self.endpoint,
+            )
+        if "model" not in api_data:
+            raise ModelArtefactError(
+                "Could not find `model` key in roboflow API model description response."
+            )
+        if "environment" not in api_data:
+            raise ModelArtefactError(
+                "Could not find `environment` key in roboflow API model description response."
+            )
+        environment = get_from_roboflow_api(api_data["environment"], json_response=True)
+        model_weights_response = get_from_roboflow_api(api_data["model"])
+        save_bytes_in_cache(
+            content=model_weights_response.content,
+            file=self.weights_file,
+            model_id=self.endpoint,
+        )
+        if "colors" in api_data:
+            environment["COLORS"] = api_data["colors"]
+        save_json_in_cache(
+            content=environment,
+            file="environment.json",
+            model_id=self.endpoint,
+        )
+        if "keypoints_metadata" in api_data:
+            # TODO: make sure backend provides that
+            save_json_in_cache(
+                content=api_data["keypoints_metadata"],
+                file="keypoints_metadata.json",
+                model_id=self.endpoint,
+            )
+
+    def load_model_artifacts_from_cache(self) -> None:
+        logger.debug("Model artifacts already downloaded, loading model from cache")
+        infer_bucket_files = self.get_all_required_infer_bucket_file()
+        if "environment.json" in infer_bucket_files:
+            self.environment = load_json_from_cache(
+                file="environment.json",
+                model_id=self.endpoint,
+                object_pairs_hook=OrderedDict,
+            )
+        if "class_names.txt" in infer_bucket_files:
+            self.class_names = load_text_file_from_cache(
+                file="class_names.txt",
+                model_id=self.endpoint,
+                split_lines=True,
+                strip_white_chars=True,
+            )
         else:
-            # If AWS keys are available, then we can download model artifacts directly
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
-                logger.debug("Downloading model artifacts from S3")
-                for f in infer_bucket_files:
-                    success = False
-                    attempts = 0
-                    while not success and attempts < NUM_S3_RETRY:
-                        try:
-                            s3.download_file(
-                                INFER_BUCKET,
-                                f"{self.endpoint}/{f}",
-                                self.cache_file(f),
-                            )
-                            success = True
-                        except Exception as e:
-                            attempts += 1
-                            logger.error(
-                                f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f} | Weights File = {self.weights_file}",
-                                traceback.format_exc(),
-                            )
-                            sleep(SLEEP_SECONDS_BETWEEN_RETRIES)
-                    if not success:
-                        raise Exception(f"Failed to download model artifacts.")
-
-                if "environment.json" in infer_bucket_files:
-                    with self.open_cache("environment.json", "r") as f:
-                        self.environment = json.load(f)
-
-                if "class_names.txt" in infer_bucket_files:
-                    self.class_names = []
-                    with self.open_cache("class_names.txt", "r") as f:
-                        for l in f.readlines():
-                            self.class_names.append(l.strip("\n"))
-                elif "CLASS_MAP" in self.environment:
-                    self.class_names = []
-                    for i in range(len(self.environment["CLASS_MAP"].keys())):
-                        self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-
-                if "COLORS" in self.environment.keys():
-                    self.colors = json.loads(self.environment["COLORS"])
-                else:
-                    # then no colors have been saved to S3
-                    colors_order = [
-                        "#4892EA",
-                        "#00EEC3",
-                        "#FE4EF0",
-                        "#F4004E",
-                        "#FA7200",
-                        "#EEEE17",
-                        "#90FF00",
-                        "#78C1D2",
-                        "#8C29FF",
-                    ]
-
-                    self.colors = {}
-                    i = 1
-                    for c in self.class_names:
-                        self.colors[c] = colors_order[i % len(colors_order)]
-                        i += 1
-
-            else:
-                self.log("Downloading model artifacts from Roboflow API")
-                # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = ApiUrl(
-                    f"{API_BASE_URL}/ort/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true&dynamic=true"
+            self.class_names = get_class_names_from_environment_file(
+                environment=self.environment
+            )
+        self.colors = get_color_mapping_from_environment(
+            environment=self.environment,
+            class_names=self.class_names,
+        )
+        if "keypoints_metadata.json" in infer_bucket_files:
+            self.keypoints_metadata = parse_keypoints_metadata(
+                load_json_from_cache(
+                    file="keypoints_metadata.json",
+                    model_id=self.endpoint,
+                    object_pairs_hook=OrderedDict,
                 )
-                api_data = get_api_data(self.api_url)
-                if "ort" not in api_data.keys():
-                    raise TensorrtRoboflowAPIError(
-                        f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {self.api_url}. The error was: Key 'tensorrt' not in api_data."
-                    )
-
-                api_data = api_data["ort"]
-
-                if "classes" in api_data:
-                    self.class_names = api_data["classes"]
-                else:
-                    self.class_names = None
-
-                if "colors" in api_data:
-                    self.colors = api_data["colors"]
-
-                t1 = perf_counter()
-                weights_url = ApiUrl(api_data["model"])
-                r = requests.get(weights_url)
-                with self.open_cache(self.weights_file, "wb") as f:
-                    f.write(r.content)
-                if perf_counter() - t1 > 120:
-                    self.log(
-                        "Weights download took longer than 120 seconds, refreshing API request"
-                    )
-                    api_data = get_api_data(self.api_url)
-                env_url = ApiUrl(api_data["environment"])
-                self.environment = requests.get(env_url).json()
-                with open(self.cache_file("environment.json"), "w") as f:
-                    json.dump(self.environment, f)
-                if not self.class_names and "CLASS_MAP" in self.environment:
-                    self.class_names = []
-                    for i in range(len(self.environment["CLASS_MAP"].keys())):
-                        self.class_names.append(self.environment["CLASS_MAP"][str(i)])
-
-        if not os.path.exists(self.cache_file("class_names.txt")):
-            with self.open_cache("class_names.txt", "w") as f:
-                for c in self.class_names:
-                    f.write(f"{c}\n")
+            )
         self.num_classes = len(self.class_names)
-        self.preproc = json.loads(self.environment["PREPROCESSING"])
-
+        if "PREPROCESSING" not in self.environment:
+            raise ModelArtefactError(
+                "Could not find `PREPROCESSING` key in environment file."
+            )
+        if issubclass(type(self.environment["PREPROCESSING"]), dict):
+            self.preproc = self.environment["PREPROCESSING"]
+        else:
+            self.preproc = json.loads(self.environment["PREPROCESSING"])
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
             if self.resize_method not in [
@@ -409,67 +351,6 @@ class RoboflowInferenceModel(Model):
             NotImplementedError: If the method is not implemented.
         """
         raise NotImplementedError(self.__class__.__name__ + ".initialize_model")
-
-    @staticmethod
-    def letterbox_image(img, desired_size, c=(0, 0, 0)):
-        """
-        Resize and pad image to fit the desired size, preserving its aspect ratio.
-
-        Parameters:
-        - img: numpy array representing the image.
-        - desired_size: tuple (width, height) representing the target dimensions.
-        - color: tuple (B, G, R) representing the color to pad with.
-
-        Returns:
-        - letterboxed image.
-        """
-        # Calculate the ratio of the old dimensions compared to the new desired dimensions
-        img_ratio = img.shape[1] / img.shape[0]
-        desired_ratio = desired_size[0] / desired_size[1]
-
-        # Determine the new dimensions
-        if img_ratio >= desired_ratio:
-            # Resize by width
-            new_width = desired_size[0]
-            new_height = int(desired_size[0] / img_ratio)
-        else:
-            # Resize by height
-            new_height = desired_size[1]
-            new_width = int(desired_size[1] * img_ratio)
-
-        # Resize the image to new dimensions
-        resized_img = cv2.resize(img, (new_width, new_height))
-
-        # Pad the image to fit the desired size
-        top_padding = (desired_size[1] - new_height) // 2
-        bottom_padding = desired_size[1] - new_height - top_padding
-        left_padding = (desired_size[0] - new_width) // 2
-        right_padding = desired_size[0] - new_width - left_padding
-
-        letterboxed_img = cv2.copyMakeBorder(
-            resized_img,
-            top_padding,
-            bottom_padding,
-            left_padding,
-            right_padding,
-            cv2.BORDER_CONSTANT,
-            value=c,
-        )
-
-        return letterboxed_img
-
-    def open_cache(self, f: str, mode: str, encoding: str = None):
-        """Opens a cache file with the given filename, mode, and encoding.
-
-        Args:
-            f (str): Filename to open from cache.
-            mode (str): Mode in which to open the file (e.g., 'r' for read, 'w' for write).
-            encoding (str, optional): Encoding to use when opening the file. Defaults to None.
-
-        Returns:
-            file object: The opened file object.
-        """
-        return open(self.cache_file(f), mode, encoding=encoding)
 
     def preproc_image(
         self,
@@ -500,7 +381,6 @@ class RoboflowInferenceModel(Model):
         )
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
@@ -511,14 +391,14 @@ class RoboflowInferenceModel(Model):
                 preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
             )
         elif self.resize_method == "Fit (black edges) in":
-            resized = self.letterbox_image(
+            resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
             )
         elif self.resize_method == "Fit (white edges) in":
-            resized = self.letterbox_image(
+            resized = letterbox_image(
                 preprocessed_image,
                 (self.img_size_w, self.img_size_h),
-                c=(255, 255, 255),
+                color=(255, 255, 255),
             )
 
         if is_bgr:
@@ -531,7 +411,6 @@ class RoboflowInferenceModel(Model):
     def preprocess_image(
         self,
         image: np.ndarray,
-        disable_preproc_auto_orient: bool = False,
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
@@ -541,7 +420,6 @@ class RoboflowInferenceModel(Model):
 
         Args:
             image (Image.Image): The PIL image to preprocess.
-            disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
             disable_preproc_contrast (bool, optional): If true, the contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
             disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
@@ -552,7 +430,6 @@ class RoboflowInferenceModel(Model):
         return prepare(
             image,
             self.preproc,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
@@ -593,89 +470,46 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
         This method includes handling for AWS access keys and error handling.
         """
-        if any(
-            [
-                not os.path.exists(self.cache_file(f))
-                for f in self.get_infer_bucket_file_list()
-            ]
-        ):
-            self.log("Downloading model artifacts")
-            if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
-                infer_bucket_files = self.get_infer_bucket_file_list()
-                for f in infer_bucket_files:
-                    success = False
-                    attempts = 0
-                    while not success and attempts < NUM_S3_RETRY:
-                        try:
-                            local_file_path = self.cache_file(f)
-                            s3.download_file(
-                                CORE_MODEL_BUCKET,
-                                f"{self.endpoint}/{f}",
-                                local_file_path,
-                            )
+        infer_bucket_files = self.get_infer_bucket_file_list()
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            logger.debug("Model artifacts already downloaded, loading from cache")
+            return None
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+        self.download_model_from_roboflow_api()
 
-                            # Check file size
-                            if (
-                                os.path.getsize(local_file_path) <= 4096
-                                and attempts < 2
-                            ):
-                                attempts += 1
-                                continue
-
-                            success = True
-                        except Exception as e:
-                            attempts += 1
-                            logger.error(
-                                f"Failed to download model artifacts after {attempts} attempts | Infer Bucket = {INFER_BUCKET} | Object Path = {self.endpoint}/{f}",
-                                traceback.format_exc(),
-                            )
-                            sleep(SLEEP_SECONDS_BETWEEN_RETRIES)
-                    if not success:
-                        raise Exception(f"Failed to download model artifacts.")
-            else:
-                # AWS Keys are not available so we use the API Key to hit the Roboflow API which returns a signed link for downloading model artifacts
-                self.api_url = ApiUrl(
-                    f"{API_BASE_URL}/core_model/{self.endpoint}?api_key={self.api_key}&device={self.device_id}&nocache=true"
+    def download_model_from_roboflow_api(self) -> None:
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.CORE_MODEL,
+            device_id=self.device_id,
+        )
+        if "weights" not in api_data:
+            raise ModelArtefactError(
+                f"`weights` key not available in Roboflow API response while downloading model weights."
+            )
+        for weights_url_key in api_data["weights"]:
+            weights_url = api_data["weights"][weights_url_key]
+            t1 = perf_counter()
+            model_weights_response = get_from_roboflow_api(weights_url)
+            filename = weights_url.split("?")[0].split("/")[-1]
+            save_bytes_in_cache(
+                content=model_weights_response.content,
+                file=filename,
+                model_id=self.endpoint,
+            )
+            if perf_counter() - t1 > 120:
+                self.log(
+                    "Weights download took longer than 120 seconds, refreshing API request"
                 )
-                api_data = get_api_data(self.api_url)
-                if "weights" not in api_data.keys():
-                    raise TensorrtRoboflowAPIError(
-                        f"An error occurred when calling the Roboflow API to acquire the model artifacts. The endpoint to debug is {self.api_url}. The error was: Key 'tensorrt' not in api_data."
-                    )
-
-                weights_url_keys = api_data["weights"].keys()
-
-                for weights_url_key in weights_url_keys:
-                    weights_url = ApiUrl(api_data["weights"][weights_url_key])
-                    t1 = perf_counter()
-                    attempts = 0
-                    success = False
-                    while attempts < 3 and not success:
-                        r = requests.get(weights_url)
-                        filename = weights_url.split("?")[0].split("/")[-1]
-                        file_path = self.open_cache(f"{filename}", "wb")
-                        with file_path as f:
-                            f.write(r.content)
-
-                        # Check file size
-                        if os.path.getsize(file_path.name) <= 4096:
-                            if attempts < 2:
-                                attempts += 1
-                                continue
-                            else:
-                                raise Exception(
-                                    f"Failed to download model artifacts from API after 2 attempts."
-                                )
-                        else:
-                            success = True
-
-                    if perf_counter() - t1 > 120:
-                        self.log(
-                            "Weights download took longer than 120 seconds, refreshing API request"
-                        )
-                        api_data = get_api_data(self.api_url)
-        else:
-            self.log("Model artifacts already downloaded, loading from cache")
+                api_data = get_roboflow_model_data(
+                    api_key=self.api_key,
+                    model_id=self.endpoint,
+                    endpoint_type=ModelEndpointType.CORE_MODEL,
+                    device_id=self.device_id,
+                )
 
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.
@@ -730,19 +564,20 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(model_id, *args, **kwargs)
-        self.onnxruntime_execution_providers = onnxruntime_execution_providers
-        for ep in self.onnxruntime_execution_providers:
-            if ep == "TensorrtExecutionProvider":
-                ep = (
-                    "TensorrtExecutionProvider",
-                    {
-                        "trt_engine_cache_enable": True,
-                        "trt_engine_cache_path": os.path.join(
-                            TENSORRT_CACHE_PATH, self.endpoint
-                        ),
-                        "trt_fp16_enable": True,
-                    },
-                )
+        if self.load_weights or not self.has_model_metadata:
+            self.onnxruntime_execution_providers = onnxruntime_execution_providers
+            for ep in self.onnxruntime_execution_providers:
+                if ep == "TensorrtExecutionProvider":
+                    ep = (
+                        "TensorrtExecutionProvider",
+                        {
+                            "trt_engine_cache_enable": True,
+                            "trt_engine_cache_path": os.path.join(
+                                TENSORRT_CACHE_PATH, self.endpoint
+                            ),
+                            "trt_fp16_enable": True,
+                        },
+                    )
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
 
@@ -758,42 +593,77 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
         self.log("Creating inference session")
-        t1_session = perf_counter()
-        # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
-        self.onnx_session = onnxruntime.InferenceSession(
-            self.cache_file(self.weights_file),
-            providers=self.onnxruntime_execution_providers,
-        )
-        self.log(f"Session created in {perf_counter() - t1_session} seconds")
+        if self.load_weights or not self.has_model_metadata:
+            t1_session = perf_counter()
+            # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
+            self.onnx_session = onnxruntime.InferenceSession(
+                self.cache_file(self.weights_file),
+                providers=self.onnxruntime_execution_providers,
+            )
+            self.log(f"Session created in {perf_counter() - t1_session} seconds")
 
-        if REQUIRED_ONNX_PROVIDERS:
-            available_providers = onnxruntime.get_available_providers()
-            for provider in REQUIRED_ONNX_PROVIDERS:
-                if provider not in available_providers:
-                    raise OnnxProviderNotAvailable(
-                        f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
-                    )
+            if REQUIRED_ONNX_PROVIDERS:
+                available_providers = onnxruntime.get_available_providers()
+                for provider in REQUIRED_ONNX_PROVIDERS:
+                    if provider not in available_providers:
+                        raise OnnxProviderNotAvailable(
+                            f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
+                        )
 
-        inputs = self.onnx_session.get_inputs()[0]
-        input_shape = inputs.shape
-        self.batch_size = input_shape[0]
-        self.img_size_h = input_shape[2]
-        self.img_size_w = input_shape[3]
-        self.input_name = inputs.name
-        if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
-            if "resize" in self.preproc:
-                self.img_size_h = int(self.preproc["resize"]["height"])
-                self.img_size_w = int(self.preproc["resize"]["width"])
+            inputs = self.onnx_session.get_inputs()[0]
+            input_shape = inputs.shape
+            self.batch_size = input_shape[0]
+            self.img_size_h = input_shape[2]
+            self.img_size_w = input_shape[3]
+            self.input_name = inputs.name
+            if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
+                if "resize" in self.preproc:
+                    self.img_size_h = int(self.preproc["resize"]["height"])
+                    self.img_size_w = int(self.preproc["resize"]["width"])
+                else:
+                    self.img_size_h = 640
+                    self.img_size_w = 640
+
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
             else:
-                self.img_size_h = 640
-                self.img_size_w = 640
+                self.batching_enabled = False
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
 
-        if isinstance(self.batch_size, str):
-            self.batching_enabled = True
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching enabled")
+            model_metadata = {
+                "batch_size": self.batch_size,
+                "img_size_h": self.img_size_h,
+                "img_size_w": self.img_size_w,
+            }
+            self.log(f"Writing model metadata to memcache")
+            self.write_model_metadata_to_memcache(model_metadata)
+            if not self.load_weights:  # had to load weights to get metadata
+                del self.onnx_session
         else:
-            self.batching_enabled = False
-            self.log(f"Model {self.endpoint} is loaded with dynamic batching disabled")
+            if not self.has_model_metadata:
+                raise ValueError(
+                    "This should be unreachable, should get weights if we don't have model metadata"
+                )
+            self.log(f"Loading model metadata from memcache")
+            metadata = self.model_metadata_from_memcache()
+            self.batch_size = metadata["batch_size"]
+            self.img_size_h = metadata["img_size_h"]
+            self.img_size_w = metadata["img_size_w"]
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
+            else:
+                self.batching_enabled = False
+                self.log(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
 
     def load_image(
         self,
@@ -839,3 +709,58 @@ class OnnxRoboflowCoreModel(RoboflowCoreModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
     pass
+
+
+def get_class_names_from_environment_file(environment: Optional[dict]) -> List[str]:
+    if environment is None:
+        raise ModelArtefactError(
+            f"Missing environment while attempting to get model class names."
+        )
+    if class_mapping_not_available_in_environment(environment=environment):
+        raise ModelArtefactError(
+            f"Missing `CLASS_MAP` in environment or `CLASS_MAP` is not dict."
+        )
+    return [
+        environment["CLASS_MAP"][key] for key in sorted(environment["CLASS_MAP"].keys())
+    ]
+
+
+def class_mapping_not_available_in_environment(environment: dict) -> bool:
+    return "CLASS_MAP" not in environment or not issubclass(
+        type(environment["CLASS_MAP"]), dict
+    )
+
+
+def get_color_mapping_from_environment(
+    environment: Optional[dict], class_names: List[str]
+) -> Dict[str, str]:
+    if color_mapping_available_in_environment(environment=environment):
+        return environment["COLORS"]
+    return {
+        class_name: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+        for i, class_name in enumerate(class_names)
+    }
+
+
+def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
+    return (
+        environment is not None
+        and "COLORS" in environment
+        and issubclass(type(environment["COLORS"]), dict)
+    )
+
+
+def is_model_artefacts_bucket_available() -> bool:
+    return (
+        AWS_ACCESS_KEY_ID is not None
+        and AWS_SECRET_ACCESS_KEY is not None
+        and LAMBDA
+        and S3_CLIENT is not None
+    )
+
+
+def parse_keypoints_metadata(metadata: list) -> dict:
+    return {
+        e["object_class_id"]: {int(key): value for key, value in e["keypoints"].items()}
+        for e in metadata
+    }

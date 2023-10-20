@@ -79,7 +79,7 @@ inference.Stream(
 
 ## 👩‍🏫 More Examples
 
-The [`/examples`](https://github.com/roboflow/inference/blob/main/examples/) directory contains code samples for working with and extending `inference` including using foundation models like CLIP, HTTP and UDP clients, and an insights dashboard, along with community examples (PRs welcome)!
+The [`/examples`](https://github.com/roboflow/inference/tree/main/examples/) directory contains code samples for working with and extending `inference` including using foundation models like CLIP, HTTP and UDP clients, and an insights dashboard, along with community examples (PRs welcome)!
 
 ## 🎥 Inference in action
 

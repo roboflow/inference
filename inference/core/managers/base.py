@@ -1,13 +1,14 @@
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
-from inference.core.data_models import InferenceRequest, InferenceResponse
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
     METRICS_ENABLED,
@@ -36,7 +37,9 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
-    def add_model(self, model_id: str, api_key: str) -> None:
+    def add_model(
+        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+    ) -> None:
         """Adds a new model to the manager.
 
         Args:
@@ -45,7 +48,9 @@ class ModelManager:
         """
         if model_id in self._models:
             return
-        model = self.model_registry.get_model(model_id, api_key)(
+        model = self.model_registry.get_model(
+            model_id if model_id_alias is None else model_id_alias, api_key
+        )(
             model_id=model_id,
             api_key=api_key,
         )
@@ -75,11 +80,9 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
+        self.check_for_model(model_id)
         try:
-            self.check_for_model(model_id)
-
             rtn_val = self._models[model_id].infer_from_request(request)
-
             finish_time = time.time()
             if not DISABLE_INFERENCE_CACHE:
                 cache.zadd(
@@ -97,7 +100,6 @@ class ModelManager:
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
                 )
-
             return rtn_val
         except Exception as e:
             finish_time = time.time()
@@ -187,6 +189,7 @@ class ModelManager:
         Returns:
             List[str]: The class names of the model.
         """
+        self.check_for_model(model_id)
         return self._models[model_id].class_names
 
     def get_task_type(self, model_id: str) -> str:
@@ -198,6 +201,7 @@ class ModelManager:
         Returns:
             str: The task type of the model.
         """
+        self.check_for_model(model_id)
         return self._models[model_id].task_type
 
     def remove(self, model_id: str) -> None:
@@ -206,6 +210,7 @@ class ModelManager:
         Args:
             model_id (str): The identifier of the model.
         """
+        self.check_for_model(model_id)
         self._models[model_id].clear_cache()
         del self._models[model_id]
 
@@ -234,6 +239,7 @@ class ModelManager:
         Returns:
             Model: The model corresponding to the key.
         """
+        self.check_for_model(model_id=key)
         return self._models[key]
 
     def __len__(self) -> int:
@@ -251,6 +257,14 @@ class ModelManager:
             List[str]: The keys of the models in the manager.
         """
         return self._models.keys()
+
+    def models(self) -> Dict[str, Model]:
+        """Retrieve the models dictionary from the manager.
+
+        Returns:
+            Dict[str, Model]: The keys of the models in the manager.
+        """
+        return self._models
 
     def describe_models(self) -> List[ModelDescription]:
         return [

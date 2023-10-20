@@ -3,57 +3,15 @@ import uuid
 
 from dotenv import load_dotenv
 
+from inference.core.utils.environment import safe_split_value, str2bool
+
 load_dotenv(os.getcwd() + "/.env")
-
-from inference.core.exceptions import InvalidEnvironmentVariableError
-
-
-def bool_env(val):
-    """
-    Converts an environment variable to a boolean value.
-
-    Args:
-        val (str or bool): The environment variable value to be converted.
-
-    Returns:
-        bool: The converted boolean value.
-
-    Raises:
-        InvalidEnvironmentVariableError: If the value is not 'true', 'false', or a boolean.
-    """
-    if isinstance(val, bool):
-        return val
-    if val.lower() == "true":
-        return True
-    elif val.lower() == "false":
-        return False
-    else:
-        raise InvalidEnvironmentVariableError(
-            f"Expected a boolean environment variable (true or false) but got '{val}'"
-        )
-
-
-def required_providers_env(val):
-    """
-    Splits a comma-separated environment variable into a list.
-
-    Args:
-        val (str): The environment variable value to be split.
-
-    Returns:
-        list or None: The split values as a list, or None if the input is None.
-    """
-    if val is None:
-        return None
-    else:
-        return val.split(",")
-
 
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
 # Allow numpy input, default is True
-ALLOW_NUMPY_INPUT = bool_env(os.getenv("ALLOW_NUMPY_INPUT", True))
+ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "")
@@ -98,43 +56,46 @@ GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 
 # Class agnostic NMS flag, default is False
-CLASS_AGNOSTIC_NMS = bool_env(os.getenv("CLASS_AGNOSTIC_NMS", False))
+CLASS_AGNOSTIC_NMS = str2bool(os.getenv("CLASS_AGNOSTIC_NMS", False))
 
 # Confidence threshold, default is 50%
 CONFIDENCE = float(os.getenv("CONFIDENCE", 0.5))
 
 # Flag to enable core models, default is True
-CORE_MODELS_ENABLED = bool_env(os.getenv("CORE_MODELS_ENABLED", True))
+CORE_MODELS_ENABLED = str2bool(os.getenv("CORE_MODELS_ENABLED", True))
 
 # Flag to enable CLIP core model, default is True
-CORE_MODEL_CLIP_ENABLED = bool_env(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
+CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 
 # Flag to enable SAM core model, default is True
-CORE_MODEL_SAM_ENABLED = bool_env(os.getenv("CORE_MODEL_SAM_ENABLED", True))
+CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 
 # Flag to enable GAZE core model, default is True
-CORE_MODEL_GAZE_ENABLED = bool_env(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
+
+# Flag to enable DocTR core model, default is True
+CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
 # Flag to disable inference cache, default is False
-DISABLE_INFERENCE_CACHE = bool_env(os.getenv("DISABLE_INFERENCE_CACHE", False))
+DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
 
 # Flag to disable auto-orientation preprocessing, default is False
-DISABLE_PREPROC_AUTO_ORIENT = bool_env(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
+DISABLE_PREPROC_AUTO_ORIENT = str2bool(os.getenv("DISABLE_PREPROC_AUTO_ORIENT", False))
 
 # Flag to disable contrast preprocessing, default is False
-DISABLE_PREPROC_CONTRAST = bool_env(os.getenv("DISABLE_PREPROC_CONTRAST", False))
+DISABLE_PREPROC_CONTRAST = str2bool(os.getenv("DISABLE_PREPROC_CONTRAST", False))
 
 # Flag to disable grayscale preprocessing, default is False
-DISABLE_PREPROC_GRAYSCALE = bool_env(os.getenv("DISABLE_PREPROC_GRAYSCALE", False))
+DISABLE_PREPROC_GRAYSCALE = str2bool(os.getenv("DISABLE_PREPROC_GRAYSCALE", False))
 
 # Flag to disable static crop preprocessing, default is False
-DISABLE_PREPROC_STATIC_CROP = bool_env(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
+DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", False))
 
 # Flag to disable version check, default is False
-DISABLE_VERSION_CHECK = bool_env(os.getenv("DISABLE_VERSION_CHECK", False))
+DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
 
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
@@ -145,13 +106,13 @@ ELASTICACHE_ENDPOINT = os.environ.get(
 )
 
 # Flag to enable byte track, default is False
-ENABLE_BYTE_TRACK = bool_env(os.getenv("ENABLE_BYTE_TRACK", False))
+ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 # Flag to enforce FPS, default is False
-ENFORCE_FPS = bool_env(os.getenv("ENFORCE_FPS", False))
+ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
 
 # Flag to fix batch size, default is False
-FIX_BATCH_SIZE = bool_env(os.getenv("FIX_BATCH_SIZE", False))
+FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 
 # Host, default is "0.0.0.0"
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -166,13 +127,13 @@ IP_BROADCAST_ADDR = os.getenv("IP_BROADCAST_ADDR", "127.0.0.1")
 IP_BROADCAST_PORT = int(os.getenv("IP_BROADCAST_PORT", 37020))
 
 # Flag to enable JSON response, default is True
-JSON_RESPONSE = bool_env(os.getenv("JSON_RESPONSE", True))
+JSON_RESPONSE = str2bool(os.getenv("JSON_RESPONSE", True))
 
 # Lambda flag, default is False
-LAMBDA = bool_env(os.getenv("LAMBDA", False))
+LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
 # Flag to enable legacy route, default is True
-LEGACY_ROUTE_ENABLED = bool_env(os.getenv("LEGACY_ROUTE_ENABLED", True))
+LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
 # License server, default is None
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
@@ -184,7 +145,11 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
 # Maximum batch size, default is 8
-MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 8))
+MAX_BATCH_SIZE = os.getenv("MAX_BATCH_SIZE", None)
+if MAX_BATCH_SIZE is not None:
+    MAX_BATCH_SIZE = int(MAX_BATCH_SIZE)
+else:
+    MAX_BATCH_SIZE = float("inf")
 
 # Maximum number of candidates, default is 3000
 MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
@@ -196,7 +161,7 @@ MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
 # Metrics enabled flag, default is True
-METRICS_ENABLED = bool_env(os.getenv("METRICS_ENABLED", True))
+METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
 if LAMBDA:
     METRICS_ENABLED = False
 
@@ -223,7 +188,7 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
 PORT = int(os.getenv("PORT", 9001))
 
 # Profile flag, default is False
-PROFILE = bool_env(os.getenv("PROFILE", False))
+PROFILE = str2bool(os.getenv("PROFILE", False))
 
 # Redis host, default is None
 REDIS_HOST = os.getenv("REDIS_HOST", None)
@@ -232,9 +197,7 @@ REDIS_HOST = os.getenv("REDIS_HOST", None)
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 # Required ONNX providers, default is None
-REQUIRED_ONNX_PROVIDERS = required_providers_env(
-    os.getenv("REQUIRED_ONNX_PROVIDERS", None)
-)
+REQUIRED_ONNX_PROVIDERS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
 
 # Roboflow server UUID
 ROBOFLOW_SERVER_UUID = os.getenv("ROBOFLOW_SERVER_UUID", str(uuid.uuid4()))
@@ -259,8 +222,7 @@ except (TypeError, ValueError):
     pass
 
 # Tags used for device management
-TAGS = os.getenv("TAGS", "")
-TAGS = [t for t in TAGS.split(",") if t]
+TAGS = safe_split_value(os.getenv("TAGS", ""))
 
 # TensorRT cache path, default is MODEL_CACHE_DIR
 TENSORRT_CACHE_PATH = os.getenv("TENSORRT_CACHE_PATH", MODEL_CACHE_DIR)

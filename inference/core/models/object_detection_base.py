@@ -1,17 +1,18 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
+from inference.core.logger import logger
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
-from inference.core.utils.postprocess import postprocess_predictions
+from inference.core.utils.postprocess import post_process_bboxes
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -71,6 +72,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             raise ValueError(
                 f"Batching is not enabled for this model, but {batch_size} images were passed in the request"
             )
+        if batch_size > MAX_BATCH_SIZE:
+            raise ValueError(
+                f"Request has {batch_size} images but MAX_BATCH_SIZE is set to {MAX_BATCH_SIZE}"
+            )
         return super().infer(
             image,
             class_agnostic_nms=class_agnostic_nms,
@@ -109,6 +114,9 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
 
+        predictions = predictions[
+            : len(img_dims)
+        ]  # If the batch size was fixed we have empty preds at the end
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
@@ -138,7 +146,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray],
+        predictions: Tuple[np.ndarray, ...],
         preproc_return_metadata: PreprocessReturnMetadata,
         class_agnostic_nms=DEFAULT_CLASS_AGNOSTIC_NMS,
         confidence: float = DEFAULT_CONFIDENCE,
@@ -173,9 +181,9 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_candidate_detections=max_candidates,
         )
 
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preproc_return_metadata["img_dims"]
-        predictions = postprocess_predictions(
+        predictions = post_process_bboxes(
             predictions,
             infer_shape,
             img_dims,
@@ -218,11 +226,22 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         img_in /= 255.0
 
         if self.batching_enabled:
-            batch_padding = (
-                MAX_BATCH_SIZE - img_in.shape[0]
-                if FIX_BATCH_SIZE or fix_batch_size
-                else 0
-            )
+            batch_padding = 0
+            if FIX_BATCH_SIZE or fix_batch_size:
+                if MAX_BATCH_SIZE == float("inf"):
+                    logger.warn(
+                        "Requested fix_batch_size but MAX_BATCH_SIZE is not set. Using dynamic batching."
+                    )
+                    batch_padding = 0
+                else:
+                    batch_padding = MAX_BATCH_SIZE - img_in.shape[0]
+            if batch_padding < 0:
+                raise ValueError(
+                    f"Requested fix_batch_size but passed in {img_in.shape[0]} images "
+                    f"when the model's batch size is {MAX_BATCH_SIZE}\n"
+                    f"Consider turning off fix_batch_size, changing `MAX_BATCH_SIZE` in"
+                    f"your inference server config, or passing at most {MAX_BATCH_SIZE} images at a time"
+                )
             width_remainder = img_in.shape[2] % 32
             height_remainder = img_in.shape[3] % 32
             if width_remainder > 0:

@@ -6,19 +6,22 @@ import numpy as np
 import onnxruntime
 from PIL import Image
 
-from inference.core.data_models import (
+from inference.core.entities.requests.clip import (
     ClipCompareRequest,
-    ClipCompareResponse,
-    ClipEmbeddingResponse,
     ClipImageEmbeddingRequest,
     ClipInferenceRequest,
     ClipTextEmbeddingRequest,
-    InferenceRequestImage,
-    InferenceResponse,
 )
+from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.clip import (
+    ClipCompareResponse,
+    ClipEmbeddingResponse,
+)
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     CLIP_MAX_BATCH_SIZE,
     CLIP_MODEL_ID,
+    ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
 )
@@ -26,6 +29,7 @@ from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
 
 
@@ -42,41 +46,29 @@ class Clip(OnnxRoboflowCoreModel):
         clip_preprocess (function): Function to preprocess the image.
     """
 
-    def __init__(self, *args, model_id: str = CLIP_MODEL_ID, **kwargs):
+    def __init__(
+        self,
+        *args,
+        model_id: str = CLIP_MODEL_ID,
+        onnxruntime_execution_providers: List[
+            str
+        ] = get_onnxruntime_execution_providers(ONNXRUNTIME_EXECUTION_PROVIDERS),
+        **kwargs,
+    ):
         """Initializes the Clip with the given arguments and keyword arguments."""
-
+        self.onnxruntime_execution_providers = onnxruntime_execution_providers
         t1 = perf_counter()
         super().__init__(*args, model_id=model_id, **kwargs)
         # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
         self.log("Creating inference sessions")
         self.visual_onnx_session = onnxruntime.InferenceSession(
             self.cache_file("visual.onnx"),
-            providers=[
-                (
-                    "TensorrtExecutionProvider",
-                    {
-                        "trt_engine_cache_enable": True,
-                        "trt_engine_cache_path": TENSORRT_CACHE_PATH,
-                    },
-                ),
-                "CUDAExecutionProvider",
-                "CPUExecutionProvider",
-            ],
+            providers=self.onnxruntime_execution_providers,
         )
 
         self.textual_onnx_session = onnxruntime.InferenceSession(
             self.cache_file("textual.onnx"),
-            providers=[
-                (
-                    "TensorrtExecutionProvider",
-                    {
-                        "trt_engine_cache_enable": True,
-                        "trt_engine_cache_path": TENSORRT_CACHE_PATH,
-                    },
-                ),
-                "CUDAExecutionProvider",
-                "CPUExecutionProvider",
-            ],
+            providers=self.onnxruntime_execution_providers,
         )
 
         if REQUIRED_ONNX_PROVIDERS:

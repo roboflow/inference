@@ -4,9 +4,10 @@ Before you begin, ensure that you have Docker installed on your machine. Docker 
 allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If 
 you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
 
+
 ## via CLI
 
-The easiest way to run the Roboflow Inference Server with Docker is via the command line.
+Another easy way to run the Roboflow Inference Server with Docker is via the command line.
 
 First, [Install the CLI](../index.md#cli).
 
