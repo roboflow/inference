@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Callable, Union
 
+import cv2
 import numpy as np
 import supervision as sv
 from PIL import Image
@@ -199,9 +200,12 @@ class Stream(BaseInterface):
                 if webcam_stream.stopped is True or self.stop:
                     break
                 else:
-                    self.frame, self.frame_cv, frame_id = webcam_stream.read()
+                    self.frame_cv, frame_id = webcam_stream.read_opencv()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
+                        self.frame = Image.fromarray(
+                            cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
+                        )
                         self.preproc_result = self.model.preprocess(self.frame)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
@@ -233,6 +237,7 @@ class Stream(BaseInterface):
 
                 self.queue_control = False
                 frame_id = self.frame_id
+                start = time.perf_counter()
                 predictions = self.model.predict(
                     self.img_in,
                 )
@@ -246,7 +251,6 @@ class Stream(BaseInterface):
                     max_detections=self.max_detections,
                 )
 
-                start = time.perf_counter()
                 if self.json_response:
                     predictions = self.model.make_response(
                         predictions,
