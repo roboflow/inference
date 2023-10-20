@@ -76,11 +76,12 @@ class WebcamStream:
                     self.enforce_fps != "skip"
                     or t1 >= last_frame_position + skip_seconds
                 ):
-                    ret, self.frame = self.vcap.retrieve()
+                    ret, frame = self.vcap.retrieve()
                     logger.debug("video capture FPS: %s", frame_id / (t1 - t0))
-                    if self.frame is not None:
+                    if frame is not None:
                         last_frame_position = t1
                         self.frame_id = frame_id
+                        self.frame = frame
                     else:
                         logger.debug("[Exiting] Frame not available to retrieve")
                         self.stopped = True
