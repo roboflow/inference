@@ -17,6 +17,7 @@ from inference.core.entities.requests.clip import (
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
+from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -60,6 +61,7 @@ from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
+    CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
     LAMBDA,
@@ -68,7 +70,6 @@ from inference.core.env import (
     METRICS_ENABLED,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
-    CORE_MODEL_GROUNDINGDINO_ENABLED
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -339,6 +340,19 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The DocTR model ID.
+        """
+
+        load_grounding_dino_model = partial(
+            load_core_model, core_model="grounding-dino"
+        )
+        """Loads the Grounding DINO model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The Grounding DINO model ID.
         """
 
         @app.get(
@@ -653,14 +667,14 @@ class HttpInterface(BaseInterface):
             if CORE_MODEL_GROUNDINGDINO_ENABLED:
 
                 @app.post(
-                    "/clip/embed_image",
-                    response_model=M.ClipEmbeddingResponse,
+                    "/grounding-dino/infer",
+                    response_model=ObjectDetectionInferenceResponse,
                     summary="CLIP Image Embeddings",
-                    description="Run the Open AI CLIP model to embed image data.",
+                    description="Run the Grounding DINO zero-shot object detection model.",
                 )
                 @with_route_exceptions
-                async def clip_embed_image(
-                    inference_request: M.ClipImageEmbeddingRequest,
+                async def grounding_dino_infer(
+                    inference_request: GroundingDINOInferenceRequest,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
@@ -671,14 +685,16 @@ class HttpInterface(BaseInterface):
                     Embeds image data using the Grounding DINO model.
 
                     Args:
-                        inference_request (M.ClipImageEmbeddingRequest): The request containing the image to be embedded.
+                        inference_request GroundingDINOInferenceRequest): The request containing the image on which to run object detection.
                         api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.ClipEmbeddingResponse: The response containing the embedded image.
+                        ObjectDetectionInferenceResponse: The object detection response.
                     """
-                    clip_model_id = load_clip_model(inference_request, api_key=api_key)
+                    clip_model_id = load_grounding_dino_model(
+                        inference_request, api_key=api_key
+                    )
                     response = self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
