@@ -19,7 +19,7 @@ Check out Inference running on a video of a football game:
 
 ## 👩‍🏫 Examples
 
-The [`/examples` directory](./examples/) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
+The [`/examples` directory](https://github.com/roboflow/inference/tree/main/examples) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
 
 ## 💻 Why Inference?
 
