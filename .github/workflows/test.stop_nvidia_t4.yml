@@ -1,0 +1,31 @@
+name: Start NVIDIA T4 Instance
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Code Quality & Regression Tests - NVIDIA T4"]
+    types:
+      - completed
+
+jobs:
+    start:
+        runs-on: ubuntu-latest
+      
+        permissions:
+            contents: 'read'
+            id-token: 'write'
+    
+        steps:
+        - id: 'auth'
+          uses: 'google-github-actions/auth@v1'
+          with:
+            workload_identity_provider: 'projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github'
+            service_account: 'github-action@roboflow-staging.iam.gserviceaccount.com'
+    
+        - name: 'Set up Cloud SDK'
+          uses: 'google-github-actions/setup-gcloud@v1'
+          with:
+            version: '>= 363.0.0'
+        
+        - name: 'Start T4 Instance'
+          run: 'gcloud compute instances stop gh-actions-runner-t4 --zone us-central1-a'

@@ -14,6 +14,11 @@ except:
     pass
 
 try:
+    from inference.models.doctr import DocTR
+except:
+    pass
+
+try:
     from inference.models.grounding_dino import GroundingDINO
 except:
     pass

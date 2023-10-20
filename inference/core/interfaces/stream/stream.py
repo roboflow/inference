@@ -1,15 +1,14 @@
 import json
-import socket
-import sys
 import threading
 import time
 from typing import Callable, Union
 
+import cv2
 import numpy as np
 import supervision as sv
 from PIL import Image
 
-from inference.core import data_models as M
+import inference.core.entities.requests.inference
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -26,7 +25,6 @@ from inference.core.env import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
-from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
 
@@ -111,7 +109,9 @@ class Stream(BaseInterface):
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
 
-        self.inference_request_type = M.ObjectDetectionInferenceRequest
+        self.inference_request_type = (
+            inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
+        )
 
         self.webcam_stream = WebcamStream(
             stream_id=self.stream_id, enforce_fps=enforce_fps
@@ -198,9 +198,10 @@ class Stream(BaseInterface):
                 if webcam_stream.stopped is True or self.stop:
                     break
                 else:
-                    self.frame, self.frame_cv, frame_id = webcam_stream.read()
+                    self.frame_cv, frame_id = webcam_stream.read_opencv()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
+                        self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
                         self.preproc_result = self.model.preprocess(self.frame)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
@@ -232,6 +233,7 @@ class Stream(BaseInterface):
 
                 self.queue_control = False
                 frame_id = self.frame_id
+                start = time.perf_counter()
                 predictions = self.model.predict(
                     self.img_in,
                 )
@@ -245,7 +247,6 @@ class Stream(BaseInterface):
                     max_detections=self.max_detections,
                 )
 
-                start = time.perf_counter()
                 if self.json_response:
                     predictions = self.model.make_response(
                         predictions,

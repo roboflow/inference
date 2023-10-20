@@ -1,7 +1,7 @@
-from inference.core.env import TENSORRT_CACHE_PATH
+from typing import List
 
 
-def get_onnxruntime_execution_providers(value):
+def get_onnxruntime_execution_providers(value: str) -> List[str]:
     """Extracts the ONNX runtime execution providers from the given string.
 
     The input string is expected to be a comma-separated list, possibly enclosed
@@ -13,5 +13,7 @@ def get_onnxruntime_execution_providers(value):
     Returns:
         List[str]: A list of strings representing each execution provider.
     """
+    if len(value) == 0:
+        return []
     value = value.replace("[", "").replace("]", "").replace("'", "").replace(" ", "")
     return value.split(",")

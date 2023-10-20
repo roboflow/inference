@@ -1,4 +1,3 @@
-import requests
 import base64
 import json
 import os
@@ -10,8 +9,7 @@ import pytest
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
-from requests_toolbelt.multipart.encoder import MultipartEncoder
-from tests.inference.regression_test import compare_detection_response
+from tests.inference.integration_tests.regression_test import compare_detection_response
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
@@ -20,6 +18,12 @@ TIME_TOLERANCE = 0.75
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
+
+
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
 
 
 def infer_request_with_image_url(
@@ -98,6 +102,7 @@ def infer_request_with_base64_image_dif_size(
         "base64_diffsize",
     )
 
+
 def infer_request_with_base64_image_dif_size_fixed(
     test, port=9001, api_key="", base_url="http://localhost", batch_size=1
 ):
@@ -141,7 +146,7 @@ def infer_request_with_base64_image_dif_size_fixed(
         "confidence": test["confidence"],
         "iou_threshold": test["iou_threshold"],
         "api_key": api_key,
-        "fix_batch_size": True
+        "fix_batch_size": True,
     }
     return (
         requests.post(
@@ -233,13 +238,14 @@ def test_detection(test, res_function):
             raise ValueError(
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
-        for d, test_data in zip(data, test["expected_response"][image_type]):
-            compare_detection_response(
-                d,
-                test_data,
-                type=test["type"],
-                multilabel=test.get("multi_label", False),
-            )
+        if not bool_env(os.getenv("FUNCTIONAL", False)):
+            for d, test_data in zip(data, test["expected_response"][image_type]):
+                compare_detection_response(
+                    d,
+                    test_data,
+                    type=test["type"],
+                    multilabel=test.get("multi_label", False),
+                )
         print(
             "\u2713"
             + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."

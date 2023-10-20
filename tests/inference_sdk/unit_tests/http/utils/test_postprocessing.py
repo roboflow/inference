@@ -9,22 +9,22 @@ from requests import Response
 
 from inference_sdk.http.entities import VisualisationResponseFormat
 from inference_sdk.http.utils.post_processing import (
-    adjust_segmentation_polygon_to_client_scaling_factor,
+    adjust_points_coordinates_to_client_scaling_factor,
     adjust_bbox_coordinates_to_client_scaling_factor,
-    adjust_instance_segmentation_predictions_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
     response_contains_jpeg_image,
     transform_base64_visualisation,
     adjust_prediction_to_client_scaling_factor,
+    adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
 )
 
 
-def test_adjust_segmentation_polygon_to_client_scaling_factor() -> None:
+def test_adjust_points_coordinates_to_client_scaling_factor() -> None:
     # given
     points = [{"x": 50, "y": 100}, {"x": 80, "y": 120}]
 
     # when
-    result = adjust_segmentation_polygon_to_client_scaling_factor(
+    result = adjust_points_coordinates_to_client_scaling_factor(
         points=points,
         scaling_factor=0.5,
     )
@@ -61,7 +61,7 @@ def test_adjust_bbox_coordinates_to_client_scaling_factor() -> None:
     }
 
 
-def test_adjust_instance_segmentation_predictions_to_client_scaling_factor() -> None:
+def test_adjust_prediction_with_bbox_and_points_to_client_scaling_factor() -> None:
     # given
     predictions = [
         {
@@ -76,9 +76,10 @@ def test_adjust_instance_segmentation_predictions_to_client_scaling_factor() -> 
     ]
 
     # when
-    result = adjust_instance_segmentation_predictions_to_client_scaling_factor(
+    result = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
         predictions=predictions,
         scaling_factor=0.5,
+        points_key="points",
     )
 
     # then
@@ -361,6 +362,64 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
         "class": "wood-log",
         "class_id": 0,
         "points": [{"x": 200.0, "y": 400.0}],
+    }
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_keypoints_detection() -> (
+    None
+):
+    # given
+    prediction = {
+        "visualization": None,
+        "frame_id": None,
+        "time": 0.26239124999847263,
+        "image": {"width": 224, "height": 150},
+        "predictions": [
+            {
+                "x": 21.0,
+                "y": 128.0,
+                "width": 42.0,
+                "height": 48.0,
+                "confidence": 0.9,
+                "class": "wood-log",
+                "class_id": 0,
+                "keypoints": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "confidence": 0.92,
+                        "class_id": 16,
+                        "class": "right_ankle",
+                    }
+                ],
+            }
+        ],
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
+
+    # then
+    assert result["image"] == {"width": 448, "height": 300}
+    assert len(result["predictions"]) == 1
+    assert result["predictions"][0] == {
+        "x": 42.0,
+        "y": 256.0,
+        "width": 84.0,
+        "height": 96.0,
+        "confidence": 0.9,
+        "class": "wood-log",
+        "class_id": 0,
+        "keypoints": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "confidence": 0.92,
+                "class_id": 16,
+                "class": "right_ankle",
+            }
+        ],
     }
 
 

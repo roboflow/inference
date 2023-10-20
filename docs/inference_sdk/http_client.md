@@ -30,7 +30,8 @@ print(predictions)
 
 ## Why client has two modes - `v0` and `v1`?
 We are constantly improving our `infrence` package - initial version (`v0`) is compatible with
-models deployed at Roboflow platform (task types: `classification`, `object-detection` and `instance-segmentation`)
+models deployed at Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
+`keypoints-detection`)
 are supported. Version `v1` is available in locally hosted Docker images with HTTP API. 
 
 Locally hosted `inference` server exposes endpoints for model manipulations, but those endpoints are not available
@@ -284,6 +285,8 @@ used in specific contexts. In particular:
 ### Inference in `v0` mode
 The following fields are passed to API
 * `confidence_threshold` (as `confidence`) - to alter model thresholding
+* `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+based on model confidence
 * `format` - to visualise on server side - use `image` (but then you loose prediction details from response)
 * `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
 * `mask_decode_mode`
@@ -310,6 +313,23 @@ The following fields are passed to API
 * `visualize_labels` - flag to enable / disable labels visualisation if visualisation is enabled
 * `confidence_threshold` as `confidence`
 * `class_filter` to filter out list of classes
+* `class_agnostic_nms` - flag to control whether NMS is class-agnostic
+* `fix_batch_size`
+* `iou_threshold` - to dictate NMS IoU threshold
+* `stroke_width` - width of stroke in visualisation
+* `max_detections` - max detections to return from model
+* `max_candidates` - max candidates to post-processing from model
+* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
+`disable_preproc_static_crop` to alter server-side pre-processing
+
+
+### Keypoints detection model in `v1` mode:
+* `visualize_predictions` - flag to enable / disable visualisation
+* `visualize_labels` - flag to enable / disable labels visualisation if visualisation is enabled
+* `confidence_threshold` as `confidence`
+* `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+based on model confidence
+* `class_filter` to filter out list of object classes
 * `class_agnostic_nms` - flag to control whether NMS is class-agnostic
 * `fix_batch_size`
 * `iou_threshold` - to dictate NMS IoU threshold

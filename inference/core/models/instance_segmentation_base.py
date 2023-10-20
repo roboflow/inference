@@ -1,9 +1,8 @@
-from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
 
-from inference.core.data_models import (
+from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
@@ -14,12 +13,12 @@ from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
-    mask2poly,
-    postprocess_predictions,
+    masks2poly,
+    post_process_bboxes,
+    post_process_polygons,
     process_mask_accurate,
     process_mask_fast,
     process_mask_tradeoff,
-    scale_polys,
 )
 
 DEFAULT_CONFIDENCE = 0.5
@@ -122,7 +121,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_candidate_detections=kwargs["max_candidates"],
             num_masks=32,
         )
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         predictions = np.array(predictions)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
@@ -159,8 +158,8 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     raise InvalidMaskDecodeArgument(
                         f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                     )
-                polys = mask2poly(batch_masks)
-                pred[:, :4] = postprocess_predictions(
+                polys = masks2poly(batch_masks)
+                pred[:, :4] = post_process_bboxes(
                     [pred[:, :4]],
                     infer_shape,
                     [img_dim],
@@ -170,10 +169,10 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                         "disable_preproc_static_crop"
                     ],
                 )[0]
-                polys = scale_polys(
-                    output_mask_shape,
-                    polys,
+                polys = post_process_polygons(
                     img_dim,
+                    polys,
+                    output_mask_shape,
                     self.preproc,
                     resize_method=self.resize_method,
                 )
@@ -211,6 +210,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         masks: List[List[List[float]]],
         img_dims: List[Tuple[int, int]],
         class_filter: List[str] = [],
+        **kwargs,
     ) -> Union[
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
