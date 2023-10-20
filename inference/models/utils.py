@@ -141,6 +141,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models import DocTR
+
+    ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=None, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)

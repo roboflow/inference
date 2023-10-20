@@ -15,6 +15,7 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -36,6 +37,7 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
+from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -56,6 +58,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
@@ -324,6 +327,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The GAZE model ID.
+        """
+
+        load_doctr_model = partial(load_core_model, core_model="doctr")
+        """Loads the DocTR model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The DocTR model ID.
         """
 
         @app.get(
@@ -633,6 +647,47 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(clip_model_id, actor, n=2)
+                    return response
+
+            if CORE_MODEL_DOCTR_ENABLED:
+
+                @app.post(
+                    "/doctr/ocr",
+                    response_model=DoctrOCRInferenceResponse,
+                    summary="DocTR OCR response",
+                    description="Run the DocTR OCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                async def doctr_retrieve_text(
+                    inference_request: DoctrOCRInferenceRequest,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    request: Request = Body(),
+                ):
+                    """
+                    Embeds image data using the DocTR model.
+
+                    Args:
+                        inference_request (M.DoctrOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.DoctrOCRInferenceResponse: The response containing the embedded image.
+                    """
+                    doctr_model_id = load_doctr_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = self.model_manager.infer_from_request(
+                        doctr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(doctr_model_id, actor)
                     return response
 
             if CORE_MODEL_SAM_ENABLED:

@@ -17,6 +17,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
+    requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
     ./
 
@@ -28,6 +29,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gpu.txt \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
+    -r requirements.doctr.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 

@@ -88,8 +88,9 @@ Some functionality requires extra dependencies. These can be installed by specif
 | `gaze` | Ability to use the core `Gaze` model |
 | `http` | Ability to run the http interface |
 | `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
+| `doctr` | Ability to use the core `doctr` model (by [Mindee](https://github.com/mindee/doctr)) |
 
-**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependencies however pytorch installs can be highly environment dependent. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
+**_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the [official PyTorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
 
 Example install with CLIP dependencies:
 

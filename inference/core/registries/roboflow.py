@@ -20,6 +20,7 @@ GENERIC_MODELS = {
     "clip": ("embed", "clip"),
     "sam": ("embed", "sam"),
     "gaze": ("gaze", "l2cs"),
+    "doctr": ("ocr", "doctr"),
 }
 
 
