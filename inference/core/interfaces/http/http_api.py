@@ -21,6 +21,7 @@ from inference.core.entities.requests.inference import (
     InferenceRequest,
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
 from inference.core.entities.requests.sam import (
@@ -40,6 +41,7 @@ from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
+    KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
 )
@@ -498,6 +500,27 @@ class HttpInterface(BaseInterface):
 
                 return process_inference_request(inference_request)
 
+            @app.post(
+                "/infer/keypoints_detection",
+                response_model=KeypointsDetectionInferenceResponse,
+                summary="Keypoints detection infer",
+                description="Run inference with the specified keypoints detection model",
+            )
+            @with_route_exceptions
+            async def infer_keypoints(
+                inference_request: KeypointsDetectionInferenceRequest,
+            ):
+                """Run inference with the specified keypoints detection model.
+
+                Args:
+                    inference_request (KeypointsDetectionInferenceRequest): The request containing the necessary details for keypoints detection.
+
+                Returns:
+                    Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
+                """
+
+                return process_inference_request(inference_request)
+
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
 
@@ -744,6 +767,7 @@ class HttpInterface(BaseInterface):
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
+                    KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
@@ -766,6 +790,10 @@ class HttpInterface(BaseInterface):
                 confidence: float = Query(
                     0.4,
                     description="The confidence threshold used to filter out predictions",
+                ),
+                keypoint_confidence: float = Query(
+                    0.0,
+                    description="The confidence threshold used to filter out keypoints that are not visible based on model confidence",
                 ),
                 format: str = Query(
                     "json",
@@ -837,7 +865,7 @@ class HttpInterface(BaseInterface):
                     # Other parameters described in the function signature...
 
                 Returns:
-                    Union[InstanceSegmentationInferenceResponse, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
+                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
                 """
                 model_id = f"{dataset_id}/{version_id}"
 
@@ -912,7 +940,9 @@ class HttpInterface(BaseInterface):
                     }
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
-
+                elif task_type == "keypoints-detection":
+                    inference_request_type = KeypointsDetectionInferenceRequest
+                    args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(
                     model_id=request_model_id,
                     image=request_image,
@@ -932,7 +962,6 @@ class HttpInterface(BaseInterface):
                 inference_response = self.model_manager.infer_from_request(
                     inference_request.model_id, inference_request
                 )
-
                 if format == "image":
                     return Response(
                         content=inference_response.visualization,
