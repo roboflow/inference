@@ -18,7 +18,7 @@ from inference.core.utils.image_utils import load_image
 
 
 class DocTR(RoboflowCoreModel):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
         """Initializes the DocTR model.
 
         Args:
