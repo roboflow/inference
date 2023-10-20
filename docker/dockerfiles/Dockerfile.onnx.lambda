@@ -20,6 +20,7 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.hosted.txt \
+    requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
     ./
 
@@ -32,6 +33,7 @@ RUN pip3 install \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
     -r requirements.hosted.txt \
+    -r requirements.doctr.txt \
     mangum \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \

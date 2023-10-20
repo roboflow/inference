@@ -16,3 +16,4 @@ class DoctrOCRInferenceRequest(BaseModel):
 
     api_key: Optional[str] = ApiKey
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
+    doctr_version_id: Optional[str] = "default"

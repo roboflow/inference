@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 from time import perf_counter
+from typing import Any, List, Union
 
 from doctr import models as models
 from doctr.io import DocumentFile
@@ -9,7 +10,9 @@ from doctr.models import ocr_predictor
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
@@ -23,6 +26,7 @@ class DocTR(RoboflowCoreModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
+        self.api_key = kwargs.get("api_key")
         model_id = model_id.lower()
 
         os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr_rec")
@@ -56,7 +60,17 @@ class DocTR(RoboflowCoreModel):
         """
         pass
 
-    def infer(self, request: DoctrOCRInferenceRequest):
+    def infer_from_request(
+        self, request: DoctrOCRInferenceRequest
+    ) -> DoctrOCRInferenceResponse:
+        t1 = perf_counter()
+        result = self.infer(**request.dict())
+        return DoctrOCRInferenceResponse(
+            result=result,
+            time=perf_counter() - t1,
+        )
+
+    def infer(self, image: Any, **kwargs):
         """
         Run inference on a provided image.
 
@@ -66,9 +80,8 @@ class DocTR(RoboflowCoreModel):
         Returns:
             DoctrOCRInferenceResponse: The inference response.
         """
-        t1 = perf_counter()
 
-        img = load_image(request["image"]["value"])
+        img = load_image(image)
 
         with tempfile.NamedTemporaryFile(suffix=".jpg") as f:
             image = Image.fromarray(img[0])
@@ -78,8 +91,6 @@ class DocTR(RoboflowCoreModel):
             doc = DocumentFile.from_images([f.name])
 
             result = self.model(doc).export()
-
-            t2 = perf_counter() - t1
 
             result = result["pages"][0]["blocks"]
 
@@ -91,10 +102,7 @@ class DocTR(RoboflowCoreModel):
 
             result = " ".join(result)
 
-            return DoctrOCRInferenceResponse(
-                result=result,
-                time=t2,
-            )
+            return result
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

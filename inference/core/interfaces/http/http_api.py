@@ -40,7 +40,6 @@ from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
-    DoctrOCRInferenceResponse,
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
     MultiLabelClassificationInferenceResponse,
@@ -326,6 +325,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The GAZE model ID.
+        """
+
+        load_doctr_model = partial(load_core_model, core_model="doctr")
+        """Loads the DocTR model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The DocTR model ID.
         """
 
         @app.get(
@@ -644,7 +654,9 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.DoctrOCRInferenceResponse: The response containing the embedded image.
                     """
-                    doctr_model_id = load_clip_model(inference_request, api_key=api_key)
+                    doctr_model_id = load_doctr_model(
+                        inference_request, api_key=api_key
+                    )
                     response = self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
                     )

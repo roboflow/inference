@@ -20,12 +20,10 @@ TESTS = [
                 "value": "https://media.roboflow.com/swift.png",
             }
         },
-        "expected_response": [
-            {
-                "result": "- was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, - found myself playing various songs on repeat. I listened to the album in order multiple times.",
-                "time": 2.61976716702338
-            },
-        ],
+        "expected_response": {
+            "result": "- was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, - found myself playing various songs on repeat. I listened to the album in order multiple times.",
+            "time": 2.61976716702338,
+        },
     }
 ]
 
@@ -40,19 +38,22 @@ def test_doctr(test):
     )
     try:
         response.raise_for_status()
-        data = response.json()[0]
+        data = response.json()
         try:
-            assert "predictions" in data
+            assert "result" in data
         except:
-            print(f"Invalid response: {data}, expected 'predictions' in data")
+            print(f"Invalid response: {data}, expected 'result' in data")
 
         try:
-            assert (
-                isinstance(data["predictions"], list) and len(data["predictions"]) > 0
-            )
+            assert isinstance(data["result"], str) and len(data["result"]) > 0
+        except:
+            print(f"Invalid response: {data['result']}, expected a non-empty string")
+
+        try:
+            assert data["result"] == test["expected_response"]["result"]
         except:
             print(
-                f"Invalid response: {data['predictions']}, expected at least one prediction"
+                f"Invalid response: {data['result']}, expected {test['expected_response']['result']}"
             )
     except Exception as e:
         raise e
