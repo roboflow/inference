@@ -20,6 +20,12 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
 def infer_request_with_image_url(
     test, port=9001, api_key="", base_url="http://localhost", batch_size=1
 ):
@@ -96,6 +102,7 @@ def infer_request_with_base64_image_dif_size(
         "base64_diffsize",
     )
 
+
 def infer_request_with_base64_image_dif_size_fixed(
     test, port=9001, api_key="", base_url="http://localhost", batch_size=1
 ):
@@ -139,7 +146,7 @@ def infer_request_with_base64_image_dif_size_fixed(
         "confidence": test["confidence"],
         "iou_threshold": test["iou_threshold"],
         "api_key": api_key,
-        "fix_batch_size": True
+        "fix_batch_size": True,
     }
     return (
         requests.post(
@@ -231,13 +238,14 @@ def test_detection(test, res_function):
             raise ValueError(
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
-        for d, test_data in zip(data, test["expected_response"][image_type]):
-            compare_detection_response(
-                d,
-                test_data,
-                type=test["type"],
-                multilabel=test.get("multi_label", False),
-            )
+        if not bool_env(os.getenv("FUNCTIONAL", False)):
+            for d, test_data in zip(data, test["expected_response"][image_type]):
+                compare_detection_response(
+                    d,
+                    test_data,
+                    type=test["type"],
+                    multilabel=test.get("multi_label", False),
+                )
         print(
             "\u2713"
             + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."

@@ -1,0 +1,10 @@
+python-dotenv<=2.0.0
+requests
+pytest
+pillow 
+requests_toolbelt
+requests-mock==1.11.0
+black
+isort
+flake8
+rich
