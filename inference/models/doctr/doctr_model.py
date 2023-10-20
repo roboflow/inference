@@ -1,31 +1,24 @@
+import os
+import shutil
+import tempfile
 from time import perf_counter
 
-import tempfile
-import shutil
-
-from doctr.models import ocr_predictor
-
-from inference.core.utils.image_utils import load_image
-
+from doctr import models as models
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
-
-from inference.core.env import MODEL_CACHE_DIR
-
 from PIL import Image
 
 from inference.core.data_models import (
     DoctrOCRInferenceRequest,
     DoctrOCRInferenceResponse,
 )
-
+from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.utils.image_utils import load_image
 
-from doctr import models as models
-import os
 
 class DocTR(RoboflowCoreModel):
-    def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
+    def __init__(self, *args, **kwargs):
         """Initializes the DocTR model.
 
         Args:

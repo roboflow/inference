@@ -263,7 +263,6 @@ def validate_numpy_image(data: np.ndarray) -> None:
         )
 
 
-
 def load_image_from_url(
     value: str, cv_imread_flags: int = cv2.IMREAD_COLOR
 ) -> np.ndarray:
@@ -323,10 +322,11 @@ def np_image_to_base64(image: np.ndarray) -> bytes:
         buffer.seek(0)
         return buffer.getvalue()
 
+
 def xyxy_to_xywh(xyxy):
     x_temp = (xyxy[0] + xyxy[2]) / 2
     y_temp = (xyxy[1] + xyxy[3]) / 2
     w_temp = abs(xyxy[0] - xyxy[2])
     h_temp = abs(xyxy[1] - xyxy[3])
-    
+
     return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]
