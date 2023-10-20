@@ -62,7 +62,7 @@ def on_message(client, userdata, msg):
 
 def connect_mqtt():
     client = mqtt_client.Client(CLIENT_ID, clean_session=False)
-    client.tls_set(ca_certs="./inference/enterprise/device_manager/broker.crt")
+    client.tls_set(ca_certs="./inference/enterprise/device_manager/server.crt")
     client.username_pw_set(MESSAGE_BROKER_USER, MESSAGE_BROKER_PASSWORD)
     client.enable_logger()
     client.on_connect = on_connect
