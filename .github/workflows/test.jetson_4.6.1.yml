@@ -1,8 +1,11 @@
 name: Code Quality & Regression Tests - Jetson 4.6.1
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to test (e.g. v1.0.0.rc1)'
+        required: true
 
 jobs:
   build:
@@ -22,7 +25,7 @@ jobs:
       - name: 🛎️ Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ format('{0}{1}','ref/tags/',inputs.tag) }}
       
       - name: 🦾 Install dependencies
         run: |

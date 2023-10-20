@@ -2,6 +2,10 @@ name: Start NVIDIA T4 Instance
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Code Quality & Regression Tests - NVIDIA T4"]
+    types:
+      - completed
 
 jobs:
     start:
@@ -24,4 +28,4 @@ jobs:
             version: '>= 363.0.0'
         
         - name: 'Start T4 Instance'
-          run: 'gcloud compute instances start gh-actions-runner-t4 --zone us-central1-a'
+          run: 'gcloud compute instances stop gh-actions-runner-t4 --zone us-central1-a'
