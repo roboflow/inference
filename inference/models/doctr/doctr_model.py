@@ -8,10 +8,8 @@ from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from PIL import Image
 
-from inference.core.data_models import (
-    DoctrOCRInferenceRequest,
-    DoctrOCRInferenceResponse,
-)
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
@@ -73,7 +71,9 @@ class DocTR(RoboflowCoreModel):
         img = load_image(request["image"]["value"])
 
         with tempfile.NamedTemporaryFile(suffix=".jpg") as f:
-            img.save(f.name)
+            image = Image.fromarray(img[0])
+
+            image.save(f.name)
 
             doc = DocumentFile.from_images([f.name])
 
