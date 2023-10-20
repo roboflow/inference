@@ -123,6 +123,7 @@ class RoboflowInferenceModel(Model):
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
+        self.keypoints_metadata: Optional[dict] = None
         initialise_cache(model_id=self.endpoint)
 
     def cache_file(self, f: str) -> str:
@@ -282,6 +283,13 @@ class RoboflowInferenceModel(Model):
             file="environment.json",
             model_id=self.endpoint,
         )
+        if "keypoints_metadata" in api_data:
+            # TODO: make sure backend provides that
+            save_json_in_cache(
+                content=api_data["keypoints_metadata"],
+                file="keypoints_metadata.json",
+                model_id=self.endpoint,
+            )
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -307,12 +315,23 @@ class RoboflowInferenceModel(Model):
             environment=self.environment,
             class_names=self.class_names,
         )
+        if "keypoints_metadata.json" in infer_bucket_files:
+            self.keypoints_metadata = parse_keypoints_metadata(
+                load_json_from_cache(
+                    file="keypoints_metadata.json",
+                    model_id=self.endpoint,
+                    object_pairs_hook=OrderedDict,
+                )
+            )
         self.num_classes = len(self.class_names)
         if "PREPROCESSING" not in self.environment:
             raise ModelArtefactError(
                 "Could not find `PREPROCESSING` key in environment file."
             )
-        self.preproc = json.loads(self.environment["PREPROCESSING"])
+        if issubclass(type(self.environment["PREPROCESSING"]), dict):
+            self.preproc = self.environment["PREPROCESSING"]
+        else:
+            self.preproc = json.loads(self.environment["PREPROCESSING"])
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
             if self.resize_method not in [
@@ -738,3 +757,10 @@ def is_model_artefacts_bucket_available() -> bool:
         and LAMBDA
         and S3_CLIENT is not None
     )
+
+
+def parse_keypoints_metadata(metadata: list) -> dict:
+    return {
+        e["object_class_id"]: {int(key): value for key, value in e["keypoints"].items()}
+        for e in metadata
+    }

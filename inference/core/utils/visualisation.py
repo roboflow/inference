@@ -5,10 +5,13 @@ import numpy as np
 
 from inference.core.entities.requests.inference import (
     InstanceSegmentationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
 from inference.core.entities.responses.inference import (
     InstanceSegmentationPrediction,
+    Keypoint,
+    KeypointsPrediction,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
     Point,
@@ -18,10 +21,14 @@ from inference.core.utils.image_utils import load_image_rgb, np_image_to_base64
 
 def draw_detection_predictions(
     inference_request: Union[
-        ObjectDetectionInferenceRequest, InstanceSegmentationInferenceRequest
+        ObjectDetectionInferenceRequest,
+        InstanceSegmentationInferenceRequest,
+        KeypointsDetectionInferenceRequest,
     ],
     inference_response: Union[
-        ObjectDetectionInferenceResponse, InstanceSegmentationPrediction
+        ObjectDetectionInferenceResponse,
+        InstanceSegmentationPrediction,
+        KeypointsPrediction,
     ],
     colors: Dict[str, str],
 ) -> bytes:
@@ -40,6 +47,13 @@ def draw_detection_predictions(
             image = draw_instance_segmentation_points(
                 image=image,
                 points=box.points,
+                color=color,
+                thickness=inference_request.visualization_stroke_width,
+            )
+        if hasattr(box, "keypoints"):
+            draw_keypoints(
+                image=image,
+                keypoints=box.keypoints,
                 color=color,
                 thickness=inference_request.visualization_stroke_width,
             )
@@ -84,6 +98,23 @@ def draw_instance_segmentation_points(
             thickness=thickness,
         )
     return image
+
+
+def draw_keypoints(
+    image: np.ndarray,
+    keypoints: List[Keypoint],
+    color: Tuple[int, ...],
+    thickness: int,
+) -> None:
+    for keypoint in keypoints:
+        center_coordinates = (round(keypoint.x), round(keypoint.y))
+        image = cv2.circle(
+            image,
+            center_coordinates,
+            thickness,
+            color,
+            -1,
+        )
 
 
 def draw_labels(

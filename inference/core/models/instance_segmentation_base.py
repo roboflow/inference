@@ -1,4 +1,3 @@
-from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -122,7 +121,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_candidate_detections=kwargs["max_candidates"],
             num_masks=32,
         )
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         predictions = np.array(predictions)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
@@ -171,9 +170,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     ],
                 )[0]
                 polys = post_process_polygons(
-                    output_mask_shape,
-                    polys,
                     img_dim,
+                    polys,
+                    output_mask_shape,
                     self.preproc,
                     resize_method=self.resize_method,
                 )
@@ -211,6 +210,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         masks: List[List[List[float]]],
         img_dims: List[Tuple[int, int]],
         class_filter: List[str] = [],
+        **kwargs,
     ) -> Union[
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],

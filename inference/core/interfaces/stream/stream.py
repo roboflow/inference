@@ -1,6 +1,4 @@
 import json
-import socket
-import sys
 import threading
 import time
 from typing import Callable, Union
