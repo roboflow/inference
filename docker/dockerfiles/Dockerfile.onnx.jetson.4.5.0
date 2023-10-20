@@ -27,7 +27,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
-    requirements/requirements.groundingdino.txt \
     requirements/_requirements.txt \ 
     ./
 
@@ -39,7 +38,6 @@ RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
-    -r requirements.groundingdino.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
