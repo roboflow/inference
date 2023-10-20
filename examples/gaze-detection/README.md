@@ -10,7 +10,7 @@ First, clone this repository and navigate to the project folder:
 
 ```bash
 git clone https://github.com/roboflow/inference
-cd inference/examples/gaze_detection
+cd inference/examples/gaze-detection
 ```
 
 Next, set up a Python environment and install the required project dependencies:
