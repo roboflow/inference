@@ -56,6 +56,6 @@ ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
 ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
+ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0
 
 ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

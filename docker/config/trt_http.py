@@ -1,6 +1,7 @@
 import os
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from inference.core.env import MAX_ACTIVE_MODELS
 from inference.core.interfaces.http.http_api import HttpInterface
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -11,7 +12,9 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-model_manager = WithFixedSizeCache(ModelManager(model_registry))
+model_manager = WithFixedSizeCache(
+    ModelManager(model_registry), max_size=MAX_ACTIVE_MODELS
+)
 model_manager.model_manager.init_pingback()
 interface = HttpInterface(
     model_manager,

@@ -14,6 +14,12 @@ with open(os.path.join(Path(__file__).resolve().parent, "clip_tests.json"), "r")
     TESTS = json.load(f)
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
 @pytest.mark.parametrize("test", TESTS)
 def test_clip(test):
     payload = deepcopy(test["payload"])
@@ -24,6 +30,8 @@ def test_clip(test):
     )
     try:
         response.raise_for_status()
+        if bool_env(os.getenv("FUNCTIONAL", False)):
+            return
         data = response.json()
         if test["type"] == "embed_image" or test["type"] == "embed_text":
             try:

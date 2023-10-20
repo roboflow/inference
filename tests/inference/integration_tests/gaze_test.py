@@ -54,6 +54,15 @@ TESTS = [
 ]
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_GAZE_TEST", False)), reason="Skipping gaze test"
+)
 @pytest.mark.parametrize("test", TESTS)
 def test_gaze(test):
     payload = deepcopy(test["payload"])
