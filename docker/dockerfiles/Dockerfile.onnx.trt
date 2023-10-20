@@ -16,6 +16,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
+    requirements/requirements.groundingdino.txt \
     requirements/_requirements.txt \
     ./
 
@@ -27,6 +28,7 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
+    -r requirements.groundingdino.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
