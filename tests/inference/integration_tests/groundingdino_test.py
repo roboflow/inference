@@ -31,7 +31,7 @@ def test_doctr(test):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
-        f"{base_url}:{port}/doctr/ocr",
+        f"{base_url}:{port}/groundingdino/infer",
         json=payload,
     )
     try:
