@@ -25,7 +25,7 @@ jobs:
       - name: 🛎️ Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ format('{0}{1}','ref/tags/',inputs.tag) }}
+          ref: ${{ inputs.tag }}
       
       - name: 🦾 Install dependencies
         run: |
