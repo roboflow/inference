@@ -9,6 +9,7 @@ from inference.models import (
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
 )
+from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "vit"): VitClassification,
@@ -107,6 +108,16 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov8-seg",
     ): YOLOv8InstanceSegmentation,
+    ("keypoints-detection", "yolov8n"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8s"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8m"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8l"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8x"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8n-pose"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8s-pose"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
+    ("keypoints-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
 }
 
 try:
@@ -127,6 +138,13 @@ try:
     from inference.models import Gaze
 
     ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
+except:
+    pass
+
+try:
+    from inference.models import DocTR
+
+    ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
 except:
     pass
 

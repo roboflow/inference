@@ -321,3 +321,12 @@ def np_image_to_base64(image: np.ndarray) -> bytes:
         image.save(buffer, format="JPEG")
         buffer.seek(0)
         return buffer.getvalue()
+
+
+def xyxy_to_xywh(xyxy):
+    x_temp = (xyxy[0] + xyxy[2]) / 2
+    y_temp = (xyxy[1] + xyxy[3]) / 2
+    w_temp = abs(xyxy[0] - xyxy[2])
+    h_temp = abs(xyxy[1] - xyxy[3])
+
+    return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]

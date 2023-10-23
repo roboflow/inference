@@ -40,7 +40,7 @@ class WebcamStream:
         if self.vcap.isOpened() is False:
             logger.debug("[Exiting]: Error accessing webcam stream.")
             exit(0)
-        self.fps_input_stream = int(self.vcap.get(5))
+        self.fps_input_stream = int(self.vcap.get(cv2.CAP_PROP_FPS))
         logger.debug(
             "FPS of webcam hardware/input stream: {}".format(self.fps_input_stream)
         )
@@ -60,16 +60,32 @@ class WebcamStream:
 
     def update(self):
         """Update the frame by reading from the webcam."""
+        frame_id = 0
+        skip_seconds = 0
+        last_frame_position = time.perf_counter()
+        t0 = time.perf_counter()
         while True:
             t1 = time.perf_counter()
             if self.stopped is True:
                 break
-            self.grabbed, self.frame = self.vcap.read()
-            if self.frame is not None and self.grabbed:
-                self.frame_id += 1
-                self.pil_image = Image.fromarray(
-                    cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-                )
+
+            self.grabbed = self.vcap.grab()
+            if self.grabbed:
+                frame_id += 1
+                if (
+                    self.enforce_fps != "skip"
+                    or t1 >= last_frame_position + skip_seconds
+                ):
+                    ret, frame = self.vcap.retrieve()
+                    logger.debug("video capture FPS: %s", frame_id / (t1 - t0))
+                    if frame is not None:
+                        last_frame_position = t1
+                        self.frame_id = frame_id
+                        self.frame = frame
+                    else:
+                        logger.debug("[Exiting] Frame not available to retrieve")
+                        self.stopped = True
+                        break
 
             if self.grabbed is False:
                 logger.debug("[Exiting] No more frames to read")
@@ -77,18 +93,14 @@ class WebcamStream:
                 break
             if self.enforce_fps:
                 t2 = time.perf_counter()
-                time.sleep(
-                    max(1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1))
+                next_frame = max(
+                    1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1)
                 )
+                if self.enforce_fps == "skip":
+                    skip_seconds = next_frame
+                else:
+                    time.sleep(next_frame)
         self.vcap.release()
-
-    def read(self):
-        """Read the current frame.
-
-        Returns:
-            Image, array, int: The current frame as a PIL image, a NumPy array, and the frame ID.
-        """
-        return self.pil_image, self.frame, self.frame_id
 
     def read_opencv(self):
         """Read the current frame using OpenCV.

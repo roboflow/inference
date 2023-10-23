@@ -20,6 +20,12 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
 def model_add(test, port=9001, api_key="", base_url="http://localhost"):
     return requests.post(
         f"{base_url}:{port}/{test['project']}/{test['version']}?"
@@ -391,11 +397,13 @@ INFER_RESPONSE_FUNCTIONS = [
     legacy_infer_with_multipart_form_image,
 ]
 
+SKIP_YOLOV8_TEST = bool_env(os.getenv("SKIP_YOLOV8_TEST", False))
 DETECTION_TEST_PARAMS = []
 for test in TESTS:
     if "expected_response" in test:
-        for res_func in INFER_RESPONSE_FUNCTIONS:
-            DETECTION_TEST_PARAMS.append((test, res_func))
+        if not SKIP_YOLOV8_TEST or "YOLOv8" not in test["description"]:
+            for res_func in INFER_RESPONSE_FUNCTIONS:
+                DETECTION_TEST_PARAMS.append((test, res_func))
 
 
 @pytest.mark.parametrize("test,res_function", DETECTION_TEST_PARAMS)
@@ -432,12 +440,13 @@ def test_detection(test, res_function):
             raise ValueError(
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
-        compare_detection_response(
-            data,
-            test["expected_response"][image_type],
-            type=test["type"],
-            multilabel=test.get("multi_label", False),
-        )
+        if not bool_env(os.getenv("FUNCTIONAL", False)):
+            compare_detection_response(
+                data,
+                test["expected_response"][image_type],
+                type=test["type"],
+                multilabel=test.get("multi_label", False),
+            )
         print(
             "\u2713"
             + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."

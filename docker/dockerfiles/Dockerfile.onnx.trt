@@ -15,6 +15,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
+    requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
     ./
 
@@ -25,6 +26,7 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.http.txt \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
+    -r requirements.doctr.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 

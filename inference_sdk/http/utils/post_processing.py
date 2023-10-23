@@ -5,12 +5,7 @@ import numpy as np
 from PIL import Image
 from requests import Response
 
-from inference_sdk.http.entities import (
-    INSTANCE_SEGMENTATION_TASK,
-    OBJECT_DETECTION_TASK,
-    TaskType,
-    VisualisationResponseFormat,
-)
+from inference_sdk.http.entities import VisualisationResponseFormat
 from inference_sdk.http.utils.encoding import (
     bytes_to_opencv_image,
     bytes_to_pillow_image,
@@ -74,9 +69,18 @@ def adjust_prediction_to_client_scaling_factor(
     if "points" in prediction["predictions"][0]:
         prediction[
             "predictions"
-        ] = adjust_instance_segmentation_predictions_to_client_scaling_factor(
+        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
             predictions=prediction["predictions"],
             scaling_factor=scaling_factor,
+            points_key="points",
+        )
+    elif "keypoints" in prediction["predictions"][0]:
+        prediction[
+            "predictions"
+        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+            predictions=prediction["predictions"],
+            scaling_factor=scaling_factor,
+            points_key="keypoints",
         )
     elif "x" in prediction["predictions"][0] and "y" in prediction["predictions"][0]:
         prediction[
@@ -111,9 +115,10 @@ def adjust_object_detection_predictions_to_client_scaling_factor(
     return result
 
 
-def adjust_instance_segmentation_predictions_to_client_scaling_factor(
+def adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
     predictions: List[dict],
     scaling_factor: float,
+    points_key: str,
 ) -> List[dict]:
     result = []
     for prediction in predictions:
@@ -121,8 +126,8 @@ def adjust_instance_segmentation_predictions_to_client_scaling_factor(
             bbox=prediction,
             scaling_factor=scaling_factor,
         )
-        prediction["points"] = adjust_segmentation_polygon_to_client_scaling_factor(
-            points=prediction["points"],
+        prediction[points_key] = adjust_points_coordinates_to_client_scaling_factor(
+            points=prediction[points_key],
             scaling_factor=scaling_factor,
         )
         result.append(prediction)
@@ -140,7 +145,7 @@ def adjust_bbox_coordinates_to_client_scaling_factor(
     return bbox
 
 
-def adjust_segmentation_polygon_to_client_scaling_factor(
+def adjust_points_coordinates_to_client_scaling_factor(
     points: List[dict],
     scaling_factor: float,
 ) -> List[dict]:

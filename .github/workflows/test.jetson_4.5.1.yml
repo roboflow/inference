@@ -1,0 +1,51 @@
+name: Code Quality & Regression Tests - Jetson 4.5.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to test (e.g. v1.0.0.rc1)'
+        required: true
+
+jobs:
+  build:
+    if: ${{ !github.event.act }}
+    runs-on: [self-hosted, jetson, jetpack-4.5.1]
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.tag }}
+      
+      - name: 🦾 Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements/requirements.test.txt
+      - name: 🔨 Build and Push Test Docker - Jetson 4.5.0
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: roboflow/roboflow-inference-server-jetson-4.5.0:test
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:test-cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:test-cache,mode=max
+          platforms: linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.5.0
+      - name: 🔋 Start Test Docker - Jetson 4.5.0
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-jetson-4.5.0 DOCKERFILE=Dockerfile.onnx.jetson.4.5.0 make start_test_docker_jetson
+      - name: 🧪 Regression Tests - Jetson 4.5.0
+        run: |
+          SKIP_YOLOV8_TEST=true SKIP_GAZE_TEST=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+      - name: 🧹 Cleanup Test Docker - Jetson 4.5.0
+        run: make stop_test_docker
+        if: success() || failure()

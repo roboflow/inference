@@ -16,12 +16,14 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
 from inference.core.entities.requests.sam import (
@@ -36,11 +38,13 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
+from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
+    KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
 )
@@ -55,6 +59,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
@@ -325,6 +330,17 @@ class HttpInterface(BaseInterface):
         The GAZE model ID.
         """
 
+        load_doctr_model = partial(load_core_model, core_model="doctr")
+        """Loads the DocTR model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The DocTR model ID.
+        """
+
         @app.get(
             "/info",
             response_model=ServerVersionInfo,
@@ -499,6 +515,27 @@ class HttpInterface(BaseInterface):
 
                 return await process_inference_request(inference_request)
 
+            @app.post(
+                "/infer/keypoints_detection",
+                response_model=KeypointsDetectionInferenceResponse,
+                summary="Keypoints detection infer",
+                description="Run inference with the specified keypoints detection model",
+            )
+            @with_route_exceptions
+            async def infer_keypoints(
+                inference_request: KeypointsDetectionInferenceRequest,
+            ):
+                """Run inference with the specified keypoints detection model.
+
+                Args:
+                    inference_request (KeypointsDetectionInferenceRequest): The request containing the necessary details for keypoints detection.
+
+                Returns:
+                    Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
+                """
+
+                return process_inference_request(inference_request)
+
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
 
@@ -613,6 +650,47 @@ class HttpInterface(BaseInterface):
                         trackUsage(clip_model_id, actor, n=2)
                     return response
 
+            if CORE_MODEL_DOCTR_ENABLED:
+
+                @app.post(
+                    "/doctr/ocr",
+                    response_model=DoctrOCRInferenceResponse,
+                    summary="DocTR OCR response",
+                    description="Run the DocTR OCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                async def doctr_retrieve_text(
+                    inference_request: DoctrOCRInferenceRequest,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    request: Request = Body(),
+                ):
+                    """
+                    Embeds image data using the DocTR model.
+
+                    Args:
+                        inference_request (M.DoctrOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.DoctrOCRInferenceResponse: The response containing the embedded image.
+                    """
+                    doctr_model_id = load_doctr_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = self.model_manager.infer_from_request(
+                        doctr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(doctr_model_id, actor)
+                    return response
+
             if CORE_MODEL_SAM_ENABLED:
 
                 @app.post(
@@ -699,46 +777,44 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
-                if CORE_MODEL_GAZE_ENABLED:
+            if CORE_MODEL_GAZE_ENABLED:
 
-                    @app.post(
-                        "/gaze/gaze_detection",
-                        response_model=List[GazeDetectionInferenceResponse],
-                        summary="Gaze Detection",
-                        description="Run the gaze detection model to detect gaze.",
+                @app.post(
+                    "/gaze/gaze_detection",
+                    response_model=List[GazeDetectionInferenceResponse],
+                    summary="Gaze Detection",
+                    description="Run the gaze detection model to detect gaze.",
+                )
+                @with_route_exceptions
+                async def gaze_detection(
+                    inference_request: GazeDetectionInferenceRequest,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    request: Request = Body(),
+                ):
+                    """
+                    Detect gaze using the gaze detection model.
+
+                    Args:
+                        inference_request (M.GazeDetectionRequest): The request containing the image to be detected.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
+                    """
+                    gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
+                    response = await self.model_manager.infer_from_request(
+                        gaze_model_id, inference_request
                     )
-                    @with_route_exceptions
-                    async def gaze_detection(
-                        inference_request: GazeDetectionInferenceRequest,
-                        api_key: Optional[str] = Query(
-                            None,
-                            description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                        ),
-                        request: Request = Body(),
-                    ):
-                        """
-                        Detect gaze using the gaze detection model.
-
-                        Args:
-                            inference_request (M.GazeDetectionRequest): The request containing the image to be detected.
-                            api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                            request (Request, default Body()): The HTTP request.
-
-                        Returns:
-                            M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
-                        """
-                        gaze_model_id = load_gaze_model(
-                            inference_request, api_key=api_key
-                        )
-                        response = await self.model_manager.infer_from_request(
-                            gaze_model_id, inference_request
-                        )
-                        if LAMBDA:
-                            actor = request.scope["aws.event"]["requestContext"][
-                                "authorizer"
-                            ]["lambda"]["actor"]
-                            trackUsage(gaze_model_id, actor)
-                        return response
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(gaze_model_id, actor)
+                    return response
 
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatability
@@ -747,6 +823,7 @@ class HttpInterface(BaseInterface):
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
+                    KeypointsDetectionInferenceResponse,
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
@@ -769,6 +846,10 @@ class HttpInterface(BaseInterface):
                 confidence: float = Query(
                     0.4,
                     description="The confidence threshold used to filter out predictions",
+                ),
+                keypoint_confidence: float = Query(
+                    0.0,
+                    description="The confidence threshold used to filter out keypoints that are not visible based on model confidence",
                 ),
                 format: str = Query(
                     "json",
@@ -840,7 +921,7 @@ class HttpInterface(BaseInterface):
                     # Other parameters described in the function signature...
 
                 Returns:
-                    Union[InstanceSegmentationInferenceResponse, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
+                    Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
                 """
                 model_id = f"{dataset_id}/{version_id}"
 
@@ -918,7 +999,9 @@ class HttpInterface(BaseInterface):
                     }
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
-
+                elif task_type == "keypoints-detection":
+                    inference_request_type = KeypointsDetectionInferenceRequest
+                    args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=request_model_id,
@@ -939,7 +1022,6 @@ class HttpInterface(BaseInterface):
                 inference_response = await self.model_manager.infer_from_request(
                     inference_request.model_id, inference_request
                 )
-
                 if format == "image":
                     return Response(
                         content=inference_response.visualization,

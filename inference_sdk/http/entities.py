@@ -17,6 +17,7 @@ TaskType = str
 CLASSIFICATION_TASK = "classification"
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
+KEYPOINTS_DETECTION_TASK = "keypoints-detection"
 DEFAULT_MAX_INPUT_SIZE = 1024
 
 
@@ -55,6 +56,7 @@ class VisualisationResponseFormat:
 @dataclass(frozen=True)
 class InferenceConfiguration:
     confidence_threshold: Optional[float] = None
+    keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
     mask_decode_mode: Optional[str] = None
     tradeoff_factor: Optional[float] = None
@@ -97,9 +99,16 @@ class InferenceConfiguration:
             return self.to_instance_segmentation_parameters()
         if task_type == CLASSIFICATION_TASK:
             return self.to_classification_parameters()
+        if task_type == KEYPOINTS_DETECTION_TASK:
+            return self.to_keypoints_detection_parameters()
         raise ModelTaskTypeNotSupportedError(
             f"Model task {task_type} is not supported by API v1 client."
         )
+
+    def to_keypoints_detection_parameters(self) -> Dict[str, Any]:
+        parameters = self.to_object_detection_parameters()
+        parameters["keypoint_confidence"] = self.keypoint_confidence_threshold
+        return remove_empty_values(dictionary=parameters)
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         parameters_specs = [
@@ -151,6 +160,7 @@ class InferenceConfiguration:
     def to_legacy_call_parameters(self) -> Dict[str, Any]:
         parameters_specs = [
             ("confidence_threshold", "confidence"),
+            ("keypoint_confidence_threshold", "keypoint_confidence"),
             ("format", "format"),
             ("visualize_labels", "labels"),
             ("mask_decode_mode", "mask_decode_mode"),

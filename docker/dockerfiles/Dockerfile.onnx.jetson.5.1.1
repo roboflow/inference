@@ -23,6 +23,7 @@ RUN apt-get update -y && apt-get install -y \
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
+    requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
     ./
 
@@ -33,6 +34,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
+    -r requirements.doctr.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -56,6 +58,6 @@ ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
 ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
+ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0
 
 ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

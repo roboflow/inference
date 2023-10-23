@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -146,7 +146,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray],
+        predictions: Tuple[np.ndarray, ...],
         preproc_return_metadata: PreprocessReturnMetadata,
         class_agnostic_nms=DEFAULT_CLASS_AGNOSTIC_NMS,
         confidence: float = DEFAULT_CONFIDENCE,
@@ -181,7 +181,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_candidate_detections=max_candidates,
         )
 
-        infer_shape = (self.img_size_w, self.img_size_h)
+        infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preproc_return_metadata["img_dims"]
         predictions = post_process_bboxes(
             predictions,
