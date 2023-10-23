@@ -27,6 +27,8 @@ class DocTR(RoboflowCoreModel):
             **kwargs: Arbitrary keyword arguments.
         """
         self.api_key = kwargs.get("api_key")
+        self.dataset_id = "doctr"
+        self.version_id = "default"
         model_id = model_id.lower()
 
         os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr_rec")
