@@ -20,6 +20,7 @@ TASK_RESULT_KEY = "results:{}"
 TASK_STATUS_KEY = "status:{}"
 FINAL_STATE = 1
 INITIAL_STATE = 0
+FAILURE_STATE = -1
 
 NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 
@@ -28,6 +29,7 @@ class ResultsChecker:
     def __init__(self):
         self.tasks = []
         self.dones = dict()
+        self.errors = dict()
         self.running = True
 
     def add_redis(self, r: Redis):
@@ -44,6 +46,9 @@ class ResultsChecker:
     def check_task(self, t):
         if t in self.dones:
             return self.dones.pop(t)
+        if t in self.errors:
+            message = self.errors.pop(t)
+            raise Exception(message)
         return NOT_FINISHED_RESPONSE
 
     async def loop(self):
@@ -54,14 +59,17 @@ class ResultsChecker:
             donenesses = [self.r.get(t) for t in task_names]
             donenesses = [int(d) for d in donenesses]
             for id_, doneness in zip(tasks, donenesses):
-                if doneness == FINAL_STATE:
+                if doneness in [FINAL_STATE, FAILURE_STATE]:
                     pipe = self.r.pipeline()
                     pipe.get(TASK_RESULT_KEY.format(id_))
                     pipe.delete(TASK_RESULT_KEY.format(id_))
                     pipe.delete(TASK_STATUS_KEY.format(id_))
                     result, _, _ = pipe.execute()
                     self.tasks.remove(id_)
-                    self.dones[id_] = result
+                    if doneness == FINAL_STATE:
+                        self.dones[id_] = result
+                    if doneness == FAILURE_STATE:
+                        self.errors[id_] = result
             await asyncio.sleep(interval)
 
     async def wait_for_response(self, key):

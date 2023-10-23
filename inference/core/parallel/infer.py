@@ -8,17 +8,15 @@ from time import perf_counter
 from typing import Tuple
 
 import numpy as np
-from PIL import Image
 from redis import ConnectionPool, Redis
 
-from inference.core.cache import cache
 from inference.core.entities.requests.inference import request_from_type
 from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.parallel.tasks import postprocess
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.models.utils import get_roboflow_model
+from inference.core.parallel.utils import shm_closer, failure_handler
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 r = Redis(connection_pool=pool, decode_responses=True)
@@ -52,60 +50,72 @@ class InferServer:
         r.zrem(f"infer:{selected_model}", *[b[0] for b in batch])
         r.hincrby(f"requests", selected_model, -len(batch))
         batch = [json.loads(b[0]) for b in batch]
-        model_id = selected_model
-        model_manager.add_model(model_id, batch[0]["request"]["api_key"])
-        model_type = model_manager.get_task_type(model_id)
-        for b in batch:
-            request = request_from_type(model_type, b["request"])
-            b["request"] = request
+        return batch, selected_model
         return batch
 
     def infer_loop(self):
         while True:
-            request_counts = r.hgetall("requests")
-            model_names = [
-                model_name
-                for model_name, count in request_counts.items()
-                if int(count) > 0
-            ]
-            if not model_names:
-                time.sleep(0.005)
-                continue
-            batch = self.get_batch(model_names)
-            images = []
-            metadatas = []
-            shms = []
-            for b in batch:
-                shm = shared_memory.SharedMemory(name=b["chunk_name"])
-                image = np.ndarray(
-                    b["image_shape"], dtype=b["image_dtype"], buffer=shm.buf
-                )
-                images.append(image)
-                metadatas.append(b["metadata"])
-                shms.append(shm)
-            outputs = model_manager.predict(batch[0]["request"].model_id, images)
-            del images
-            for output, b, metadata in zip(zip(*outputs), batch, metadatas):
-                info = self.write_response(output)
-                postprocess.s(info, b["request"].dict(), metadata).delay()
-            for shm in shms:
-                shm.close()
-                shm.unlink()
+            try:
+                request_counts = r.hgetall("requests")
+                model_names = [
+                    model_name
+                    for model_name, count in request_counts.items()
+                    if int(count) > 0
+                ]
+                if not model_names:
+                    time.sleep(0.005)
+                    continue
+                batch, model_id = self.get_batch(model_names)
+                with failure_handler(r, *[b["request"]["id"] for b in batch]):
+                    model_manager.add_model(model_id, batch[0]["request"]["api_key"])
+                    model_type = model_manager.get_task_type(model_id)
+                    for b in batch:
+                        request = request_from_type(model_type, b["request"])
+                        b["request"] = request
+                    shms = []
+                    for b in batch:
+                        shm = shared_memory.SharedMemory(name=b["chunk_name"])
+                        shms.append(shm)
+                    with shm_closer(*shms):
+                        images = []
+                        metadatas = []
+                        for b, shm in zip(batch, shms):
+                            image = np.ndarray(
+                                b["image_shape"], dtype=b["image_dtype"], buffer=shm.buf
+                            )
+                            images.append(image)
+                            metadatas.append(b["metadata"])
 
-    def write_response(self, im_arrs: Tuple[np.ndarray, ...]):
-        returns = list()
+                        outputs = model_manager.predict(
+                            batch[0]["request"].model_id, images
+                        )
+
+                        del images
+                        for output, b, metadata in zip(zip(*outputs), batch, metadatas):
+                            self.write_response(output, b["request"], metadata)
+            except:
+                continue
+
+    def write_response(self, im_arrs: Tuple[np.ndarray, ...], request, metadata):
+        shms = []
         for im_arr in im_arrs:
-            shm2 = shared_memory.SharedMemory(create=True, size=im_arr.nbytes)
-            shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm2.buf)
-            shared[:] = im_arr[:]
-            return_val = {
-                "chunk_name": shm2.name,
-                "image_shape": im_arr.shape,
-                "image_dtype": im_arr.dtype.name,
-            }
-            shm2.close()
-            returns.append(return_val)
-        return tuple(returns)
+            shm = shared_memory.SharedMemory(create=True, size=im_arr.nbytes)
+            shms.append(shm)
+
+        with shm_closer(*shms, on_success=False):
+            returns = []
+            for im_arr, shm in zip(im_arrs, shms):
+                shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm.buf)
+                shared[:] = im_arr[:]
+                return_val = {
+                    "chunk_name": shm.name,
+                    "image_shape": im_arr.shape,
+                    "image_dtype": im_arr.dtype.name,
+                }
+                shm.close()
+                returns.append(return_val)
+
+            postprocess.s(tuple(returns), request.dict(), metadata).delay()
 
 
 if __name__ == "__main__":
