@@ -24,15 +24,16 @@ class GroundingDINO(RoboflowCoreModel):
         model: The GroundingDINO model.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, model_id="groundingdino/groundingdino_swint_ogc", **kwargs):
         """Initializes the GroundingDINO model.
 
         Args:
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
+
         super().__init__(
-            *args, model_id="groundingdino/groundingdino_swint_ogc", **kwargs
+            *args, model_id=model_id, **kwargs
         )
 
         GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, "groundingdino")
