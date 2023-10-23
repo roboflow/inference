@@ -11,7 +11,7 @@ from inference.core.entities.requests.inference import (
     request_from_type,
 )
 from inference.core.entities.responses.inference import response_from_type
-from inference.core.env import REDIS_HOST, REDIS_PORT
+from inference.core.env import REDIS_HOST, REDIS_PORT, NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess
 from inference.core.registries.roboflow import get_model_type
@@ -33,8 +33,12 @@ class ResultsChecker:
     def add_redis(self, r: Redis):
         self.r = r
 
-    def add_task(self, t):
+    async def add_task(self, t, request):
+        interval = 0.1
+        while len(self.tasks) > NUM_PARALLEL_TASKS:
+            await asyncio.sleep(interval)
         self.tasks.append(t)
+        preprocess.s(request.dict()).delay()
         self.r.set(TASK_STATUS_KEY.format(t), INITIAL_STATE)
 
     def check_task(self, t):
@@ -98,13 +102,14 @@ class DispatchModelManager(ModelManager):
         else:
             requests = [request]
 
-        awaitables = []
+        start_task_awaitables = []
+        results_awaitables = []
         for r in requests:
-            self.checker.add_task(r.id)
-            preprocess.s(r.dict()).delay()
-            awaitables.append(self.checker.wait_for_response(r.id))
+            start_task_awaitables.append(self.checker.add_task(r.id, r))
+            results_awaitables.append(self.checker.wait_for_response(r.id))
 
-        response_strings = await asyncio.gather(*awaitables)
+        await asyncio.gather(*start_task_awaitables)
+        response_strings = await asyncio.gather(*results_awaitables)
         responses = []
         for response_json_string in response_strings:
             response = response_from_type(task_type, json.loads(response_json_string))

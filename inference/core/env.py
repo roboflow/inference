@@ -251,3 +251,5 @@ INFER_BUCKET = os.getenv(
     if PROJECT == "roboflow-platform"
     else "roboflow-infer-staging",
 )
+
+NUM_PARALLEL_TASKS = os.getenv("NUM_PARALLEL_TASKS", 1000)
