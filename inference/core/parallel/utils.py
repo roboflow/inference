@@ -12,6 +12,10 @@ FAILURE_STATE = -1
 
 @contextmanager
 def failure_handler(redis: Redis, *request_ids):
+    """
+    Context manager that updates the status/results key in redis with exception
+    info on failure.
+    """
     try:
         yield
     except:
@@ -25,6 +29,7 @@ def failure_handler(redis: Redis, *request_ids):
 
 @contextmanager
 def shm_closer(*shms, on_failure=True, on_success=True):
+    """Context manager that closes and frees shared memory objects."""
     try:
         yield
     except:
