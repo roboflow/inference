@@ -51,7 +51,6 @@ class InferServer:
         r.hincrby(f"requests", selected_model, -len(batch))
         batch = [json.loads(b[0]) for b in batch]
         return batch, selected_model
-        return batch
 
     def infer_loop(self):
         while True:
@@ -86,9 +85,7 @@ class InferServer:
                             images.append(image)
                             metadatas.append(b["metadata"])
 
-                        outputs = model_manager.predict(
-                            batch[0]["request"].model_id, images
-                        )
+                        outputs = model_manager.predict(model_id, images)
 
                         del images
                         for output, b, metadata in zip(zip(*outputs), batch, metadatas):

@@ -15,12 +15,14 @@ from inference.core.env import REDIS_HOST, REDIS_PORT, NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess
 from inference.core.registries.roboflow import get_model_type
+from inference.core.parallel.utils import (
+    TASK_RESULT_KEY,
+    TASK_STATUS_KEY,
+    FINAL_STATE,
+    FAILURE_STATE,
+    INITIAL_STATE,
+)
 
-TASK_RESULT_KEY = "results:{}"
-TASK_STATUS_KEY = "status:{}"
-FINAL_STATE = 1
-INITIAL_STATE = 0
-FAILURE_STATE = -1
 
 NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 

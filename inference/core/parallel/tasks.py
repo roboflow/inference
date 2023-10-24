@@ -80,7 +80,7 @@ def postprocess(arg_list, request, metadata):
             model_type = model_manager.get_task_type(request["model_id"])
             request = request_from_type(model_type, request)
             outputs = []
-            for shm in shms:
+            for args, shm in zip(arg_list, shms):
                 output = np.ndarray(
                     [1] + args["image_shape"], dtype=args["image_dtype"], buffer=shm.buf
                 )

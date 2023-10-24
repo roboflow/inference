@@ -1,7 +1,12 @@
 from contextlib import contextmanager
-from inference.core.managers.parallel import TASK_STATUS_KEY, FAILURE_STATE, TASK_RESULT_KEY
 from redis import Redis
 import sys
+
+TASK_RESULT_KEY = "results:{}"
+TASK_STATUS_KEY = "status:{}"
+FINAL_STATE = 1
+INITIAL_STATE = 0
+FAILURE_STATE = -1
 
 @contextmanager
 def failure_handler(redis: Redis, *request_ids):
