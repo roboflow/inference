@@ -59,7 +59,6 @@ class DocTR(RoboflowCoreModel):
         self.det_model.clear_cache()
         self.rec_model.clear_cache()
 
-
     def preprocess_image(self, image: Image.Image) -> Image.Image:
         """
         DocTR pre-processes images as part of its inference pipeline.
