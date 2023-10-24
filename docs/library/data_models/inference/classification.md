@@ -1,3 +1,3 @@
 # Classification Inference Request
 
-:::inference.core.data_models.ClassificationInferenceRequest
+:::inference.core.entities.requests.inference.ClassificationInferenceRequest

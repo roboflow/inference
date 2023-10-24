@@ -1,3 +1,3 @@
 # CLIP Compare Request
 
-:::inference.core.data_models.ClipCompareRequest
+:::inference.core.entities.requests.clip.ClipCompareRequest

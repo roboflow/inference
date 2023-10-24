@@ -1,3 +1,3 @@
 # CV Inference Request
 
-:::inference.core.data_models.CVInferenceRequest
+:::inference.core.entities.requests.inference.CVInferenceRequest
