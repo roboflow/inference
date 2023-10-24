@@ -1,8 +1,10 @@
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Callable, Dict, Optional, Type, Union, List
 
+import numpy as np
 import requests
 from requests import Response
+from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.entities.types import (
@@ -191,10 +193,81 @@ def get_roboflow_model_data(
 
 
 @wrap_roboflow_api_errors()
+def get_active_learning_configuration(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    dataset_id: DatasetID,
+) -> dict:
+    url = f"{API_BASE_URL}/dataset/{workspace_id}/{dataset_id}?api_key={api_key}"
+    # return _get_from_roboflow_api(url=url)
+    return {
+        "enabled": True,
+        "sampling_strategies": [
+            {
+                "type": "random_sampling",
+                "name": "default_strategy",
+                "persist_predictions": True,
+                "traffic_percentage": 0.1,   # float 0-1
+                "dataset_splits": {   # how much of sampled traffic should go to which split. Must sum to one.
+                    "train": 0.8,
+                    "val": 0.1,
+                    "test": 0.1,
+                },
+                "max_image_size": (1200, 1200),  # (h, w)
+                "jpeg_compression_level": 75  # int 0-100
+            }
+        ],
+        "batching_strategies": {
+            "creation_strategy": "time_based",  # "time_based" | "num_images_based"
+            "creation_interval": "daily",  # "never" | "daily" | "weekly" | "monthly" | None
+            "max_batch_images": None,  # Optional[int]
+        }
+    }
+
+
+@wrap_roboflow_api_errors()
+def register_image(
+    api_key: str,
+    dataset_id: DatasetID,
+    local_image_id: str,
+    image_bytes: bytes,
+    split: str,
+    batch_name: str,
+    tags: Optional[List[str]] = None,
+) -> str:
+    url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
+    params = {
+        "api_key": api_key,
+        "batch": batch_name,
+    }
+    if tags is not None:
+        params["tag"] = tags
+    m = MultipartEncoder(
+        fields={
+            "name": f"{local_image_id}.jpg",
+            "split": split,
+            "file": ("imageToUpload", image_bytes, "image/jpeg"),
+        }
+    )
+    response = requests.post(
+        url,
+        data=m, headers={"Content-Type": m.content_type},
+        params=params
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+@wrap_roboflow_api_errors()
 def get_from_roboflow_api(
-    url: str, json_response: bool = False
+    url: str, json_response: bool = True
 ) -> Union[Response, dict]:
+    return _get_from_roboflow_api(url=url, json_response=json_response)
+
+
+def _get_from_roboflow_api(url: str, json_response: bool = True) -> Union[Response, dict]:
     response = requests.get(wrap_url(url))
+    response.raise_for_status()
     if json_response:
         return response.json()
     return response
