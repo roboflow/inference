@@ -102,10 +102,11 @@ def wrap_roboflow_api_errors(
 
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
-    api_url = wrap_url("/".join([API_BASE_URL, f"?api_key={api_key}"]))
-    api_key_info = requests.get(api_url)
-    api_key_info.raise_for_status()
-    workspace_id = api_key_info.json().get("workspace")
+    api_url = _add_params_to_url(
+        url=API_BASE_URL, params={"api_key": api_key, "nocache": "true"}
+    )
+    api_key_info = _get_from_url(url=api_url)
+    workspace_id = api_key_info.get("workspace")
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
     return workspace_id
@@ -115,14 +116,12 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 def get_roboflow_dataset_type(
     api_key: str, workspace_id: WorkspaceID, dataset_id: DatasetID
 ) -> TaskType:
-    api_url = wrap_url(
-        "/".join(
-            [API_BASE_URL, workspace_id, dataset_id, f"?api_key={api_key}&nocache=true"]
-        )
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}",
+        params={"api_key": api_key, "nocache": "true"},
     )
-    dataset_info = requests.get(api_url)
-    dataset_info.raise_for_status()
-    project_task_type = dataset_info.json().get("project", {})
+    dataset_info = _get_from_url(url=api_url)
+    project_task_type = dataset_info.get("project", {})
     if "type" not in project_task_type:
         logger.warning(
             f"Project task type not defined for workspace={workspace_id} and dataset={dataset_id}, defaulting "
@@ -147,20 +146,12 @@ def get_roboflow_model_type(
     version_id: VersionID,
     project_task_type: ModelType,
 ) -> ModelType:
-    api_url = wrap_url(
-        "/".join(
-            [
-                API_BASE_URL,
-                workspace_id,
-                dataset_id,
-                version_id,
-                f"?api_key={api_key}&nocache=true",
-            ]
-        )
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/{version_id}",
+        params={"api_key": api_key, "nocache": "true"},
     )
-    version_info = requests.get(api_url)
-    version_info.raise_for_status()
-    model_type = version_info.json()["version"]
+    version_info = _get_from_url(url=api_url)
+    model_type = version_info["version"]
     if "modelType" not in model_type:
         if project_task_type not in MODEL_TYPE_DEFAULTS:
             raise MissingDefaultModelError(
@@ -184,49 +175,56 @@ def get_roboflow_model_data(
     endpoint_type: ModelEndpointType,
     device_id: str,
 ) -> dict:
-    api_url = wrap_url(
-        f"{API_BASE_URL}/{endpoint_type.value}/{model_id}?api_key={api_key}&device={device_id}&nocache=true&dynamic=true"
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+        params={
+            "api_key": api_key,
+            "nocache": "true",
+            "device": device_id,
+            "dynamic": "true",
+        },
     )
-    model_data = requests.get(api_url)
-    model_data.raise_for_status()
-    return model_data.json()
+    return _get_from_url(url=api_url)
 
 
 @wrap_roboflow_api_errors()
-def get_active_learning_configuration(
+def get_roboflow_active_learning_configuration(
     api_key: str,
     workspace_id: WorkspaceID,
     dataset_id: DatasetID,
 ) -> dict:
-    url = f"{API_BASE_URL}/dataset/{workspace_id}/{dataset_id}?api_key={api_key}"
-    # return _get_from_roboflow_api(url=url)
+    # api_url = _add_params_to_url(
+    #     url=f"{API_BASE_URL}/dataset/{workspace_id}/{dataset_id}",
+    #     params={"api_key": api_key, "nocache": "true"}
+    # )
+    # return _get_from_roboflow_api(url=api_url)
     return {
         "enabled": True,
+        "max_image_size": (1200, 1200),  # (h, w)
+        "jpeg_compression_level": 75,  # int 0-100
+        "persist_predictions": True,
         "sampling_strategies": [
             {
                 "type": "random_sampling",
                 "name": "default_strategy",
-                "persist_predictions": True,
-                "traffic_percentage": 0.1,   # float 0-1
-                "dataset_splits": {   # how much of sampled traffic should go to which split. Must sum to one.
+                "traffic_percentage": 0.1,  # float 0-1
+                "dataset_splits": {  # how much of sampled traffic should go to which split. Must sum to one.
                     "train": 0.8,
                     "val": 0.1,
                     "test": 0.1,
                 },
-                "max_image_size": (1200, 1200),  # (h, w)
-                "jpeg_compression_level": 75  # int 0-100
             }
         ],
-        "batching_strategies": {
-            "creation_strategy": "time_based",  # "time_based" | "num_images_based"
-            "creation_interval": "daily",  # "never" | "daily" | "weekly" | "monthly" | None
+        "batching_strategy": {
+            "batches_name_prefix": "al_batch",
+            "recreation_interval": "daily",  # "never" | "daily" | "weekly" | "monthly" | None
             "max_batch_images": None,  # Optional[int]
-        }
+        },
     }
 
 
 @wrap_roboflow_api_errors()
-def register_image(
+def register_image_at_roboflow(
     api_key: str,
     dataset_id: DatasetID,
     local_image_id: str,
@@ -234,12 +232,13 @@ def register_image(
     split: str,
     batch_name: str,
     tags: Optional[List[str]] = None,
-) -> str:
+) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = {
         "api_key": api_key,
         "batch": batch_name,
     }
+    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
     if tags is not None:
         params["tag"] = tags
     m = MultipartEncoder(
@@ -250,24 +249,93 @@ def register_image(
         }
     )
     response = requests.post(
-        url,
-        data=m, headers={"Content-Type": m.content_type},
-        params=params
+        url=wrapped_url,
+        data=m,
+        headers={"Content-Type": m.content_type},
     )
     response.raise_for_status()
-    return response.json()
+    parsed_response = response.json()
+    if "duplicate" not in parsed_response and "success" not in parsed_response:
+        # this error handling is required due to backend specifics
+        raise Exception(f"Server rejected image: {parsed_response}")
+    return parsed_response
+
+
+@wrap_roboflow_api_errors(
+    http_errors_handlers={
+        409: lambda e: raise_from_lambda(e, Exception, "already annotated")
+    }
+)
+def annotate_image_at_roboflow(
+    api_key: str,
+    dataset_id: DatasetID,
+    local_image_id: str,
+    roboflow_image_id: str,
+    annotation_content: str,
+    is_prediction: bool = True,
+) -> dict:
+    url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
+    params = {
+        "api_key": api_key,
+        "name": f"{local_image_id}_annotation.txt",
+        "prediction": is_prediction,
+    }
+    wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
+    response = requests.post(
+        wrapped_url,
+        data=annotation_content,
+        headers={"Content-Type": "text/plain"},
+    )
+    response.raise_for_status()
+    parsed_response = response.json()
+    if "error" in parsed_response or "success" not in parsed_response:
+        raise Exception(
+            f"Failed to save annotation for {roboflow_image_id}. API response: {parsed_response}"
+        )
+    return parsed_response
 
 
 @wrap_roboflow_api_errors()
-def get_from_roboflow_api(
-    url: str, json_response: bool = True
+def get_roboflow_labeling_batches(
+    api_key: str, workspace_id: WorkspaceID, dataset_id: str
+) -> dict:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/batches",
+        params={"api_key": api_key},
+    )
+    return _get_from_url(url=api_url)
+
+
+@wrap_roboflow_api_errors()
+def get_roboflow_labeling_jobs(
+    api_key: str, workspace_id: WorkspaceID, dataset_id: str
+) -> dict:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/jobs",
+        params={"api_key": api_key},
+    )
+    return _get_from_url(url=api_url)
+
+
+@wrap_roboflow_api_errors()
+def get_from_url(
+    url: str,
+    json_response: bool = True,
 ) -> Union[Response, dict]:
-    return _get_from_roboflow_api(url=url, json_response=json_response)
+    return _get_from_url(url=url, json_response=json_response)
 
 
-def _get_from_roboflow_api(url: str, json_response: bool = True) -> Union[Response, dict]:
+def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
     response = requests.get(wrap_url(url))
     response.raise_for_status()
     if json_response:
         return response.json()
     return response
+
+
+def _add_params_to_url(url: str, params: Dict[str, Any]) -> str:
+    if len(params) == 0:
+        return url
+    params_chunks = [f"{name}={value}" for name, value in params.items()]
+    parameters_string = "&".join(params_chunks)
+    return f"{url}?{parameters_string}"

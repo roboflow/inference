@@ -330,3 +330,9 @@ def xyxy_to_xywh(xyxy):
     h_temp = abs(xyxy[1] - xyxy[3])
 
     return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]
+
+
+def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> bytes:
+    encoding_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+    _, img_encoded = cv2.imencode(".jpg", image, encoding_param)
+    return np.array(img_encoded).tobytes()

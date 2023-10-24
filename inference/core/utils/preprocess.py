@@ -186,22 +186,11 @@ def letterbox_image(
     Returns:
     - letterboxed image.
     """
-    img_ratio = image.shape[1] / image.shape[0]
-    desired_ratio = desired_size[0] / desired_size[1]
-
-    # Determine the new dimensions
-    if img_ratio >= desired_ratio:
-        # Resize by width
-        new_width = desired_size[0]
-        new_height = int(desired_size[0] / img_ratio)
-    else:
-        # Resize by height
-        new_height = desired_size[1]
-        new_width = int(desired_size[1] * img_ratio)
-
-    # Resize the image to new dimensions
-    resized_img = cv2.resize(image, (new_width, new_height))
-
+    resized_img = resize_image_keeping_aspect_ratio(
+        image=image,
+        desired_size=desired_size,
+    )
+    new_height, new_width = image.shape[:2]
     # Pad the image to fit the desired size
     top_padding = (desired_size[1] - new_height) // 2
     bottom_padding = desired_size[1] - new_height - top_padding
@@ -217,3 +206,40 @@ def letterbox_image(
         cv2.BORDER_CONSTANT,
         value=color,
     )
+
+
+def downscale_image_keeping_aspect_ratio(
+    image: np.ndarray,
+    desired_size: Tuple[int, int],
+) -> np.ndarray:
+    if image.shape[0] <= desired_size[1] and image.shape[1] <= desired_size[0]:
+        return image
+    return resize_image_keeping_aspect_ratio(image=image, desired_size=desired_size)
+
+
+def resize_image_keeping_aspect_ratio(
+    image: np.ndarray,
+    desired_size: Tuple[int, int],
+) -> np.ndarray:
+    """
+    Resize reserving its aspect ratio.
+
+    Parameters:
+    - image: numpy array representing the image.
+    - desired_size: tuple (width, height) representing the target dimensions.
+    """
+    img_ratio = image.shape[1] / image.shape[0]
+    desired_ratio = desired_size[0] / desired_size[1]
+
+    # Determine the new dimensions
+    if img_ratio >= desired_ratio:
+        # Resize by width
+        new_width = desired_size[0]
+        new_height = int(desired_size[0] / img_ratio)
+    else:
+        # Resize by height
+        new_height = desired_size[1]
+        new_width = int(desired_size[1] * img_ratio)
+
+    # Resize the image to new dimensions
+    return cv2.resize(image, (new_width, new_height))

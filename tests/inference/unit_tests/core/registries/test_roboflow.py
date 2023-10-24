@@ -1,6 +1,6 @@
 import json
 import os.path
-from typing import Any, Tuple
+from typing import Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -8,11 +8,9 @@ import pytest
 
 from inference.core.entities.types import TaskType, ModelType
 from inference.core.exceptions import (
-    InvalidModelIDError,
     ModelNotRecognisedError,
 )
 from inference.core.registries.roboflow import (
-    get_model_id_chunks,
     get_model_metadata_from_cache,
     model_metadata_content_is_invalid,
     save_model_metadata_in_cache,
@@ -20,21 +18,6 @@ from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
 from inference.core.registries import roboflow
-
-
-@pytest.mark.parametrize("value", ["some", "some/2/invalid", "another-2"])
-def test_get_model_id_chunks_when_invalid_input_given(value: Any) -> None:
-    # when
-    with pytest.raises(InvalidModelIDError):
-        _ = get_model_id_chunks(model_id=value)
-
-
-def test_get_model_id_chunks_when_valid_input_given() -> None:
-    # when
-    result = get_model_id_chunks("some/1")
-
-    # then
-    assert result == ("some", "1")
 
 
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
