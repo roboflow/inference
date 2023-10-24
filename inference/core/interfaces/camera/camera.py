@@ -88,12 +88,14 @@ class WebcamStream:
                     logger.debug("[Exiting] Frame not available for read")
                     self.stopped = True
                     break
-                logger.debug(f"retrieved frame {frame_id}, effective FPS: {frame_id / (t1 - t0):.2f}")
+                logger.debug(
+                    f"retrieved frame {frame_id}, effective FPS: {frame_id / (t1 - t0):.2f}"
+                )
                 self.frame_id = frame_id
                 self.frame = frame
                 while self.file_mode and self.enforce_fps and self.max_fps is None:
                     # sleep until we have processed the first frame and we know what our FPS should be
-                    time.sleep(.01)
+                    time.sleep(0.01)
                 if self.max_fps is None:
                     self.max_fps = 30
                 next_frame_time = t1 + (1 / self.max_fps) + 0.02
