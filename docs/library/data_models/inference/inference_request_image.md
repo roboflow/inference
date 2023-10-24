@@ -1,3 +1,3 @@
 # Inference Request Image
 
-:::inference.core.data_models.InferenceRequestImage
+:::inference.core.entities.requests.inference.InferenceRequestImage
