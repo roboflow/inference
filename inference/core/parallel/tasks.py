@@ -21,9 +21,9 @@ from inference.core.managers.decorators.locked_load import (
 )
 from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.parallel.utils import failure_handler, shm_closer
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_roboflow_model
-from inference.core.parallel.utils import failure_handler, shm_closer
 
 pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
 app = Celery("tasks", broker="redis://localhost:6379")
