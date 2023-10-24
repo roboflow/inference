@@ -42,7 +42,7 @@ class WebcamStream:
                 "Ignoring enforce_fps flag for this stream. It is not compatible with streams and will cause the process to crash"
             )
             self.enforce_fps = False
-        self.max_fps = 30
+        self.max_fps = None
         if self.vcap.isOpened() is False:
             logger.debug("[Exiting]: Error accessing webcam stream.")
             exit(0)
@@ -82,19 +82,29 @@ class WebcamStream:
             frame_id += 1
             # We can't retrieve each frame on nano and other lower powered devices quickly enough to keep up with the stream.
             # By default, we will only retrieve frames when we'll be ready process them (determined by self.max_fps).
-            if t1 > next_frame_time or self.enforce_fps:
+            if t1 > next_frame_time:
                 ret, frame = self.vcap.retrieve()
                 if frame is None:
                     logger.debug("[Exiting] Frame not available for read")
                     self.stopped = True
                     break
-                logger.debug(f"video capture effective FPS: {frame_id / (t1 - t0):.2f}")
+                logger.debug(f"retrieved frame {frame_id}, effective FPS: {frame_id / (t1 - t0):.2f}")
                 self.frame_id = frame_id
                 self.frame = frame
+                while self.file_mode and self.enforce_fps and self.max_fps is None:
+                    # sleep until we have processed the first frame and we know what our FPS should be
+                    time.sleep(.01)
+                if self.max_fps is None:
+                    self.max_fps = 30
                 next_frame_time = t1 + (1 / self.max_fps) + 0.02
             if self.file_mode:
                 t2 = time.perf_counter()
-                time_to_sleep = (1 / self.fps_input_stream) - (t2 - t1)
+                if self.enforce_fps:
+                    # when enforce_fps is true, grab video frames 1:1 with inference speed
+                    time_to_sleep = next_frame_time - t2
+                else:
+                    # otherwise, grab at native FPS of the video file
+                    time_to_sleep = (1 / self.fps_input_stream) - (t2 - t1)
                 if time_to_sleep > 0:
                     time.sleep(time_to_sleep)
         self.vcap.release()

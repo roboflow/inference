@@ -109,7 +109,6 @@ class Stream(BaseInterface):
         self.json_response = json_response
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
-        self.simulate_process_delay = simulate_process_delay
 
         self.inference_request_type = (
             inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
@@ -201,7 +200,7 @@ class Stream(BaseInterface):
                     break
                 else:
                     self.frame_cv, frame_id = webcam_stream.read_opencv()
-                    if frame_id != self.frame_id:
+                    if frame_id > 0 and frame_id != self.frame_id:
                         self.frame_id = frame_id
                         self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
                         self.preproc_result = self.model.preprocess(self.frame)
@@ -248,9 +247,6 @@ class Stream(BaseInterface):
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
                 )
-
-                if self.simulate_process_delay > 0:
-                    time.sleep(self.simulate_process_delay)
 
                 if self.json_response:
                     predictions = self.model.make_response(
