@@ -70,7 +70,6 @@ class Stream(BaseInterface):
         on_prediction: Callable = None,
         on_start: Callable = None,
         on_stop: Callable = None,
-        simulate_process_delay: float = 0,
     ):
         """Initialize the stream with the given parameters.
         Prints the server settings and initializes the inference with a test frame.
