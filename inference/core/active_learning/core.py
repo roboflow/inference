@@ -232,7 +232,7 @@ def register_datapoint_at_roboflow(
             strategy_name=strategy_with_spare_limit,
         )
     logger.info(f"Image duplication status: {duplication_status}")
-    if configuration.persist_predictions and duplication_status:
+    if configuration.persist_predictions and not duplication_status:
         encoded_prediction = json.dumps(prediction)
         _ = annotate_image_at_roboflow(
             api_key=api_key,

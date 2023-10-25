@@ -152,10 +152,10 @@ class MemoryCache(BaseCache):
         return len(keys_to_delete)
 
     def acquire_lock(self, key: str, expire=None) -> Any:
-        if key not in self.cache:
-            self.set(key, Lock(), expire=expire)
-
-        lock: Lock = self.get(key)
+        lock: Optional[Lock] = self.get(key)
+        if lock is None:
+            lock = Lock()
+            self.set(key, lock, expire=expire)
         acquired = lock.acquire(timeout=expire)
         if not acquired:
             raise TimeoutError()
