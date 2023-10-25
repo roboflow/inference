@@ -3,7 +3,10 @@ from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.common import ApiKey
-from inference.core.entities.requests.inference import InferenceRequestImage, BaseRequest
+from inference.core.entities.requests.inference import (
+    BaseRequest,
+    InferenceRequestImage,
+)
 from inference.core.env import CLIP_VERSION_ID
 
 
@@ -20,7 +23,7 @@ class ClipInferenceRequest(BaseRequest):
         example="ViT-B-16",
         description="The version ID of CLIP to be used for this request. Must be one of RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, and ViT-L-14.",
     )
-    model_id: Optional[str]=Field()
+    model_id: Optional[str] = Field()
 
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):

@@ -2,7 +2,10 @@ from typing import Any, List, Optional, Union
 
 from pydantic import Field, validator
 
-from inference.core.entities.requests.inference import InferenceRequestImage, BaseRequest
+from inference.core.entities.requests.inference import (
+    BaseRequest,
+    InferenceRequestImage,
+)
 from inference.core.env import SAM_VERSION_ID
 
 
@@ -25,7 +28,6 @@ class SamInferenceRequest(BaseRequest):
         if values.get("sam_version_id") is None:
             return None
         return f"sam/{values['sam_version_id']}"
-
 
 
 class SamEmbeddingRequest(SamInferenceRequest):
