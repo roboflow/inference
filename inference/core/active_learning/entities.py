@@ -8,7 +8,7 @@ from inference.core.entities.types import WorkspaceID, DatasetID
 
 LocalImageIdentifier = str
 PredictionType = str
-Prediction = Any
+Prediction = dict
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class BatchReCreationInterval(Enum):
 
 @dataclass(frozen=True)
 class ActiveLearningConfiguration:
-    max_image_size: ImageDimensions
+    max_image_size: Optional[ImageDimensions]
     jpeg_compression_level: int
     persist_predictions: bool
     sampling_methods: List[SamplingMethod]
@@ -53,20 +53,24 @@ class ActiveLearningConfiguration:
     max_batch_images: Optional[int]
     workspace_id: WorkspaceID
     dataset_id: DatasetID
+    model_id: str
 
     @classmethod
     def init(
         cls,
         roboflow_api_configuration: Dict[str, Any],
         sampling_methods: List[SamplingMethod],
-        workspace_id: str,
-        dataset_id: str,
+        workspace_id: WorkspaceID,
+        dataset_id: DatasetID,
+        model_id: str,
     ) -> "ActiveLearningConfiguration":
         try:
-            max_image_size = ImageDimensions(
-                height=roboflow_api_configuration["max_image_size"][0],
-                width=roboflow_api_configuration["max_image_size"][1],
-            )
+            max_image_size = roboflow_api_configuration.get("max_image_size")
+            if max_image_size is not None:
+                max_image_size = ImageDimensions(
+                    height=roboflow_api_configuration["max_image_size"][0],
+                    width=roboflow_api_configuration["max_image_size"][1],
+                )
             return cls(
                 max_image_size=max_image_size,
                 jpeg_compression_level=roboflow_api_configuration[
@@ -87,6 +91,7 @@ class ActiveLearningConfiguration:
                 ],
                 workspace_id=workspace_id,
                 dataset_id=dataset_id,
+                model_id=model_id,
             )
         except (KeyError, ValueError) as e:
             raise Exception(str(e)) from e

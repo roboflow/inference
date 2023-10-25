@@ -26,7 +26,7 @@ def prepare_active_learning_configuration(
         return None
     logger.info(f"Fetching active learning configuration.")
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    workspace_id = get_roboflow_workspace()
+    workspace_id = get_roboflow_workspace(api_key=api_key)
     dataset_type = get_roboflow_dataset_type(
         api_key=api_key,
         workspace_id=workspace_id,
@@ -49,6 +49,7 @@ def prepare_active_learning_configuration(
         sampling_methods=sampling_methods,
         workspace_id=workspace_id,
         dataset_id=dataset_id,
+        model_id=model_id,
     )
 
 

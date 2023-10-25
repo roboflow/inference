@@ -1,12 +1,17 @@
-from typing import Any, Dict, List, Optional, Tuple
+import json
+import logging
+from typing import Any, List, Optional, Tuple
+from uuid import uuid4
 
 import numpy as np
 
 from inference.core import logger
 from inference.core.active_learning.accounting import image_can_be_submitted_to_batch
 from inference.core.active_learning.batching import generate_batch_name
+from inference.core.active_learning.configuration import (
+    prepare_active_learning_configuration,
+)
 from inference.core.active_learning.entities import (
-    LocalImageIdentifier,
     ActiveLearningConfiguration,
     SamplingMethod,
     SamplingResult,
@@ -19,37 +24,54 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
     annotate_image_at_roboflow,
 )
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 
 
-class BaseActiveLearningMiddleware:
-    def __int__(
-        self,
-        api_key: str,
-        configuration: ActiveLearningConfiguration,
-        registered_images: Dict[str, np.ndarray],
-    ):
+class ActiveLearningMiddleware:
+    @classmethod
+    def init(cls, api_key: str, model_id: str) -> "ActiveLearningMiddleware":
+        configuration = prepare_active_learning_configuration(
+            api_key=api_key,
+            model_id=model_id,
+        )
+        return cls(
+            api_key=api_key,
+            configuration=configuration,
+        )
+
+    def __init__(self, api_key: str, configuration: ActiveLearningConfiguration):
         self._api_key = api_key
         self._configuration = configuration
-        self._registered_images = registered_images
 
-    def register_image(self, image_id: LocalImageIdentifier, image: np.ndarray) -> None:
-        self._registered_images[image_id] = image
-
-    def register_prediction(
+    def register_batch(
         self,
-        image_id: LocalImageIdentifier,
-        prediction: Any,
-        prediction_type: str,
+        inference_inputs: List[Any],
+        predictions: List[Prediction],
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
     ) -> None:
-        if image_id not in self._registered_images:
-            logger.warn(
-                f"Could not find image with id {image_id} registered in Active Learning middleware."
+        for inference_input, prediction in zip(inference_inputs, predictions):
+            self.register(
+                inference_input=inference_input,
+                prediction=prediction,
+                prediction_type=prediction_type,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
             )
-            return None
-        image = self._registered_images[image_id]
-        del self._registered_images[image_id]
+
+    def register(
+        self,
+        inference_input: Any,
+        prediction: dict,
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
+        image, is_bgr = load_image(
+            value=inference_input,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+        )
+        if not is_bgr:
+            image = image[:, :, ::-1]
         sampling_details = execute_sampling(
             image=image,
             prediction=prediction,
@@ -73,11 +95,11 @@ class BaseActiveLearningMiddleware:
         env_defined_tags = (
             ACTIVE_LEARNING_TAGS if ACTIVE_LEARNING_TAGS is not None else []
         )
+        local_image_id = str(uuid4())
         execute_datapoint_registration(
             image=image,
-            local_image_id=image_id,
+            local_image_id=local_image_id,
             prediction=prediction,
-            prediction_type=prediction_type,
             configuration=self._configuration,
             api_key=self._api_key,
             split=sampling_result.target_split,
@@ -103,7 +125,6 @@ def execute_datapoint_registration(
     image: np.ndarray,
     local_image_id: str,
     prediction: Prediction,
-    prediction_type: PredictionType,
     configuration: ActiveLearningConfiguration,
     api_key: str,
     split: str,
@@ -115,6 +136,8 @@ def execute_datapoint_registration(
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
     )
+    if configuration.persist_predictions:
+        tags.append(configuration.model_id)
     registration_response = register_image_at_roboflow(
         api_key=api_key,
         dataset_id=configuration.dataset_id,
@@ -124,11 +147,10 @@ def execute_datapoint_registration(
         batch_name=batch_name,
         tags=tags,
     )
-    if configuration.persist_predictions:
-        encoded_prediction = prepare_prediction_to_registration(
-            prediction=prediction,
-            prediction_type=prediction_type,
-        )
+    duplication_status = registration_response.get("duplicate", False)
+    logger.info(f"Image duplication status: {duplication_status}")
+    if configuration.persist_predictions and duplication_status:
+        encoded_prediction = json.dumps(prediction)
         _ = annotate_image_at_roboflow(
             api_key=api_key,
             dataset_id=configuration.dataset_id,
@@ -141,20 +163,12 @@ def execute_datapoint_registration(
 
 def prepare_image_to_registration(
     image: np.ndarray,
-    desired_size: ImageDimensions,
+    desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,
 ) -> bytes:
-    resized_image = downscale_image_keeping_aspect_ratio(
-        image=image,
-        desired_size=desired_size.to_wh(),
-    )
-    return encode_image_to_jpeg_bytes(
-        image=resized_image, jpeg_quality=jpeg_compression_level
-    )
-
-
-def prepare_prediction_to_registration(
-    prediction: Prediction, prediction_type: PredictionType
-) -> str:
-    # TODO: implement
-    return ""
+    if desired_size is not None:
+        image = downscale_image_keeping_aspect_ratio(
+            image=image,
+            desired_size=desired_size.to_wh(),
+        )
+    return encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level)

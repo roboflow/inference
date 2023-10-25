@@ -1,5 +1,4 @@
 import time
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -22,12 +21,12 @@ from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
 
 
-@dataclass
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
-    _models: Dict[str, Model] = field(default_factory=dict, init=False)
-    model_registry: ModelRegistry = field()
+    def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
+        self.model_registry = model_registry
+        self._models = models if models is not None else {}
 
     def init_pingback(self):
         """Initializes pingback mechanism."""

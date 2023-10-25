@@ -207,7 +207,7 @@ def get_roboflow_active_learning_configuration(
             {
                 "type": "random_sampling",
                 "name": "default_strategy",
-                "traffic_percentage": 0.1,  # float 0-1
+                "traffic_percentage": 1.0,  # float 0-1
                 "dataset_splits": {  # how much of sampled traffic should go to which split. Must sum to one.
                     "train": 0.8,
                     "val": 0.1,
@@ -277,7 +277,7 @@ def annotate_image_at_roboflow(
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
     params = {
         "api_key": api_key,
-        "name": f"{local_image_id}_annotation.txt",
+        "name": f"{local_image_id}_annotation.json",
         "prediction": is_prediction,
     }
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
@@ -286,6 +286,7 @@ def annotate_image_at_roboflow(
         data=annotation_content,
         headers={"Content-Type": "text/plain"},
     )
+    print(response.json())
     response.raise_for_status()
     parsed_response = response.json()
     if "error" in parsed_response or "success" not in parsed_response:
