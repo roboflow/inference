@@ -1,7 +1,10 @@
 import time
 
+import requests
+
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS
+from inference.core.utils.url_utils import wrap_url
+from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS, METRICS_URL
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.version import __version__
@@ -131,7 +134,7 @@ def send_metrics():
     """
     all_data = aggregate_device_stats()
     logger.info(str(all_data))
-    # TODO: also send to regular pingback
+    # requests.post(wrap_url(METRICS_URL), json=all_data)
     pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)
 
 

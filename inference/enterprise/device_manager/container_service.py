@@ -1,11 +1,14 @@
 import time
+import imghdr
 import base64
+import io
 from dataclasses import dataclass
 from datetime import datetime
 
 import requests
 
 import docker
+from PIL import Image
 from inference.core.logger import logger
 from inference.core.env import METRICS_INTERVAL
 from inference.core.cache import cache
@@ -216,6 +219,15 @@ def get_container_ids():
     return [c.id for c in containers]
 
 
+def infer_image_type(value):
+    image_bytes = value
+    img_type = imghdr.what(None, image_bytes)
+    if img_type is None:
+        img = Image.open(io.BytesIO(image_bytes))
+        img_type = img.format
+    return img_type
+
+
 def get_latest_inferences(container_id=None, max=1):
     container = None
     containers = get_inference_containers()
@@ -254,7 +266,6 @@ def get_latest_inferences(container_id=None, max=1):
                 continue
             image_dims = response.get("image")
             predictions = response.get("predictions", [])
-            logger.info(f"Got predictions {predictions}")
             if images is None or len(images) == 0:
                 continue
             if type(images) is not list:
@@ -268,11 +279,20 @@ def get_latest_inferences(container_id=None, max=1):
                     image_bytes = loaded_image.tobytes()
                     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                     value = image_base64
+                    img = Image.open(io.BytesIO(image_bytes))
+                    logger.info(f"image type {img.format}")
                 if latest_inferred_images.get(model_id) is None:
                     latest_inferred_images[model_id] = []
-                inference = dict(
-                    image=value, dimensions=image_dims, predictions=predictions
+                inference = {
+                    "image": value,
+                    "dimensions": image_dims,
+                    "predictions": predictions,
+                }
+                logger.info(
+                    f"Got inferred inference image type {infer_image_type(value)}"
                 )
                 latest_inferred_images[model_id].append(inference)
-                num_images += 1
+                if value:
+                    num_images += 1
+    # logger.info(f"Got latest inferred images {latest_inferred_images}")
     return latest_inferred_images

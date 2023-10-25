@@ -1,3 +1,4 @@
+import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
@@ -54,7 +55,12 @@ async def exec_command(command: Command):
     return {"status": "ok"}
 
 
-scheduler = BackgroundScheduler(job_defaults={"coalesce": True})
-scheduler.add_job(send_metrics, "interval", seconds=METRICS_INTERVAL)
+scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "max_instances": 3})
+scheduler.add_job(
+    send_metrics,
+    "interval",
+    seconds=METRICS_INTERVAL,
+    next_run_time=datetime.datetime.now(),
+)
 scheduler.add_job(send_latest_inferences, "interval", seconds=5)
 scheduler.start()
