@@ -32,7 +32,7 @@ class SamplingResult:
 @dataclass(frozen=True)
 class SamplingMethod:
     name: str
-    sample: Callable[[np.ndarray, Prediction, PredictionType], SamplingResult]
+    sample: Callable[[np.ndarray, Prediction, PredictionType], bool]
 
 
 class BatchReCreationInterval(Enum):
@@ -40,6 +40,24 @@ class BatchReCreationInterval(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
+
+
+class StrategyLimitType(Enum):
+    HOURLY = "hourly"
+    DAILY = "daily"
+
+
+@dataclass(frozen=True)
+class StrategyLimit:
+    limit_type: StrategyLimitType
+    value: int
+
+    @classmethod
+    def from_dict(cls, specification: dict) -> "StrategyLimit":
+        return cls(
+            limit_type=StrategyLimitType(specification["type"]),
+            value=specification["value"],
+        )
 
 
 @dataclass(frozen=True)
@@ -54,6 +72,9 @@ class ActiveLearningConfiguration:
     workspace_id: WorkspaceID
     dataset_id: DatasetID
     model_id: str
+    strategies_limits: Dict[str, List[StrategyLimit]]
+    tags: List[str]
+    strategies_tags: Dict[str, List[str]]
 
     @classmethod
     def init(
@@ -71,6 +92,17 @@ class ActiveLearningConfiguration:
                     height=roboflow_api_configuration["max_image_size"][0],
                     width=roboflow_api_configuration["max_image_size"][1],
                 )
+            strategies_limits = {
+                strategy["name"]: [
+                    StrategyLimit.from_dict(specification=specification)
+                    for specification in strategy["limits"]
+                ]
+                for strategy in roboflow_api_configuration["sampling_strategies"]
+            }
+            strategies_tags = {
+                strategy["name"]: strategy.get("tags", [])
+                for strategy in roboflow_api_configuration["sampling_strategies"]
+            }
             return cls(
                 max_image_size=max_image_size,
                 jpeg_compression_level=roboflow_api_configuration[
@@ -92,6 +124,9 @@ class ActiveLearningConfiguration:
                 workspace_id=workspace_id,
                 dataset_id=dataset_id,
                 model_id=model_id,
+                strategies_limits=strategies_limits,
+                tags=roboflow_api_configuration.get("tags", []),
+                strategies_tags=strategies_tags,
             )
         except (KeyError, ValueError) as e:
             raise Exception(str(e)) from e

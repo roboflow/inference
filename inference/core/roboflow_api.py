@@ -1,5 +1,6 @@
+import urllib.parse
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type, Union, List
+from typing import Any, Callable, Dict, Optional, Type, Union, List, Tuple
 
 import numpy as np
 import requests
@@ -103,7 +104,8 @@ def wrap_roboflow_api_errors(
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_url = _add_params_to_url(
-        url=API_BASE_URL, params={"api_key": api_key, "nocache": "true"}
+        url=API_BASE_URL,
+        params=[("api_key", api_key), ("nocache", "true")],
     )
     api_key_info = _get_from_url(url=api_url)
     workspace_id = api_key_info.get("workspace")
@@ -118,7 +120,7 @@ def get_roboflow_dataset_type(
 ) -> TaskType:
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}",
-        params={"api_key": api_key, "nocache": "true"},
+        params=[("api_key", api_key), ("nocache", "true")],
     )
     dataset_info = _get_from_url(url=api_url)
     project_task_type = dataset_info.get("project", {})
@@ -148,7 +150,7 @@ def get_roboflow_model_type(
 ) -> ModelType:
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/{version_id}",
-        params={"api_key": api_key, "nocache": "true"},
+        params=[("api_key", api_key), ("nocache", "true")],
     )
     version_info = _get_from_url(url=api_url)
     model_type = version_info["version"]
@@ -177,12 +179,12 @@ def get_roboflow_model_data(
 ) -> dict:
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
-        params={
-            "api_key": api_key,
-            "nocache": "true",
-            "device": device_id,
-            "dynamic": "true",
-        },
+        params=[
+            ("api_key", api_key),
+            ("nocache", "true"),
+            ("device", device_id),
+            ("dynamic", "true"),
+        ],
     )
     return _get_from_url(url=api_url)
 
@@ -200,19 +202,22 @@ def get_roboflow_active_learning_configuration(
     # return _get_from_roboflow_api(url=api_url)
     return {
         "enabled": True,
+        "target_workspace": "pawel-peczek-private",  # Optional
+        "target_project": "barbel-detection",  # Optional
         "max_image_size": (1200, 1200),  # (h, w)
         "jpeg_compression_level": 75,  # int 0-100
         "persist_predictions": True,
         "sampling_strategies": [
             {
-                "type": "random_sampling",
                 "name": "default_strategy",
+                "type": "random_sampling",
                 "traffic_percentage": 1.0,  # float 0-1
-                "dataset_splits": {  # how much of sampled traffic should go to which split. Must sum to one.
-                    "train": 0.8,
-                    "val": 0.1,
-                    "test": 0.1,
-                },
+                "target_split": "train",  # Optional - name of target split
+                "tags": ["c", "d"],  # Optional
+                "limits": [  # Optional
+                    {"type": "hourly", "value": 10},
+                    {"type": "daily", "value": 100},
+                ],
             }
         ],
         "batching_strategy": {
@@ -220,6 +225,7 @@ def get_roboflow_active_learning_configuration(
             "recreation_interval": "daily",  # "never" | "daily" | "weekly" | "monthly" | None
             "max_batch_images": None,  # Optional[int]
         },
+        "tags": ["a", "b"],  # Optional
     }
 
 
@@ -229,22 +235,21 @@ def register_image_at_roboflow(
     dataset_id: DatasetID,
     local_image_id: str,
     image_bytes: bytes,
-    split: str,
     batch_name: str,
     tags: Optional[List[str]] = None,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
-    params = {
-        "api_key": api_key,
-        "batch": batch_name,
-    }
+    params = [
+        ("api_key", api_key),
+        ("batch", batch_name),
+    ]
+    tags = tags if tags is not None else []
+    for tag in tags:
+        params.append(("tag", tag))
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
-    if tags is not None:
-        params["tag"] = tags
     m = MultipartEncoder(
         fields={
             "name": f"{local_image_id}.jpg",
-            "split": split,
             "file": ("imageToUpload", image_bytes, "image/jpeg"),
         }
     )
@@ -275,18 +280,17 @@ def annotate_image_at_roboflow(
     is_prediction: bool = True,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
-    params = {
-        "api_key": api_key,
-        "name": f"{local_image_id}_annotation.json",
-        "prediction": is_prediction,
-    }
+    params = [
+        ("api_key", api_key),
+        ("name", f"{local_image_id}_annotation.json"),
+        ("prediction", str(is_prediction).lower()),
+    ]
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
     response = requests.post(
         wrapped_url,
         data=annotation_content,
         headers={"Content-Type": "text/plain"},
     )
-    print(response.json())
     response.raise_for_status()
     parsed_response = response.json()
     if "error" in parsed_response or "success" not in parsed_response:
@@ -302,7 +306,7 @@ def get_roboflow_labeling_batches(
 ) -> dict:
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/batches",
-        params={"api_key": api_key},
+        params=[("api_key", api_key)],
     )
     return _get_from_url(url=api_url)
 
@@ -313,7 +317,7 @@ def get_roboflow_labeling_jobs(
 ) -> dict:
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/jobs",
-        params={"api_key": api_key},
+        params=[("api_key", api_key)],
     )
     return _get_from_url(url=api_url)
 
@@ -334,9 +338,11 @@ def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]
     return response
 
 
-def _add_params_to_url(url: str, params: Dict[str, Any]) -> str:
+def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     if len(params) == 0:
         return url
-    params_chunks = [f"{name}={value}" for name, value in params.items()]
+    params_chunks = [
+        f"{name}={urllib.parse.quote_plus(value)}" for name, value in params
+    ]
     parameters_string = "&".join(params_chunks)
     return f"{url}?{parameters_string}"

@@ -3,6 +3,7 @@ from typing import Optional, Dict
 
 from inference.core import logger
 from inference.core.active_learning.core import ActiveLearningMiddleware
+from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import ModelManager
@@ -13,9 +14,11 @@ class ActiveLearningManager(ModelManager):
     def __init__(
         self,
         model_registry: ModelRegistry,
+        cache: BaseCache,
         middlewares: Optional[Dict[str, ActiveLearningMiddleware]] = None,
     ):
         super().__init__(model_registry=model_registry)
+        self._cache = cache
         self._middlewares = middlewares if middlewares is not None else {}
 
     def infer_from_request(
@@ -27,6 +30,7 @@ class ActiveLearningManager(ModelManager):
             self._middlewares[model_id] = ActiveLearningMiddleware.init(
                 api_key=request.api_key,
                 model_id=model_id,
+                cache=self._cache,
             )
             end = time.perf_counter()
             logger.info(f"Middleware init latency: {(end - start) * 1000} ms")
