@@ -1,1 +1,2 @@
 python-doctr[torch]
+tf2onnx

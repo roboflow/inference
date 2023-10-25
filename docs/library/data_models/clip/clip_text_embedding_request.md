@@ -1,3 +1,3 @@
 # CLIP Text Embedding Request
 
-:::inference.core.data_models.ClipTextEmbeddingRequest
+:::inference.core.entities.requests.clip.ClipTextEmbeddingRequest

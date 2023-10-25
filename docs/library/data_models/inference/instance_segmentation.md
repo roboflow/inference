@@ -1,3 +1,3 @@
 # Instance Segmentation Inference Request
 
-:::inference.core.data_models.InstanceSegmentationInferenceRequest
+:::inference.core.entities.requests.inference.InstanceSegmentationInferenceRequest

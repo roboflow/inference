@@ -1,3 +1,3 @@
 # CLIP Image Embedding Request
 
-:::inference.core.data_models.ClipImageEmbeddingRequest
+:::inference.core.entities.requests.clip.ClipImageEmbeddingRequest
