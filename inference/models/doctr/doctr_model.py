@@ -17,6 +17,24 @@ from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
 
+VALID_DOCTR_DETECTION_MODEL_IDS = {
+    "linknet_resnet18": "db_resnet50-ac60cadc.pt",
+    "linknet_resnet18_rotation": "db_resnet50-ac60cadc.pt",
+    "linknet_resnet34": "db_resnet50-ac60cadc.pt",
+    "linknet_resnet50": "db_resnet50-ac60cadc.pt",
+    "db_resnet50": "db_resnet50-ac60cadc.pt",
+    "db_mobilenet_v3_large": "db_resnet50-ac60cadc.pt",
+}
+
+VALID_DOCTR_RECOGNITION_MODEL_IDS = {
+    "crnn_vgg16_bn": "db_resnet50-ac60cadc.pt",
+    "crnn_mobilenet_v3_small": "db_resnet50-ac60cadc.pt",
+    "crnn_mobilenet_v3_large": "db_resnet50-ac60cadc.pt",
+    "sar_resnet31": "db_resnet50-ac60cadc.pt",
+    "vitstr_small": "db_resnet50-ac60cadc.pt",
+    "vitstr_base": "db_resnet50-ac60cadc.pt",
+    "parseq": "db_resnet50-ac60cadc.pt"
+}
 
 class DocTR(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
@@ -26,10 +44,12 @@ class DocTR(RoboflowCoreModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
+
         self.api_key = kwargs.get("api_key")
         self.dataset_id = "doctr"
         self.version_id = "default"
         self.endpoint = model_id
+
         model_id = model_id.lower()
 
         os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr_rec")
