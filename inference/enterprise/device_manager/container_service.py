@@ -1,14 +1,12 @@
 import time
-import imghdr
+import sys
 import base64
-import io
 from dataclasses import dataclass
 from datetime import datetime
 
 import requests
 
 import docker
-from PIL import Image
 from inference.core.logger import logger
 from inference.core.env import METRICS_INTERVAL
 from inference.core.cache import cache
@@ -19,8 +17,8 @@ from inference.enterprise.device_manager.helpers import get_cache_model_items
 @dataclass
 class InferServerContainer:
     status: str
-    id: str
-    name: str
+    alias: str
+    container_id: str
     port: int
     host: str
     startup_time: float
@@ -29,8 +27,8 @@ class InferServerContainer:
     def __init__(self, docker_container, details):
         self.container = docker_container
         self.status = details.get("status")
-        self.name = details.get("uuid")
-        self.id = details.get("container_id")
+        self.alias = details.get("alias")
+        self.container_id = details.get("short_id")
         self.port = details.get("port")
         self.host = details.get("host")
         self.version = details.get("version")
@@ -80,10 +78,6 @@ class InferServerContainer:
         except Exception as e:
             logger.error(e)
             return False, None
-
-    def snapshot(self):
-        latest_inferences = get_latest_inferences(self.id)
-        return True, latest_inferences
 
     def get_startup_config(self):
         """
@@ -149,14 +143,15 @@ def get_inference_containers():
                     f"http://{details['host']}:{details['port']}/info", timeout=3
                 ).json()
             except Exception as e:
-                logger.error(f"Failed to get info from container {c.id} {details} {e}")
+                logger.error(f"Failed to get info from container {details} {e}")
             details.update(info)
+            details["alias"] = details["uuid"]
             infer_container = InferServerContainer(c, details)
             if len(inference_containers) == 0:
                 inference_containers.append(infer_container)
                 continue
             for ic in inference_containers:
-                if ic.id == infer_container.id:
+                if ic.alias == infer_container.alias:
                     continue
                 inference_containers.append(infer_container)
     return inference_containers
@@ -173,7 +168,7 @@ def parse_container_info(c):
         dict: A dictionary containing the container information
     """
     env = c.attrs.get("Config", {}).get("Env", {})
-    info = {"container_id": c.id, "port": 9001, "host": "0.0.0.0"}
+    info = {"short_id": c.short_id, "port": 9001, "host": "0.0.0.0"}
     for var in env:
         if var.startswith("PORT="):
             info["port"] = var.split("=")[1]
@@ -191,9 +186,9 @@ def parse_container_info(c):
     return info
 
 
-def get_container_by_id(id):
+def get_container_by_id(alias, default_to_first=False):
     """
-    Gets an inference server container by its id
+    Gets an inference server container by its alias
 
     Args:
         id (string): The id of the container
@@ -203,8 +198,10 @@ def get_container_by_id(id):
     """
     containers = get_inference_containers()
     for c in containers:
-        if c.id == id:
+        if c.alias == alias:
             return c
+    if default_to_first and len(containers) > 0:
+        return containers[0]
     return None
 
 
@@ -216,40 +213,43 @@ def get_container_ids():
         list: A list of container ids
     """
     containers = get_inference_containers()
-    return [c.id for c in containers]
+    return [c.alias for c in containers]
 
 
-def infer_image_type(value):
-    image_bytes = value
-    img_type = imghdr.what(None, image_bytes)
-    if img_type is None:
-        img = Image.open(io.BytesIO(image_bytes))
-        img_type = img.format
-    return img_type
+def _get_cached_model_ids(container_name, now=None):
+    if now is None:
+        now = time.time()
+    cached_models = get_cache_model_items()
+    api_keys = cached_models.get(container_name, {}).keys()
+    model_ids = []
+    for api_key in api_keys:
+        mids = cached_models.get(container_name, {}).get(api_key, [])
+        model_ids.extend(mids)
+
+    return model_ids
+
+
+def _get_formatted_image_value(image):
+    value = None
+    if image["type"] == "base64":
+        value = image["value"]
+    else:
+        loaded_image = load_image_rgb(image)
+        image_bytes = loaded_image.tobytes()
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        value = image_base64
+
+    return f"data:image/jpeg;base64, {value}"
 
 
 def get_latest_inferences(container_id=None, max=1):
-    container = None
-    containers = get_inference_containers()
-    if container_id is None:
-        container = containers[0]
-    else:
-        for c in containers:
-            if c.id == container_id:
-                container = c
-                break
-
+    container = get_container_by_id(container_id, default_to_first=True)
     if container is None:
         return {}
 
     now = time.time()
     start = now - (METRICS_INTERVAL * 2)
-    cached_models = get_cache_model_items()
-    api_keys = cached_models.get(container.name, {}).keys()
-    model_ids = []
-    for api_key in api_keys:
-        mids = cached_models.get(container.name, {}).get(api_key, [])
-        model_ids.extend(mids)
+    model_ids = _get_cached_model_ids(container.alias, now=now)
 
     num_images = 0
     latest_inferred_images = {}
@@ -257,10 +257,11 @@ def get_latest_inferences(container_id=None, max=1):
         if num_images >= max:
             break
         latest_reqs = cache.zrangebyscore(
-            f"inference:{container.name}:{model_id}", min=start, max=now
+            f"inference:{container.alias}:{model_id}", min=start, max=now
         )
+        latest_reqs = filter(lambda x: isinstance(x, dict), latest_reqs)
         for req in latest_reqs:
-            images = req["request"].get("image")
+            images = req.get("request", {}).get("image")
             response = req.get("response", [])[0]
             if response is None:
                 continue
@@ -271,28 +272,30 @@ def get_latest_inferences(container_id=None, max=1):
             if type(images) is not list:
                 images = [images]
             for image in images:
-                value = None
-                if image["type"] == "base64":
-                    value = image["value"]
-                else:
-                    loaded_image = load_image_rgb(image)
-                    image_bytes = loaded_image.tobytes()
-                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                    value = image_base64
-                    img = Image.open(io.BytesIO(image_bytes))
-                    logger.info(f"image type {img.format}")
+                value = _get_formatted_image_value(image)
                 if latest_inferred_images.get(model_id) is None:
                     latest_inferred_images[model_id] = []
-                inference = {
-                    "image": value,
-                    "dimensions": image_dims,
-                    "predictions": predictions,
-                }
-                logger.info(
-                    f"Got inferred inference image type {infer_image_type(value)}"
+                latest_inferred_images[model_id].append(
+                    {
+                        "image": value,
+                        "dimensions": image_dims,
+                        "predictions": predictions,
+                    }
                 )
-                latest_inferred_images[model_id].append(inference)
                 if value:
                     num_images += 1
-    # logger.info(f"Got latest inferred images {latest_inferred_images}")
+
     return latest_inferred_images
+
+
+def check_for_duplicate_aliases():
+    containers = get_inference_containers()
+    aliases = [c.alias for c in containers]
+    counts = {}
+    for a in aliases:
+        counts[a] = counts.get(a, 0) + 1
+        if counts[a] > 1:
+            logger.fatal(
+                f"Multiple containers found with alias {a}.\n Please restart the inference server and specify a unique value for the `INFERENCE_SERVER_ID` environment variable."
+            )
+            sys.exit(1)

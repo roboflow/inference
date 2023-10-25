@@ -4,9 +4,8 @@ from fastapi import FastAPI
 
 from inference.core.env import METRICS_INTERVAL
 from inference.core.version import __version__
-from inference.enterprise.device_manager.command_handler import (
-    Command,
-    handle_command,
+from inference.enterprise.device_manager.container_service import (
+    check_for_duplicate_aliases,
 )
 from inference.enterprise.device_manager.metrics_service import (
     send_metrics,
@@ -49,11 +48,7 @@ def root():
     }
 
 
-@app.post("/exec_command")
-async def exec_command(command: Command):
-    handle_command(command.dict())
-    return {"status": "ok"}
-
+check_for_duplicate_aliases()
 
 scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "max_instances": 3})
 scheduler.add_job(

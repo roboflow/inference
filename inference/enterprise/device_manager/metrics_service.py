@@ -1,10 +1,7 @@
 import time
 
-import requests
-
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.utils.url_utils import wrap_url
-from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS, METRICS_URL
+from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS, DEVICE_ALIAS
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.version import __version__
@@ -87,7 +84,10 @@ def build_container_stats():
         if container:
             container_stats = {}
             models = aggregate_model_stats(id)
-            container_stats["uuid"] = container.id
+            # TODO: deprecate `uuid` in favor of `alias`
+            container_stats["uuid"] = container.alias
+            container_stats["alias"] = container.alias
+            container_stats["container_id"] = container.container_id
             container_stats["version"] = container.version
             container_stats["startup_time"] = container.startup_time
             container_stats["models"] = models
@@ -115,7 +115,8 @@ def aggregate_device_stats():
         "timestamp": window_start_timestamp,
         "device": {
             "id": get_device_id(),
-            "name": GLOBAL_DEVICE_ID,
+            "name": DEVICE_ALIAS or GLOBAL_DEVICE_ID,
+            "app_id": GLOBAL_DEVICE_ID,
             "type": f"roboflow-inference-server=={__version__}",
             "tags": TAGS,
             "system_info": get_system_info(),

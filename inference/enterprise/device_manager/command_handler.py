@@ -20,8 +20,8 @@ def handle_command(cmd_payload: dict):
     was_processed = False
     if get_device_id() != cmd_payload.get("deviceId"):
         return was_processed, None
-    container_id = cmd_payload.get("containerId")
-    container = get_container_by_id(container_id)
+    container_alias = cmd_payload.get("containerId")
+    container = get_container_by_id(container_alias)
     if not container:
         return was_processed, None
     cmd = cmd_payload.get("command")
@@ -32,9 +32,7 @@ def handle_command(cmd_payload: dict):
         case "stop":
             was_processed, data = container.stop()
         case "ping":
-            was_processed, data = container.ping()
-        case "snapshot":
-            was_processed, data = container.snapshot()
+            was_processed = True
         case "start":
             was_processed, data = container.start()
         case "update_version":

@@ -71,7 +71,7 @@ def connect_mqtt():
         qos=1,
         retain=False,
     )
-    client.connect(MESSAGE_BROKER_HOST, 8883, keepalive=120)
+    client.connect(MESSAGE_BROKER_HOST, 8883, keepalive=60)
     return client
 
 
