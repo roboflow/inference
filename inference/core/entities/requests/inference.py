@@ -5,23 +5,29 @@ from pydantic import BaseModel, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
-
-class InferenceRequest(BaseModel):
+class BaseRequest(BaseModel):
     """Base request for inference.
 
     Attributes:
         id_ (str_): A unique request identifier.
-        model_id (str): A unique model identifier.
-        model_type (Optional[str]): The type of the model, usually referring to what task the model performs.
         api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
         start (Optional[float]): start time of request
+    """
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    api_key: Optional[str] = ApiKey
+    start: Optional[float] = None
+
+class InferenceRequest(BaseRequest):
+    """Base request for inference.
+
+    Attributes:
+        model_id (str): A unique model identifier.
+        model_type (Optional[str]): The type of the model, usually referring to what task the model performs.
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
-    api_key: Optional[str] = ApiKey
-    start: Optional[float] = None
 
 
 class InferenceRequestImage(BaseModel):

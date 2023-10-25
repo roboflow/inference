@@ -1,13 +1,13 @@
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.common import ApiKey
-from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.inference import InferenceRequestImage, BaseRequest
 from inference.core.env import GAZE_VERSION_ID
 
 
-class GazeDetectionInferenceRequest(BaseModel):
+class GazeDetectionInferenceRequest(BaseRequest):
     """Request for gaze detection inference.
 
     Attributes:
@@ -17,7 +17,6 @@ class GazeDetectionInferenceRequest(BaseModel):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
     """
 
-    api_key: Optional[str] = ApiKey
     gaze_version_id: Optional[str] = Field(
         default=GAZE_VERSION_ID,
         example="l2cs",
@@ -31,3 +30,10 @@ class GazeDetectionInferenceRequest(BaseModel):
     )
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
+    model_id: Optional[str] = Field()
+    
+    @validator("model_id", always=True)
+    def validate_model_id(cls, value, values):
+        if values.get("gaze_version_id") is None:
+            return None
+        return f"gaze/{values['gaze_version_id']}"

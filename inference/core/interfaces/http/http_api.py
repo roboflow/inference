@@ -681,7 +681,7 @@ class HttpInterface(BaseInterface):
                     doctr_model_id = load_doctr_model(
                         inference_request, api_key=api_key
                     )
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
                     )
                     if LAMBDA:
