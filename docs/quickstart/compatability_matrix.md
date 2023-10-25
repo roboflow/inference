@@ -2,6 +2,15 @@
 
 The table below shows on what devices you can deploy models supported by Inference.
 
+See our [Docker Getting Started](/docs/quickstart/docker) guide for more information on how to deploy Inference on your device.
+
+Table key:
+
+- ✅ Fully supported
+- 🟡 Not TRT accelerated
+- 🚫 Not supported
+- 🚧 On roadmap, not currently supported
+
 | Model | CPU | GPU | TensorRT | Jetson 4.5.x | Jetson 4.6.x | Jetson 5.x | Roboflow Hosted Inference |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | YOLOv8 Object Detection | ✅ | ✅ | ✅ | 🚫 | 🚫 | ✅ | ✅ |
@@ -15,9 +24,3 @@ The table below shows on what devices you can deploy models supported by Inferen
 | SAM | ✅ | ✅ | 🟡 | 🚫 | 🚫 | 🚫 | 🚫 |
 | ViT Classification | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | YOLACT | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ✅ Fully supported |
-| 🟡 Not TRT accelerated |
-| 🚫 Not supported |
-| 🚧 On roadmap |
-
-See our [Docker Getting Started](/docs/quickstart/docker) guide for more information on how to deploy Inference on your device.
