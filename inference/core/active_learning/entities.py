@@ -43,6 +43,7 @@ class BatchReCreationInterval(Enum):
 
 
 class StrategyLimitType(Enum):
+    MINUTELY = "minutely"
     HOURLY = "hourly"
     DAILY = "daily"
 

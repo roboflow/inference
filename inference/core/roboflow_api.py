@@ -211,12 +211,13 @@ def get_roboflow_active_learning_configuration(
             {
                 "name": "default_strategy",
                 "type": "random_sampling",
-                "traffic_percentage": 1.0,  # float 0-1
+                "traffic_percentage": 0.1,  # float 0-1
                 "target_split": "train",  # Optional - name of target split
                 "tags": ["c", "d"],  # Optional
                 "limits": [  # Optional
-                    {"type": "hourly", "value": 10},
-                    {"type": "daily", "value": 100},
+                    {"type": "minutely", "value": 10},
+                    {"type": "hourly", "value": 100},
+                    {"type": "daily", "value": 1000},
                 ],
             }
         ],

@@ -164,7 +164,7 @@ def test_get_roboflow_workspace_when_wrong_api_key_used(requests_mock: Mocker) -
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -193,7 +193,7 @@ def test_get_roboflow_workspace_when_response_parsing_error_occurs(
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
 
 
 def test_get_roboflow_workspace_when_workspace_id_is_empty(
@@ -210,7 +210,7 @@ def test_get_roboflow_workspace_when_workspace_id_is_empty(
         _ = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
 
 
 def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) -> None:
@@ -224,7 +224,7 @@ def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) ->
     result = get_roboflow_workspace(api_key="my_api_key")
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key"
+    assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
     assert result == "my_workspace"
 
 
@@ -233,9 +233,7 @@ def test_get_roboflow_dataset_type_when_wrong_key_used(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection"),
         status_code=401,
     )
 
@@ -256,9 +254,7 @@ def test_get_roboflow_dataset_type_when_project_not_found_used(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection"),
         status_code=404,
     )
 
@@ -295,9 +291,7 @@ def test_get_roboflow_dataset_type_when_response_parsing_error_occurs(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection"),
         content=b"For sure not a JSON payload",
     )
 
@@ -318,9 +312,7 @@ def test_get_roboflow_dataset_type_when_project_is_empty(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection"),
         json={"project": {}},
     )
 
@@ -339,9 +331,7 @@ def test_get_roboflow_dataset_type_when_response_is_valid(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection"),
         json={"project": {"type": "classification"}},
     )
 
@@ -360,9 +350,7 @@ def test_get_roboflow_model_type_when_wrong_api_key_used(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         status_code=401,
     )
 
@@ -385,9 +373,7 @@ def test_get_roboflow_model_type_when_wrong_project_used(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         status_code=404,
     )
 
@@ -410,9 +396,7 @@ def test_get_roboflow_model_type_when_wrong_version_used(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/invalid/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/invalid"),
         status_code=500,  # This is to compensate bug in Roboflow API
     )
 
@@ -453,9 +437,7 @@ def test_get_roboflow_model_type_when_response_parsing_error_occurs(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         content=b"For sure not a JSON payload",
     )
 
@@ -478,9 +460,7 @@ def test_get_roboflow_model_type_when_default_model_can_be_chosen(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         json={"version": {}},
     )
 
@@ -503,9 +483,7 @@ def test_get_roboflow_model_type_when_default_model_cannot_be_chosen(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         json={"version": {}},
     )
 
@@ -528,9 +506,7 @@ def test_get_roboflow_model_type_when_response_is_valid(
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(
-            f"{API_BASE_URL}/my_workspace/coins_detection/1/?api_key=my_api_key&nocache=true"
-        ),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/1"),
         json={"version": {"modelType": "yolov8n"}},
     )
 

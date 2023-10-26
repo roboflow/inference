@@ -14,10 +14,12 @@ SECONDS_IN_HOUR = 60 * 60
 USAGE_KEY = "usage"
 
 LIMIT_TYPE2KEY_INFIX_GENERATOR = {
+    StrategyLimitType.MINUTELY: lambda: f"minute_{datetime.utcnow().minute}",
     StrategyLimitType.HOURLY: lambda: f"hour_{datetime.utcnow().hour}",
     StrategyLimitType.DAILY: lambda: f"day_{datetime.utcnow().strftime(TIMESTAMP_FORMAT)}",
 }
 LIMIT_TYPE2KEY_EXPIRATION = {
+    StrategyLimitType.MINUTELY: 120,
     StrategyLimitType.HOURLY: 2 * SECONDS_IN_HOUR,
     StrategyLimitType.DAILY: 25 * SECONDS_IN_HOUR,
 }
