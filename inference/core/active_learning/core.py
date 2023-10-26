@@ -9,7 +9,6 @@ from inference.core import logger
 from inference.core.active_learning.accounting import image_can_be_submitted_to_batch
 from inference.core.active_learning.batching import generate_batch_name
 from inference.core.active_learning.cache_operations import (
-    consume_strategy_usage_limits_credit,
     use_credit_of_matching_strategy,
     return_strategy_credit,
 )

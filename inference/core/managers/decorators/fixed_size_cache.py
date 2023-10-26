@@ -50,7 +50,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         return super().remove(model_id)
 
     def infer_from_request(
-        self, model_id: str, request: InferenceRequest
+        self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Processes a complete inference request and updates the cache.
 

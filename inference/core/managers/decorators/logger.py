@@ -26,7 +26,7 @@ class WithLogger(ModelManagerDecorator):
         return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
 
     def infer_from_request(
-        self, model_id: str, request: InferenceRequest
+        self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Processes a complete inference request and logs both the request and response.
 

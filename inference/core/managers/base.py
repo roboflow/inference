@@ -68,7 +68,7 @@ class ModelManager:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
 
     def infer_from_request(
-        self, model_id: str, request: InferenceRequest
+        self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Runs inference on the specified model with the given request.
 
