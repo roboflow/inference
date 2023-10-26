@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 
@@ -16,3 +16,4 @@ class GroundingDINOInferenceRequest(InferenceRequest):
         example=["person", "dog", "cat"],
         description="A list of strings",
     )
+    grounding_dino_version_id: Optional[str] = "default"

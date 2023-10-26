@@ -151,7 +151,7 @@ except:
 try:
     from inference.models import GroundingDINO
 
-    ROBOFLOW_MODEL_TYPES[("object-detection", "groundingdino")] = GroundingDINO
+    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding_dino")] = GroundingDINO
 except:
     pass
 
