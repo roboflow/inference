@@ -16,7 +16,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess
 from inference.core.parallel.utils import (
     FAILURE_STATE,
-    FINAL_STATE,
+    SUCCESS_STATE,
     INITIAL_STATE,
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
@@ -60,14 +60,14 @@ class ResultsChecker:
             donenesses = [self.r.get(t) for t in task_names]
             donenesses = [int(d) for d in donenesses]
             for id_, doneness in zip(tasks, donenesses):
-                if doneness in [FINAL_STATE, FAILURE_STATE]:
+                if doneness in [SUCCESS_STATE, FAILURE_STATE]:
                     pipe = self.r.pipeline()
                     pipe.get(TASK_RESULT_KEY.format(id_))
                     pipe.delete(TASK_RESULT_KEY.format(id_))
                     pipe.delete(TASK_STATUS_KEY.format(id_))
                     result, _, _ = pipe.execute()
                     self.tasks.remove(id_)
-                    if doneness == FINAL_STATE:
+                    if doneness == SUCCESS_STATE:
                         self.dones[id_] = result
                     if doneness == FAILURE_STATE:
                         self.errors[id_] = result

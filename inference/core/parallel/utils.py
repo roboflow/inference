@@ -7,7 +7,7 @@ from redis import Redis
 
 TASK_RESULT_KEY = "results:{}"
 TASK_STATUS_KEY = "status:{}"
-FINAL_STATE = 1
+SUCCESS_STATE = 1
 INITIAL_STATE = 0
 FAILURE_STATE = -1
 
@@ -37,27 +37,27 @@ def shm_manager(
 ):
     """Context manager that closes and frees shared memory objects."""
     try:
-        loaded_shims = []
+        loaded_shms = []
         for shm in shms:
             errors = []
             try:
                 if isinstance(shm, str):
                     shm = shared_memory.SharedMemory(name=shm)
-                loaded_shims.append(shm)
+                loaded_shms.append(shm)
             except BaseException as E:
                 errors.append(E)
             if errors:
                 raise Exception(errors)
 
-        yield loaded_shims
+        yield loaded_shms
     except:
         if close_on_failure:
-            for shm in shms:
+            for shm in loaded_shms:
                 shm.close()
                 shm.unlink()
         raise
     else:
         if close_on_success:
-            for shm in shms:
+            for shm in loaded_shms:
                 shm.close()
                 shm.unlink()

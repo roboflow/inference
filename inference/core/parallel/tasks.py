@@ -17,7 +17,13 @@ from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
 from inference.core.managers.stub_loader import StubLoaderManager
-from inference.core.parallel.utils import failure_handler, shm_manager
+from inference.core.parallel.utils import (
+    failure_handler,
+    shm_manager,
+    SUCCESS_STATE,
+    TASK_STATUS_KEY,
+    TASK_RESULT_KEY,
+)
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
@@ -53,10 +59,10 @@ def queue_infer_task(
 
 
 def write_response(redis: Redis, response: InferenceResponse, request_id: str):
-    results = results.json(exclude_none=True, by_alias=True)
+    response = response.json(exclude_none=True, by_alias=True)
     pipe = redis.pipeline()
-    pipe.set(f"results:{request_id}", results)
-    pipe.set(f"status:{request_id}", 1)
+    pipe.set(TASK_RESULT_KEY.format(request_id), response)
+    pipe.set(TASK_STATUS_KEY.format(request_id), SUCCESS_STATE)
     pipe.execute()
 
 
@@ -97,7 +103,7 @@ def postprocess(
 ):
     r = Redis(connection_pool=pool, decode_responses=True)
     with failure_handler(r, request["id"]):
-        with shm_manager(*[shm["name"] for shm in shm_info_list]) as shms:
+        with shm_manager(*[shm["chunk_name"] for shm in shm_info_list]) as shms:
             model_manager.add_model(request["model_id"], request["api_key"])
             model_type = model_manager.get_task_type(request["model_id"])
             request = request_from_type(model_type, request)
