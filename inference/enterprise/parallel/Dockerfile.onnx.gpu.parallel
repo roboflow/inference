@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y redis
 
 WORKDIR /app/
 COPY inference inference
-COPY docker/config/parallel_http.py parallel_http.py
+COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -55,7 +55,7 @@ ENV CORE_MODELS_ENABLED=false
 
 
 ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
-    celery -A inference.core.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \
-    celery -A inference.core.parallel.tasks worker --prefetch-multiplier 8 --concurrency $NUM_CELERY_WORKERS -Q post --loglevel=WARNING & \
-    python3 inference/core/parallel/infer.py & \
+    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \
+    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 8 --concurrency $NUM_CELERY_WORKERS -Q post --loglevel=WARNING & \
+    python3 inference/enterprise/parallel/infer.py & \
     uvicorn parallel_http:app --workers $NUM_WORKERS --host $HOST --port $PORT && fg

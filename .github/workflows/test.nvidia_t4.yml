@@ -57,7 +57,7 @@ jobs:
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:test-cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:test-cache,mode=max
           platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.gpu.parallel
+          file: ./inference/enterprise/parallel/Dockerfile.onnx.gpu.parallel
       - name: 🔋 Start Test Docker - GPU Parallel
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel DOCKERFILE=Dockerfile.onnx.gpu.parallel make start_test_docker_gpu

@@ -1,5 +1,5 @@
-from inference.core.interfaces.http.parallel_http_api import ParallelHttpInterface
-from inference.core.managers.parallel import DispatchModelManager
+from inference.enterprise.parallel.parallel_http_api import ParallelHttpInterface
+from inference.enterprise.parallel.dispatch_manager import DispatchModelManager
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )

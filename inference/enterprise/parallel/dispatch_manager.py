@@ -13,8 +13,8 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import response_from_type
 from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
-from inference.core.parallel.tasks import preprocess
-from inference.core.parallel.utils import (
+from inference.enterprise.parallel.tasks import preprocess
+from inference.enterprise.parallel.utils import (
     FAILURE_STATE,
     INITIAL_STATE,
     SUCCESS_STATE,
