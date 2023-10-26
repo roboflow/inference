@@ -1,6 +1,6 @@
 import urllib.parse
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Type, Union, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import requests

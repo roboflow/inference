@@ -3,7 +3,7 @@ from functools import partial, wraps
 from typing import Any, List, Optional, Union
 
 import uvicorn
-from fastapi import Body, FastAPI, Path, Query, Request, BackgroundTasks
+from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles

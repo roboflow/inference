@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Tuple, Optional, Callable, List, Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from inference.core.entities.types import WorkspaceID, DatasetID
+from inference.core.entities.types import DatasetID, WorkspaceID
 
 LocalImageIdentifier = str
 PredictionType = str

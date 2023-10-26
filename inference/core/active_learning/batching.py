@@ -3,9 +3,9 @@ from inference.core.active_learning.entities import (
     BatchReCreationInterval,
 )
 from inference.core.active_learning.utils import (
+    generate_start_timestamp_for_this_month,
     generate_start_timestamp_for_this_week,
     generate_today_timestamp,
-    generate_start_timestamp_for_this_month,
 )
 
 RECREATION_INTERVAL2TIMESTAMP_GENERATOR = {

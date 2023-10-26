@@ -3,8 +3,8 @@ from typing import List
 from inference.core.active_learning.entities import PredictionType
 from inference.core.constants import (
     CLASSIFICATION_TASK,
-    OBJECT_DETECTION_TASK,
     INSTANCE_SEGMENTATION_TASK,
+    OBJECT_DETECTION_TASK,
 )
 
 

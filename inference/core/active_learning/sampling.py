@@ -1,12 +1,12 @@
 import random
 from functools import partial
-from typing import Dict, Any
+from typing import Any, Dict
 
 import numpy as np
 
 from inference.core.active_learning.entities import (
-    PredictionType,
     Prediction,
+    PredictionType,
     SamplingMethod,
 )
 

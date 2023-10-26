@@ -11,18 +11,18 @@ from inference.core import logger
 from inference.core.active_learning.accounting import image_can_be_submitted_to_batch
 from inference.core.active_learning.batching import generate_batch_name
 from inference.core.active_learning.cache_operations import (
-    use_credit_of_matching_strategy,
     return_strategy_credit,
+    use_credit_of_matching_strategy,
 )
 from inference.core.active_learning.configuration import (
     prepare_active_learning_configuration,
 )
 from inference.core.active_learning.entities import (
     ActiveLearningConfiguration,
-    SamplingMethod,
+    ImageDimensions,
     Prediction,
     PredictionType,
-    ImageDimensions,
+    SamplingMethod,
 )
 from inference.core.active_learning.post_processing import (
     adjust_prediction_to_client_scaling_factor,
@@ -30,12 +30,11 @@ from inference.core.active_learning.post_processing import (
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_TAGS
 from inference.core.roboflow_api import (
-    register_image_at_roboflow,
     annotate_image_at_roboflow,
+    register_image_at_roboflow,
 )
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
-
 
 MAX_REGISTRATION_QUEUE_SIZE = 128
 

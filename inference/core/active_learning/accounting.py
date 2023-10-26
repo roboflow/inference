@@ -1,6 +1,6 @@
-from typing import Optional, List
+from typing import List, Optional
 
-from inference.core.entities.types import WorkspaceID, DatasetID
+from inference.core.entities.types import DatasetID, WorkspaceID
 from inference.core.roboflow_api import (
     get_roboflow_labeling_batches,
     get_roboflow_labeling_jobs,

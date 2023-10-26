@@ -1,5 +1,5 @@
 import time
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from fastapi import BackgroundTasks
 

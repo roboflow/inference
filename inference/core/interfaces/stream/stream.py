@@ -11,8 +11,8 @@ from PIL import Image
 
 import inference.core.entities.requests.inference
 from inference.core.active_learning.core import (
-    ThreadingActiveLearningMiddleware,
     NullActiveLearningMiddleware,
+    ThreadingActiveLearningMiddleware,
 )
 from inference.core.cache import cache
 from inference.core.env import (

@@ -1,7 +1,7 @@
+import threading
 from contextlib import contextmanager
 from datetime import datetime
-import threading
-from typing import List, Dict, Optional, OrderedDict, Generator, Union
+from typing import Dict, Generator, List, Optional, OrderedDict, Union
 
 import redis.lock
 

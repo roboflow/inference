@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from inference.core import logger
 from inference.core.active_learning.entities import (
@@ -9,12 +9,11 @@ from inference.core.active_learning.sampling import initialize_random_sampling
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_ENABLED
 from inference.core.roboflow_api import (
-    get_roboflow_workspace,
-    get_roboflow_dataset_type,
     get_roboflow_active_learning_configuration,
+    get_roboflow_dataset_type,
+    get_roboflow_workspace,
 )
 from inference.core.utils.roboflow import get_model_id_chunks
-
 
 TYPE2SAMPLING_INITIALIZERS = {"random_sampling": initialize_random_sampling}
 
