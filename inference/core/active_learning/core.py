@@ -8,12 +8,10 @@ import numpy as np
 from inference.core import logger
 from inference.core.active_learning.accounting import image_can_be_submitted_to_batch
 from inference.core.active_learning.batching import generate_batch_name
-from inference.core.active_learning.cache import (
-    find_strategy_with_spare_usage_limit,
-    generate_cache_key_for_active_learning_usage_lock,
-    MAX_LOCK_TIME,
-    increment_strategy_usage,
-    increment_strategies_usage,
+from inference.core.active_learning.cache_operations import (
+    consume_strategy_usage_limits_credit,
+    use_credit_of_matching_strategy,
+    return_strategy_credit,
 )
 from inference.core.active_learning.configuration import (
     prepare_active_learning_configuration,
@@ -146,38 +144,29 @@ def execute_datapoint_registration(
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
     )
-    limits_lock_key = generate_cache_key_for_active_learning_usage_lock(
-        workspace=configuration.workspace_id,
-        project=configuration.dataset_id,
-    )
     matching_strategies_limits = OrderedDict(
         (strategy_name, configuration.strategies_limits[strategy_name])
         for strategy_name in matching_strategies
     )
-    with cache.lock(key=limits_lock_key, expire=MAX_LOCK_TIME):
-        strategy_with_spare_limit = find_strategy_with_spare_usage_limit(
-            cache=cache,
-            workspace=configuration.workspace_id,
-            project=configuration.dataset_id,
-            matching_strategies_limits=matching_strategies_limits,
-        )
-        if strategy_with_spare_limit is None:
-            logger.warning(f"Limit on Active Learning strategy reached.")
-            return None
-        tags = collect_tags(
-            configuration=configuration, sampling_strategy=strategy_with_spare_limit
-        )
-        register_datapoint_at_roboflow(
-            cache=cache,
-            strategy_with_spare_limit=strategy_with_spare_limit,
-            encoded_image=encoded_image,
-            local_image_id=local_image_id,
-            prediction=prediction,
-            configuration=configuration,
-            api_key=api_key,
-            batch_name=batch_name,
-            tags=tags,
-        )
+    strategy_with_spare_credit = use_credit_of_matching_strategy(
+        cache=cache,
+        workspace=configuration.workspace_id,
+        project=configuration.dataset_id,
+        matching_strategies_limits=matching_strategies_limits,
+    )
+    if strategy_with_spare_credit is None:
+        logger.warning(f"Limit on Active Learning strategy reached.")
+        return None
+    register_datapoint_at_roboflow(
+        cache=cache,
+        strategy_with_spare_credit=strategy_with_spare_credit,
+        encoded_image=encoded_image,
+        local_image_id=local_image_id,
+        prediction=prediction,
+        configuration=configuration,
+        api_key=api_key,
+        batch_name=batch_name,
+    )
 
 
 def prepare_image_to_registration(
@@ -193,6 +182,43 @@ def prepare_image_to_registration(
     return encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level)
 
 
+def register_datapoint_at_roboflow(
+    cache: BaseCache,
+    strategy_with_spare_credit: str,
+    encoded_image: bytes,
+    local_image_id: str,
+    prediction: Prediction,
+    configuration: ActiveLearningConfiguration,
+    api_key: str,
+    batch_name: str,
+) -> None:
+    tags = collect_tags(
+        configuration=configuration,
+        sampling_strategy=strategy_with_spare_credit,
+    )
+    roboflow_image_id = safe_register_image_at_roboflow(
+        cache=cache,
+        strategy_with_spare_credit=strategy_with_spare_credit,
+        encoded_image=encoded_image,
+        local_image_id=local_image_id,
+        configuration=configuration,
+        api_key=api_key,
+        batch_name=batch_name,
+        tags=tags,
+    )
+    if not configuration.persist_predictions or roboflow_image_id is None:
+        return None
+    encoded_prediction = json.dumps(prediction)
+    _ = annotate_image_at_roboflow(
+        api_key=api_key,
+        dataset_id=configuration.dataset_id,
+        local_image_id=local_image_id,
+        roboflow_image_id=roboflow_image_id,
+        annotation_content=encoded_prediction,
+        is_prediction=True,
+    )
+
+
 def collect_tags(
     configuration: ActiveLearningConfiguration, sampling_strategy: str
 ) -> List[str]:
@@ -204,41 +230,40 @@ def collect_tags(
     return tags
 
 
-def register_datapoint_at_roboflow(
+def safe_register_image_at_roboflow(
     cache: BaseCache,
-    strategy_with_spare_limit: str,
+    strategy_with_spare_credit: str,
     encoded_image: bytes,
     local_image_id: str,
-    prediction: Prediction,
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
     tags: List[str],
-) -> None:
-    registration_response = register_image_at_roboflow(
-        api_key=api_key,
-        dataset_id=configuration.dataset_id,
-        local_image_id=local_image_id,
-        image_bytes=encoded_image,
-        batch_name=batch_name,
-        tags=tags,
-    )
-    duplication_status = registration_response.get("duplicate", False)
-    if duplication_status is False:
-        increment_strategies_usage(
-            cache=cache,
-            workspace=configuration.workspace_id,
-            project=configuration.dataset_id,
-            strategy_name=strategy_with_spare_limit,
-        )
-    logger.info(f"Image duplication status: {duplication_status}")
-    if configuration.persist_predictions and not duplication_status:
-        encoded_prediction = json.dumps(prediction)
-        _ = annotate_image_at_roboflow(
+) -> Optional[str]:
+    credit_to_be_returned = False
+    try:
+        registration_response = register_image_at_roboflow(
             api_key=api_key,
             dataset_id=configuration.dataset_id,
             local_image_id=local_image_id,
-            roboflow_image_id=registration_response["id"],
-            annotation_content=encoded_prediction,
-            is_prediction=True,
+            image_bytes=encoded_image,
+            batch_name=batch_name,
+            tags=tags,
         )
+        image_duplicated = registration_response.get("duplicate", False)
+        if image_duplicated:
+            credit_to_be_returned = True
+            logger.warning(f"Image duplication detected: {registration_response}.")
+            return None
+        return registration_response["id"]
+    except Exception as error:
+        credit_to_be_returned = True
+        raise error
+    finally:
+        if credit_to_be_returned:
+            return_strategy_credit(
+                cache=cache,
+                workspace=configuration.workspace_id,
+                project=configuration.dataset_id,
+                strategy_name=strategy_with_spare_credit,
+            )
