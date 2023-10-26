@@ -13,6 +13,7 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import response_from_type
 from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
+from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import (
     FAILURE_STATE,
@@ -21,7 +22,6 @@ from inference.enterprise.parallel.utils import (
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
 )
-from inference.core.registries.roboflow import get_model_type
 
 NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 

@@ -1,10 +1,7 @@
-from inference.enterprise.parallel.parallel_http_api import ParallelHttpInterface
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.dispatch_manager import DispatchModelManager
-from inference.core.registries.roboflow import (
-    RoboflowModelRegistry,
-)
+from inference.enterprise.parallel.parallel_http_api import ParallelHttpInterface
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = DispatchModelManager(model_registry)
