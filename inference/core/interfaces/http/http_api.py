@@ -343,7 +343,7 @@ class HttpInterface(BaseInterface):
         """
 
         load_grounding_dino_model = partial(
-            load_core_model, core_model="grounding-dino"
+            load_core_model, core_model="groundingdino"
         )
         """Loads the Grounding DINO model into the model manager.
 
@@ -669,7 +669,7 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/grounding-dino/infer",
                     response_model=ObjectDetectionInferenceResponse,
-                    summary="CLIP Image Embeddings",
+                    summary="Grounding DINO inference.",
                     description="Run the Grounding DINO zero-shot object detection model.",
                 )
                 @with_route_exceptions
@@ -692,17 +692,17 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
-                    clip_model_id = load_grounding_dino_model(
+                    grounding_dino_model_id = load_grounding_dino_model(
                         inference_request, api_key=api_key
                     )
                     response = self.model_manager.infer_from_request(
-                        clip_model_id, inference_request
+                        grounding_dino_model_id, inference_request
                     )
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
                         ]["lambda"]["actor"]
-                        trackUsage(clip_model_id, actor)
+                        trackUsage(grounding_dino_model_id, actor)
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:

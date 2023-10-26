@@ -27,7 +27,7 @@ TESTS = [
 
 
 @pytest.mark.parametrize("test", TESTS)
-def test_doctr(test):
+def test_grounding_dino(test):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
