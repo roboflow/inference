@@ -20,6 +20,9 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
+    RoboflowAPIIAlreadyAnnotatedError,
+    RoboflowAPIIAnnotationRejectionError,
+    RoboflowAPIImageUploadRejectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIUnsuccessfulRequestError,
@@ -259,15 +262,20 @@ def register_image_at_roboflow(
     )
     response.raise_for_status()
     parsed_response = response.json()
-    if "duplicate" not in parsed_response and "success" not in parsed_response:
-        # this error handling is required due to backend specifics
-        raise Exception(f"Server rejected image: {parsed_response}")
+    if "duplicate" not in parsed_response and not parsed_response.get("success"):
+        raise RoboflowAPIImageUploadRejectionError(
+            f"Server rejected image: {parsed_response}"
+        )
     return parsed_response
 
 
 @wrap_roboflow_api_errors(
     http_errors_handlers={
-        409: lambda e: raise_from_lambda(e, Exception, "already annotated")
+        409: lambda e: raise_from_lambda(
+            e,
+            RoboflowAPIIAlreadyAnnotatedError,
+            "Given datapoint already has annotation.",
+        )
     }
 )
 def annotate_image_at_roboflow(
@@ -282,7 +290,7 @@ def annotate_image_at_roboflow(
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
     params = [
         ("api_key", api_key),
-        ("name", f"{local_image_id}_annotation.{annotation_file_type}"),
+        ("name", f"{local_image_id}.{annotation_file_type}"),
         ("prediction", str(is_prediction).lower()),
     ]
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
@@ -293,8 +301,8 @@ def annotate_image_at_roboflow(
     )
     response.raise_for_status()
     parsed_response = response.json()
-    if "error" in parsed_response or "success" not in parsed_response:
-        raise Exception(
+    if "error" in parsed_response or not parsed_response.get("success"):
+        raise RoboflowAPIIAnnotationRejectionError(
             f"Failed to save annotation for {roboflow_image_id}. API response: {parsed_response}"
         )
     return parsed_response
