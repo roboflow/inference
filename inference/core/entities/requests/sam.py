@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import Field, validator, root_validator
+from pydantic import Field, root_validator, validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,

@@ -5,9 +5,8 @@ import numpy as np
 from celery import Celery
 from redis import ConnectionPool, Redis
 
-from inference.core.entities.requests.inference import (
-    request_from_type,
-)
+from inference.core.entities.requests.inference import request_from_type
+from inference.core.env import REDIS_HOST, REDIS_PORT, STUB_CACHE_SIZE
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
@@ -16,7 +15,6 @@ from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.parallel.utils import failure_handler, shm_closer
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-from inference.core.env import REDIS_HOST, REDIS_PORT, STUB_CACHE_SIZE
 
 pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 app = Celery("tasks", broker=f"redis://{REDIS_HOST}:{REDIS_PORT}")
