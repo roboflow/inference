@@ -342,9 +342,7 @@ class HttpInterface(BaseInterface):
         The DocTR model ID.
         """
 
-        load_grounding_dino_model = partial(
-            load_core_model, core_model="groundingdino"
-        )
+        load_grounding_dino_model = partial(load_core_model, core_model="groundingdino")
         """Loads the Grounding DINO model into the model manager.
 
         Args:
