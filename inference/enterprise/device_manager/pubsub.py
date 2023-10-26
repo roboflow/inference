@@ -6,7 +6,9 @@ from paho.mqtt import client as mqtt_client
 from inference.enterprise.device_manager.command_handler import handle_command
 from inference.core.env import (
     API_KEY,
-    MESSAGE_BROKER_HOST,
+    DEVICE_MANAGER_PUBSUB_HOST,
+    DEVICE_MANAGER_USERNAME,
+    DEVICE_MANAGER_PASSWORD,
 )
 from inference.core.logger import logger
 from inference.enterprise.device_manager.helpers import (
@@ -60,18 +62,24 @@ def on_message(client, userdata, msg):
 def connect_mqtt():
     client = mqtt_client.Client(CLIENT_ID, clean_session=False)
     client.tls_set(ca_certs="./inference/enterprise/device_manager/server.crt")
-    client.username_pw_set("testuser1", "foobarqux")
+    client.username_pw_set(DEVICE_MANAGER_USERNAME, DEVICE_MANAGER_PASSWORD)
     client.enable_logger(logger=logger)
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
     client.will_set(
         SYS_TOPIC,
-        payload=json.dumps({"device_id": get_device_id(), "type": "offline"}),
+        payload=json.dumps(
+            {
+                "device_id": get_device_id(),
+                "type": "disconnected",
+                "source": "device_manager",
+            }
+        ),
         qos=1,
         retain=False,
     )
-    client.connect(MESSAGE_BROKER_HOST, 8883, keepalive=60)
+    client.connect(DEVICE_MANAGER_PUBSUB_HOST, 8883, keepalive=60)
     return client
 
 

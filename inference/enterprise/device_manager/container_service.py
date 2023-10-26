@@ -3,6 +3,8 @@ import sys
 import base64
 from dataclasses import dataclass
 from datetime import datetime
+from PIL import Image
+from io import BytesIO
 
 import requests
 
@@ -10,7 +12,7 @@ import docker
 from inference.core.logger import logger
 from inference.core.env import METRICS_INTERVAL
 from inference.core.cache import cache
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.image_utils import load_image
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 
 
@@ -145,7 +147,7 @@ def get_inference_containers():
             except Exception as e:
                 logger.error(f"Failed to get info from container {details} {e}")
             details.update(info)
-            details["alias"] = details["uuid"]
+            details["alias"] = details.get("uuid")
             infer_container = InferServerContainer(c, details)
             if len(inference_containers) == 0:
                 inference_containers.append(infer_container)
@@ -231,14 +233,15 @@ def _get_cached_model_ids(container_name, now=None):
 
 def _get_formatted_image_value(image):
     value = None
-    if image["type"] == "base64":
-        value = image["value"]
-    else:
-        loaded_image = load_image_rgb(image)
-        image_bytes = loaded_image.tobytes()
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-        value = image_base64
-
+    if image["type"] == "base64" or image["type"] == "url":
+        logger.info(f"returning value {image['value']}")
+        return image["value"]
+    loaded_image, is_bgr = load_image(image)
+    image = Image.fromarray(loaded_image)
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+    base64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    value = base64_image
     return f"data:image/jpeg;base64, {value}"
 
 
@@ -278,6 +281,7 @@ def get_latest_inferences(container_id=None, max=1):
                 latest_inferred_images[model_id].append(
                     {
                         "image": value,
+                        "type": image["type"],
                         "dimensions": image_dims,
                         "predictions": predictions,
                     }

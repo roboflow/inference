@@ -239,11 +239,9 @@ VERSION_CHECK_MODE = os.getenv("VERSION_CHECK_MODE", "once")
 # Metlo key, default is None
 METLO_KEY = os.getenv("METLO_KEY", None)
 
-MESSAGE_BROKER_USER = os.getenv("MESSAGE_BROKER_USER", "public")
-MESSAGE_BROKER_PASSWORD = os.getenv("MESSAGE_BROKER_PASSWORD", "public")
-MESSAGE_BROKER_HOST = os.getenv(
-    "MESSAGE_BROKER_HOSt", "k79fa999.ala.us-east-1.emqxsl.com"
-)
+DEVICE_MANAGER_USERNAME = os.getenv("DEVICE_MANAGER_USERNAME")
+DEVICE_MANAGER_PASSWORD = os.getenv("DEVICE_MANAGER_PASSWORD")
+DEVICE_MANAGER_PUBSUB_HOST = os.getenv("DEVICE_MANAGER_PUBSUB_HOST")
 
 # Core model bucket
 CORE_MODEL_BUCKET = os.getenv(

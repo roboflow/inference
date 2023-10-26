@@ -45,19 +45,18 @@ def aggregate_model_stats(container_id):
           the global constant METRICS_INTERVAL, passed in when starting up the container.
     """
     now = time.time()
-    start = now - METRICS_INTERVAL
+    start = now - (METRICS_INTERVAL * 5)
     models = []
-    api_keys = get_cache_model_items().get(container_id, dict()).keys()
+    cached_models = get_cache_model_items(start=int(start), end=now)
+    api_keys = cached_models.get(container_id, dict()).keys()
     for api_key in api_keys:
-        model_ids = get_cache_model_items().get(container_id, dict()).get(api_key, [])
+        model_ids = cached_models.get(container_id, dict()).get(api_key, [])
         for model_id in model_ids:
             model = {
                 "dataset_id": model_id.split("/")[0],
                 "version": model_id.split("/")[1],
                 "api_key": api_key,
-                "metrics": get_model_metrics(
-                    container_id, model_id, min=start, max=now
-                ),
+                "metrics": get_model_metrics(container_id, model_id, min=-1, max=now),
             }
             models.append(model)
     return models

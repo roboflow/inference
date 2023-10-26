@@ -1,5 +1,5 @@
-import time
 import uuid
+import time
 
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL
@@ -7,10 +7,9 @@ from inference.core.env import METRICS_INTERVAL
 
 def get_device_id():
     return hex(uuid.getnode())
-    # return f"{s[2:10]}:{s[10:14]}:{s[14:18]}:{s[18:22]}:{s[22:]}"
 
 
-def get_cache_model_items():
+def get_cache_model_items(start=None, end=None):
     """
     Retrieve and organize cached model items within a specified time interval.
 
@@ -31,7 +30,7 @@ def get_cache_model_items():
         - It uses the global constant METRICS_INTERVAL to specify the time interval.
     """
     now = time.time()
-    start = now - METRICS_INTERVAL
+    start = 1
     models = cache.zrangebyscore("models", min=start, max=now)
     model_items = dict()
     for model in models:

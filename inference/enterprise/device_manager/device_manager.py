@@ -2,7 +2,12 @@ import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
-from inference.core.env import METRICS_INTERVAL
+from inference.core.env import (
+    METRICS_INTERVAL,
+    DEVICE_MANAGER_USERNAME,
+    DEVICE_MANAGER_PASSWORD,
+    DEVICE_MANAGER_PUBSUB_HOST,
+)
 from inference.core.version import __version__
 from inference.enterprise.device_manager.container_service import (
     check_for_duplicate_aliases,
@@ -11,6 +16,13 @@ from inference.enterprise.device_manager.metrics_service import (
     send_metrics,
     send_latest_inferences,
 )
+
+if not DEVICE_MANAGER_PASSWORD:
+    raise ValueError("The DEVICE_MANAGER_PASSWORD environment variable must be set")
+elif not DEVICE_MANAGER_USERNAME:
+    raise ValueError("The DEVICE_MANAGER_USERNAME environment variable must be set")
+elif not DEVICE_MANAGER_PUBSUB_HOST:
+    raise ValueError("The DEVICE_MANAGER_PUBSUB_HOST environment variable must be set")
 
 app = FastAPI(
     title="Roboflow Device Manager",
