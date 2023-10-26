@@ -1552,13 +1552,13 @@ def test_get_roboflow_labeling_jobs_when_valid_response_returned(
                 "instructionsText": "",
                 "createdBy": "XXX",
                 "name": "Uploaded on 10/11/23 at 7:20 pm",
-                "labeler": "pawel@roboflow.com",
+                "labeler": "XXX",
                 "created": {"_seconds": 1697044995, "_nanoseconds": 375000000},
                 "numImages": 161,
                 "status": "complete",
                 "unannotated": 0,
                 "annotated": 161,
-                "id": "0HWqoLfLx3p0Fs1BIr2l",
+                "id": "XXX",
             }
         ],
     }
