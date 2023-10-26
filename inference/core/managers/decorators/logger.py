@@ -38,7 +38,7 @@ class WithLogger(ModelManagerDecorator):
             InferenceResponse: The response from the inference.
         """
         logger.info(f"📥 [{model_id}] request={request}.")
-        res = super().infer_from_request(model_id, request)
+        res = super().infer_from_request(model_id, request, **kwargs)
         logger.info(f"📥 [{model_id}] res={res}.")
         return res
 

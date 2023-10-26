@@ -57,6 +57,9 @@ def return_strategy_credit(
 ) -> None:
     # In scope of this function, cache keys updates regarding usage limits for
     # specific :workspace and :project are locked - to ensure decrement to be done atomically
+    # Returning strategy is a bit naive (we may add to a pool of credits from the next period - but only
+    # if we have previously taken from the previous one and some credits are used in the new pool) -
+    # in favour of easier implementation.
     with lock_limits(cache=cache, workspace=workspace, project=project):
         return_strategy_usage_limits_credit(
             cache=cache,

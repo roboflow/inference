@@ -54,7 +54,7 @@ class ModelManagerDecorator:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        return self.model_manager.infer_from_request(model_id, request)
+        return self.model_manager.infer_from_request(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request.

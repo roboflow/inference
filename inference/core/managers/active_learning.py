@@ -1,6 +1,8 @@
 import time
 from typing import Optional, Dict
 
+from fastapi import BackgroundTasks
+
 from inference.core import logger
 from inference.core.active_learning.core import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
@@ -8,6 +10,9 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
+
+ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
+BACKGROUND_TASKS_PARAM = "background_tasks"
 
 
 class ActiveLearningManager(ModelManager):
@@ -25,16 +30,26 @@ class ActiveLearningManager(ModelManager):
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         prediction = super().infer_from_request(model_id=model_id, request=request)
+        active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
+        if not active_learning_eligible:
+            return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction
 
     def register(
         self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
     ) -> None:
-        self.ensure_middleware_initialised(model_id=model_id, request=request)
-        self.register_datapoint(
-            prediction=prediction, model_id=model_id, request=request
-        )
+        try:
+            self.ensure_middleware_initialised(model_id=model_id, request=request)
+            self.register_datapoint(
+                prediction=prediction, model_id=model_id, request=request
+            )
+        except Exception as error:
+            # Error handling to be decided
+            logger.warning(
+                f"Error in datapoint registration for Active Learning. Details: {error}. "
+                f"Error is suppressed in favour of normal operations of API."
+            )
 
     def ensure_middleware_initialised(
         self, model_id: str, request: InferenceRequest
@@ -77,3 +92,25 @@ class ActiveLearningManager(ModelManager):
         )
         end = time.perf_counter()
         logger.info(f"Registration: {(end - start) * 1000} ms")
+
+
+class BackgroundTaskActiveLearningManager(ActiveLearningManager):
+    def infer_from_request(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        prediction = super().infer_from_request(model_id=model_id, request=request)
+        active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
+        if not active_learning_eligible:
+            return prediction
+        if BACKGROUND_TASKS_PARAM not in kwargs:
+            logger.warning(
+                "BackgroundTaskActiveLearningManager used against rules - `background_tasks` argument not "
+                "provided making Active Learning registration running sequentially."
+            )
+            self.register(prediction=prediction, model_id=model_id, request=request)
+        else:
+            background_tasks: BackgroundTasks = kwargs["background_tasks"]
+            background_tasks.add_task(
+                self.register, prediction=prediction, model_id=model_id, request=request
+            )
+        return prediction
