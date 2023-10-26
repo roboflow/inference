@@ -6,10 +6,13 @@ import time
 from typing import Union
 
 import cv2
+import numpy as np
 import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
+from inference.core.active_learning.core import ThreadingActiveLearningMiddleware
+from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -28,6 +31,7 @@ from inference.core.env import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
+from inference.core.registries.roboflow import get_model_type
 from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
@@ -94,7 +98,12 @@ class UdpStream(BaseInterface):
             raise ValueError("API_KEY is not defined")
 
         self.model = get_roboflow_model(self.model_id, self.api_key)
-
+        self.task_type = get_model_type(model_id=self.model_id, api_key=self.api_key)[0]
+        self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+            api_key=self.api_key,
+            model_id=self.model_id,
+            cache=cache,
+        )
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
         self.iou_threshold = iou_threshold
@@ -151,6 +160,7 @@ class UdpStream(BaseInterface):
         self.model.infer(
             frame, confidence=self.confidence, iou_threshold=self.iou_threshold
         )
+        self.active_learning_middleware.start_registration_thread()
 
     def preprocess_thread(self):
         """Preprocess incoming frames for inference.
@@ -192,6 +202,7 @@ class UdpStream(BaseInterface):
             if self.queue_control:
                 self.queue_control = False
                 frame_id = self.frame_id
+                inference_input = np.copy(self.frame_cv)
                 predictions = self.model.predict(
                     self.img_in,
                 )
@@ -209,6 +220,11 @@ class UdpStream(BaseInterface):
                         predictions,
                         self.img_dims,
                     )[0]
+                    self.active_learning_middleware.register(
+                        inference_input=inference_input,
+                        prediction=predictions.dict(by_alias=True, exclude_none=True),
+                        prediction_type=self.task_type,
+                    )
                     if self.use_bytetrack:
                         detections = sv.Detections.from_roboflow(
                             predictions.dict(by_alias=True), self.model.class_names
@@ -258,5 +274,6 @@ class UdpStream(BaseInterface):
             except KeyboardInterrupt:
                 logger.info("Stopping server...")
                 self.stop = True
+                self.active_learning_middleware.stop_registration_thread()
                 time.sleep(3)
                 sys.exit(0)

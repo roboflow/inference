@@ -40,6 +40,38 @@ from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 MAX_REGISTRATION_QUEUE_SIZE = 128
 
 
+class NullActiveLearningMiddleware:
+    def register_batch(
+        self,
+        inference_inputs: List[Any],
+        predictions: List[Prediction],
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
+        pass
+
+    def register(
+        self,
+        inference_input: Any,
+        prediction: dict,
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
+        pass
+
+    def start_registration_thread(self) -> None:
+        pass
+
+    def stop_registration_thread(self) -> None:
+        pass
+
+    def __enter__(self) -> "NullActiveLearningMiddleware":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
+
 class ActiveLearningMiddleware:
     @classmethod
     def init(
@@ -58,7 +90,7 @@ class ActiveLearningMiddleware:
     def __init__(
         self,
         api_key: str,
-        configuration: ActiveLearningConfiguration,
+        configuration: Optional[ActiveLearningConfiguration],
         cache: BaseCache,
     ):
         self._api_key = api_key
@@ -101,6 +133,8 @@ class ActiveLearningMiddleware:
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
     ) -> None:
+        if self._configuration is None:
+            return None
         image, is_bgr = load_image(
             value=inference_input,
             disable_preproc_auto_orient=disable_preproc_auto_orient,

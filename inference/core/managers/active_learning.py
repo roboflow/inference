@@ -60,14 +60,14 @@ class ActiveLearningManager(ModelManager):
         if model_id in self._middlewares:
             return None
         start = time.perf_counter()
-        logger.info(f"Initialising AL middleware for {model_id}")
+        logger.debug(f"Initialising AL middleware for {model_id}")
         self._middlewares[model_id] = ActiveLearningMiddleware.init(
             api_key=request.api_key,
             model_id=model_id,
             cache=self._cache,
         )
         end = time.perf_counter()
-        logger.info(f"Middleware init latency: {(end - start) * 1000} ms")
+        logger.debug(f"Middleware init latency: {(end - start) * 1000} ms")
 
     def register_datapoint(
         self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
@@ -99,7 +99,7 @@ class ActiveLearningManager(ModelManager):
             disable_preproc_auto_orient=disable_preproc_auto_orient,
         )
         end = time.perf_counter()
-        logger.info(f"Registration: {(end - start) * 1000} ms")
+        logger.debug(f"Registration: {(end - start) * 1000} ms")
 
 
 class BackgroundTaskActiveLearningManager(ActiveLearningManager):
