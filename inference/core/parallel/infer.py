@@ -15,7 +15,7 @@ from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE, REDIS_HOST, RE
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.parallel.tasks import postprocess
-from inference.core.parallel.utils import failure_handler, shm_closer
+from inference.core.parallel.utils import failure_handler, shm_manager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 
 logging.basicConfig(level=logging.INFO)
@@ -69,12 +69,8 @@ def write_response(
     request: InferenceRequest,
     preproc_return_metadata: Dict,
 ):
-    shms = []
-    for im_arr in im_arrs:
-        shm = shared_memory.SharedMemory(create=True, size=im_arr.nbytes)
-        shms.append(shm)
-
-    with shm_closer(*shms, on_success=False):
+    shms = [shared_memory.SharedMemory(create=True, size=im.nbytes) for im in im_arrs]
+    with shm_manager(*shms, close_on_success=False):
         returns = []
         for im_arr, shm in zip(im_arrs, shms):
             shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm.buf)
@@ -107,7 +103,7 @@ class InferServer:
                 self.infer()
             except:
                 continue
-    
+
     def infer(self):
         model_names = get_requested_model_names(self.redis)
         if not model_names:
@@ -122,8 +118,7 @@ class InferServer:
                 request = request_from_type(model_type, b["request"])
                 b["request"] = request
 
-            shms = [shared_memory.SharedMemory(name=b["chunk_name"]) for b in batch]
-            with shm_closer(*shms):
+            with shm_manager(*[b["chunk_name"] for b in batch]) as shms:
                 images, preproc_return_metadatas = load_batch(batch, shms)
                 outputs = self.model_manager.predict(model_id, images)
                 for output, b, metadata in zip(

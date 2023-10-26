@@ -1,5 +1,6 @@
 import json
 from multiprocessing import shared_memory
+from typing import List, Dict
 
 import numpy as np
 from celery import Celery
@@ -12,7 +13,7 @@ from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
 from inference.core.managers.stub_loader import StubLoaderManager
-from inference.core.parallel.utils import failure_handler, shm_closer
+from inference.core.parallel.utils import failure_handler, shm_manager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
@@ -26,7 +27,7 @@ model_manager = WithFixedSizeCache(
 
 
 @app.task(queue="pre")
-def preprocess(request):
+def preprocess(request: Dict):
     r = Redis(connection_pool=pool, decode_responses=True)
     with failure_handler(r, request["id"]):
         model_manager.add_model(request["model_id"], request["api_key"])
@@ -38,7 +39,7 @@ def preprocess(request):
         img_dims = preprocess_return_metadata["img_dims"]
         image = image[0]
         shm = shared_memory.SharedMemory(create=True, size=image.nbytes)
-        with shm_closer(shm, on_success=False):
+        with shm_manager(shm, close_on_success=False):
             shared = np.ndarray(image.shape, dtype=image.dtype, buffer=shm.buf)
             shared[:] = image[:]
             shm.close()
@@ -59,19 +60,17 @@ def preprocess(request):
 
 
 @app.task(queue="post")
-def postprocess(arg_list, request, metadata):
+def postprocess(
+    shm_info_list: List[Dict], request: Dict, preproc_return_metadata: Dict
+):
     r = Redis(connection_pool=pool, decode_responses=True)
     with failure_handler(r, request["id"]):
-        shms = []
-        for args in arg_list:
-            shm = shared_memory.SharedMemory(name=args["chunk_name"])
-            shms.append(shm)
-        with shm_closer(*shms):
+        with shm_manager(*[shm["name"] for shm in shm_info_list]) as shms:
             model_manager.add_model(request["model_id"], request["api_key"])
             model_type = model_manager.get_task_type(request["model_id"])
             request = request_from_type(model_type, request)
             outputs = []
-            for args, shm in zip(arg_list, shms):
+            for args, shm in zip(shm_info_list, shms):
                 output = np.ndarray(
                     [1] + args["image_shape"], dtype=args["image_dtype"], buffer=shm.buf
                 )
@@ -81,7 +80,7 @@ def postprocess(arg_list, request, metadata):
             results = model_manager.postprocess(
                 request.model_id,
                 tuple(outputs),
-                metadata,
+                preproc_return_metadata,
                 **request_dict,
                 return_image_dims=True,
             )

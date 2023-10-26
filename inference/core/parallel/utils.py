@@ -1,5 +1,7 @@
 import sys
 from contextlib import contextmanager
+from multiprocessing import shared_memory
+from typing import Union
 
 from redis import Redis
 
@@ -28,18 +30,34 @@ def failure_handler(redis: Redis, *request_ids):
 
 
 @contextmanager
-def shm_closer(*shms, on_failure=True, on_success=True):
+def shm_manager(
+    *shms: Union[str, shared_memory.SharedMemory],
+    close_on_failure=True,
+    close_on_success=True
+):
     """Context manager that closes and frees shared memory objects."""
     try:
-        yield
+        loaded_shims = []
+        for shm in shms:
+            errors = []
+            try:
+                if isinstance(shm, str):
+                    shm = shared_memory.SharedMemory(name=shm)
+                loaded_shims.append(shm)
+            except BaseException as E:
+                errors.append(E)
+            if errors:
+                raise Exception(errors)
+
+        yield loaded_shims
     except:
-        if on_failure:
+        if close_on_failure:
             for shm in shms:
                 shm.close()
                 shm.unlink()
         raise
     else:
-        if on_success:
+        if close_on_success:
             for shm in shms:
                 shm.close()
                 shm.unlink()
