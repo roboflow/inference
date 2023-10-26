@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import traceback
 from typing import Callable, Union
 
 import cv2
@@ -226,6 +227,7 @@ class Stream(BaseInterface):
                         self.queue_control = True
 
         except Exception as e:
+            traceback.print_exc()
             logger.error(e)
 
     def inference_request_thread(self):

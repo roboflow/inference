@@ -210,6 +210,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
     ) -> None:
+        logger.debug(f"Putting registration task into queue")
         self._task_queue.put(
             (inference_input, prediction, prediction_type, disable_preproc_auto_orient)
         )
@@ -218,26 +219,31 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         if self._registration_thread is not None:
             logger.warning(f"Registration thread already started.")
             return None
+        logger.debug("Staring registration thread")
         self._registration_thread = Thread(target=self._consume_queue)
         self._registration_thread.start()
 
     def stop_registration_thread(self) -> None:
         if self._registration_thread is None:
             logger.warning("Registration thread is already stopped.")
+        logger.debug("Stopping registration thread")
         self._task_queue.put(None)
-        self._task_queue.join()
         self._registration_thread.join()
         if self._registration_thread.is_alive():
             logger.warning(f"Registration thread stopping was unsuccessful.")
+        self._registration_thread = None
 
     def _consume_queue(self) -> None:
-        queue_closed = True
+        queue_closed = False
         while not queue_closed:
             queue_closed = self._consume_queue_task()
 
     def _consume_queue_task(self) -> bool:
+        logger.debug("Consuming registration task")
         task = self._task_queue.get()
+        logger.debug("Received registration task")
         if task is None:
+            logger.debug("Terminating registration thread")
             self._task_queue.task_done()
             return True
         inference_input, prediction, prediction_type, disable_preproc_auto_orient = task
@@ -263,6 +269,9 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop_registration_thread()
+
+    def __del__(self) -> None:
+        self._task_queue.join()
 
 
 def execute_sampling(

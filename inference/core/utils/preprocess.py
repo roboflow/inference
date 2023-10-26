@@ -190,13 +190,11 @@ def letterbox_image(
         image=image,
         desired_size=desired_size,
     )
-    new_height, new_width = image.shape[:2]
-    # Pad the image to fit the desired size
+    new_height, new_width = resized_img.shape[:2]
     top_padding = (desired_size[1] - new_height) // 2
     bottom_padding = desired_size[1] - new_height - top_padding
     left_padding = (desired_size[0] - new_width) // 2
     right_padding = desired_size[0] - new_width - left_padding
-
     return cv2.copyMakeBorder(
         resized_img,
         top_padding,
