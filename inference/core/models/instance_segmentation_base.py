@@ -20,6 +20,7 @@ from inference.core.utils.postprocess import (
     process_mask_fast,
     process_mask_tradeoff,
 )
+from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -40,6 +41,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
     """
 
     task_type = "instance-segmentation"
+    num_masks = 32
 
     def infer(
         self,
@@ -119,7 +121,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             class_agnostic=kwargs["class_agnostic_nms"],
             max_detections=kwargs["max_detections"],
             max_candidate_detections=kwargs["max_candidates"],
-            num_masks=32,
+            num_masks=self.num_masks,
         )
         infer_shape = (self.img_size_h, self.img_size_w)
         predictions = np.array(predictions)
@@ -274,3 +276,15 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError("predict must be implemented by a subclass")
+
+    def validate_model_classes(self) -> None:
+        output_shape = self.get_model_output_shape()
+        num_classes = get_num_classes_from_model_prediction_shape(
+            output_shape[2], masks=self.num_masks
+        )
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )
