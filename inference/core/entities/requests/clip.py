@@ -26,6 +26,8 @@ class ClipInferenceRequest(BaseRequest):
 
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
         if values.get("clip_version_id") is None:
             return None
         return f"clip/{values['clip_version_id']}"

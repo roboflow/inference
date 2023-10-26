@@ -11,14 +11,14 @@ import numpy as np
 from redis import ConnectionPool, Redis
 
 from inference.core.entities.requests.inference import request_from_type
-from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE
+from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.parallel.tasks import postprocess
 from inference.core.parallel.utils import failure_handler, shm_closer
 from inference.core.registries.roboflow import RoboflowModelRegistry
 
-pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
+pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 r = Redis(connection_pool=pool, decode_responses=True)
 logging.basicConfig(level=logging.INFO)
 

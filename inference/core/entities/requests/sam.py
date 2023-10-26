@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import Field, validator
+from pydantic import Field, validator, root_validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
@@ -23,8 +23,12 @@ class SamInferenceRequest(BaseRequest):
         description="The version ID of SAM to be used for this request. Must be one of vit_h, vit_l, or vit_b.",
     )
 
+    model_id: Optional[str] = Field()
+
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
         if values.get("sam_version_id") is None:
             return None
         return f"sam/{values['sam_version_id']}"

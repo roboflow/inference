@@ -35,8 +35,10 @@ class GazeDetectionInferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     model_id: Optional[str] = Field()
 
-    @validator("model_id", always=True)
+    @validator("model_id", always=True, allow_reuse=True)
     def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
         if values.get("gaze_version_id") is None:
             return None
         return f"gaze/{values['gaze_version_id']}"

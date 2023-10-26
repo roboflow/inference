@@ -1,36 +1,29 @@
-import base64
-import io
 import json
-import time
-from contextlib import contextmanager
 from multiprocessing import shared_memory
 
 import numpy as np
 from celery import Celery
-from PIL import Image
 from redis import ConnectionPool, Redis
 
 from inference.core.entities.requests.inference import (
-    InferenceRequest,
     request_from_type,
 )
-from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
 from inference.core.managers.stub_loader import StubLoaderManager
-from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.parallel.utils import failure_handler, shm_closer
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_roboflow_model
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
+from inference.core.env import REDIS_HOST, REDIS_PORT, STUB_CACHE_SIZE
 
-pool = ConnectionPool(host="localhost", port=6379, decode_responses=True)
-app = Celery("tasks", broker="redis://localhost:6379")
+pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+app = Celery("tasks", broker=f"redis://{REDIS_HOST}:{REDIS_PORT}")
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = StubLoaderManager(model_registry)
 model_manager = WithFixedSizeCache(
-    LockedLoadModelManagerDecorator(model_manager), max_size=256
+    LockedLoadModelManagerDecorator(model_manager), max_size=STUB_CACHE_SIZE
 )
 
 
