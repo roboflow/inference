@@ -1,6 +1,12 @@
-from typing import List
+import json
+from typing import List, Tuple
 
-from inference.core.active_learning.entities import PredictionType
+from inference.core.active_learning.entities import (
+    Prediction,
+    PredictionFileType,
+    PredictionType,
+    SerialisedPrediction,
+)
 from inference.core.constants import (
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
@@ -105,3 +111,14 @@ def adjust_points_coordinates_to_client_scaling_factor(
         point["y"] = point["y"] / scaling_factor
         result.append(point)
     return result
+
+
+def encode_prediction(
+    prediction: Prediction,
+    prediction_type: PredictionType,
+) -> Tuple[SerialisedPrediction, PredictionFileType]:
+    if CLASSIFICATION_TASK not in prediction_type:
+        return json.dumps(prediction), "json"
+    if "top" in prediction:
+        return prediction["top"], "txt"
+    raise NotImplementedError()

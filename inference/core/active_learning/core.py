@@ -19,6 +19,7 @@ from inference.core.active_learning.entities import (
 )
 from inference.core.active_learning.post_processing import (
     adjust_prediction_to_client_scaling_factor,
+    encode_prediction,
 )
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_TAGS
@@ -84,6 +85,7 @@ def execute_datapoint_registration(
         encoded_image=encoded_image,
         local_image_id=local_image_id,
         prediction=prediction,
+        prediction_type=prediction_type,
         configuration=configuration,
         api_key=api_key,
         batch_name=batch_name,
@@ -115,6 +117,7 @@ def register_datapoint_at_roboflow(
     encoded_image: bytes,
     local_image_id: str,
     prediction: Prediction,
+    prediction_type: PredictionType,
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
@@ -135,13 +138,16 @@ def register_datapoint_at_roboflow(
     )
     if not configuration.persist_predictions or roboflow_image_id is None:
         return None
-    encoded_prediction = json.dumps(prediction)
+    encoded_prediction, prediction_file_type = encode_prediction(
+        prediction=prediction, prediction_type=prediction_type
+    )
     _ = annotate_image_at_roboflow(
         api_key=api_key,
         dataset_id=configuration.dataset_id,
         local_image_id=local_image_id,
         roboflow_image_id=roboflow_image_id,
         annotation_content=encoded_prediction,
+        annotation_file_type=prediction_file_type,
         is_prediction=True,
     )
 

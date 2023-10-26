@@ -202,8 +202,6 @@ def get_roboflow_active_learning_configuration(
     # return _get_from_roboflow_api(url=api_url)
     return {
         "enabled": True,
-        "target_workspace": "pawel-peczek-private",  # Optional
-        "target_project": "barbel-detection",  # Optional
         "max_image_size": (1200, 1200),  # (h, w)
         "jpeg_compression_level": 75,  # int 0-100
         "persist_predictions": True,
@@ -278,12 +276,13 @@ def annotate_image_at_roboflow(
     local_image_id: str,
     roboflow_image_id: str,
     annotation_content: str,
+    annotation_file_type: str,
     is_prediction: bool = True,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/annotate/{roboflow_image_id}"
     params = [
         ("api_key", api_key),
-        ("name", f"{local_image_id}_annotation.json"),
+        ("name", f"{local_image_id}_annotation.{annotation_file_type}"),
         ("prediction", str(is_prediction).lower()),
     ]
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))

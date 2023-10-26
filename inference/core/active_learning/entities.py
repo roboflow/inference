@@ -9,6 +9,8 @@ from inference.core.entities.types import DatasetID, WorkspaceID
 LocalImageIdentifier = str
 PredictionType = str
 Prediction = dict
+SerialisedPrediction = str
+PredictionFileType = str
 
 
 @dataclass(frozen=True)

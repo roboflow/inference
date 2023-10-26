@@ -47,7 +47,7 @@ def prepare_active_learning_configuration(
     target_workspace_id = roboflow_api_configuration.get(
         "target_workspace", workspace_id
     )
-    target_dataset_id = roboflow_api_configuration.get("target_project", workspace_id)
+    target_dataset_id = roboflow_api_configuration.get("target_project", dataset_id)
     return ActiveLearningConfiguration.init(
         roboflow_api_configuration=roboflow_api_configuration,
         sampling_methods=sampling_methods,
