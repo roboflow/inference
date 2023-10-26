@@ -32,17 +32,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.txt
       - name: 🔨 Build and Push Test Docker - GPU
-        uses: docker/build-push-action@v4
-        with:
-          push: true
-          tags: roboflow/roboflow-inference-server-gpu:test
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu:test-cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:test-cache,mode=max
-          platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.gpu
+        run : |
+          docker pull roboflow/roboflow-inference-server-gpu:test
+          docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
+          docker push roboflow/roboflow-inference-server-gpu:test
       - name: 🔋 Start Test Docker - GPU
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu DOCKERFILE=Dockerfile.onnx.gpu make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - GPU
         run: |
           FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} python -m pytest tests/inference/integration_tests/
@@ -51,17 +47,13 @@ jobs:
         if: success() || failure()
       - name: 🔨 Build and Push Test Docker - TRT
         if: success() || failure()
-        uses: docker/build-push-action@v4
-        with:
-          push: true
-          tags: roboflow/roboflow-inference-server-trt:test
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt:test-cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt:test-cache,mode=max
-          platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.trt
+        run : |
+          docker pull roboflow/roboflow-inference-server-trt:test
+          docker build -t roboflow/roboflow-inference-server-trt:test -f docker/dockerfiles/Dockerfile.onnx.trt .
+          docker push roboflow/roboflow-inference-server-trt:test
       - name: 🔋 Start Test Docker - TRT
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-trt DOCKERFILE=Dockerfile.onnx.trt make start_test_docker_gpu
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-trt make start_test_docker_gpu
       - name: 🧪 Regression Tests - TRT
         run: |
           SKIP_GAZE_TEST=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} python -m pytest tests/inference/integration_tests/
