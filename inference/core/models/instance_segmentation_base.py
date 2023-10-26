@@ -191,10 +191,10 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         img_in, img_dims = self.load_image(
             image,
-            disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
-            disable_preproc_contrast=kwargs["disable_preproc_contrast"],
-            disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
-            disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+            disable_preproc_auto_orient=kwargs.get("disable_preproc_auto_orient"),
+            disable_preproc_contrast=kwargs.get("disable_preproc_contrast"),
+            disable_preproc_grayscale=kwargs.get("disable_preproc_grayscale"),
+            disable_preproc_static_crop=kwargs.get("disable_preproc_static_crop"),
         )
 
         img_in /= 255.0
@@ -202,7 +202,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             {
                 "img_dims": img_dims,
                 "im_shape": img_in.shape,
-                "disable_preproc_static_crop": kwargs["disable_preproc_static_crop"],
+                "disable_preproc_static_crop": kwargs.get(
+                    "disable_preproc_static_crop"
+                ),
             }
         )
 
