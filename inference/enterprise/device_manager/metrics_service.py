@@ -1,8 +1,16 @@
 import time
+import requests
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.env import API_KEY, METRICS_INTERVAL, TAGS, DEVICE_ALIAS
+from inference.core.env import (
+    API_KEY,
+    METRICS_INTERVAL,
+    TAGS,
+    DEVICE_ALIAS,
+    METRICS_URL,
+)
 from inference.core.logger import logger
+from inference.core.utils.url_utils import wrap_url
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.version import __version__
 from inference.enterprise.device_manager.container_service import (
@@ -134,7 +142,7 @@ def send_metrics():
     """
     all_data = aggregate_device_stats()
     logger.info(str(all_data))
-    # requests.post(wrap_url(METRICS_URL), json=all_data)
+    requests.post(wrap_url(METRICS_URL), json=all_data)
     pubsub.dispatch(pubsub.METRICS_TOPIC, all_data)
 
 

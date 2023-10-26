@@ -152,8 +152,4 @@ export_api_keys.sh
 inference_cli/version.py
 inference_sdk/version.py
 
-<<<<<<< HEAD
-.DS_store
-=======
 **/.DS_Store
->>>>>>> main
