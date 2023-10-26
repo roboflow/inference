@@ -2,14 +2,14 @@ import json
 import logging
 import time
 from multiprocessing import shared_memory
-from typing import Tuple, List, Dict
+from typing import Dict, List, Tuple
 
 import numpy as np
 from redis import ConnectionPool, Redis
 
 from inference.core.entities.requests.inference import (
-    request_from_type,
     InferenceRequest,
+    request_from_type,
 )
 from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
@@ -21,7 +21,6 @@ from inference.core.registries.roboflow import RoboflowModelRegistry
 logging.basicConfig(level=logging.INFO)
 
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
 
 BATCH_SIZE = min(MAX_BATCH_SIZE, 128)
 

@@ -1,14 +1,14 @@
 import json
 from multiprocessing import shared_memory
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 from celery import Celery
 from redis import ConnectionPool, Redis
 
 from inference.core.entities.requests.inference import (
-    request_from_type,
     InferenceRequest,
+    request_from_type,
 )
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import REDIS_HOST, REDIS_PORT, STUB_CACHE_SIZE
@@ -18,11 +18,11 @@ from inference.core.managers.decorators.locked_load import (
 )
 from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.parallel.utils import (
+    SUCCESS_STATE,
+    TASK_RESULT_KEY,
+    TASK_STATUS_KEY,
     failure_handler,
     shm_manager,
-    SUCCESS_STATE,
-    TASK_STATUS_KEY,
-    TASK_RESULT_KEY,
 )
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES

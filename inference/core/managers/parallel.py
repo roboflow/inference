@@ -16,8 +16,8 @@ from inference.core.managers.base import ModelManager
 from inference.core.parallel.tasks import preprocess
 from inference.core.parallel.utils import (
     FAILURE_STATE,
-    SUCCESS_STATE,
     INITIAL_STATE,
+    SUCCESS_STATE,
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
 )
