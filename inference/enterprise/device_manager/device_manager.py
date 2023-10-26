@@ -1,20 +1,21 @@
 import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
 from inference.core.env import (
-    METRICS_INTERVAL,
-    DEVICE_MANAGER_USERNAME,
     DEVICE_MANAGER_PASSWORD,
     DEVICE_MANAGER_PUBSUB_HOST,
+    DEVICE_MANAGER_USERNAME,
+    METRICS_INTERVAL,
 )
 from inference.core.version import __version__
 from inference.enterprise.device_manager.container_service import (
     check_for_duplicate_aliases,
 )
 from inference.enterprise.device_manager.metrics_service import (
-    send_metrics,
     send_latest_inferences,
+    send_metrics,
 )
 
 if not DEVICE_MANAGER_PASSWORD:

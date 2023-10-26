@@ -1,19 +1,18 @@
+import json
 import time
 import uuid
-import json
 
 from paho.mqtt import client as mqtt_client
-from inference.enterprise.device_manager.command_handler import handle_command
+
 from inference.core.env import (
     API_KEY,
+    DEVICE_MANAGER_PASSWORD,
     DEVICE_MANAGER_PUBSUB_HOST,
     DEVICE_MANAGER_USERNAME,
-    DEVICE_MANAGER_PASSWORD,
 )
 from inference.core.logger import logger
-from inference.enterprise.device_manager.helpers import (
-    get_device_id,
-)
+from inference.enterprise.device_manager.command_handler import handle_command
+from inference.enterprise.device_manager.helpers import get_device_id
 
 METRICS_TOPIC = f"roboflow/device-management/v1/{API_KEY}/metrics"
 COMMANDS_TOPIC = f"roboflow/device-management/v1/{API_KEY}/commands"

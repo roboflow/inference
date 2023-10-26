@@ -1,5 +1,5 @@
-import uuid
 import time
+import uuid
 
 from inference.core.cache import cache
 from inference.core.env import METRICS_INTERVAL

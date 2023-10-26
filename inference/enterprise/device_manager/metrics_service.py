@@ -1,18 +1,20 @@
 import time
+
 import requests
 
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_KEY,
-    METRICS_INTERVAL,
-    TAGS,
     DEVICE_ALIAS,
+    METRICS_INTERVAL,
     METRICS_URL,
+    TAGS,
 )
 from inference.core.logger import logger
-from inference.core.utils.url_utils import wrap_url
 from inference.core.managers.metrics import get_model_metrics, get_system_info
+from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
+from inference.enterprise.device_manager import pubsub
 from inference.enterprise.device_manager.container_service import (
     get_container_by_id,
     get_container_ids,
@@ -22,8 +24,6 @@ from inference.enterprise.device_manager.helpers import (
     get_cache_model_items,
     get_device_id,
 )
-
-from inference.enterprise.device_manager import pubsub
 
 
 def aggregate_model_stats(container_id):

@@ -40,9 +40,9 @@ def handle_command(cmd_payload: dict):
         case _:
             logger.error("Unknown command: {}".format(cmd))
     if was_processed:
-        from inference.enterprise.device_manager.metrics_service import (
+        from inference.enterprise.device_manager.metrics_service import (  # isort: skip
             send_metrics,
-        )  # isort: skip
+        )
 
         send_metrics()
 

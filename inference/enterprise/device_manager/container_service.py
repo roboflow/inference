@@ -1,17 +1,17 @@
-import time
-import sys
 import base64
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from PIL import Image
 from io import BytesIO
 
 import requests
+from PIL import Image
 
 import docker
-from inference.core.logger import logger
-from inference.core.env import METRICS_INTERVAL
 from inference.core.cache import cache
+from inference.core.env import METRICS_INTERVAL
+from inference.core.logger import logger
 from inference.core.utils.image_utils import load_image
 from inference.enterprise.device_manager.helpers import get_cache_model_items
 
