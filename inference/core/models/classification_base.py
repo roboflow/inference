@@ -15,6 +15,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
@@ -184,10 +185,18 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             imgs_with_dims = [
                 self.preproc_image(
                     i,
-                    disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
-                    disable_preproc_contrast=kwargs["disable_preproc_contrast"],
-                    disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
-                    disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                    disable_preproc_contrast=kwargs.get(
+                        "disable_preproc_contrast", False
+                    ),
+                    disable_preproc_grayscale=kwargs.get(
+                        "disable_preproc_grayscale", False
+                    ),
+                    disable_preproc_static_crop=kwargs.get(
+                        "disable_preproc_static_crop", False
+                    ),
                 )
                 for i in image
             ]
@@ -196,10 +205,16 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         else:
             img_in, img_dims = self.preproc_image(
                 image,
-                disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
-                disable_preproc_contrast=kwargs["disable_preproc_contrast"],
-                disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
-                disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+                disable_preproc_contrast=kwargs.get("disable_preproc_contrast", False),
+                disable_preproc_grayscale=kwargs.get(
+                    "disable_preproc_grayscale", False
+                ),
+                disable_preproc_static_crop=kwargs.get(
+                    "disable_preproc_static_crop", False
+                ),
             )
             img_dims = [img_dims]
 
@@ -335,3 +350,19 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         """
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
+
+    def get_model_output_shape(self) -> Tuple[int, int, int]:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        test_image, _ = self.preprocess(test_image)
+        output = np.array(self.predict(test_image))
+        return output.shape
+
+    def validate_model_classes(self) -> None:
+        output_shape = self.get_model_output_shape()
+        num_classes = output_shape[3]
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )

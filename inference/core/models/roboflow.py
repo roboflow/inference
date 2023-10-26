@@ -342,7 +342,7 @@ class RoboflowInferenceModel(Model):
                 self.resize_method = "Stretch to"
         else:
             self.resize_method = "Stretch to"
-        self.log(f"Resize method is '{self.resize_method}'")
+        logger.debug(f"Resize method is '{self.resize_method}'")
 
     def initialize_model(self) -> None:
         """Initialize the model.
@@ -501,7 +501,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 model_id=self.endpoint,
             )
             if perf_counter() - t1 > 120:
-                self.log(
+                logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
                 api_data = get_roboflow_model_data(
@@ -580,6 +580,43 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     )
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
+        try:
+            self.validate_model()
+        except ModelArtefactError as e:
+            logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
+            self.clear_cache()
+            raise ModelArtefactError from e
+
+    def validate_model(self) -> None:
+        try:
+            assert self.onnx_session is not None
+        except AssertionError as e:
+            raise ModelArtefactError(
+                "ONNX session not initialized. Check that the model weights are available."
+            ) from e
+        try:
+            self.run_test_inference()
+        except Exception as e:
+            raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
+        try:
+            self.validate_model_classes()
+        except Exception as e:
+            raise ModelArtefactError(
+                f"Unable to validate model classes. Cause: {e}"
+            ) from e
+
+    def run_test_inference(self) -> None:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        return self.infer(test_image)
+
+    def get_model_output_shape(self) -> Tuple[int, int, int]:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        test_image, _ = self.preprocess(test_image)
+        output = self.predict(test_image)[0]
+        return output.shape
+
+    def validate_model_classes(self) -> None:
+        pass
 
     def get_infer_bucket_file_list(self) -> list:
         """Returns the list of files to be downloaded from the inference bucket for ONNX model.
@@ -592,7 +629,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
-        self.log("Creating inference session")
+        logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
@@ -600,7 +637,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 self.cache_file(self.weights_file),
                 providers=self.onnxruntime_execution_providers,
             )
-            self.log(f"Session created in {perf_counter() - t1_session} seconds")
+            logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             if REQUIRED_ONNX_PROVIDERS:
                 available_providers = onnxruntime.get_available_providers()
@@ -626,12 +663,12 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching enabled"
                 )
             else:
                 self.batching_enabled = False
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
@@ -640,7 +677,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 "img_size_h": self.img_size_h,
                 "img_size_w": self.img_size_w,
             }
-            self.log(f"Writing model metadata to memcache")
+            logger.debug(f"Writing model metadata to memcache")
             self.write_model_metadata_to_memcache(model_metadata)
             if not self.load_weights:  # had to load weights to get metadata
                 del self.onnx_session
@@ -649,19 +686,19 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 raise ValueError(
                     "This should be unreachable, should get weights if we don't have model metadata"
                 )
-            self.log(f"Loading model metadata from memcache")
+            logger.debug(f"Loading model metadata from memcache")
             metadata = self.model_metadata_from_memcache()
             self.batch_size = metadata["batch_size"]
             self.img_size_h = metadata["img_size_h"]
             self.img_size_w = metadata["img_size_w"]
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching enabled"
                 )
             else:
                 self.batching_enabled = False
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
