@@ -262,7 +262,7 @@ def register_image_at_roboflow(
     )
     response.raise_for_status()
     parsed_response = response.json()
-    if "duplicate" not in parsed_response and not parsed_response.get("success"):
+    if not parsed_response.get("duplicate") and not parsed_response.get("success"):
         raise RoboflowAPIImageUploadRejectionError(
             f"Server rejected image: {parsed_response}"
         )
