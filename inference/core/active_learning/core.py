@@ -1,6 +1,8 @@
 import json
 from collections import OrderedDict
-from typing import Any, List, Optional
+from queue import Queue
+from threading import Thread
+from typing import Any, List, Optional, Tuple
 from uuid import uuid4
 
 import numpy as np
@@ -22,6 +24,9 @@ from inference.core.active_learning.entities import (
     PredictionType,
     ImageDimensions,
 )
+from inference.core.active_learning.post_processing import (
+    adjust_prediction_to_client_scaling_factor,
+)
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_TAGS
 from inference.core.roboflow_api import (
@@ -30,6 +35,9 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
+
+
+MAX_REGISTRATION_QUEUE_SIZE = 128
 
 
 class ActiveLearningMiddleware:
@@ -79,6 +87,20 @@ class ActiveLearningMiddleware:
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
     ) -> None:
+        self._execute_registration(
+            inference_input=inference_input,
+            prediction=prediction,
+            prediction_type=prediction_type,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
+        )
+
+    def _execute_registration(
+        self,
+        inference_input: Any,
+        prediction: dict,
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
         image, is_bgr = load_image(
             value=inference_input,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -108,10 +130,105 @@ class ActiveLearningMiddleware:
             matching_strategies=matching_strategies,
             image=image,
             prediction=prediction,
+            prediction_type=prediction_type,
             configuration=self._configuration,
             api_key=self._api_key,
             batch_name=batch_name,
         )
+
+
+class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
+    @classmethod
+    def init(
+        cls,
+        api_key: str,
+        model_id: str,
+        cache: BaseCache,
+        max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
+    ) -> "ThreadingActiveLearningMiddleware":
+        configuration = prepare_active_learning_configuration(
+            api_key=api_key,
+            model_id=model_id,
+        )
+        task_queue = Queue(max_queue_size)
+        return cls(
+            api_key=api_key,
+            configuration=configuration,
+            cache=cache,
+            task_queue=task_queue,
+        )
+
+    def __init__(
+        self,
+        api_key: str,
+        configuration: ActiveLearningConfiguration,
+        cache: BaseCache,
+        task_queue: Queue,
+    ):
+        super().__init__(api_key=api_key, configuration=configuration, cache=cache)
+        self._task_queue = task_queue
+        self._registration_thread: Optional[Thread] = None
+
+    def register(
+        self,
+        inference_input: Any,
+        prediction: dict,
+        prediction_type: PredictionType,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
+        self._task_queue.put(
+            (inference_input, prediction, prediction_type, disable_preproc_auto_orient)
+        )
+
+    def start_registration_thread(self) -> None:
+        if self._registration_thread is not None:
+            logger.warning(f"Registration thread already started.")
+            return None
+        self._registration_thread = Thread(target=self._consume_queue)
+        self._registration_thread.start()
+
+    def stop_registration_thread(self) -> None:
+        if self._registration_thread is None:
+            logger.warning("Registration thread is already stopped.")
+        self._task_queue.put(None)
+        self._task_queue.join()
+        self._registration_thread.join()
+        if self._registration_thread.is_alive():
+            logger.warning(f"Registration thread stopping was unsuccessful.")
+
+    def _consume_queue(self) -> None:
+        queue_closed = True
+        while not queue_closed:
+            queue_closed = self._consume_queue_task()
+
+    def _consume_queue_task(self) -> bool:
+        task = self._task_queue.get()
+        if task is None:
+            self._task_queue.task_done()
+            return True
+        inference_input, prediction, prediction_type, disable_preproc_auto_orient = task
+        try:
+            self._execute_registration(
+                inference_input=inference_input,
+                prediction=prediction,
+                prediction_type=prediction_type,
+                disable_preproc_auto_orient=disable_preproc_auto_orient,
+            )
+        except Exception as error:
+            # Error handling to be decided
+            logger.warning(
+                f"Error in datapoint registration for Active Learning. Details: {error}. "
+                f"Error is suppressed in favour of normal operations of registration thread."
+            )
+        self._task_queue.task_done()
+        return False
+
+    def __enter__(self) -> "ThreadingActiveLearningMiddleware":
+        self.start_registration_thread()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.stop_registration_thread()
 
 
 def execute_sampling(
@@ -133,15 +250,21 @@ def execute_datapoint_registration(
     matching_strategies: List[str],
     image: np.ndarray,
     prediction: Prediction,
+    prediction_type: PredictionType,
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
 ) -> None:
     local_image_id = str(uuid4())
-    encoded_image = prepare_image_to_registration(
+    encoded_image, scaling_factor = prepare_image_to_registration(
         image=image,
         desired_size=configuration.max_image_size,
         jpeg_compression_level=configuration.jpeg_compression_level,
+    )
+    prediction = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction,
+        scaling_factor=scaling_factor,
+        prediction_type=prediction_type,
     )
     matching_strategies_limits = OrderedDict(
         (strategy_name, configuration.strategies_limits[strategy_name])
@@ -172,13 +295,19 @@ def prepare_image_to_registration(
     image: np.ndarray,
     desired_size: Optional[ImageDimensions],
     jpeg_compression_level: int,
-) -> bytes:
+) -> Tuple[bytes, float]:
+    scaling_factor = 1.0
     if desired_size is not None:
+        height_before_scale = image.shape[0]
         image = downscale_image_keeping_aspect_ratio(
             image=image,
             desired_size=desired_size.to_wh(),
         )
-    return encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level)
+        scaling_factor = image.shape[0] / height_before_scale
+    return (
+        encode_image_to_jpeg_bytes(image=image, jpeg_quality=jpeg_compression_level),
+        scaling_factor,
+    )
 
 
 def register_datapoint_at_roboflow(

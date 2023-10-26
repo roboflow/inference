@@ -14,8 +14,8 @@ SECONDS_IN_HOUR = 60 * 60
 USAGE_KEY = "usage"
 
 LIMIT_TYPE2KEY_INFIX_GENERATOR = {
-    StrategyLimitType.HOURLY: lambda: f"hour_{datetime.now().hour}",
-    StrategyLimitType.DAILY: lambda: f"day_{datetime.now().strftime(TIMESTAMP_FORMAT)}",
+    StrategyLimitType.HOURLY: lambda: f"hour_{datetime.utcnow().hour}",
+    StrategyLimitType.DAILY: lambda: f"day_{datetime.utcnow().strftime(TIMESTAMP_FORMAT)}",
 }
 LIMIT_TYPE2KEY_EXPIRATION = {
     StrategyLimitType.HOURLY: 2 * SECONDS_IN_HOUR,
@@ -31,6 +31,8 @@ def use_credit_of_matching_strategy(
 ) -> Optional[str]:
     # In scope of this function, cache keys updates regarding usage limits for
     # specific :workspace and :project are locked - to ensure increment to be done atomically
+    # Limits are accounted at the moment of registration - which may introduce inaccuracy
+    # given that registration is postponed from prediction
     with lock_limits(cache=cache, workspace=workspace, project=project):
         strategy_with_spare_credit = find_strategy_with_spare_usage_credit(
             cache=cache,

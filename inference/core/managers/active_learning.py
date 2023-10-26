@@ -8,6 +8,7 @@ from inference.core.active_learning.core import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 
@@ -42,7 +43,9 @@ class ActiveLearningManager(ModelManager):
         try:
             self.ensure_middleware_initialised(model_id=model_id, request=request)
             self.register_datapoint(
-                prediction=prediction, model_id=model_id, request=request
+                prediction=prediction,
+                model_id=model_id,
+                request=request,
             )
         except Exception as error:
             # Error handling to be decided
@@ -85,10 +88,15 @@ class ActiveLearningManager(ModelManager):
                 e.dict(by_alias=True, exclude={"visualization"}) for e in prediction
             ]
         prediction_type = self.get_task_type(model_id=model_id)
+        disable_preproc_auto_orient = (
+            getattr(request, "disable_preproc_auto_orient", False)
+            or DISABLE_PREPROC_AUTO_ORIENT
+        )
         self._middlewares[model_id].register_batch(
             inference_inputs=inference_inputs,
             predictions=results_dicts,
             prediction_type=prediction_type,
+            disable_preproc_auto_orient=disable_preproc_auto_orient,
         )
         end = time.perf_counter()
         logger.info(f"Registration: {(end - start) * 1000} ms")
