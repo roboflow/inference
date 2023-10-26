@@ -11,7 +11,7 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
-from inference.core.active_learning.core import ThreadingActiveLearningMiddleware
+from inference.core.active_learning.moddlewares import ThreadingActiveLearningMiddleware
 from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
