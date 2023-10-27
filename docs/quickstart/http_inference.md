@@ -91,7 +91,7 @@ params = {
 }
 res = requests.post(
     f"http://localhost:9001/{project_id}/{model_version}",
-    params=infer_object_detection_payload,
+    params=params,
 )
 
 predictions = res.json()
@@ -126,7 +126,7 @@ img_str = img_str.decode("ascii")
 
 res = requests.post(
     f"http://localhost:9001/{project_id}/{model_version}",
-    params=infer_object_detection_payload,
+    params=params,
     data=img_str,
 )
 
@@ -145,6 +145,7 @@ api_key = ""
 task = "object_detection
 
 infer_payload = {
+    "model_id": f"{project_id}/{model_version}",
     "image": {
         "type": "url",
         "value": image_url,
@@ -155,7 +156,7 @@ infer_payload = {
 }
 res = requests.post(
     f"http://localhost:9001/infer/{task}",
-    json=infer_object_detection_payload,
+    json=infer_payload,
 )
 
 predictions = res.json()
@@ -165,6 +166,7 @@ Object detection models trained with Roboflow support batching.
 
 ```python
 infer_payload = {
+    "model_id": f"{project_id}/{model_version}",
     "image": [
         {
             "type": "url",
@@ -197,6 +199,7 @@ img_str = base64.b64encode(buffered.getvalue())
 img_str = img_str.decode("ascii")
 
 infer_payload = {
+    "model_id": f"{project_id}/{model_version}",
     "image": {
         "type": "base64",
         "value": img_str,
