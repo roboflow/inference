@@ -1,10 +1,14 @@
+from queue import Queue
 from unittest import mock
 from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
 
-from inference.core.active_learning.middlewares import ActiveLearningMiddleware
+from inference.core.active_learning.middlewares import (
+    ActiveLearningMiddleware,
+    ThreadingActiveLearningMiddleware,
+)
 from inference.core.active_learning import middlewares
 
 
@@ -206,17 +210,72 @@ def test_active_learning_registration_of_batch(
     )
 
     # then
-    middleware.register.assert_has_calls([
-        call(
-            inference_input=image_as_numpy,
-            prediction={"some": "prediction"},
-            prediction_type="object-detection",
-            disable_preproc_auto_orient=False,
-        ),
-        call(
-            inference_input=image_as_numpy,
-            prediction={"other": "prediction"},
+    middleware.register.assert_has_calls(
+        [
+            call(
+                inference_input=image_as_numpy,
+                prediction={"some": "prediction"},
+                prediction_type="object-detection",
+                disable_preproc_auto_orient=False,
+            ),
+            call(
+                inference_input=image_as_numpy,
+                prediction={"other": "prediction"},
+                prediction_type="object-detection",
+                disable_preproc_auto_orient=False,
+            ),
+        ]
+    )
+
+
+@pytest.mark.timeout(30)
+def test_threading_active_learning_middleware() -> None:
+    # given
+    image = MagicMock()
+    task_queue = Queue()
+    middleware = ThreadingActiveLearningMiddleware(
+        api_key="api-key",
+        configuration=MagicMock(),
+        cache=MagicMock(),
+        task_queue=task_queue,
+    )
+    middleware._execute_registration = MagicMock()
+    middleware._execute_registration.side_effect = [None, Exception, None]
+
+    # when
+    with middleware:
+        middleware.register_batch(
+            inference_inputs=[image, image, image],
+            predictions=[
+                {"some": "prediction"},
+                {"other": "prediction"},
+                {"third": "prediction"},
+            ],
             prediction_type="object-detection",
             disable_preproc_auto_orient=False,
         )
-    ])
+
+    # then
+    assert middleware._registration_thread is None
+    middleware._execute_registration.assert_has_calls(
+        [
+            call(
+                inference_input=image,
+                prediction={"some": "prediction"},
+                prediction_type="object-detection",
+                disable_preproc_auto_orient=False,
+            ),
+            call(
+                inference_input=image,
+                prediction={"other": "prediction"},
+                prediction_type="object-detection",
+                disable_preproc_auto_orient=False,
+            ),
+            call(
+                inference_input=image,
+                prediction={"third": "prediction"},
+                prediction_type="object-detection",
+                disable_preproc_auto_orient=False,
+            ),
+        ]
+    )
