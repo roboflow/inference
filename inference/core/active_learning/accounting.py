@@ -32,7 +32,7 @@ def image_can_be_submitted_to_batch(
         labeling_jobs = get_roboflow_labeling_jobs(
             api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
         )
-        batch_images_under_labeling = get_images_in_labeling_jobs(
+        batch_images_under_labeling = get_images_in_labeling_jobs_of_specific_batch(
             all_labeling_jobs=labeling_jobs["jobs"],
             batch_id=matching_labeling_batch["id"],
         )
@@ -52,7 +52,7 @@ def get_matching_labeling_batch(
     return matching_batch
 
 
-def get_images_in_labeling_jobs(
+def get_images_in_labeling_jobs_of_specific_batch(
     all_labeling_jobs: List[dict],
     batch_id: str,
 ) -> int:
