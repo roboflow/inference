@@ -27,43 +27,38 @@ extra_css:
   - styles.css
 
 nav:
-  - Home: index.md
-  - Quickstart:
-    - Docker: quickstart/docker.md
-    - HTTP Inference: quickstart/http_inference.md
-    - CLIP Example: https://github.com/roboflow/inference/tree/main/examples/clip-search-engine
-    - SAM Example: https://github.com/roboflow/inference/tree/main/examples/sam-client
-    - Gaze Detection Example: https://github.com/roboflow/inference/tree/main/examples/gaze-detection
-    - UDP and Video Examples: https://github.com/roboflow/inference/tree/main/examples/inference-client
-    - Webcam and RTSP Examples: https://github.com/roboflow/inference/tree/main/examples/stream-examples
-    - Model Device Compatability: quickstart/compatability_matrix.md
-  - API Reference: api.md
-  - Library Reference:
-    - Models:
-      - CLIP: library/models/clip.md
-      - Gaze: library/models/gaze.md
-      - Segment Anything: library/models/segment_anything.md
-      - ViT Classification: library/models/vit_classification.md
-      - YOLOv5 Object Detection: library/models/yolov5.md
-      - YOLOv8 Object Detection: library/models/yolov8.md
-      - YOLOv8 Classification: library/models/yolov8_classification.md
-      - YOLOv7 Instance Segmentation: library/models/yolov7_instance_segmentation.md
-      - YOLOv8 Instance Segmentation: library/models/yolov8_segmentation.md
-      - YOLO-ACT Instance Segmentation: library/models/yoloact_segmentation.md
-    - Model Managers:
-      - Base Manager: library/model_managers/base.md
-      - Pingback Manager: library/model_managers/pingback.md
-    - Model Registries:
-      - Base Registry: library/model_registries/base.md
-      - Roboflow Registry: library/model_registries/roboflow.md
-    - Interfaces:
-      - Base Interface: library/interfaces/base.md
-      - HTTP Interface: library/interfaces/http.md
-      - UDP Stream Interface: library/interfaces/udp.md
-    - Docker Configuration Options: library/docker_configuration_options.md
-  - Add a Model: add_a_model.md
-  - Inference SDK - HTTP client: inference_sdk/http_client.md
-  - Contributing: contributing.md
+  - Home:
+    - Home: index.md
+    - Get Started:
+      - What is Inference?: quickstart/what_is_inference.md
+      - What Devices Can I Use?: quickstart/devices.md
+      - Run Your First Model: quickstart/run_a_model.md
+      - Run a Fine-Tuned Model: quickstart/explore_models.md
+    - Run a Model:
+      - On an Image: quickstart/run_model_on_image.md
+      - On a Video: quickstart/run_model_on_video.md
+      - On a Webcam Stream: quickstart/run_model_on_webcam.md
+      - On an RTSP Stream: quickstart/run_model_on_rtsp.md
+      - Over UDP: quickstart/run_model_over_udp.md
+    - Use a Foundation Model:
+      - What is a Foundation Model?: foundation/about.md
+      - CLIP (Classification, Embeddings): foundation/clip.md
+      - DocTR (OCR): foundation/doctr.md
+      - Grounding DINO (Object Detection): foundation/grounding_dino.md
+      - L2CS-Net (Gaze Detection): foundation/gaze.md
+      - Segment Anything (Segmentation): foundation/sam.md
+    - Reference:
+      - Model Licensing: quickstart/licensing.md
+      - Model Device Compatability: quickstart/compatability_matrix.md
+      - Install Inference with Docker: quickstart/docker.md
+      - Docker Configuration Options: quickstart/docker_configuration_options.md
+      - HTTP Inference: quickstart/http_inference.md
+      - SDK Reference: inference_sdk/http_client.md
+  - HTTP API Reference:
+    - API Reference: api.md
+    - Back to Quickstart: /quickstart/what_is_inference/
+  - Contribute:
+    - Contribute to Inference: contributing.md
   - Changelog: https://github.com/roboflow/inference/releases
 
 theme:
@@ -74,6 +69,17 @@ theme:
     text: Roboto
     code: Roboto Mono
   custom_dir: 'custom_theme'
+  features:
+    - navigation.top
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.prune
+    - navigation.footer
+    - navigation.tracking
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.indexes
+    - navigation.sections
 
 plugins:
   - mkdocstrings
