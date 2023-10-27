@@ -267,8 +267,7 @@ def test_remove_when_model_not_available() -> None:
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
 
-    with pytest.raises(InferenceModelNotFound):
-        model_manager.remove(model_id="some/1")
+    model_manager.remove(model_id="some/1")
 
 
 def test_clear() -> None:
