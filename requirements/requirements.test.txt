@@ -8,3 +8,4 @@ black
 isort
 flake8
 rich
+pytest-asyncio<=0.21.1
