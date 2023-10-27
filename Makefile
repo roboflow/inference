@@ -4,12 +4,12 @@ export PYTHONPATH = .
 check_dirs := inference inference_sdk
 
 style:
-	black  $(check_dirs)
-	isort --profile black $(check_dirs)
+	python3 -m black  $(check_dirs)
+	python3 -m isort --profile black $(check_dirs)
 
 check_code_quality:
-	black --check $(check_dirs)
-	isort --check-only --profile black $(check_dirs)
+	python3 -m black --check $(check_dirs)
+	python3 -m isort --check-only --profile black $(check_dirs)
 	# stop the build if there are Python syntax errors or undefined names
 	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics
 	# exit-zero treats all errors as warnings. E203 for black, E501 for docstring, W503 for line breaks before logical operators 
@@ -19,7 +19,7 @@ start_test_docker_cpu:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 start_test_docker_gpu:
-	docker run --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 start_test_docker_jetson:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
