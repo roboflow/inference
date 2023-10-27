@@ -1,10 +1,11 @@
 import threading
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Dict, Generator, List, Optional, OrderedDict, Union
+from typing import Generator, List, Optional, OrderedDict, Union
 
 import redis.lock
 
+from inference.core import logger
 from inference.core.active_learning.entities import StrategyLimit, StrategyLimitType
 from inference.core.active_learning.utils import TIMESTAMP_FORMAT
 from inference.core.cache.base import BaseCache
@@ -35,6 +36,7 @@ def use_credit_of_matching_strategy(
     # specific :workspace and :project are locked - to ensure increment to be done atomically
     # Limits are accounted at the moment of registration - which may introduce inaccuracy
     # given that registration is postponed from prediction
+    # Returns: strategy with spare credit if found - else None
     with lock_limits(cache=cache, workspace=workspace, project=project):
         strategy_with_spare_credit = find_strategy_with_spare_usage_credit(
             cache=cache,
@@ -44,7 +46,7 @@ def use_credit_of_matching_strategy(
         )
         if strategy_with_spare_credit is None:
             return None
-        consume_strategy_usage_limits_credit(
+        consume_strategy_limits_usage_credit(
             cache=cache,
             workspace=workspace,
             project=project,
@@ -65,7 +67,7 @@ def return_strategy_credit(
     # if we have previously taken from the previous one and some credits are used in the new pool) -
     # in favour of easier implementation.
     with lock_limits(cache=cache, workspace=workspace, project=project):
-        return_strategy_usage_limits_credit(
+        return_strategy_limits_usage_credit(
             cache=cache,
             workspace=workspace,
             project=project,
@@ -91,7 +93,7 @@ def find_strategy_with_spare_usage_credit(
     cache: BaseCache,
     workspace: str,
     project: str,
-    matching_strategies_limits: Dict[str, List[StrategyLimit]],
+    matching_strategies_limits: OrderedDict[str, List[StrategyLimit]],
 ) -> Optional[str]:
     for strategy_name, strategy_limits in matching_strategies_limits.items():
         rejected_by_strategy = (
@@ -116,7 +118,7 @@ def datapoint_should_be_rejected_based_on_strategy_usage_limits(
     strategy_limits: List[StrategyLimit],
 ) -> bool:
     for strategy_limit in strategy_limits:
-        limit_reached = datapoint_should_be_rejected_based_on_usage_limit(
+        limit_reached = datapoint_should_be_rejected_based_on_limit_usage(
             cache=cache,
             workspace=workspace,
             project=project,
@@ -124,18 +126,22 @@ def datapoint_should_be_rejected_based_on_strategy_usage_limits(
             strategy_limit=strategy_limit,
         )
         if limit_reached:
+            logger.warn(
+                f"Violated Active Learning strategy limit: {strategy_limit.limit_type.name} "
+                f"with value {strategy_limit.value} for sampling strategy: {strategy_name}."
+            )
             return True
     return False
 
 
-def datapoint_should_be_rejected_based_on_usage_limit(
+def datapoint_should_be_rejected_based_on_limit_usage(
     cache: BaseCache,
     workspace: str,
     project: str,
     strategy_name: str,
     strategy_limit: StrategyLimit,
 ) -> bool:
-    current_usage = get_current_strategy_usage_limit(
+    current_usage = get_current_strategy_limit_usage(
         cache=cache,
         workspace=workspace,
         project=project,
@@ -143,18 +149,18 @@ def datapoint_should_be_rejected_based_on_usage_limit(
         limit_type=strategy_limit.limit_type,
     )
     if current_usage is None:
-        return False
+        current_usage = 0
     return current_usage >= strategy_limit.value
 
 
-def consume_strategy_usage_limits_credit(
+def consume_strategy_limits_usage_credit(
     cache: BaseCache,
     workspace: str,
     project: str,
     strategy_name: str,
 ) -> None:
     for limit_type in StrategyLimitType:
-        consume_strategy_usage_limit_credit(
+        consume_strategy_limit_usage_credit(
             cache=cache,
             workspace=workspace,
             project=project,
@@ -163,14 +169,14 @@ def consume_strategy_usage_limits_credit(
         )
 
 
-def consume_strategy_usage_limit_credit(
+def consume_strategy_limit_usage_credit(
     cache: BaseCache,
     workspace: str,
     project: str,
     strategy_name: str,
     limit_type: StrategyLimitType,
 ) -> None:
-    current_value = get_current_strategy_usage_limit(
+    current_value = get_current_strategy_limit_usage(
         cache=cache,
         limit_type=limit_type,
         workspace=workspace,
@@ -180,7 +186,7 @@ def consume_strategy_usage_limit_credit(
     if current_value is None:
         current_value = 0
     current_value += 1
-    set_current_strategy_usage_limit(
+    set_current_strategy_limit_usage(
         current_value=current_value,
         cache=cache,
         limit_type=limit_type,
@@ -190,14 +196,14 @@ def consume_strategy_usage_limit_credit(
     )
 
 
-def return_strategy_usage_limits_credit(
+def return_strategy_limits_usage_credit(
     cache: BaseCache,
     workspace: str,
     project: str,
     strategy_name: str,
 ) -> None:
     for limit_type in StrategyLimitType:
-        return_strategy_usage_limit_credit(
+        return_strategy_limit_usage_credit(
             cache=cache,
             workspace=workspace,
             project=project,
@@ -206,14 +212,14 @@ def return_strategy_usage_limits_credit(
         )
 
 
-def return_strategy_usage_limit_credit(
+def return_strategy_limit_usage_credit(
     cache: BaseCache,
     workspace: str,
     project: str,
     strategy_name: str,
     limit_type: StrategyLimitType,
 ) -> None:
-    current_value = get_current_strategy_usage_limit(
+    current_value = get_current_strategy_limit_usage(
         cache=cache,
         limit_type=limit_type,
         workspace=workspace,
@@ -223,7 +229,7 @@ def return_strategy_usage_limit_credit(
     if current_value is None:
         return None
     current_value = max(current_value - 1, 0)
-    set_current_strategy_usage_limit(
+    set_current_strategy_limit_usage(
         current_value=current_value,
         cache=cache,
         limit_type=limit_type,
@@ -233,7 +239,7 @@ def return_strategy_usage_limit_credit(
     )
 
 
-def get_current_strategy_usage_limit(
+def get_current_strategy_limit_usage(
     cache: BaseCache,
     workspace: str,
     project: str,
@@ -252,7 +258,7 @@ def get_current_strategy_usage_limit(
     return value[USAGE_KEY]
 
 
-def set_current_strategy_usage_limit(
+def set_current_strategy_limit_usage(
     current_value: int,
     cache: BaseCache,
     workspace: str,
@@ -274,17 +280,14 @@ def generate_cache_key_for_active_learning_usage_lock(
     workspace: str,
     project: str,
 ) -> str:
-    return f"active_learning:usage:{workspace}:{project}:lock"
+    return f"active_learning:usage:{workspace}:{project}:usage:lock"
 
 
 def generate_cache_key_for_active_learning_usage(
     limit_type: StrategyLimitType,
     workspace: str,
     project: str,
-    strategy_name: Optional[str] = None,
+    strategy_name: str,
 ) -> str:
     time_infix = LIMIT_TYPE2KEY_INFIX_GENERATOR[limit_type]()
-    key = f"active_learning:usage:{time_infix}:{workspace}:{project}"
-    if strategy_name is not None:
-        key = f"{key}:{strategy_name}"
-    return key
+    return f"active_learning:usage:{workspace}:{project}:{strategy_name}:{time_infix}"
