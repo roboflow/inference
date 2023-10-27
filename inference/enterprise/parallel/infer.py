@@ -14,8 +14,8 @@ from inference.core.entities.requests.inference import (
 from inference.core.env import MAX_ACTIVE_MODELS, MAX_BATCH_SIZE, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
-from inference.core.parallel.tasks import postprocess
-from inference.core.parallel.utils import failure_handler, shm_manager
+from inference.enterprise.parallel.tasks import postprocess
+from inference.enterprise.parallel.utils import failure_handler, shm_manager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 
 logging.basicConfig(level=logging.INFO)

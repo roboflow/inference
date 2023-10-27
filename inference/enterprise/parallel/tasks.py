@@ -17,7 +17,7 @@ from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
 from inference.core.managers.stub_loader import StubLoaderManager
-from inference.core.parallel.utils import (
+from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
