@@ -44,6 +44,9 @@ inference.Stream(
 )
 ```
 
+> [!NOTE]  
+> Currently, the stream interface only supports object detection
+
 Now let's extend the example to use [Supervision](https://roboflow.com/supervision)
 to visualize the predictions and display them on screen with OpenCV:
 
