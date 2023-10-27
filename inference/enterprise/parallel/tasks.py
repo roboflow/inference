@@ -17,6 +17,7 @@ from inference.core.managers.decorators.locked_load import (
     LockedLoadModelManagerDecorator,
 )
 from inference.core.managers.stub_loader import StubLoaderManager
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
     TASK_RESULT_KEY,
@@ -24,7 +25,6 @@ from inference.enterprise.parallel.utils import (
     failure_handler,
     shm_manager,
 )
-from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
