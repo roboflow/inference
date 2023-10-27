@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from inference.core.entities.types import DatasetID, WorkspaceID
+from inference.core.exceptions import ActiveLearningConfigurationDecodingError
 
 LocalImageIdentifier = str
 PredictionType = str
@@ -92,7 +93,7 @@ class ActiveLearningConfiguration:
             strategies_limits = {
                 strategy["name"]: [
                     StrategyLimit.from_dict(specification=specification)
-                    for specification in strategy["limits"]
+                    for specification in strategy.get("limits", [])
                 ]
                 for strategy in roboflow_api_configuration["sampling_strategies"]
             }
@@ -102,9 +103,9 @@ class ActiveLearningConfiguration:
             }
             return cls(
                 max_image_size=max_image_size,
-                jpeg_compression_level=roboflow_api_configuration[
-                    "jpeg_compression_level"
-                ],
+                jpeg_compression_level=roboflow_api_configuration.get(
+                    "jpeg_compression_level", 95
+                ),
                 persist_predictions=roboflow_api_configuration["persist_predictions"],
                 sampling_methods=sampling_methods,
                 batches_name_prefix=roboflow_api_configuration["batching_strategy"][
@@ -115,9 +116,9 @@ class ActiveLearningConfiguration:
                         "recreation_interval"
                     ]
                 ),
-                max_batch_images=roboflow_api_configuration["batching_strategy"][
+                max_batch_images=roboflow_api_configuration["batching_strategy"].get(
                     "max_batch_images"
-                ],
+                ),
                 workspace_id=workspace_id,
                 dataset_id=dataset_id,
                 model_id=model_id,
@@ -126,4 +127,6 @@ class ActiveLearningConfiguration:
                 strategies_tags=strategies_tags,
             )
         except (KeyError, ValueError) as e:
-            raise Exception(str(e)) from e
+            raise ActiveLearningConfigurationDecodingError(
+                f"Failed to initialise Active Learning configuration. Cause: {str(e)}"
+            ) from e

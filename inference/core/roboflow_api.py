@@ -205,8 +205,8 @@ def get_roboflow_active_learning_configuration(
     # return _get_from_roboflow_api(url=api_url)
     return {
         "enabled": True,
-        "max_image_size": (1200, 1200),  # (h, w)
-        "jpeg_compression_level": 75,  # int 0-100
+        "max_image_size": (1200, 1200),  # Optional (h, w)
+        "jpeg_compression_level": 75,  # Optional int 0-100, defaults to 95
         "persist_predictions": True,
         "sampling_strategies": [
             {
