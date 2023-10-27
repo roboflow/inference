@@ -40,24 +40,6 @@ jobs:
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:test-cache,mode=max
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.gpu
-      - name: 🔨 Build and Push Test Docker - GPU Parallel
-        uses: docker/build-push-action@v4
-        with:
-          push: true
-          tags: roboflow/roboflow-inference-server-gpu-parallel:test
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:test-cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:test-cache,mode=max
-          platforms: linux/amd64
-          file: ./inference/enterprise/parallel/Dockerfile.onnx.gpu.parallel
-      - name: 🔋 Start Test Docker - GPU Parallel
-        run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel DOCKERFILE=Dockerfile.onnx.gpu.parallel make start_test_docker_gpu
-      - name: 🧪 Regression Tests - GPU Parallel
-        run: |
-          FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} python -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
-      - name: 🧹 Cleanup Test Docker - GPU Parallel
-        run: make stop_test_docker
-        if: success() || failure()
       - name: 🔋 Start Test Docker - GPU
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu DOCKERFILE=Dockerfile.onnx.gpu make start_test_docker_gpu
