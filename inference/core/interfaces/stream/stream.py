@@ -219,7 +219,7 @@ class Stream(BaseInterface):
                     break
                 else:
                     self.frame_cv, frame_id = webcam_stream.read_opencv()
-                    if frame_id != self.frame_id:
+                    if frame_id > 0 and frame_id != self.frame_id:
                         self.frame_id = frame_id
                         self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
                         self.preproc_result = self.model.preprocess(self.frame)

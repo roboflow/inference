@@ -13,6 +13,7 @@ from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes
+from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -278,3 +279,15 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError("predict must be implemented by a subclass")
+
+    def validate_model_classes(self) -> None:
+        output_shape = self.get_model_output_shape()
+        num_classes = get_num_classes_from_model_prediction_shape(
+            output_shape[2], masks=0
+        )
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )

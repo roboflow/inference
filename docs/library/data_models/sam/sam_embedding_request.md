@@ -1,3 +1,3 @@
 # SAM Embedding Request
 
-:::inference.core.data_models.SamEmbeddingRequest
+:::inference.core.entities.requests.sam.SamEmbeddingRequest
