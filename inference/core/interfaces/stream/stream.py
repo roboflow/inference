@@ -10,7 +10,7 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
-from inference.core.active_learning.moddlewares import (
+from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
     ThreadingActiveLearningMiddleware,
 )

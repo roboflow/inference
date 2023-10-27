@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from fastapi import BackgroundTasks
 
 from inference.core import logger
-from inference.core.active_learning.moddlewares import ActiveLearningMiddleware
+from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
