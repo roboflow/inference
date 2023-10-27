@@ -130,3 +130,12 @@ class ActiveLearningConfiguration:
             raise ActiveLearningConfigurationDecodingError(
                 f"Failed to initialise Active Learning configuration. Cause: {str(e)}"
             ) from e
+
+
+@dataclass(frozen=True)
+class RoboflowProjectMetadata:
+    dataset_id: DatasetID
+    version_id: str
+    workspace_id: WorkspaceID
+    dataset_type: str
+    active_learning_configuration: dict

@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from inference.core import logger
 from inference.core.active_learning.entities import (
     ActiveLearningConfiguration,
+    RoboflowProjectMetadata,
     SamplingMethod,
 )
 from inference.core.active_learning.sampling import initialize_random_sampling
@@ -24,6 +25,41 @@ def prepare_active_learning_configuration(
 ) -> Optional[ActiveLearningConfiguration]:
     if not ACTIVE_LEARNING_ENABLED:
         return None
+    project_metadata = get_roboflow_project_metadata(
+        api_key=api_key,
+        model_id=model_id,
+    )
+    if not project_metadata.active_learning_configuration.get("enabled", False):
+        return None
+    logger.info(
+        f"Configuring active learning for workspace: {project_metadata.workspace_id}, "
+        f"project: {project_metadata.dataset_id} of type: {project_metadata.dataset_type}. "
+        f"AL configuration: {project_metadata.active_learning_configuration}"
+    )
+    sampling_methods = initialize_sampling_methods(
+        sampling_strategies_configs=project_metadata.active_learning_configuration[
+            "sampling_strategies"
+        ],
+    )
+    target_workspace_id = project_metadata.active_learning_configuration.get(
+        "target_workspace", project_metadata.workspace_id
+    )
+    target_dataset_id = project_metadata.active_learning_configuration.get(
+        "target_project", project_metadata.dataset_id
+    )
+    return ActiveLearningConfiguration.init(
+        roboflow_api_configuration=project_metadata.active_learning_configuration,
+        sampling_methods=sampling_methods,
+        workspace_id=target_workspace_id,
+        dataset_id=target_dataset_id,
+        model_id=model_id,
+    )
+
+
+def get_roboflow_project_metadata(
+    api_key: str,
+    model_id: str,
+) -> RoboflowProjectMetadata:
     logger.info(f"Fetching active learning configuration.")
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     workspace_id = get_roboflow_workspace(api_key=api_key)
@@ -35,25 +71,12 @@ def prepare_active_learning_configuration(
     roboflow_api_configuration = get_roboflow_active_learning_configuration(
         api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
     )
-    if not roboflow_api_configuration.get("enabled", False):
-        return None
-    logger.info(
-        f"Configuring active learning for workspace: {workspace_id}, project: {dataset_id} "
-        f"of type: {dataset_type}. AL configuration: {roboflow_api_configuration}"
-    )
-    sampling_methods = initialize_sampling_methods(
-        sampling_strategies_configs=roboflow_api_configuration["sampling_strategies"],
-    )
-    target_workspace_id = roboflow_api_configuration.get(
-        "target_workspace", workspace_id
-    )
-    target_dataset_id = roboflow_api_configuration.get("target_project", dataset_id)
-    return ActiveLearningConfiguration.init(
-        roboflow_api_configuration=roboflow_api_configuration,
-        sampling_methods=sampling_methods,
-        workspace_id=target_workspace_id,
-        dataset_id=target_dataset_id,
-        model_id=model_id,
+    return RoboflowProjectMetadata(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        workspace_id=workspace_id,
+        dataset_type=dataset_type,
+        active_learning_configuration=roboflow_api_configuration,
     )
 
 
