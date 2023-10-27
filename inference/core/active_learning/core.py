@@ -1,4 +1,3 @@
-import json
 from collections import OrderedDict
 from typing import List, Optional, Tuple
 from uuid import uuid4
@@ -159,6 +158,7 @@ def collect_tags(
     tags.extend(configuration.tags)
     tags.extend(configuration.strategies_tags[sampling_strategy])
     if configuration.persist_predictions:
+        # this replacement is needed due to backend input validation
         tags.append(configuration.model_id.replace("/", "-"))
     return tags
 
