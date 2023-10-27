@@ -1,4 +1,4 @@
-name: Start NVIDIA T4 Instance
+name: Stop NVIDIA T4 Instance
 
 on:
   workflow_dispatch:
