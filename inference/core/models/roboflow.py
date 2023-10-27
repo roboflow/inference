@@ -588,6 +588,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             raise ModelArtefactError from e
 
     def validate_model(self) -> None:
+        if not self.load_weights:
+            return
         try:
             assert self.onnx_session is not None
         except AssertionError as e:
