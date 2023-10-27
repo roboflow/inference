@@ -335,6 +335,22 @@ def test_datapoint_should_be_rejected_based_on_limit_usage_when_rejection_should
     assert result is False
 
 
+def test_datapoint_should_be_rejected_based_on_strategy_usage_limits_when_no_limits_assigned() -> (
+    None
+):
+    # when
+    result = datapoint_should_be_rejected_based_on_strategy_usage_limits(
+        cache=MagicMock(),
+        workspace="some",
+        project="other",
+        strategy_name="my-strategy",
+        strategy_limits=[],
+    )
+
+    # then
+    assert result is False
+
+
 @mock.patch.object(cache_operations, "get_current_strategy_limit_usage")
 def test_datapoint_should_be_rejected_based_on_strategy_usage_limits_when_rejection_should_happen(
     get_current_strategy_limit_usage_mock: MagicMock,
