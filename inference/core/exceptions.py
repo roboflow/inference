@@ -160,3 +160,11 @@ class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
 
 class ModelArtefactError(Exception):
     pass
+
+
+class ActiveLearningError(Exception):
+    pass
+
+
+class PredictionFormatNotSupported(ActiveLearningError):
+    pass

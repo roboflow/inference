@@ -12,6 +12,7 @@ from inference.core.constants import (
     INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
 )
+from inference.core.exceptions import PredictionFormatNotSupported
 
 
 def adjust_prediction_to_client_scaling_factor(
@@ -121,4 +122,6 @@ def encode_prediction(
         return json.dumps(prediction), "json"
     if "top" in prediction:
         return prediction["top"], "txt"
-    raise NotImplementedError()
+    raise PredictionFormatNotSupported(
+        f"Prediction type or prediction format not supported."
+    )

@@ -26,12 +26,6 @@ class ImageDimensions:
 
 
 @dataclass(frozen=True)
-class SamplingResult:
-    datapoint_selected: bool
-    target_split: Optional[str] = None
-
-
-@dataclass(frozen=True)
 class SamplingMethod:
     name: str
     sample: Callable[[np.ndarray, Prediction, PredictionType], bool]
