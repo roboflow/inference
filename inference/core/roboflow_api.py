@@ -22,6 +22,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
+from inference.core.utils.requests import safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 
 MODEL_TYPE_DEFAULTS = {
@@ -102,7 +103,7 @@ def wrap_roboflow_api_errors(
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_url = wrap_url("/".join([API_BASE_URL, f"?api_key={api_key}"]))
     api_key_info = requests.get(api_url)
-    api_key_info.raise_for_status()
+    safe_raise_for_status(response=api_key_info)
     workspace_id = api_key_info.json().get("workspace")
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
@@ -119,7 +120,7 @@ def get_roboflow_dataset_type(
         )
     )
     dataset_info = requests.get(api_url)
-    dataset_info.raise_for_status()
+    safe_raise_for_status(response=dataset_info)
     project_task_type = dataset_info.json().get("project", {})
     if "type" not in project_task_type:
         logger.warning(
@@ -157,7 +158,7 @@ def get_roboflow_model_type(
         )
     )
     version_info = requests.get(api_url)
-    version_info.raise_for_status()
+    safe_raise_for_status(response=version_info)
     model_type = version_info.json()["version"]
     if "modelType" not in model_type:
         if project_task_type not in MODEL_TYPE_DEFAULTS:
@@ -186,7 +187,7 @@ def get_roboflow_model_data(
         f"{API_BASE_URL}/{endpoint_type.value}/{model_id}?api_key={api_key}&device={device_id}&nocache=true&dynamic=true"
     )
     model_data = requests.get(api_url)
-    model_data.raise_for_status()
+    safe_raise_for_status(response=model_data)
     return model_data.json()
 
 

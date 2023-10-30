@@ -21,6 +21,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
+from inference.core.utils.requests import safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
@@ -276,7 +277,7 @@ def load_image_from_url(
     """
     try:
         response = requests.get(value, stream=True)
-        response.raise_for_status()
+        safe_raise_for_status(response=response)
         return load_image_from_encoded_bytes(
             value=response.content, cv_imread_flags=cv_imread_flags
         )

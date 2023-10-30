@@ -6,6 +6,7 @@ from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import API_KEY, METRICS_INTERVAL, METRICS_URL, TAGS
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
+from inference.core.utils.requests import safe_raise_for_status
 from inference.core.version import __version__
 from inference.enterprise.device_manager.command_handler import handle_command
 from inference.enterprise.device_manager.container_service import (
@@ -128,7 +129,7 @@ def report_metrics_and_handle_commands():
     all_data = aggregate_device_stats()
     logger.info(f"Sending metrics to Roboflow {str(all_data)}.")
     res = requests.post(METRICS_URL, json=all_data)
-    res.raise_for_status()
+    safe_raise_for_status(response=res)
     response = res.json()
     for cmd in response.get("data", []):
         if cmd:

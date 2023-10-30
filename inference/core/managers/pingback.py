@@ -14,6 +14,7 @@ from inference.core.env import (
 )
 from inference.core.logger import logger
 from inference.core.managers.metrics import get_model_metrics, get_system_info
+from inference.core.utils.requests import safe_raise_for_status
 from inference.core.version import __version__
 
 
@@ -129,7 +130,7 @@ class PingbackInfo:
             self.window_start_timestamp = timestamp
             res = requests.post(METRICS_URL, json=all_data)
             try:
-                res.raise_for_status()
+                safe_raise_for_status(response=res)
                 logger.debug(
                     "Sent metrics to Roboflow {} at {}.".format(
                         METRICS_URL, str(all_data)
