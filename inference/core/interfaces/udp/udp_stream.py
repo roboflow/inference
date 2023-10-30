@@ -130,7 +130,6 @@ class UdpStream(BaseInterface):
         self.inference_response = None
         self.stop = False
 
-        self.frame = None
         self.frame_cv = None
         self.frame_id = None
         logger.info("Server initialized with settings:")
@@ -169,8 +168,7 @@ class UdpStream(BaseInterface):
                     self.frame_cv, frame_id = webcam_stream.read_opencv()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
-                        self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
-                        self.preproc_result = self.model.preprocess(self.frame)
+                        self.preproc_result = self.model.preprocess(self.frame_cv)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
 
