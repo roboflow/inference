@@ -113,7 +113,11 @@ def load_image_with_known_type(
             f"NumPy image type is not supported in this configuration of `inference`."
         )
     loader = IMAGE_LOADERS[image_type]
-    is_bgr = True if image_type is not ImageType.PILLOW else False
+    is_bgr = (
+        True
+        if image_type is not ImageType.PILLOW and image_type is not ImageType.NUMPY
+        else False
+    )
     image = loader(value, cv_imread_flags)
     return image, is_bgr
 
@@ -135,7 +139,7 @@ def load_image_with_inferred_type(
     """
     if isinstance(value, (np.ndarray, np.generic)):
         validate_numpy_image(data=value)
-        return value, True
+        return value, False
     elif isinstance(value, Image.Image):
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
