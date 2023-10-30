@@ -4,7 +4,7 @@ from requests import Response, HTTPError
 from inference.core.utils.requests import (
     API_KEY_PATTERN,
     deduct_api_key,
-    safe_raise_for_status,
+    api_key_safe_raise_for_status,
 )
 
 
@@ -56,13 +56,13 @@ def test_deduce_api_key_when_multiple_api_key_available() -> None:
 
 
 @pytest.mark.parametrize("status_code", [200, 201, 300])
-def test_safe_raise_for_status_when_no_error_occurs(status_code: int) -> None:
+def test_api_key_safe_raise_for_status_when_no_error_occurs(status_code: int) -> None:
     # given
     response = Response()
     response.status_code = status_code
 
     # when
-    safe_raise_for_status(response=response)
+    api_key_safe_raise_for_status(response=response)
 
     # then no error happens
 
@@ -70,7 +70,7 @@ def test_safe_raise_for_status_when_no_error_occurs(status_code: int) -> None:
 @pytest.mark.parametrize(
     "status_code", [400, 401, 402, 403, 404, 500, 501, 502, 503, 504]
 )
-def test_safe_raise_for_status_when_error_occurs(status_code: int) -> None:
+def test_api_keysafe_raise_for_status_when_error_occurs(status_code: int) -> None:
     # given
     response = Response()
     response.status_code = status_code
@@ -80,7 +80,7 @@ def test_safe_raise_for_status_when_error_occurs(status_code: int) -> None:
 
     # when
     with pytest.raises(HTTPError) as expected_error:
-        safe_raise_for_status(response=response)
+        api_key_safe_raise_for_status(response=response)
 
     # then
     assert "https://some.com/endpoint?api_key=19***0s&param_2=some_value" in str(
