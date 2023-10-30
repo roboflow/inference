@@ -222,7 +222,7 @@ class Stream(BaseInterface):
                     if frame_id > 0 and frame_id != self.frame_id:
                         self.frame_id = frame_id
                         self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
-                        self.preproc_result = self.model.preprocess(self.frame)
+                        self.preproc_result = self.model.preprocess(self.frame_cv)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
 

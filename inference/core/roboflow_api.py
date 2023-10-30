@@ -28,6 +28,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
+from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 
 MODEL_TYPE_DEFAULTS = {
@@ -259,7 +260,7 @@ def register_image_at_roboflow(
         data=m,
         headers={"Content-Type": m.content_type},
     )
-    response.raise_for_status()
+    api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
     if not parsed_response.get("duplicate") and not parsed_response.get("success"):
         raise RoboflowAPIImageUploadRejectionError(
@@ -298,7 +299,7 @@ def annotate_image_at_roboflow(
         data=annotation_content,
         headers={"Content-Type": "text/plain"},
     )
-    response.raise_for_status()
+    api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
     if "error" in parsed_response or not parsed_response.get("success"):
         raise RoboflowAPIIAnnotationRejectionError(
@@ -339,7 +340,7 @@ def get_from_url(
 
 def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
     response = requests.get(wrap_url(url))
-    response.raise_for_status()
+    api_key_safe_raise_for_status(response=response)
     if json_response:
         return response.json()
     return response

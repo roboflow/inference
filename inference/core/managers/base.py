@@ -15,6 +15,7 @@ from inference.core.env import (
     ROBOFLOW_SERVER_UUID,
 )
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model
@@ -209,9 +210,14 @@ class ModelManager:
         Args:
             model_id (str): The identifier of the model.
         """
-        self.check_for_model(model_id)
-        self._models[model_id].clear_cache()
-        del self._models[model_id]
+        try:
+            self.check_for_model(model_id)
+            self._models[model_id].clear_cache()
+            del self._models[model_id]
+        except InferenceModelNotFound:
+            logger.warning(
+                f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
+            )
 
     def clear(self) -> None:
         """Removes all models from the manager."""
