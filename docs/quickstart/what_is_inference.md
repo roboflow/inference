@@ -1,6 +1,6 @@
 Roboflow Inference enables you to deploy computer vision models faster than ever.
 
-Here is an example of a model running on a video using Inference (See the code):
+Here is an example of a model running on a video using Inference ([See the code](https://github.com/roboflow/inference/blob/main/examples/inference-client/video.py)):
 
 <video width="100%" autoplay loop muted>
   <source src="https://media.roboflow.com/football-video.mp4" type="video/mp4">

@@ -7,22 +7,28 @@ If you need to deploy to the edge, you can use a device like the Jetson Nano. If
 !!! tip "Tip"
     Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run.
 
-First, install the `roboflow` Python package:
+!!! info
+    If you haven't already, follow our Run Your First Model guide to install and set up Inference.
+
+First, start an Inference server:
 
 ```
-pip install roboflow
+inference server start
 ```
 
 Next, create a new Python file and add the following code:
 
 ```python
-from roboflow import Roboflow
-rf = Roboflow(api_key="API_KEY")
-project = rf.workspace().project("MODEL_ENDPOINT")
-model = project.version(VERSION, local="http://localhost:9001").model
+from inference.models.utils import get_roboflow_model
+from PIL import Image
 
-# infer on a local image
-results = model.predict("your_image.jpg", confidence=40, overlap=30).json()
+model = get_roboflow_model(
+    model_id="soccer-players-5fuqs/1"
+)
+
+result = model.infer("path/to/image.jpg")
+
+print(result)
 ```
 
 Replace your API key, model ID, and model version as appropriate.

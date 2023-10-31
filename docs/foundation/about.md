@@ -6,9 +6,9 @@ The CLIP training process, which was run using over 400 million pairs of images 
 
 Foundation models are being built for a range of vision tasks, from image segmentation to classification to zero-shot object detection.
 
-Autodistill supports the following foundation models:
+Inference supports the following foundation models:
 
-- LC2S-Net: Detect the direction in which someone is looking.
+- Gaze (LC2S-Net): Detect the direction in which someone is looking.
 - CLIP: Classify images and compare the similarity of images and text.
 - DocTR: Read characters in images.
 - Grounding DINO: Detect objects in images using text prompts.

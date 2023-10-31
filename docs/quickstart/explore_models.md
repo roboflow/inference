@@ -77,7 +77,7 @@ You can run models you have trained privately on Roboflow with Inference. To do 
 
 Click the "Deploy" link in the sidebar to find the information you will need to use your model with Inference:
 
-![Model list](https://media.roboflow.com/docs-sidebar-list.png)
+<img src="https://media.roboflow.com/docs-model-deploy.png" alt="Model deploy page" width="100%" style="max-height: 200px;">
 
 Copy the model ID on the page (in this case, `taylor-swift-records/3`).
 
