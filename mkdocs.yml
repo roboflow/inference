@@ -37,6 +37,7 @@ nav:
     - UDP and Video Examples: https://github.com/roboflow/inference/tree/main/examples/inference-client
     - Webcam and RTSP Examples: https://github.com/roboflow/inference/tree/main/examples/stream-examples
     - Model Device Compatability: quickstart/compatability_matrix.md
+    - Inference without model: quickstart/stubs.md
   - API Reference: api.md
   - Library Reference:
     - Models:
