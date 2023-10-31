@@ -1,3 +1,4 @@
+from inference.core.env import API_KEY
 from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
@@ -10,7 +11,6 @@ from inference.models import (
     YOLOv8ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
-from inference.core.env import API_KEY
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "vit"): VitClassification,
