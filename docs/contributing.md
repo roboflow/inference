@@ -4,6 +4,10 @@ Thank you for your interest in contributing to Inference.
 
 We welcome any contributions to help us improve the quality of Inference.
 
+!!! note
+
+    Interested in seeing a new model in Inference? [File a Feature Request on GitHub](https://github.com/roboflow/inference/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.yml).
+
 ## Contribution Guidelines
 
 We welcome contributions to:
