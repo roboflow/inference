@@ -251,7 +251,7 @@ def test_get_model_type_when_generic_model_is_utilised(
 @mock.patch.object(roboflow, "get_roboflow_dataset_type")
 @mock.patch.object(roboflow, "get_roboflow_model_type")
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
-def test_get_model_type_when_roboflow_api_is_called(
+def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     construct_model_type_cache_path_mock: MagicMock,
     get_roboflow_model_type_mock: MagicMock,
     get_roboflow_dataset_type_mock: MagicMock,
@@ -284,6 +284,44 @@ def test_get_model_type_when_roboflow_api_is_called(
         version_id="1",
         project_task_type="object-detection",
     )
+    get_roboflow_dataset_type_mock.assert_called_once_with(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        dataset_id="some",
+    )
+    get_roboflow_workspace_mock.assert_called_once_with(api_key="my_api_key")
+
+
+@mock.patch.object(roboflow, "get_roboflow_workspace")
+@mock.patch.object(roboflow, "get_roboflow_dataset_type")
+@mock.patch.object(roboflow, "get_roboflow_model_type")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_roboflow_api_is_called_for_mock(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_model_type_mock: MagicMock,
+    get_roboflow_dataset_type_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_dataset_type_mock.return_value = "object-detection"
+    get_roboflow_workspace_mock.return_value = "my_workspace"
+
+    # when
+    result = get_model_type(
+        model_id="some/0",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("object-detection", "stub")
+    with open(metadata_path) as f:
+        persisted_metadata = json.load(f)
+    assert persisted_metadata["model_type"] == "stub"
+    assert persisted_metadata["project_task_type"] == "object-detection"
+    get_roboflow_model_type_mock.assert_not_called()
     get_roboflow_dataset_type_mock.assert_called_once_with(
         api_key="my_api_key",
         workspace_id="my_workspace",

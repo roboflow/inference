@@ -23,6 +23,8 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
 }
 
+STUB_VERSION_ID = "0"
+
 
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
@@ -77,13 +79,16 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
     project_task_type = get_roboflow_dataset_type(
         api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
     )
-    model_type = get_roboflow_model_type(
-        api_key=api_key,
-        workspace_id=workspace_id,
-        dataset_id=dataset_id,
-        version_id=version_id,
-        project_task_type=project_task_type,
-    )
+    if version_id == STUB_VERSION_ID:
+        model_type = "stub"
+    else:
+        model_type = get_roboflow_model_type(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            project_task_type=project_task_type,
+        )
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,

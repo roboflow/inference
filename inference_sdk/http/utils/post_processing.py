@@ -57,7 +57,7 @@ def adjust_prediction_to_client_scaling_factor(
     prediction: dict,
     scaling_factor: Optional[float],
 ) -> dict:
-    if scaling_factor is None:
+    if scaling_factor is None or prediction.get("is_stub", False):
         return prediction
     if "image" in prediction:
         prediction["image"] = {
