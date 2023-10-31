@@ -24,8 +24,8 @@ def failure_handler(redis: Redis, *request_ids):
         ex_type, ex_value, _ = sys.exc_info()
         message = ex_type.__name__ + ": " + str(ex_value)
         for request_id in request_ids:
-            redis.set(TASK_STATUS_KEY.format(request_id), FAILURE_STATE)
             redis.set(TASK_RESULT_KEY.format(request_id), message)
+            redis.set(TASK_STATUS_KEY.format(request_id), FAILURE_STATE)
         raise
 
 
