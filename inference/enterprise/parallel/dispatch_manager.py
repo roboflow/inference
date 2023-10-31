@@ -27,6 +27,11 @@ NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 
 
 class ResultsChecker:
+    """
+    Class responsible for queuing asyncronous inference runs,
+    keeping track of running requests, and awaiting their results.
+    """
+
     def __init__(self):
         self.tasks = []
         self.dones = dict()
@@ -34,9 +39,17 @@ class ResultsChecker:
         self.running = True
 
     def add_redis(self, r: Redis):
+        """
+        After instantiation, give results checker a redis object
+        """
         self.r = r
 
     async def add_task(self, t, request):
+        """
+        Wait until there's available cylce to queue a task.
+        When there are cycles, add the task's id to a list to keep track of its results,
+        launch the preprocess celeryt task, set the task's status to in progress in redis.
+        """
         interval = 0.1
         while len(self.tasks) > NUM_PARALLEL_TASKS:
             await asyncio.sleep(interval)
@@ -44,7 +57,10 @@ class ResultsChecker:
         preprocess.s(request.dict()).delay()
         self.r.set(TASK_STATUS_KEY.format(t), INITIAL_STATE)
 
-    def check_task(self, t):
+    def check_task(self, t: str) -> Any:
+        """
+        Check the done tasks and errored tasks for this task id.
+        """
         if t in self.dones:
             return self.dones.pop(t)
         if t in self.errors:
@@ -53,6 +69,10 @@ class ResultsChecker:
         return NOT_FINISHED_RESPONSE
 
     async def loop(self):
+        """
+        Main loop. Check all in progress tasks for their status, and if their status is final,
+        (either failure or success) then add their results to the appropriate results dictionary.
+        """
         interval = 0.1
         while self.running:
             tasks = [t for t in self.tasks]
