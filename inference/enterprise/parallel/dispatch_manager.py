@@ -77,7 +77,7 @@ class ResultsChecker:
         while self.running:
             tasks = [t for t in self.tasks]
             task_names = [TASK_STATUS_KEY.format(id_) for id_ in tasks]
-            donenesses = [self.r.get(t) for t in task_names]
+            donenesses = self.r.mget(task_names)
             donenesses = [int(d) for d in donenesses]
             for id_, doneness in zip(tasks, donenesses):
                 if doneness in [SUCCESS_STATE, FAILURE_STATE]:
