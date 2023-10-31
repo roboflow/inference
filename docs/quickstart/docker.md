@@ -4,8 +4,7 @@ Before you begin, ensure that you have Docker installed on your machine. Docker 
 allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If 
 you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
 
-
-## via CLI
+## Set up a Docker Inference Server via `inference server start``
 
 Another easy way to run the Roboflow Inference Server with Docker is via the command line.
 
@@ -33,7 +32,9 @@ Roboflow Inference CLI currently supports the following device targets:
 
 For Jetson or TensorRT Runtime inference server images, pull the images directly following the [instructions below](#pull-from-docker-hub).
 
-## Pull from Docker Hub
+## Manually Set Up a Docker Container
+
+### Step #1: Pull from Docker Hub
 
 If you don't wish to build the Docker image locally or prefer to use the official releases, you can directly pull the 
 pre-built images from the Docker Hub. These images are maintained by the Roboflow team and are optimized for various 
@@ -90,7 +91,7 @@ hardware configurations.
         docker pull roboflow/roboflow-inference-server-jetson-5.1.1
         ```
 
-## Run
+### Step #2: Run the Docker Container
 
 Once you have a Docker image (either built locally or pulled from Docker Hub), you can run the Roboflow Inference 
 Server in a container. 
@@ -145,7 +146,7 @@ You may add the flag `-e API_KEY=<YOUR API KEY>` to your `docker run` command so
 
 You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/cache`.
 
-## Build
+### Advanced: Build a Docker Container from Scratch
 
 To build a Docker image locally, first clone the Inference Server repository.
 
