@@ -37,8 +37,7 @@ nav:
     - Run a Model:
       - On an Image: quickstart/run_model_on_image.md
       - On a Video: quickstart/run_model_on_video.md
-      - On a Webcam Stream: quickstart/run_model_on_webcam.md
-      - On an RTSP Stream: quickstart/run_model_on_rtsp.md
+      - On a Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - Over UDP: quickstart/run_model_over_udp.md
     - Use a Foundation Model:
       - What is a Foundation Model?: foundation/about.md
