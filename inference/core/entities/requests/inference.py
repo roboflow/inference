@@ -10,7 +10,7 @@ class BaseRequest(BaseModel):
     """Base request for inference.
 
     Attributes:
-        id_ (str_): A unique request identifier.
+        id (str_): A unique request identifier.
         api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
         start (Optional[float]): start time of request
     """
@@ -28,7 +28,6 @@ class InferenceRequest(BaseRequest):
         model_type (Optional[str]): The type of the model, usually referring to what task the model performs.
     """
 
-    id: str = Field(default_factory=lambda: str(uuid4()))
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
 
