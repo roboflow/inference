@@ -34,7 +34,7 @@ Inference provides a scalable method through which you can use computer vision m
 
 Inference is backed by:
 
-- A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
+- A server, so you don’t have to reinvent the wheel when it comes to serving your model to disperate parts of your application.
 
 - Standard APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
 
@@ -87,7 +87,7 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 ### Extras:
 
-Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
+Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
 | extra | description |
 |:-------|:-------------------------------------------------|
@@ -168,7 +168,7 @@ From there you can run the inference server. See [Docker quickstart via CLI](./q
 inference server start
 ```
 
-To use the CLI to make inferences, first find your project ID and model version number in the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+To use the CLI to make inferences, first [find your project ID and model version number in Roboflow](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
 See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
 
