@@ -6,6 +6,7 @@ import numpy as np
 from celery import Celery
 from redis import ConnectionPool, Redis
 
+import inference.enterprise.parallel.celeryconfig
 from inference.core.entities.requests.inference import (
     InferenceRequest,
     request_from_type,
@@ -26,7 +27,6 @@ from inference.enterprise.parallel.utils import (
     shm_manager,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-import inference.enterprise.parallel.celeryconfig
 
 pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 app = Celery("tasks", broker=f"redis://{REDIS_HOST}:{REDIS_PORT}")
