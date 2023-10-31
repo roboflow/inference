@@ -10,6 +10,7 @@ from inference.models import (
     YOLOv8ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
+from inference.core.env import API_KEY
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "vit"): VitClassification,
@@ -149,6 +150,6 @@ except:
     pass
 
 
-def get_roboflow_model(model_id, api_key=None, **kwargs):
+def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
