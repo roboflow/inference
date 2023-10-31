@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from multiprocessing import shared_memory
+from threading import Thread
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -17,6 +18,7 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.tasks import postprocess
 from inference.enterprise.parallel.utils import failure_handler, shm_manager
+from inference.core.models.roboflow import RoboflowInferenceModel
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,13 +36,20 @@ def get_requested_model_names(redis: Redis):
 
 
 def get_batch(redis: Redis, model_names: List[str]) -> Tuple[List[Dict], str]:
-    batches = [
-        redis.zrange(f"infer:{m}", 0, BATCH_SIZE - 1, withscores=True)
+    batch_sizes = [
+        RoboflowInferenceModel.model_metadata_from_memcache_endpoint(m)["batch_size"]
         for m in model_names
+    ]
+    batch_sizes = [b if not isinstance(b, str) else BATCH_SIZE for b in batch_sizes]
+    batches = [
+        redis.zrange(f"infer:{m}", 0, b - 1, withscores=True)
+        for m, b in zip(model_names, batch_sizes)
     ]
     now = time.time()
     average_ages = [np.mean([float(b[1]) - now for b in batch]) for batch in batches]
-    lengths = [len(batch) / BATCH_SIZE for batch in batches]
+    lengths = [
+        len(batch) / batch_size for batch, batch_size in zip(batches, batch_sizes)
+    ]
     fitnesses = [age / 30 + length for age, length in zip(average_ages, lengths)]
     model_index = fitnesses.index(max(fitnesses))
     batch = batches[model_index]
@@ -95,6 +104,21 @@ class InferServer:
             model_manager, max_size=MAX_ACTIVE_MODELS
         )
         self.running = True
+        self.wait = 0
+        self.response_queue = []
+        self.write_thread = Thread(target=self.write_responses)
+        self.write_thread.start()
+
+    def write_responses(self):
+        while True:
+            try:
+                if not self.response_queue:
+                    time.sleep(0.002)
+                    continue
+                response = self.response_queue.pop(0)
+                write_response(*response)
+            except:
+                pass
 
     def infer_loop(self):
         while self.running:
@@ -104,26 +128,42 @@ class InferServer:
                 continue
 
     def infer(self):
+        start = time.perf_counter()
         model_names = get_requested_model_names(self.redis)
         if not model_names:
-            time.sleep(0.005)
+            if not self.wait:
+                self.wait = time.time()
+            time.sleep(0.002)
             return
 
+        if self.wait:
+            print(f"waited {(time.time() - self.wait):3f} seconds for batch")
+
         batch, model_id = get_batch(self.redis, model_names)
+        print(f"Predicting on batch of size {len(batch)}")
         with failure_handler(self.redis, *[b["request"]["id"] for b in batch]):
             self.model_manager.add_model(model_id, batch[0]["request"]["api_key"])
             model_type = self.model_manager.get_task_type(model_id)
             for b in batch:
                 request = request_from_type(model_type, b["request"])
                 b["request"] = request
-
+            metadata_processed = time.perf_counter()
+            print(f"Took {(metadata_processed - start):3f} seconds to process metadata")
             with shm_manager(*[b["chunk_name"] for b in batch]) as shms:
                 images, preproc_return_metadatas = load_batch(batch, shms)
+                loaded = time.perf_counter()
+                print(f"Took {(loaded - metadata_processed):3f} seconds to load batch")
                 outputs = self.model_manager.predict(model_id, images)
+                inferred = time.perf_counter()
+                print(f"Took {(inferred - loaded):3f} seconds to infer")
                 for output, b, metadata in zip(
                     zip(*outputs), batch, preproc_return_metadatas
                 ):
-                    write_response(output, b["request"], metadata)
+                    self.response_queue.append((output, b["request"], metadata))
+                written = time.perf_counter()
+                print(f"Took {(written - inferred):3f} seconds to write responses")
+
+        self.wait = 0
 
 
 if __name__ == "__main__":

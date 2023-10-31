@@ -191,6 +191,11 @@ class RoboflowInferenceModel(Model):
     def cache_key(self):
         return f"metadata:{self.endpoint}"
 
+    @staticmethod
+    def model_metadata_from_memcache_endpoint(endpoint):
+        model_metadata = cache.get(f"metadata:{endpoint}")
+        return model_metadata
+
     def model_metadata_from_memcache(self):
         model_metadata = cache.get(self.cache_key)
         return model_metadata

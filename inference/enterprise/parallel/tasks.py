@@ -26,9 +26,11 @@ from inference.enterprise.parallel.utils import (
     shm_manager,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
+import inference.enterprise.parallel.celeryconfig
 
 pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 app = Celery("tasks", broker=f"redis://{REDIS_HOST}:{REDIS_PORT}")
+app.config_from_object(inference.enterprise.parallel.celeryconfig)
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = StubLoaderManager(model_registry)
 model_manager = WithFixedSizeCache(
