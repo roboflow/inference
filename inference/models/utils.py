@@ -4,6 +4,7 @@ from inference.core.models.stubs import (
     KeypointsDetectionModelStub,
     ObjectDetectionModelStub,
 )
+from inference.core.env import API_KEY
 from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
@@ -159,6 +160,6 @@ except:
     pass
 
 
-def get_roboflow_model(model_id, api_key=None, **kwargs):
+def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
