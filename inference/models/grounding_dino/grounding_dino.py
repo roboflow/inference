@@ -56,8 +56,6 @@ class GroundingDINO(RoboflowCoreModel):
         #     url = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
         #     urllib.request.urlretrieve(url, GROUNDING_DINO_CHECKPOINT_PATH)
 
-        self.get_infer_bucket_file_list()
-
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,
             model_checkpoint_path=os.path.join(
