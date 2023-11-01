@@ -1,10 +1,10 @@
+from inference.core.env import API_KEY
 from inference.core.models.stubs import (
     ClassificationModelStub,
     InstanceSegmentationModelStub,
     KeypointsDetectionModelStub,
     ObjectDetectionModelStub,
 )
-from inference.core.env import API_KEY
 from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
