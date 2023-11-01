@@ -34,6 +34,7 @@ from inference.core.env import (
     API_KEY,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
+    CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     LAMBDA,
@@ -223,24 +224,28 @@ class RoboflowInferenceModel(Model):
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
         logger.debug(f"List of files required to load model: {infer_bucket_files}")
-        return infer_bucket_files
+        return [f for f in infer_bucket_files if f is not None]
 
     def download_model_artefacts_from_s3(self) -> None:
         try:
             logger.debug("Downloading model artifacts from S3")
             infer_bucket_files = self.get_all_required_infer_bucket_file()
-            cache_directory = get_cache_dir(model_id=self.endpoint)
+            cache_directory = get_cache_dir()
             s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
             download_s3_files_to_directory(
-                bucket=INFER_BUCKET,
+                bucket=self.model_artifact_bucket,
                 keys=s3_keys,
                 target_dir=cache_directory,
                 s3_client=S3_CLIENT,
             )
         except Exception as error:
             raise ModelArtefactError(
-                f"Could not obtain model artefacts from S3. Cause: {error}"
+                f"Could not obtain model artefacts from S3 with keys {s3_keys}. Cause: {error}"
             ) from error
+
+    @property
+    def model_artifact_bucket(self):
+        return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
@@ -542,6 +547,15 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             Image.Image: The preprocessed PIL image.
         """
         raise NotImplementedError(self.__class__.__name__ + ".preprocess_image")
+
+    @property
+    def weights_file(self) -> str:
+        """Abstract property representing the file containing the model weights. For core models, all model artifacts are handled through get_infer_bucket_file_list method."""
+        return None
+
+    @property
+    def model_artifact_bucket(self):
+        return CORE_MODEL_BUCKET
 
 
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
