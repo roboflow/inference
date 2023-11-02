@@ -1,6 +1,6 @@
 import random
 from functools import partial
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 
@@ -15,15 +15,19 @@ from inference.core.constants import CLASSIFICATION_TASK
 def initialize_close_to_threshold_sampling(
     strategy_config: Dict[str, Any]
 ) -> SamplingMethod:
+    selected_class_names = strategy_config.get("selected_class_names")
+    if selected_class_names is not None:
+        selected_class_names = set(selected_class_names)
     sample_function = partial(
         sample_close_to_threshold,
-        selected_class_names=strategy_config["selected_class_names"],
+        selected_class_names=selected_class_names,
         threshold=strategy_config["threshold"],
         epsilon=strategy_config["epsilon"],
-        only_top_classes=strategy_config["only_top_classes"],
-        minimum_objects_close_to_threshold=strategy_config[
-            "minimum_objects_close_to_threshold"
-        ],
+        only_top_classes=strategy_config.get("only_top_classes", True),
+        minimum_objects_close_to_threshold=strategy_config.get(
+            "minimum_objects_close_to_threshold",
+            1,
+        ),
         probability=strategy_config["probability"],
     )
     return SamplingMethod(
@@ -36,7 +40,7 @@ def sample_close_to_threshold(
     image: np.ndarray,
     prediction: Prediction,
     prediction_type: PredictionType,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
     only_top_classes: bool,
@@ -66,7 +70,7 @@ def is_prediction_a_stub(prediction: Prediction) -> bool:
 def prediction_is_close_to_threshold(
     prediction: Prediction,
     prediction_type: PredictionType,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
     only_top_classes: bool,
@@ -120,18 +124,21 @@ def multi_class_classification_prediction_is_close_to_threshold(
 
 def multi_class_classification_prediction_is_close_to_threshold_for_top_class(
     prediction: Prediction,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
 ) -> bool:
-    if prediction["top"] not in selected_class_names:
+    if (
+        selected_class_names is not None
+        and prediction["top"] not in selected_class_names
+    ):
         return False
     return abs(prediction["confidence"] - threshold) < epsilon
 
 
 def multi_label_classification_prediction_is_close_to_threshold(
     prediction: Prediction,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
     only_top_classes: bool,
@@ -140,7 +147,7 @@ def multi_label_classification_prediction_is_close_to_threshold(
     for class_name, prediction_details in prediction["predictions"].items():
         if only_top_classes and class_name not in predicted_classes:
             continue
-        if class_name not in selected_class_names:
+        if selected_class_names is not None and class_name not in selected_class_names:
             continue
         if close_to_threshold(
             value=prediction_details["confidence"], threshold=threshold, epsilon=epsilon
@@ -151,7 +158,7 @@ def multi_label_classification_prediction_is_close_to_threshold(
 
 def detection_prediction_is_close_to_threshold(
     prediction: Prediction,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
     minimum_objects_close_to_threshold: int,
@@ -167,13 +174,16 @@ def detection_prediction_is_close_to_threshold(
 
 def count_detections_close_to_threshold(
     prediction: Prediction,
-    selected_class_names: Set[str],
+    selected_class_names: Optional[Set[str]],
     threshold: float,
     epsilon: float,
 ) -> int:
     counter = 0
     for prediction_details in prediction["predictions"]:
-        if prediction_details["class"] not in selected_class_names:
+        if (
+            selected_class_names is not None
+            and prediction_details["class"] not in selected_class_names
+        ):
             continue
         if close_to_threshold(
             value=prediction_details["confidence"], threshold=threshold, epsilon=epsilon

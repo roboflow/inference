@@ -172,3 +172,7 @@ class PredictionFormatNotSupported(ActiveLearningError):
 
 class ActiveLearningConfigurationDecodingError(ActiveLearningError):
     pass
+
+
+class ActiveLearningConfigurationError(ActiveLearningError):
+    pass

@@ -19,7 +19,7 @@ def initialize_classes_based_sampling(
     sample_function = partial(
         sample_close_to_threshold,
         selected_class_names=strategy_config["selected_class_names"],
-        minimum_objects=strategy_config["minimum_objects"],
+        minimum_objects=strategy_config.get("minimum_objects", 1),
         probability=strategy_config["probability"],
     )
     return SamplingMethod(
