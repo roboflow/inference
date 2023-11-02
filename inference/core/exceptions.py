@@ -146,5 +146,29 @@ class RoboflowAPIConnectionError(RoboflowAPIRequestError):
     pass
 
 
+class RoboflowAPIImageUploadRejectionError(RoboflowAPIRequestError):
+    pass
+
+
+class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
+    pass
+
+
+class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
+    pass
+
+
 class ModelArtefactError(Exception):
+    pass
+
+
+class ActiveLearningError(Exception):
+    pass
+
+
+class PredictionFormatNotSupported(ActiveLearningError):
+    pass
+
+
+class ActiveLearningConfigurationDecodingError(ActiveLearningError):
     pass

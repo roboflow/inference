@@ -3,7 +3,7 @@ from typing import Optional, Tuple, Union
 
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
 from inference.core.env import MODEL_CACHE_DIR
-from inference.core.exceptions import InvalidModelIDError, ModelNotRecognisedError
+from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
@@ -15,6 +15,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
 )
 from inference.core.utils.file_system import dump_json, read_json
+from inference.core.utils.roboflow import get_model_id_chunks
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -96,13 +97,6 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
         model_type=model_type,
     )
     return project_task_type, model_type
-
-
-def get_model_id_chunks(model_id: str) -> Tuple[DatasetID, VersionID]:
-    model_id_chunks = model_id.split("/")
-    if len(model_id_chunks) != 2:
-        raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
-    return model_id_chunks[0], model_id_chunks[1]
 
 
 def get_model_metadata_from_cache(

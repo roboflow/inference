@@ -9,7 +9,7 @@ Inference supports running object detection, classification, instance segmentati
 You can [train and deploy your own custom model](https://github.com/roboflow/notebooks) or use one of the 50,000+
 [fine-tuned models shared by the Roboflow Universe community](https://universe.roboflow.com).
 
-<a href="https://docs.roboflow.com/inference/quickstart/run_a_model" class="button">Get started with our "Run your first model" guide</a>
+<a href="https://inference.roboflow.com/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
 
 <style>
   .button {
