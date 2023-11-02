@@ -9,6 +9,12 @@ from inference.core.active_learning.entities import (
 from inference.core.active_learning.samplers.close_to_threshold import (
     initialize_close_to_threshold_sampling,
 )
+from inference.core.active_learning.samplers.contains_classes import (
+    initialize_classes_based_sampling,
+)
+from inference.core.active_learning.samplers.number_of_detections import (
+    initialize_detections_number_based_sampling,
+)
 from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.env import ACTIVE_LEARNING_ENABLED
 from inference.core.roboflow_api import (
@@ -21,6 +27,8 @@ from inference.core.utils.roboflow import get_model_id_chunks
 TYPE2SAMPLING_INITIALIZERS = {
     "random_sampling": initialize_random_sampling,
     "close_to_threshold_sampling": initialize_close_to_threshold_sampling,
+    "classes_based_sampling": initialize_classes_based_sampling,
+    "detections_number_based_sampling": initialize_detections_number_based_sampling,
 }
 
 
