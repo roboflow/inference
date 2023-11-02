@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.active_learning.sampling import initialize_random_sampling
-from inference.core.active_learning import sampling
+from inference.core.active_learning.samplers.random import initialize_random_sampling
+from inference.core.active_learning.samplers import random
 
 
-@mock.patch.object(sampling.random, "random")
+@mock.patch.object(random.random, "random")
 def test_initialize_random_sampling_when_config_is_valid(
     random_mock: MagicMock,
 ) -> None:

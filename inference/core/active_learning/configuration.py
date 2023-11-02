@@ -6,10 +6,10 @@ from inference.core.active_learning.entities import (
     RoboflowProjectMetadata,
     SamplingMethod,
 )
-from inference.core.active_learning.sampling import (
+from inference.core.active_learning.samplers.close_to_threshold import (
     initialize_close_to_threshold_sampling,
-    initialize_random_sampling,
 )
+from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.env import ACTIVE_LEARNING_ENABLED
 from inference.core.roboflow_api import (
     get_roboflow_active_learning_configuration,
