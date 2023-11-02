@@ -257,11 +257,6 @@ def validate_numpy_image(data: np.ndarray) -> None:
         raise InvalidNumpyInput(
             f"For image given as np.ndarray expected 1 or 3 channels, got {data.shape[-1]} channels."
         )
-    if np.max(data) > 255 or np.min(data) < 0:
-        raise InvalidNumpyInput(
-            f"For image given as np.ndarray expected values between 0 and 255, got values between "
-            f"{np.min(data)} and {np.max(data)}."
-        )
 
 
 def load_image_from_url(
