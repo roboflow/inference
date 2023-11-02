@@ -186,6 +186,46 @@ def letterbox_image(
     Returns:
     - letterboxed image.
     """
+    resized_img = resize_image_keeping_aspect_ratio(
+        image=image,
+        desired_size=desired_size,
+    )
+    new_height, new_width = resized_img.shape[:2]
+    top_padding = (desired_size[1] - new_height) // 2
+    bottom_padding = desired_size[1] - new_height - top_padding
+    left_padding = (desired_size[0] - new_width) // 2
+    right_padding = desired_size[0] - new_width - left_padding
+    return cv2.copyMakeBorder(
+        resized_img,
+        top_padding,
+        bottom_padding,
+        left_padding,
+        right_padding,
+        cv2.BORDER_CONSTANT,
+        value=color,
+    )
+
+
+def downscale_image_keeping_aspect_ratio(
+    image: np.ndarray,
+    desired_size: Tuple[int, int],
+) -> np.ndarray:
+    if image.shape[0] <= desired_size[1] and image.shape[1] <= desired_size[0]:
+        return image
+    return resize_image_keeping_aspect_ratio(image=image, desired_size=desired_size)
+
+
+def resize_image_keeping_aspect_ratio(
+    image: np.ndarray,
+    desired_size: Tuple[int, int],
+) -> np.ndarray:
+    """
+    Resize reserving its aspect ratio.
+
+    Parameters:
+    - image: numpy array representing the image.
+    - desired_size: tuple (width, height) representing the target dimensions.
+    """
     img_ratio = image.shape[1] / image.shape[0]
     desired_ratio = desired_size[0] / desired_size[1]
 
@@ -200,20 +240,4 @@ def letterbox_image(
         new_width = int(desired_size[1] * img_ratio)
 
     # Resize the image to new dimensions
-    resized_img = cv2.resize(image, (new_width, new_height))
-
-    # Pad the image to fit the desired size
-    top_padding = (desired_size[1] - new_height) // 2
-    bottom_padding = desired_size[1] - new_height - top_padding
-    left_padding = (desired_size[0] - new_width) // 2
-    right_padding = desired_size[0] - new_width - left_padding
-
-    return cv2.copyMakeBorder(
-        resized_img,
-        top_padding,
-        bottom_padding,
-        left_padding,
-        right_padding,
-        cv2.BORDER_CONSTANT,
-        value=color,
-    )
+    return cv2.resize(image, (new_width, new_height))

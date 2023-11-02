@@ -52,7 +52,7 @@ from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.roboflow_api import (
     ModelEndpointType,
-    get_from_roboflow_api,
+    get_from_url,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image
@@ -274,8 +274,8 @@ class RoboflowInferenceModel(Model):
             raise ModelArtefactError(
                 "Could not find `environment` key in roboflow API model description response."
             )
-        environment = get_from_roboflow_api(api_data["environment"], json_response=True)
-        model_weights_response = get_from_roboflow_api(api_data["model"])
+        environment = get_from_url(api_data["environment"])
+        model_weights_response = get_from_url(api_data["model"], json_response=False)
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,
@@ -498,7 +498,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         for weights_url_key in api_data["weights"]:
             weights_url = api_data["weights"][weights_url_key]
             t1 = perf_counter()
-            model_weights_response = get_from_roboflow_api(weights_url)
+            model_weights_response = get_from_url(weights_url, json_response=False)
             filename = weights_url.split("?")[0].split("/")[-1]
             save_bytes_in_cache(
                 content=model_weights_response.content,
