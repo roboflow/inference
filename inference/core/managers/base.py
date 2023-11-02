@@ -1,5 +1,4 @@
 import time
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -16,18 +15,19 @@ from inference.core.env import (
     ROBOFLOW_SERVER_UUID,
 )
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
 
 
-@dataclass
 class ModelManager:
     """Model managers keep track of a dictionary of Model objects and is responsible for passing requests to the right model using the infer method."""
 
-    _models: Dict[str, Model] = field(default_factory=dict, init=False)
-    model_registry: ModelRegistry = field()
+    def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
+        self.model_registry = model_registry
+        self._models = models if models is not None else {}
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -68,12 +68,8 @@ class ModelManager:
         if model_id not in self:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
 
-    async def model_infer(self, model_id: str, request: InferenceRequest):
-        self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request)
-
     async def infer_from_request(
-        self, model_id: str, request: InferenceRequest
+        self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Runs inference on the specified model with the given request.
 
@@ -84,9 +80,10 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self.check_for_model(model_id)
         try:
-            rtn_val = await self.model_infer(model_id, request)
+            rtn_val = await self.model_infer(
+                model_id=model_id, request=request, **kwargs
+            )
             finish_time = time.time()
             if not DISABLE_INFERENCE_CACHE:
                 cache.zadd(
@@ -124,6 +121,10 @@ class ModelManager:
                     expire=METRICS_INTERVAL * 2,
                 )
             raise
+
+    async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
+        self.check_for_model(model_id)
+        return self._models[model_id].infer_from_request(request)
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
@@ -224,9 +225,14 @@ class ModelManager:
         Args:
             model_id (str): The identifier of the model.
         """
-        self.check_for_model(model_id)
-        self._models[model_id].clear_cache()
-        del self._models[model_id]
+        try:
+            self.check_for_model(model_id)
+            self._models[model_id].clear_cache()
+            del self._models[model_id]
+        except InferenceModelNotFound:
+            logger.warning(
+                f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
+            )
 
     def clear(self) -> None:
         """Removes all models from the manager."""

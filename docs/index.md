@@ -1,35 +1,42 @@
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-## Roboflow Inference
+[Roboflow](https://roboflow.com) Inference enables you to deploy computer vision models faster than ever.
 
-[Roboflow](https://roboflow.com) Inference is the easiest way to use and deploy computer vision models.
-Inference supports running object detection, classification, instance segmentation, and even foundation models (like CLIP and SAM).
+With a `pip install inference` and `inference server start`, you can start a server to run a fine-tuned model on images, videos, and streams.
+
+Inference supports running object detection, classification, instance segmentation, and foundation models (i.e. SAM, CLIP).
+
 You can [train and deploy your own custom model](https://github.com/roboflow/notebooks) or use one of the 50,000+
-[fine-tuned models shared by the community](https://universe.roboflow.com).
+[fine-tuned models shared by the Roboflow Universe community](https://universe.roboflow.com).
 
+<a href="https://inference.roboflow.com/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
 
-## 🎥 Inference in action
+<style>
+  .button {
+    background-color: var(--md-primary-fg-color);
+    display: block;
+    padding: 10px;
+    color: white !important;
+    border-radius: 5px;
+    text-align: center;
+  }
+</style>
 
-Check out Inference running on a video of a football game:
+Here is an example of a model running on a video using Inference:
 
-<video width="320" height="240" controls style="width: 100%">
-  <source src="https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173" type="video/mp4"> 
-  Your browser does not support the video tag.
+<video width="100%" autoplay loop muted>
+  <source src="https://media.roboflow.com/football-video.mp4" type="video/mp4">
 </video>
 
-## 👩‍🏫 Examples
+## 💻 Features
 
-The [`/examples` directory](https://github.com/roboflow/inference/tree/main/examples) contains example code for working with and extending `inference`, including HTTP and UDP client code and an insights dashboard, along with community examples (PRs welcome)!
-
-## 💻 Why Inference?
-
-Inference provides a scalable method through which you can manage inferences for your vision projects.
+Inference provides a scalable method through which you can use computer vision models.
 
 Inference is backed by:
 
-- A server, so you don’t have to reimplement things like image processing and prediction visualization on every project.
+- A server, so you don’t have to reinvent the wheel when it comes to serving your model to disperate parts of your application.
 
-- Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
+- Standard APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
 
 - Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
 
@@ -80,7 +87,7 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 ### Extras:
 
-Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
+Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
 | extra | description |
 |:-------|:-------------------------------------------------|
@@ -161,7 +168,7 @@ From there you can run the inference server. See [Docker quickstart via CLI](./q
 inference server start
 ```
 
-To use the CLI to make inferences, first find your project ID and model version number in the Roboflow documentation, [Workspace and Project IDs](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+To use the CLI to make inferences, first [find your project ID and model version number in Roboflow](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
 See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
 
@@ -171,116 +178,7 @@ inference infer {image_path} \
     --model-version {model_version} \
     --api-key {api_key}
 ```
-
-## 🔥 quickstart
-
-**Docker Quickstart**:
-
->inference-sdk: Using the [`inference-sdk`](./inference_sdk/http_client.md) is the easiest way to interface with a Roboflow `inference` server.
-
-If you prefer to write your own client code:
-
-```python
-import requests
-
-dataset_id = "soccer-players-5fuqs"
-version_id = "1"
-image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-#Replace ROBOFLOW_API_KEY with your Roboflow API Key
-api_key = "ROBOFLOW_API_KEY"
-confidence = 0.5
-
-url = f"http://localhost:9001/{dataset_id}/{version_id}"
-
-params = {
-    "api_key": api_key,
-    "confidence": confidence,
-    "image": image_url,
-}
-
-res = requests.post(url, params=params)
-print(res.json())
-```
-
-**pip Quickstart**:
-
-After installing via pip, you can run a simple inference using:
-
-```python
-from inference.models.utils import get_roboflow_model
-
-model = get_roboflow_model(
-    model_id="soccer-players-5fuqs/1", 
-    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
-    api_key="ROBOFLOW_API_KEY"
-)
-
-results = model.infer(image="https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg", confidence=0.5, iou_threshold=0.5)
-
-print(results)
-
-```
-
-**CLIP Quickstart**:
-
-You can run inference with OpenAI's CLIP model using:
-
-```python
-from inference.models import Clip
-
-model = Clip(
-    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
-    api_key = "ROBOFLOW_API_KEY"
-)
-
-image_url = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
-
-embeddings = model.embed_image(image_url)
-
-print(embeddings)
-```
-
-**SAM Quickstart**:
-
-You can run inference with Meta's Segment Anything model using:
-
-```python
-from inference.models import SegmentAnything
-
-model = SegmentAnything(
-    #Replace ROBOFLOW_API_KEY with your Roboflow API Key
-    api_key = "ROBOFLOW_API_KEY"
-)
-
-image_url = "https://source.roboflow.com/7fLqS2r1SV8mm0YzyI0c/yy6hjtPUFFkq4yAvhkvs/original.jpg"
-
-embeddings = model.embed_image(image_url)
-
-print(embeddings)
-```
-
-## 🏗️ inference process
-
-To standardize the inference process throughout all our models, Roboflow Inference has a structure for processing inference requests. The specifics can be found on each model's respective page, but overall it works like this for most models:
-
-<img width="900" alt="inference structure" src="https://github.com/stellasphere/inference/assets/29011058/abf69717-f852-4655-9e6e-dae19fc263dc">
-
-## 📝 license
-
-The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.md). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
-
-| model                     |                                        license                                        |
-| :------------------------ | :-----------------------------------------------------------------------------------: |
-| `inference/models/clip`   |                [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                |
-|`inference/models/gaze` | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
-| `inference/models/sam`    | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)  |
-| `inference/models/vit`    | [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE) |
-| `inference/models/yolact` |             [MIT](https://github.com/dbolya/yolact/blob/master/README.md)             |
-| `inference/models/yolov5` |         [AGPL-3.0](https://github.com/ultralytics/yolov5/blob/master/LICENSE)         |
-| `inference/models/yolov7` |          [GPL-3.0](https://github.com/WongKinYiu/yolov7/blob/main/README.md)          |
-| `inference/models/yolov8` |      [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)       |
-
-## 🚀 enterprise
+## Enterprise License
 
 With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
 
@@ -291,15 +189,7 @@ With a Roboflow Inference Enterprise License, you can access additional Inferenc
 
 To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 
-## 📚 documentation
-
-Visit our [documentation](https://roboflow.github.io/inference) for usage examples and reference for Roboflow Inference.
-
-## 🏆 contribution
-
-We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
-
-## 💻 explore more Roboflow open source projects
+## More Roboflow Open Source Projects
 
 |Project | Description|
 |:---|:---|
@@ -308,54 +198,3 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
 |[Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models.
 |[Notebooks](https://roboflow.com/notebooks) | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.
 |[Collect](https://github.com/roboflow/roboflow-collect) | Automated, intelligent data collection powered by CLIP.
-
-<br>
-
-<div align="center">
-
-  <div align="center">
-      <a href="https://youtube.com/roboflow">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/youtube.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949634652"
-            width="3%"
-          />
-      </a>
-      <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://roboflow.com">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/roboflow-app.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949746649"
-            width="3%"
-          />
-      </a>
-      <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://www.linkedin.com/company/roboflow-ai/">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/linkedin.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633691"
-            width="3%"
-          />
-      </a>
-      <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://docs.roboflow.com">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/knowledge.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949634511"
-            width="3%"
-          />
-      </a>
-      <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://disuss.roboflow.com">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/forum.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633584"
-            width="3%"
-          />
-      <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://blog.roboflow.com">
-          <img
-            src="https://media.roboflow.com/notebooks/template/icons/purple/blog.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633605"
-            width="3%"
-          />
-      </a>
-      </a>
-  </div>
-
-</div>
-  </div>

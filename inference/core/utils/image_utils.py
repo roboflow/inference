@@ -21,6 +21,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
+from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
@@ -276,7 +277,7 @@ def load_image_from_url(
     """
     try:
         response = requests.get(value, stream=True)
-        response.raise_for_status()
+        api_key_safe_raise_for_status(response=response)
         return load_image_from_encoded_bytes(
             value=response.content, cv_imread_flags=cv_imread_flags
         )
@@ -330,3 +331,9 @@ def xyxy_to_xywh(xyxy):
     h_temp = abs(xyxy[1] - xyxy[3])
 
     return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]
+
+
+def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> bytes:
+    encoding_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+    _, img_encoded = cv2.imencode(".jpg", image, encoding_param)
+    return np.array(img_encoded).tobytes()

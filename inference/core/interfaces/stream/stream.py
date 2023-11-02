@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import traceback
 from typing import Callable, Union
 
 import cv2
@@ -9,6 +10,11 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
+from inference.core.active_learning.middlewares import (
+    NullActiveLearningMiddleware,
+    ThreadingActiveLearningMiddleware,
+)
+from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
@@ -25,6 +31,7 @@ from inference.core.env import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
+from inference.core.registries.roboflow import get_model_type
 from inference.models.utils import get_roboflow_model
 
 
@@ -97,8 +104,18 @@ class Stream(BaseInterface):
 
         if isinstance(model, str):
             self.model = get_roboflow_model(model, self.api_key)
+            self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+                api_key=self.api_key,
+                model_id=self.model_id,
+                cache=cache,
+            )
+            self.task_type = get_model_type(
+                model_id=self.model_id, api_key=self.api_key
+            )[0]
         else:
             self.model = model
+            self.active_learning_middleware = NullActiveLearningMiddleware()
+            self.task_type = "unknown"
 
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
@@ -121,7 +138,9 @@ class Stream(BaseInterface):
         )
 
         self.on_start_callbacks = []
-        self.on_stop_callbacks = []
+        self.on_stop_callbacks = [
+            lambda: self.active_learning_middleware.stop_registration_thread()
+        ]
         self.on_prediction_callbacks = []
 
         if on_prediction:
@@ -183,6 +202,7 @@ class Stream(BaseInterface):
         self.model.infer(
             frame, confidence=self.confidence, iou_threshold=self.iou_threshold
         )
+        self.active_learning_middleware.start_registration_thread()
 
     def preprocess_thread(self):
         """Preprocess incoming frames for inference.
@@ -202,11 +222,12 @@ class Stream(BaseInterface):
                     if frame_id > 0 and frame_id != self.frame_id:
                         self.frame_id = frame_id
                         self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
-                        self.preproc_result = self.model.preprocess(self.frame)
+                        self.preproc_result = self.model.preprocess(self.frame_cv)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
 
         except Exception as e:
+            traceback.print_exc()
             logger.error(e)
 
     def inference_request_thread(self):
@@ -233,6 +254,7 @@ class Stream(BaseInterface):
 
                 self.queue_control = False
                 frame_id = self.frame_id
+                inference_input = np.copy(self.frame_cv)
                 start = time.perf_counter()
                 predictions = self.model.predict(
                     self.img_in,
@@ -252,6 +274,11 @@ class Stream(BaseInterface):
                         predictions,
                         self.img_dims,
                     )[0]
+                    self.active_learning_middleware.register(
+                        inference_input=inference_input,
+                        prediction=predictions.dict(by_alias=True, exclude_none=True),
+                        prediction_type=self.task_type,
+                    )
                     if self.use_bytetrack:
                         detections = sv.Detections.from_roboflow(
                             predictions.dict(by_alias=True, exclude_none=True)
