@@ -246,6 +246,18 @@ def get_roboflow_active_learning_configuration(
                     {"type": "daily", "value": 1000},
                 ],
             },
+            {
+                "name": "underrepresented_classes",
+                "type": "classes_based",
+                "selected_class_names": ["cat"],
+                "probability": 1.0,
+                "tags": ["hard_classes"],
+                "limits": [
+                    {"type": "minutely", "value": 10},
+                    {"type": "hourly", "value": 100},
+                    {"type": "daily", "value": 1000},
+                ],
+            },
         ],
         "batching_strategy": {
             "batches_name_prefix": "al_batch",
