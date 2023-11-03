@@ -1,11 +1,29 @@
+from typing import Optional, Set
+from unittest import mock
+from unittest.mock import MagicMock
+
+import numpy as np
 import pytest
 
+from inference.core.active_learning.entities import PredictionType
 from inference.core.active_learning.samplers.close_to_threshold import (
-    close_to_threshold,
+    is_close_to_threshold,
     count_detections_close_to_threshold,
-    detection_prediction_is_close_to_threshold,
+    detections_are_close_to_threshold,
     multi_label_classification_prediction_is_close_to_threshold,
-    multi_class_classification_prediction_is_close_to_threshold_for_top_class,
+    multi_class_classification_prediction_is_close_to_threshold,
+    class_to_be_excluded,
+    prediction_is_close_to_threshold,
+    is_prediction_a_stub,
+    sample_close_to_threshold,
+    initialize_close_to_threshold_sampling,
+)
+from inference.core.active_learning.samplers import close_to_threshold
+from inference.core.constants import (
+    CLASSIFICATION_TASK,
+    INSTANCE_SEGMENTATION_TASK,
+    KEYPOINTS_DETECTION_TASK,
+    OBJECT_DETECTION_TASK,
 )
 
 OBJECT_DETECTION_PREDICTION = {
@@ -127,7 +145,7 @@ def test_close_to_threshold_when_value_is_close(
     value: float, threshold: float, epsilon: float
 ) -> None:
     # when
-    result = close_to_threshold(value=value, threshold=threshold, epsilon=epsilon)
+    result = is_close_to_threshold(value=value, threshold=threshold, epsilon=epsilon)
 
     # then
     assert result is True
@@ -144,10 +162,38 @@ def test_close_to_threshold_when_value_is_not_close(
     value: float, threshold: float, epsilon: float
 ) -> None:
     # when
-    result = close_to_threshold(value=value, threshold=threshold, epsilon=epsilon)
+    result = is_close_to_threshold(value=value, threshold=threshold, epsilon=epsilon)
 
     # then
     assert result is False
+
+
+def test_class_to_be_excluded_when_classes_not_selected() -> None:
+    # when
+    result = class_to_be_excluded(class_name="some", selected_class_names=None)
+
+    # then
+    assert result is False
+
+
+def test_class_to_be_excluded_when_classes_selected_and_specific_class_matches() -> (
+    None
+):
+    # when
+    result = class_to_be_excluded(class_name="a", selected_class_names={"a", "b", "c"})
+
+    # then
+    assert result is False
+
+
+def test_class_to_be_excluded_when_classes_selected_and_specific_class_does_not_matche() -> (
+    None
+):
+    # when
+    result = class_to_be_excluded(class_name="d", selected_class_names={"a", "b", "c"})
+
+    # then
+    assert result is True
 
 
 def test_count_detections_close_to_threshold_when_no_detections_in_prediction() -> None:
@@ -247,7 +293,7 @@ def test_detection_prediction_is_close_to_threshold_when_minimum_objects_criteri
     prediction: dict,
 ) -> None:
     # when
-    result = detection_prediction_is_close_to_threshold(
+    result = detections_are_close_to_threshold(
         prediction=prediction,
         selected_class_names=None,
         threshold=0.6,
@@ -271,7 +317,7 @@ def test_detection_prediction_is_close_to_threshold_when_minimum_objects_criteri
     prediction: dict,
 ) -> None:
     # when
-    result = detection_prediction_is_close_to_threshold(
+    result = detections_are_close_to_threshold(
         prediction=prediction,
         selected_class_names=None,
         threshold=0.6,
@@ -351,11 +397,12 @@ def test_multi_class_classification_prediction_is_close_to_threshold_for_top_cla
     None
 ):
     # when
-    result = multi_class_classification_prediction_is_close_to_threshold_for_top_class(
+    result = multi_class_classification_prediction_is_close_to_threshold(
         prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
         selected_class_names=None,
         threshold=0.6,
         epsilon=0.1,
+        only_top_classes=True,
     )
 
     # then
@@ -366,12 +413,419 @@ def test_multi_class_classification_prediction_is_close_to_threshold_for_top_cla
     None
 ):
     # when
-    result = multi_class_classification_prediction_is_close_to_threshold_for_top_class(
+    result = multi_class_classification_prediction_is_close_to_threshold(
         prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
         selected_class_names=None,
         threshold=0.8,
         epsilon=0.1,
+        only_top_classes=True,
     )
 
     # then
     assert result is False
+
+
+def test_multi_class_classification_prediction_is_close_to_threshold_for_top_class_when_classes_are_selected_and_top_class_does_not_match() -> (
+    None
+):
+    # when
+    result = multi_class_classification_prediction_is_close_to_threshold(
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        selected_class_names={"Limousine", "Helicopter"},
+        threshold=0.6,
+        epsilon=0.1,
+        only_top_classes=True,
+    )
+
+    # then
+    assert result is False
+
+
+def test_multi_class_classification_prediction_is_close_to_threshold_for_top_class_when_classes_are_selected_and_top_class_matches() -> (
+    None
+):
+    # when
+    result = multi_class_classification_prediction_is_close_to_threshold(
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        selected_class_names={"Ambulance"},
+        threshold=0.6,
+        epsilon=0.1,
+        only_top_classes=True,
+    )
+
+    # then
+    assert result is True
+
+
+def test_multi_class_classification_prediction_is_close_to_threshold_not_only_for_top_class_when_classes_not_selected() -> (
+    None
+):
+    # when
+    result = multi_class_classification_prediction_is_close_to_threshold(
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        selected_class_names=None,
+        threshold=0.3,
+        epsilon=0.1,
+        only_top_classes=False,
+    )
+
+    # then
+    assert result is True
+
+
+def test_multi_class_classification_prediction_is_close_to_threshold_not_only_for_top_class_when_classes_not_selected_and_no_match_expected() -> (
+    None
+):
+    # when
+    result = multi_class_classification_prediction_is_close_to_threshold(
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        selected_class_names=None,
+        threshold=0.5,
+        epsilon=0.05,
+        only_top_classes=False,
+    )
+
+    # then
+    assert result is False
+
+
+def test_multi_class_classification_prediction_is_close_to_threshold_not_only_for_top_class_when_classes_are_selected() -> (
+    None
+):
+    # when
+    result = multi_class_classification_prediction_is_close_to_threshold(
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        selected_class_names={"Ambulance", "Helicopter"},
+        threshold=0.3,
+        epsilon=0.1,
+        only_top_classes=False,
+    )
+
+    # then
+    assert result is False
+
+
+@pytest.mark.parametrize(
+    "prediction, prediction_type, selected_class_names, threshold, epsilon, only_top_classes, "
+    "minimum_objects_close_to_threshold, expected_result",
+    [
+        (
+            OBJECT_DETECTION_PREDICTION,
+            OBJECT_DETECTION_TASK,
+            None,
+            0.9,
+            0.05,
+            False,
+            1,
+            True,
+        ),
+        (
+            INSTANCE_SEGMENTATION_PREDICTION,
+            INSTANCE_SEGMENTATION_TASK,
+            None,
+            0.9,
+            0.05,
+            False,
+            2,
+            False,
+        ),
+        (
+            KEYPOINTS_PREDICTION,
+            KEYPOINTS_DETECTION_TASK,
+            None,
+            0.8,
+            0.05,
+            False,
+            1,
+            False,
+        ),
+        (
+            MULTI_CLASS_CLASSIFICATION_PREDICTION,
+            CLASSIFICATION_TASK,
+            None,
+            0.6,
+            0.1,
+            True,
+            1,
+            True,
+        ),
+        (
+            MULTI_LABEL_CLASSIFICATION_PREDICTION,
+            CLASSIFICATION_TASK,
+            None,
+            0.05,
+            0.05,
+            False,
+            1,
+            True,
+        ),
+    ],
+)
+def test_prediction_is_close_to_threshold(
+    prediction: dict,
+    prediction_type: PredictionType,
+    selected_class_names: Optional[Set[str]],
+    threshold: float,
+    epsilon: float,
+    only_top_classes: bool,
+    minimum_objects_close_to_threshold: int,
+    expected_result: bool,
+) -> None:
+    # when
+    result = prediction_is_close_to_threshold(
+        prediction=prediction,
+        prediction_type=prediction_type,
+        selected_class_names=selected_class_names,
+        threshold=threshold,
+        epsilon=epsilon,
+        only_top_classes=only_top_classes,
+        minimum_objects_close_to_threshold=minimum_objects_close_to_threshold,
+    )
+
+    # then
+    assert result is expected_result
+
+
+@pytest.mark.parametrize(
+    "prediction",
+    [
+        OBJECT_DETECTION_PREDICTION,
+        KEYPOINTS_PREDICTION,
+        INSTANCE_SEGMENTATION_PREDICTION,
+        MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        MULTI_LABEL_CLASSIFICATION_PREDICTION,
+    ],
+)
+def test_is_prediction_a_stub_when_prediction_is_not_a_stub(prediction: dict) -> None:
+    # when
+    result = is_prediction_a_stub(prediction=prediction)
+
+    # then
+    assert result is False
+
+
+def test_is_prediction_a_stub_when_prediction_is_a_stub() -> None:
+    # given
+    prediction = {"is_stub": True}
+
+    # when
+    result = is_prediction_a_stub(prediction=prediction)
+
+    # then
+    assert result is True
+
+
+def test_sample_close_to_threshold_when_prediction_is_sub() -> None:
+    # when
+    result = sample_close_to_threshold(
+        image=np.zeros((128, 128, 3), dtype=np.uint8),
+        prediction={"is_stub": True},
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names=None,
+        threshold=0.5,
+        epsilon=0.1,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=1.0,
+    )
+
+    # then
+    assert result is False
+
+
+def test_sample_close_to_threshold_when_prediction_type_is_unknown() -> None:
+    # when
+    result = sample_close_to_threshold(
+        image=np.zeros((128, 128, 3), dtype=np.uint8),
+        prediction={"is_stub": True},
+        prediction_type="unknown",
+        selected_class_names=None,
+        threshold=0.5,
+        epsilon=0.1,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=1.0,
+    )
+
+    # then
+    assert result is False
+
+
+def test_sample_close_to_threshold_when_prediction_is_not_close_to_threshold() -> None:
+    # when
+    result = sample_close_to_threshold(
+        image=np.zeros((128, 128, 3), dtype=np.uint8),
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names={"Ambulance"},
+        threshold=0.8,
+        epsilon=0.1,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=1.0,
+    )
+
+    # then
+    assert result is False
+
+
+@mock.patch.object(close_to_threshold.random, "random")
+def test_sample_close_to_threshold_when_prediction_is_close_to_threshold(
+    random_mock: MagicMock,
+) -> None:
+    # given
+    random_mock.return_value = 0.49
+
+    # when
+    result = sample_close_to_threshold(
+        image=np.zeros((128, 128, 3), dtype=np.uint8),
+        prediction=MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names={"Ambulance"},
+        threshold=0.6,
+        epsilon=0.1,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=0.5,
+    )
+
+    # then
+    assert result is True
+
+
+def test_initialize_close_to_threshold_sampling() -> None:
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "selected_class_names": ["Ambulance"],
+        "threshold": 0.75,
+        "epsilon": 0.25,
+        "probability": 1.0,
+    }
+
+    # when
+    sampling_method = initialize_close_to_threshold_sampling(
+        strategy_config=strategy_config
+    )
+    result = sampling_method.sample(
+        np.zeros((128, 128, 3), dtype=np.uint8),
+        MULTI_CLASS_CLASSIFICATION_PREDICTION,
+        CLASSIFICATION_TASK,
+    )
+
+    # then
+    assert result is True
+    assert sampling_method.name == "ambulance_high_confidence"
+
+
+@mock.patch.object(close_to_threshold, "partial")
+def test_initialize_close_to_threshold_sampling_when_classes_not_selected(
+    partial_mock: MagicMock,
+) -> None:
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "threshold": 0.75,
+        "epsilon": 0.25,
+        "probability": 0.6,
+    }
+
+    # when
+    _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)
+
+    # then
+    partial_mock.assert_called_once_with(
+        sample_close_to_threshold,
+        selected_class_names=None,
+        threshold=0.75,
+        epsilon=0.25,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=1,
+        probability=0.6,
+    )
+
+
+@mock.patch.object(close_to_threshold, "partial")
+def test_initialize_close_to_threshold_sampling_when_classes_selected(
+    partial_mock: MagicMock,
+) -> None:
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "selected_class_names": ["Ambulance", "Helicopter"],
+        "threshold": 0.75,
+        "epsilon": 0.25,
+        "probability": 0.6,
+    }
+
+    # when
+    _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)
+
+    # then
+    partial_mock.assert_called_once_with(
+        sample_close_to_threshold,
+        selected_class_names={"Ambulance", "Helicopter"},
+        threshold=0.75,
+        epsilon=0.25,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=1,
+        probability=0.6,
+    )
+
+
+@mock.patch.object(close_to_threshold, "partial")
+def test_initialize_close_to_threshold_sampling_when_only_top_classes_mode_enabled(
+    partial_mock: MagicMock,
+) -> None:
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "selected_class_names": ["Ambulance"],
+        "threshold": 0.75,
+        "epsilon": 0.25,
+        "probability": 0.6,
+        "only_top_classes": True,
+    }
+
+    # when
+    _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)
+
+    # then
+    partial_mock.assert_called_once_with(
+        sample_close_to_threshold,
+        selected_class_names={"Ambulance"},
+        threshold=0.75,
+        epsilon=0.25,
+        only_top_classes=True,
+        minimum_objects_close_to_threshold=1,
+        probability=0.6,
+    )
+
+
+@mock.patch.object(close_to_threshold, "partial")
+def test_initialize_close_to_threshold_sampling_when_objects_close_to_threshold_specified(
+    partial_mock: MagicMock,
+) -> None:
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "selected_class_names": ["Ambulance"],
+        "threshold": 0.75,
+        "epsilon": 0.25,
+        "probability": 0.6,
+        "minimum_objects_close_to_threshold": 6,
+    }
+
+    # when
+    _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)
+
+    # then
+    partial_mock.assert_called_once_with(
+        sample_close_to_threshold,
+        selected_class_names={"Ambulance"},
+        threshold=0.75,
+        epsilon=0.25,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=6,
+        probability=0.6,
+    )

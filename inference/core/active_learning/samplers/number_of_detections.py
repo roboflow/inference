@@ -14,8 +14,18 @@ from inference.core.active_learning.samplers.close_to_threshold import (
     is_prediction_a_stub,
     sample_close_to_threshold,
 )
-from inference.core.constants import CLASSIFICATION_TASK
+from inference.core.constants import (
+    INSTANCE_SEGMENTATION_TASK,
+    KEYPOINTS_DETECTION_TASK,
+    OBJECT_DETECTION_TASK,
+)
 from inference.core.exceptions import ActiveLearningConfigurationError
+
+ELIGIBLE_PREDICTION_TYPES = {
+    INSTANCE_SEGMENTATION_TASK,
+    KEYPOINTS_DETECTION_TASK,
+    OBJECT_DETECTION_TASK,
+}
 
 
 def initialize_detections_number_based_sampling(
@@ -54,9 +64,9 @@ def sample_based_on_detections_number(
     selected_class_names: Optional[Set[str]],
     probability: float,
 ) -> bool:
-    if CLASSIFICATION_TASK in prediction_type:
-        return False
     if is_prediction_a_stub(prediction=prediction):
+        return False
+    if prediction_type not in ELIGIBLE_PREDICTION_TYPES:
         return False
     detections_close_to_threshold = count_detections_close_to_threshold(
         prediction=prediction,
