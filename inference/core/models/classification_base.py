@@ -169,7 +169,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         **kwargs,
     ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         predictions = predictions[0]
-        return self.make_response(predictions, preprocess_return_metadata["img_dims"], **kwargs)
+        return self.make_response(
+            predictions, preprocess_return_metadata["img_dims"], **kwargs
+        )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         predictions = self.onnx_session.run(None, {self.input_name: img_in})
