@@ -1,11 +1,9 @@
-from typing import Optional, Set
 from unittest import mock
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from inference.core.active_learning.entities import PredictionType
 from inference.core.active_learning.samplers.close_to_threshold import (
     is_close_to_threshold,
     count_detections_close_to_threshold,
@@ -21,8 +19,6 @@ from inference.core.active_learning.samplers.close_to_threshold import (
 from inference.core.active_learning.samplers import close_to_threshold
 from inference.core.constants import (
     CLASSIFICATION_TASK,
-    INSTANCE_SEGMENTATION_TASK,
-    KEYPOINTS_DETECTION_TASK,
     OBJECT_DETECTION_TASK,
 )
 
