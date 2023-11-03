@@ -3,6 +3,7 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from inference.core.active_learning.configuration import (
     initialize_sampling_methods,
@@ -18,6 +19,7 @@ from inference.core.active_learning.entities import (
     StrategyLimit,
     StrategyLimitType,
 )
+from inference.core.exceptions import ActiveLearningConfigurationError
 
 
 def test_initialize_sampling_methods() -> None:
@@ -25,9 +27,9 @@ def test_initialize_sampling_methods() -> None:
     sampling_strategies_configs = [
         {
             "name": "default_strategy",
-            "type": "random_sampling",
+            "type": "random",
             "traffic_percentage": 0.5,
-            "tags": ["c", "d"],
+            "tags": ["a"],
             "limits": [
                 {"type": "minutely", "value": 10},
                 {"type": "hourly", "value": 100},
@@ -35,6 +37,44 @@ def test_initialize_sampling_methods() -> None:
             ],
         },
         {"type": "non-existing"},
+        {
+            "name": "hard_examples",
+            "type": "close_to_threshold",
+            "selected_class_names": ["a", "b"],
+            "threshold": 0.25,
+            "epsilon": 0.1,
+            "probability": 0.5,
+            "tags": ["b"],
+            "limits": [
+                {"type": "minutely", "value": 10},
+                {"type": "hourly", "value": 100},
+                {"type": "daily", "value": 1000},
+            ],
+        },
+        {
+            "name": "underrepresented_classes",
+            "type": "classes_based",
+            "selected_class_names": ["a"],
+            "probability": 0.5,
+            "tags": ["hard_classes"],
+            "limits": [
+                {"type": "minutely", "value": 10},
+                {"type": "hourly", "value": 100},
+                {"type": "daily", "value": 1000},
+            ],
+        },
+        {
+            "name": "low_detections",
+            "type": "detections_number_based",
+            "probability": 0.5,
+            "less_than": 3,
+            "tags": ["empty"],
+            "limits": [
+                {"type": "minutely", "value": 10},
+                {"type": "hourly", "value": 100},
+                {"type": "daily", "value": 1000},
+            ],
+        },
     ]
 
     # when
@@ -43,13 +83,19 @@ def test_initialize_sampling_methods() -> None:
     )
 
     # then
-    assert len(result) == 1
-    assert result[0].name == "default_strategy"
-    _ = result[0].sample(  # test if sampling executed correctly
-        np.zeros((128, 128, 3), dtype=np.ndarray),
-        {"some": "prediction"},
-        "object-detection",
-    )
+    assert len(result) == 4
+    assert [r.name for r in result] == [
+        "default_strategy",
+        "hard_examples",
+        "underrepresented_classes",
+        "low_detections",
+    ]
+    for strategy in result:
+        _ = strategy.sample(  # test if sampling executed correctly
+            np.zeros((128, 128, 3), dtype=np.ndarray),
+            {"is_stub": "True"},
+            "object-detection",
+        )
 
 
 @mock.patch.object(configuration, "get_roboflow_active_learning_configuration")
@@ -148,7 +194,7 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
             "sampling_strategies": [
                 {
                     "name": "default_strategy",
-                    "type": "random_sampling",
+                    "type": "random",
                     "traffic_percentage": 0.1,
                     "tags": ["c", "d"],
                     "limits": [
@@ -200,3 +246,39 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
         tags=["a", "b"],
         strategies_tags={"default_strategy": ["c", "d"]},
     )
+
+
+def test_test_initialize_sampling_methods_when_duplicate_names_detected() -> None:
+    # given
+    sampling_strategies_configs = [
+        {
+            "name": "default_strategy",
+            "type": "random",
+            "traffic_percentage": 0.5,
+            "tags": ["a"],
+            "limits": [
+                {"type": "minutely", "value": 10},
+                {"type": "hourly", "value": 100},
+                {"type": "daily", "value": 1000},
+            ],
+        },
+        {
+            "name": "default_strategy",
+            "type": "close_to_threshold",
+            "selected_class_names": ["a", "b"],
+            "threshold": 0.25,
+            "epsilon": 0.1,
+            "probability": 0.5,
+            "tags": ["b"],
+            "limits": [
+                {"type": "minutely", "value": 10},
+                {"type": "hourly", "value": 100},
+                {"type": "daily", "value": 1000},
+            ],
+        },
+    ]
+
+    with pytest.raises(ActiveLearningConfigurationError):
+        _ = initialize_sampling_methods(
+            sampling_strategies_configs=sampling_strategies_configs
+        )

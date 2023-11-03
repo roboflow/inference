@@ -17,6 +17,7 @@ from inference.core.active_learning.samplers.number_of_detections import (
 )
 from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.env import ACTIVE_LEARNING_ENABLED
+from inference.core.exceptions import ActiveLearningConfigurationError
 from inference.core.roboflow_api import (
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
@@ -25,10 +26,10 @@ from inference.core.roboflow_api import (
 from inference.core.utils.roboflow import get_model_id_chunks
 
 TYPE2SAMPLING_INITIALIZERS = {
-    "random_sampling": initialize_random_sampling,
-    "close_to_threshold_sampling": initialize_close_to_threshold_sampling,
-    "classes_based_sampling": initialize_classes_based_sampling,
-    "detections_number_based_sampling": initialize_detections_number_based_sampling,
+    "random": initialize_random_sampling,
+    "close_to_threshold": initialize_close_to_threshold_sampling,
+    "classes_based": initialize_classes_based_sampling,
+    "detections_number_based": initialize_detections_number_based_sampling,
 }
 
 
@@ -106,4 +107,9 @@ def initialize_sampling_methods(
             continue
         initializer = TYPE2SAMPLING_INITIALIZERS[sampling_type]
         result.append(initializer(sampling_strategy_config))
+    names = set(m.name for m in result)
+    if len(names) != len(result):
+        raise ActiveLearningConfigurationError(
+            "Detected duplication of Active Learning strategies names."
+        )
     return result

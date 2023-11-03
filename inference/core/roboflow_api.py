@@ -212,9 +212,9 @@ def get_roboflow_active_learning_configuration(
         "sampling_strategies": [
             {
                 "name": "default_strategy",
-                "type": "random_sampling",
+                "type": "random",
                 "traffic_percentage": 0.1,  # float 0-1
-                "tags": ["c", "d"],  # Optional
+                "tags": ["random_traffic"],  # Optional
                 "limits": [  # Optional
                     {"type": "minutely", "value": 10},
                     {"type": "hourly", "value": 100},
