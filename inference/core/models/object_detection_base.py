@@ -156,7 +156,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
         **kwargs,
-    ) -> List[List[List[float]]]:
+    ) -> List[ObjectDetectionInferenceResponse]:
         """Postprocesses the object detection predictions.
 
         Args:
@@ -169,7 +169,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_detections (int): Maximum number of final detections. Default is 300.
 
         Returns:
-            List[List[float]]: The postprocessed predictions.
+            List[ObjectDetectionInferenceResponse]: The post-processed predictions.
         """
         predictions = predictions[0]
 
@@ -194,9 +194,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 "disable_preproc_static_crop"
             ],
         )
-        if not return_image_dims:
-            return predictions
-        return predictions, img_dims
+        return self.make_response(predictions, img_dims, **kwargs)
 
     def preprocess(
         self,

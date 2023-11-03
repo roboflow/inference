@@ -52,7 +52,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
         **kwargs,
-    ) -> List[List[List[float]]]:
+    ) -> List[KeypointsDetectionInferenceResponse]:
         """Postprocesses the object detection predictions.
 
         Args:
@@ -65,7 +65,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             max_detections (int): Maximum number of final detections. Default is 300.
 
         Returns:
-            List[List[float]]: The postprocessed predictions.
+            List[KeypointsDetectionInferenceResponse]: The post-processed predictions.
         """
         predictions = predictions[0]
         number_of_classes = len(self.get_class_names)
@@ -103,9 +103,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                 "disable_preproc_static_crop"
             ],
         )
-        if not return_image_dims:
-            return predictions
-        return predictions, img_dims
+        return self.make_response(predictions, img_dims, **kwargs)
 
     def make_response(
         self,
