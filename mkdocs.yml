@@ -35,7 +35,8 @@ nav:
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
     - Run a Model:
-      - On an Image: quickstart/run_model_on_image.md
+      - On an Image (Using HTTP): quickstart/http_inference.md
+      - On an Image (Using SDK): quickstart/run_model_on_image.md
       - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - Over UDP: quickstart/run_model_over_udp.md
     - Use a Foundation Model:
@@ -50,7 +51,6 @@ nav:
       - Model Device Compatability: quickstart/compatability_matrix.md
       - Install Inference with Docker: quickstart/docker.md
       - Docker Configuration Options: quickstart/docker_configuration_options.md
-      - HTTP Inference: quickstart/http_inference.md
       - SDK Reference: inference_sdk/http_client.md
   - HTTP API Reference:
     - API Reference: api.md

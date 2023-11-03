@@ -1,6 +1,8 @@
 Let's run a fine-tuned computer vision model to play rock paper scissors.
 
-First, we need to install Inference:
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+
+Next, we need to install Inference:
 
 ```
 pip install inference
