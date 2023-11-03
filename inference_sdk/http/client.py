@@ -37,6 +37,7 @@ from inference_sdk.http.utils.post_processing import (
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
+from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -225,7 +226,7 @@ class InferenceHTTPClient:
                 params=params,
                 data=image,
             )
-            response.raise_for_status()
+            api_key_safe_raise_for_status(response=response)
             if response_contains_jpeg_image(response=response):
                 visualisation = transform_visualisation_bytes(
                     visualisation=response.content,
