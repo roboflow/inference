@@ -11,21 +11,27 @@ from inference.core.active_learning.entities import (
 from inference.core.active_learning.samplers.close_to_threshold import (
     sample_close_to_threshold,
 )
+from inference.core.exceptions import ActiveLearningConfigurationError
 
 
 def initialize_classes_based_sampling(
     strategy_config: Dict[str, Any]
 ) -> SamplingMethod:
-    sample_function = partial(
-        sample_close_to_threshold,
-        selected_class_names=strategy_config["selected_class_names"],
-        minimum_objects=strategy_config.get("minimum_objects", 1),
-        probability=strategy_config["probability"],
-    )
-    return SamplingMethod(
-        name=strategy_config["name"],
-        sample=sample_function,
-    )
+    try:
+        sample_function = partial(
+            sample_based_on_classes,
+            selected_class_names=set(strategy_config["selected_class_names"]),
+            minimum_objects=strategy_config.get("minimum_objects", 1),
+            probability=strategy_config["probability"],
+        )
+        return SamplingMethod(
+            name=strategy_config["name"],
+            sample=sample_function,
+        )
+    except KeyError as error:
+        raise ActiveLearningConfigurationError(
+            f"In configuration of `classes_based_sampling` missing key detected: {error}."
+        ) from error
 
 
 def sample_based_on_classes(

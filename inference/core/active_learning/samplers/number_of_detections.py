@@ -31,28 +31,35 @@ ELIGIBLE_PREDICTION_TYPES = {
 def initialize_detections_number_based_sampling(
     strategy_config: Dict[str, Any]
 ) -> SamplingMethod:
-    less_than_objects = strategy_config.get("less_than_objects")
-    more_than_objects = strategy_config.get("more_than_objects")
-    both_nones = less_than_objects is None and more_than_objects is None
-    both_has_values = less_than_objects is not None and more_than_objects is not None
-    if both_nones or both_has_values:
-        raise ActiveLearningConfigurationError(
-            f"Only one from `less_than_objects` and `more_than_objects` values must be set."
+    try:
+        less_than_objects = strategy_config.get("less_than_objects")
+        more_than_objects = strategy_config.get("more_than_objects")
+        both_nones = less_than_objects is None and more_than_objects is None
+        both_has_values = (
+            less_than_objects is not None and more_than_objects is not None
         )
-    selected_class_names = strategy_config.get("selected_class_names")
-    if selected_class_names is not None:
-        selected_class_names = set(selected_class_names)
-    sample_function = partial(
-        sample_close_to_threshold,
-        less_than_objects=less_than_objects,
-        more_than_objects=more_than_objects,
-        selected_class_names=selected_class_names,
-        probability=strategy_config["probability"],
-    )
-    return SamplingMethod(
-        name=strategy_config["name"],
-        sample=sample_function,
-    )
+        if both_nones or both_has_values:
+            raise ActiveLearningConfigurationError(
+                f"Only one from `less_than_objects` and `more_than_objects` values must be set."
+            )
+        selected_class_names = strategy_config.get("selected_class_names")
+        if selected_class_names is not None:
+            selected_class_names = set(selected_class_names)
+        sample_function = partial(
+            sample_close_to_threshold,
+            less_than_objects=less_than_objects,
+            more_than_objects=more_than_objects,
+            selected_class_names=selected_class_names,
+            probability=strategy_config["probability"],
+        )
+        return SamplingMethod(
+            name=strategy_config["name"],
+            sample=sample_function,
+        )
+    except KeyError as error:
+        raise ActiveLearningConfigurationError(
+            f"In configuration of `detections_number_based_sampling` missing key detected: {error}."
+        ) from error
 
 
 def sample_based_on_detections_number(

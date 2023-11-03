@@ -21,6 +21,7 @@ from inference.core.constants import (
     CLASSIFICATION_TASK,
     OBJECT_DETECTION_TASK,
 )
+from inference.core.exceptions import ActiveLearningConfigurationError
 
 OBJECT_DETECTION_PREDICTION = {
     "predictions": [
@@ -776,3 +777,18 @@ def test_initialize_close_to_threshold_sampling_when_objects_close_to_threshold_
         minimum_objects_close_to_threshold=6,
         probability=0.6,
     )
+
+
+def test_initialize_close_to_threshold_sampling_when_configuration_key_missing() -> (
+    None
+):
+    # given
+    strategy_config = {
+        "name": "ambulance_high_confidence",
+        "threshold": 0.75,
+        "epsilon": 0.25,
+    }
+
+    # when
+    with pytest.raises(ActiveLearningConfigurationError):
+        _ = initialize_close_to_threshold_sampling(strategy_config=strategy_config)

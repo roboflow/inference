@@ -6,6 +6,7 @@ import pytest
 
 from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.active_learning.samplers import random
+from inference.core.exceptions import ActiveLearningConfigurationError
 
 
 @mock.patch.object(random.random, "random")
@@ -57,7 +58,7 @@ def test_initialize_random_sampling_when_strategy_name_is_not_present() -> None:
     }
 
     # when
-    with pytest.raises(KeyError):
+    with pytest.raises(ActiveLearningConfigurationError):
         _ = initialize_random_sampling(strategy_config=strategy_config)
 
 
@@ -75,5 +76,5 @@ def test_initialize_random_sampling_when_traffic_percentage_is_not_present() -> 
     }
 
     # when
-    with pytest.raises(KeyError):
+    with pytest.raises(ActiveLearningConfigurationError):
         _ = initialize_random_sampling(strategy_config=strategy_config)
