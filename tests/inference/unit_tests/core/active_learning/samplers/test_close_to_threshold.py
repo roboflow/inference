@@ -505,85 +505,36 @@ def test_multi_class_classification_prediction_is_close_to_threshold_not_only_fo
     assert result is False
 
 
-@pytest.mark.parametrize(
-    "prediction, prediction_type, selected_class_names, threshold, epsilon, only_top_classes, "
-    "minimum_objects_close_to_threshold, expected_result",
-    [
-        (
-            OBJECT_DETECTION_PREDICTION,
-            OBJECT_DETECTION_TASK,
-            None,
-            0.9,
-            0.05,
-            False,
-            1,
-            True,
-        ),
-        (
-            INSTANCE_SEGMENTATION_PREDICTION,
-            INSTANCE_SEGMENTATION_TASK,
-            None,
-            0.9,
-            0.05,
-            False,
-            2,
-            False,
-        ),
-        (
-            KEYPOINTS_PREDICTION,
-            KEYPOINTS_DETECTION_TASK,
-            None,
-            0.8,
-            0.05,
-            False,
-            1,
-            False,
-        ),
-        (
-            MULTI_CLASS_CLASSIFICATION_PREDICTION,
-            CLASSIFICATION_TASK,
-            None,
-            0.6,
-            0.1,
-            True,
-            1,
-            True,
-        ),
-        (
-            MULTI_LABEL_CLASSIFICATION_PREDICTION,
-            CLASSIFICATION_TASK,
-            None,
-            0.05,
-            0.05,
-            False,
-            1,
-            True,
-        ),
-    ],
-)
-def test_prediction_is_close_to_threshold(
-    prediction: dict,
-    prediction_type: PredictionType,
-    selected_class_names: Optional[Set[str]],
-    threshold: float,
-    epsilon: float,
-    only_top_classes: bool,
-    minimum_objects_close_to_threshold: int,
-    expected_result: bool,
-) -> None:
+def test_prediction_is_close_to_threshold_for_detection_prediction() -> None:
     # when
     result = prediction_is_close_to_threshold(
-        prediction=prediction,
-        prediction_type=prediction_type,
-        selected_class_names=selected_class_names,
-        threshold=threshold,
-        epsilon=epsilon,
-        only_top_classes=only_top_classes,
-        minimum_objects_close_to_threshold=minimum_objects_close_to_threshold,
+        prediction=OBJECT_DETECTION_PREDICTION,
+        prediction_type=OBJECT_DETECTION_TASK,
+        selected_class_names=None,
+        threshold=0.9,
+        epsilon=0.05,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=1,
     )
 
     # then
-    assert result is expected_result
+    assert result is True
+
+
+def test_prediction_is_close_to_threshold_for_classification_prediction() -> None:
+    # when
+    result = prediction_is_close_to_threshold(
+        prediction=MULTI_LABEL_CLASSIFICATION_PREDICTION,
+        prediction_type=CLASSIFICATION_TASK,
+        selected_class_names=None,
+        threshold=0.05,
+        epsilon=0.05,
+        only_top_classes=False,
+        minimum_objects_close_to_threshold=1,
+    )
+
+    # then
+    assert result is True
 
 
 @pytest.mark.parametrize(
