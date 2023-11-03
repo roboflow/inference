@@ -46,6 +46,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    StubResponse,
 )
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
@@ -449,6 +450,7 @@ class HttpInterface(BaseInterface):
                 response_model=Union[
                     ObjectDetectionInferenceResponse,
                     List[ObjectDetectionInferenceResponse],
+                    StubResponse,
                 ],
                 summary="Object detection infer",
                 description="Run inference with the specified object detection model",
@@ -477,7 +479,9 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/infer/instance_segmentation",
-                response_model=InstanceSegmentationInferenceResponse,
+                response_model=Union[
+                    InstanceSegmentationInferenceResponse, StubResponse
+                ],
                 summary="Instance segmentation infer",
                 description="Run inference with the specified instance segmentation model",
             )
@@ -507,6 +511,7 @@ class HttpInterface(BaseInterface):
                 response_model=Union[
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                 ],
                 summary="Classification infer",
                 description="Run inference with the specified classification model",
@@ -534,7 +539,7 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/infer/keypoints_detection",
-                response_model=KeypointsDetectionInferenceResponse,
+                response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
             )
@@ -844,6 +849,7 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                     Any,
                 ],
                 response_model_exclude_none=True,

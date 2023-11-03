@@ -14,6 +14,7 @@ from inference.core.active_learning.core import (
     safe_register_image_at_roboflow,
     register_datapoint_at_roboflow,
     execute_datapoint_registration,
+    is_prediction_registration_forbidden,
 )
 from inference.core.active_learning.entities import (
     SamplingMethod,
@@ -685,3 +686,57 @@ def test_execute_datapoint_registration_when_spare_credit_found(
         register_datapoint_at_roboflow_mock.call_args[1]["strategy_with_spare_credit"]
         == "strategy_b"
     )
+
+
+def test_is_prediction_registration_forbidden_when_stub_prediction_given() -> None:
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"is_stub": True},
+        persist_predictions=True,
+        roboflow_image_id="roboflow_id",
+    )
+
+    # then
+    assert result is True
+
+
+def test_is_prediction_registration_forbidden_when_prediction_persistence_turned_off() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"predictions": [], "top": "cat"},
+        persist_predictions=False,
+        roboflow_image_id="roboflow_id",
+    )
+
+    # then
+    assert result is True
+
+
+def test_is_prediction_registration_forbidden_when_roboflow_image_id_not_registered() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"predictions": [], "top": "cat"},
+        persist_predictions=True,
+        roboflow_image_id=None,
+    )
+
+    # then
+    assert result is True
+
+
+def test_is_prediction_registration_forbidden_when_prediction_should_be_registered() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"predictions": [], "top": "cat"},
+        persist_predictions=True,
+        roboflow_image_id="some+id",
+    )
+
+    # then
+    assert result is False

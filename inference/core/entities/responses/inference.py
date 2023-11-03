@@ -272,3 +272,9 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
         alias="class", default="face", description="The predicted class label"
     )
     landmarks: Union[List[Point], List[Point3D]]
+
+
+class StubResponse(InferenceResponse, WithVisualizationResponse):
+    is_stub: bool = Field(description="Field to mark prediction type as stub")
+    model_id: str = Field(description="Identifier of a model stub that was called")
+    task_type: str = Field(description="Task type of the project")

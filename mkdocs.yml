@@ -46,12 +46,15 @@ nav:
       - Grounding DINO (Object Detection): foundation/grounding_dino.md
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
+    - Integrate with Inference:
+        - SDK Reference: inference_sdk/http_client.md
+        - Collecting data without model: quickstart/stubs.md
     - Reference:
       - Model Licensing: quickstart/licensing.md
       - Model Device Compatability: quickstart/compatability_matrix.md
       - Install Inference with Docker: quickstart/docker.md
       - Docker Configuration Options: quickstart/docker_configuration_options.md
-      - SDK Reference: inference_sdk/http_client.md
+      - HTTP Inference: quickstart/http_inference.md
   - HTTP API Reference:
     - API Reference: api.md
     - Back to Quickstart: /quickstart/what_is_inference/

@@ -356,3 +356,23 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
     assert result["time"] == prediction["time"]
     assert result["predictions"] == prediction["predictions"]
     assert result["predicted_classes"] == prediction["predicted_classes"]
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_stub_prediction() -> (
+    None
+):
+    # given
+    prediction = {
+        "time": 0.0002442499971948564,
+        "is_stub": True,
+        "model_id": "asl-poly-instance-seg/0",
+        "task_type": "instance-segmentation",
+    }
+
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5, prediction_type="object-detection"
+    )
+
+    # then
+    assert result == prediction
