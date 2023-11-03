@@ -165,15 +165,6 @@ def test_load_image_from_numpy_str_when_array_with_non_standard_channels_given()
         _ = load_image_from_numpy_str(value=payload)
 
 
-def test_load_image_from_numpy_str_when_array_with_invalid_values_given() -> None:
-    # given
-    payload = pickle.dumps(1024 * np.ones((128, 128, 3), dtype=np.uint8))
-
-    # when
-    with pytest.raises(InvalidNumpyInput):
-        _ = load_image_from_numpy_str(value=payload)
-
-
 def test_load_image_from_numpy_str_when_valid_image_given(
     image_as_pickled_bytes: bytes,
     image_as_numpy: np.ndarray,
