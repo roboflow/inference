@@ -250,11 +250,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - If visualization is requested, the predictions are drawn on the image.
         """
         t1 = perf_counter()
-        predictions_data = self.infer(**request.dict(), return_image_dims=True)
-        responses = self.make_response(
-            *predictions_data,
-            confidence=request.confidence,
-        )
+        responses = self.infer(**request.dict(), return_image_dims=True)
         for response in responses:
             response.time = perf_counter() - t1
 
