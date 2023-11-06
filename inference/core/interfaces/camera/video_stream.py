@@ -11,6 +11,7 @@ from inference.core.interfaces.camera.entities import (
     FrameID,
     FrameTimestamp,
     StatusUpdate,
+    UpdateSeverity,
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
@@ -19,6 +20,8 @@ from inference.core.interfaces.camera.exceptions import (
 )
 
 DEFAULT_BUFFER_SIZE = 64
+STATE_UPDATE_EVENT = "STREAM_STATE_UPDATE"
+STREAM_ERROR_EVENT = "STREAM_ERROR"
 
 
 class StreamState(Enum):
@@ -53,27 +56,27 @@ class VideoStream:
         cls,
         stream_reference: Union[str, int],
         buffer_size: int = DEFAULT_BUFFER_SIZE,
-        on_status_update: Optional[List[Callable[[StatusUpdate], None]]] = None,
+        status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
     ):
         frames_buffer = Queue(maxsize=buffer_size)
-        if on_status_update is None:
-            on_status_update = []
+        if status_update_handlers is None:
+            status_update_handlers = []
         stream = cv2.VideoCapture(stream_reference)
         return cls(
             stream=stream,
             frames_buffer=frames_buffer,
-            on_status_update=on_status_update,
+            status_update_handlers=status_update_handlers,
         )
 
     def __init__(
         self,
         stream: cv2.VideoCapture,
         frames_buffer: Queue,
-        on_status_update: List[Callable[[StatusUpdate], None]],
+        status_update_handlers: List[Callable[[StatusUpdate], None]],
     ):
         self._stream = stream
         self._frames_buffer = frames_buffer
-        self._on_status_update = on_status_update
+        self._status_update_handlers = status_update_handlers
         self._state = StreamState.NOT_STARTED
         self._resume_event = Event()
         self._stream_consumption_thread: Optional[Thread] = None
@@ -91,23 +94,27 @@ class VideoStream:
             raise StreamOperationNotAllowedError(
                 f"Could not TERMINATE stream in state: {self._state}"
             )
-        self._state = StreamState.TERMINATING
+        self._change_state(target_state=StreamState.TERMINATING)
         if self._state is StreamState.PAUSED:
             self.resume()
+        self._stream_consumption_thread.join()
+        self._frames_buffer.join()
+        if self._state is not StreamState.ERROR:
+            self._change_state(target_state=StreamState.ENDED)
 
     def pause(self) -> None:
         if self._state not in PAUSE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not PAUSE stream in state: {self._state}"
             )
-        self._state = StreamState.PAUSED
+        self._change_state(target_state=StreamState.PAUSED)
 
     def resume(self) -> None:
         if self._state not in RESUME_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESUME stream in state: {self._state}"
             )
-        self._state = StreamState.RUNNING
+        self._change_state(target_state=StreamState.RUNNING)
         self._resume_event.set()
 
     def get_state(self) -> StreamState:
@@ -131,16 +138,58 @@ class VideoStream:
         return frame_timestamp, frame_id, frame
 
     def _consume_stream(self) -> None:
-        self._state = StreamState.RUNNING
-        frame_counter = 0
-        while self._stream.isOpened():
-            frame_timestamp = datetime.now()
-            success, frame = self._stream.read()
-            frame_counter += 1
-            if not success:
-                break
-            self._frames_buffer.put((frame_timestamp, frame_counter, frame))
-        self._state = StreamState.ENDED
+        try:
+            self._change_state(target_state=StreamState.RUNNING)
+            frame_counter = 0
+            while self._stream.isOpened():
+                if self._state is StreamState.TERMINATING:
+                    break
+                self._resume_event.wait()
+                self._resume_event.clear()
+                frame_timestamp = datetime.now()
+                success, frame = self._stream.read()
+                if not success:
+                    break
+                frame_counter += 1
+                self._frames_buffer.put((frame_timestamp, frame_counter, frame))
+            self._change_state(target_state=StreamState.ENDED)
+        except Exception as error:
+            self._change_state(target_state=StreamState.ERROR)
+            payload = {
+                "error_type": error.__class__.__name__,
+                "error_message": str(error),
+                "error_context": "stream_consumer_thread",
+            }
+            self._send_status_update(
+                severity=UpdateSeverity.ERROR,
+                event_type=STREAM_ERROR_EVENT,
+                payload=payload,
+            )
+
+    def _change_state(self, target_state: StreamState) -> None:
+        payload = {
+            "previous_state": self._state,
+            "new_state": target_state,
+        }
+        self._state = target_state
+        self._send_status_update(
+            severity=UpdateSeverity.DEBUG,
+            event_type=STATE_UPDATE_EVENT,
+            payload=payload,
+        )
+
+    def _send_status_update(
+        self, severity: UpdateSeverity, event_type: str, payload: dict
+    ) -> None:
+        status_update = StatusUpdate(
+            timestamp=datetime.now(),
+            severity=severity,
+            event_type=event_type,
+            payload=payload,
+        )
+        for handler in self._status_update_handlers:
+            handler(status_update)
 
     def __del__(self) -> None:
+        self._frames_buffer.join()
         self._stream.release()
