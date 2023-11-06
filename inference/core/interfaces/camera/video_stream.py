@@ -182,6 +182,7 @@ class VideoStream:
                     },
                 )
                 self._frames_buffer.put((frame_timestamp, frame_counter, frame))
+            self._stream.release()
             self._change_state(target_state=StreamState.ENDED)
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
@@ -231,7 +232,6 @@ class VideoStream:
 
     def __del__(self) -> None:
         self._frames_buffer.join()
-        self._stream.release()
 
 
 def discover_stream_properties(stream: cv2.VideoCapture) -> StreamProperties:
