@@ -91,7 +91,7 @@ class VideoStream:
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
         self._state = StreamState.NOT_STARTED
-        self._resume_event = Event()
+        self._playback_allowed = Event()
         self._stream_consumption_thread: Optional[Thread] = None
 
     def start(self) -> None:
@@ -99,6 +99,7 @@ class VideoStream:
             raise StreamOperationNotAllowedError(
                 f"Could not START stream in state: {self._state}"
             )
+        self._playback_allowed.set()
         self._stream_consumption_thread = Thread(target=self._consume_stream())
         self._stream_consumption_thread.start()
 
@@ -120,6 +121,7 @@ class VideoStream:
             raise StreamOperationNotAllowedError(
                 f"Could not PAUSE stream in state: {self._state}"
             )
+        self._playback_allowed.clear()
         self._change_state(target_state=StreamState.PAUSED)
 
     def resume(self) -> None:
@@ -128,7 +130,7 @@ class VideoStream:
                 f"Could not RESUME stream in state: {self._state}"
             )
         self._change_state(target_state=StreamState.RUNNING)
-        self._resume_event.set()
+        self._playback_allowed.set()
 
     def get_state(self) -> StreamState:
         return self._state
@@ -166,8 +168,7 @@ class VideoStream:
             while self._stream.isOpened():
                 if self._state is StreamState.TERMINATING:
                     break
-                self._resume_event.wait()
-                self._resume_event.clear()
+                self._playback_allowed.wait()
                 frame_timestamp = datetime.now()
                 success, frame = self._stream.read()
                 if not success:

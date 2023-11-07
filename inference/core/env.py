@@ -110,6 +110,9 @@ ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
+MAX_FPS = os.getenv("MAX_FPS")
+if MAX_FPS is not None:
+    MAX_FPS = int(MAX_FPS)
 
 # Flag to fix batch size, default is False
 FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))

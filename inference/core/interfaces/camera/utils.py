@@ -1,6 +1,6 @@
 import time
 from enum import Enum
-from typing import Callable, Generator, Iterable, List, Optional, Tuple, Union
+from typing import Generator, Iterable, Optional, Tuple, Union
 
 import numpy as np
 from supervision.utils.video import FPSMonitor
@@ -8,10 +8,8 @@ from supervision.utils.video import FPSMonitor
 from inference.core.interfaces.camera.entities import (
     FrameID,
     FrameTimestamp,
-    StatusUpdate,
 )
 from inference.core.interfaces.camera.video_stream import (
-    DEFAULT_BUFFER_SIZE,
     VideoStream,
 )
 
@@ -22,23 +20,21 @@ class FPSLimiterStrategy(Enum):
 
 
 def get_video_frames_generator(
-    stream_reference: Union[str, int],
+    stream: Union[VideoStream, str, int],
     max_fps: Optional[float] = None,
-    buffer_size: int = DEFAULT_BUFFER_SIZE,
-    status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
-    video_stream = VideoStream.init(
-        stream_reference=stream_reference,
-        buffer_size=buffer_size,
-        status_update_handlers=status_update_handlers,
-    )
+    if not issubclass(type(stream), VideoStream):
+        stream = VideoStream.init(
+            stream_reference=stream,
+        )
+        stream.start()
     if max_fps is None:
-        yield from video_stream
+        yield from stream
     limiter_strategy = FPSLimiterStrategy.DROP
-    if video_stream.stream_properties.is_file:
+    if stream.stream_properties.is_file:
         limiter_strategy = FPSLimiterStrategy.WAIT
     yield from limit_frame_rate(
-        frames_generator=video_stream, max_fps=max_fps, strategy=limiter_strategy
+        frames_generator=stream, max_fps=max_fps, strategy=limiter_strategy
     )
 
 

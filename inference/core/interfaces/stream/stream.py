@@ -1,15 +1,11 @@
-import json
 import threading
-import time
-import traceback
-from typing import Callable, Union
+from copy import copy
+from typing import Callable, Union, Optional, Tuple
 
 import cv2
 import numpy as np
-import supervision as sv
 from PIL import Image
 
-import inference.core.entities.requests.inference
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
     ThreadingActiveLearningMiddleware,
@@ -19,23 +15,36 @@ from inference.core.env import (
     API_KEY,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
-    ENABLE_BYTE_TRACK,
-    ENFORCE_FPS,
     IOU_THRESHOLD,
-    JSON_RESPONSE,
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
     STREAM_ID,
+    MAX_FPS,
 )
-from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.camera.camera import WebcamStream
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    FrameTimestamp,
+    FrameID,
+)
+from inference.core.interfaces.camera.utils import get_video_frames_generator
+from inference.core.interfaces.camera.video_stream import VideoStream
+from inference.core.interfaces.stream.utils import translate_stream_reference
 from inference.core.logger import logger
+from inference.core.models.base import BaseInference
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.registries.roboflow import get_model_type
 from inference.models.utils import get_roboflow_model
 
 
-class Stream(BaseInterface):
+def log_video_stream_status(status_update: StatusUpdate) -> None:
+    logger.log(
+        level=status_update.severity.value,
+        msg=f"[{status_update.event_type}] {status_update.payload}",
+    )
+
+
+class Stream:
     """Roboflow defined stream interface for a general-purpose inference server.
 
     Attributes:
@@ -61,17 +70,15 @@ class Stream(BaseInterface):
 
     def __init__(
         self,
-        api_key: str = API_KEY,
+        api_key: Optional[str] = API_KEY,
         class_agnostic_nms: bool = CLASS_AGNOSTIC_NMS,
         confidence: float = CONFIDENCE,
-        enforce_fps: bool = ENFORCE_FPS,
+        max_fps: Optional[int] = MAX_FPS,
         iou_threshold: float = IOU_THRESHOLD,
-        json_response: bool = JSON_RESPONSE,
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
-        model: Union[str, Callable] = MODEL_ID,
-        source: Union[int, str] = STREAM_ID,
-        use_bytetrack: bool = ENABLE_BYTE_TRACK,
+        model: Optional[Union[str, BaseInference]] = MODEL_ID,
+        source: Optional[Union[int, str]] = STREAM_ID,
         use_main_thread: bool = False,
         output_channel_order: str = "RGB",
         on_prediction: Callable = None,
@@ -82,26 +89,14 @@ class Stream(BaseInterface):
         Prints the server settings and initializes the inference with a test frame.
         """
         logger.info("Initializing server")
-
         self.frame_count = 0
-        self.byte_tracker = sv.ByteTrack() if use_bytetrack else None
-        self.use_bytetrack = use_bytetrack
-
-        if source == "webcam":
-            stream_id = 0
-        else:
-            stream_id = source
-
-        self.stream_id = stream_id
-        if self.stream_id is None:
-            raise ValueError("STREAM_ID is not defined")
+        self.stream_id = translate_stream_reference(stream_reference=source)
+        if model is None:
+            raise ValueError("MODEL_ID is not defined.")
+        if api_key is None:
+            raise ValueError("API_KEY is not defined.")
         self.model_id = model
-        if not self.model_id:
-            raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
-        if not self.api_key:
-            raise ValueError("API_KEY is not defined")
-
         if isinstance(model, str):
             self.model = get_roboflow_model(model, self.api_key)
             self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
@@ -116,7 +111,6 @@ class Stream(BaseInterface):
             self.model = model
             self.active_learning_middleware = NullActiveLearningMiddleware()
             self.task_type = "unknown"
-
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
         self.iou_threshold = iou_threshold
@@ -125,16 +119,13 @@ class Stream(BaseInterface):
         self.json_response = json_response
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
-
-        self.inference_request_type = (
-            inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
+        self.video_stream = VideoStream.init(
+            stream_reference=self.stream_id,
+            status_update_handlers=[log_video_stream_status],
         )
-
-        self.webcam_stream = WebcamStream(
-            stream_id=self.stream_id, enforce_fps=enforce_fps
-        )
+        self.max_fps = max_fps
         logger.info(
-            f"Streaming from device with resolution: {self.webcam_stream.width} x {self.webcam_stream.height}"
+            f"Streaming from device with resolution: {self.video_stream.width} x {self.video_stream.height}"
         )
 
         self.on_start_callbacks = []
@@ -151,17 +142,21 @@ class Stream(BaseInterface):
 
         if on_stop:
             self.on_stop_callbacks.append(on_stop)
-
+        self._new_frame_captured = threading.Event()
         self.init_infer()
         self.preproc_result = None
         self.inference_request_obj = None
-        self.queue_control = False
         self.inference_response = None
         self.stop = False
 
         self.frame = None
         self.frame_cv = None
         self.frame_id = None
+        self._frame_data_lock = threading.Lock()
+        self._frame_data: Optional[Tuple[FrameTimestamp, FrameID, np.ndarray]] = None
+        self._preprocessing_result = Optional[
+            Tuple[np.ndarray, PreprocessReturnMetadata]
+        ] = None
         logger.info("Server initialized with settings:")
         logger.info(f"Stream ID: {self.stream_id}")
         logger.info(f"Model ID: {self.model_id}")
@@ -210,25 +205,21 @@ class Stream(BaseInterface):
         Reads frames from the webcam stream, converts them into the proper format, and preprocesses them for
         inference.
         """
-        webcam_stream = self.webcam_stream
-        webcam_stream.start()
-        # processing frames in input stream
         try:
-            while True:
-                if webcam_stream.stopped is True or self.stop:
+            for frame_data in get_video_frames_generator(
+                stream=self.video_stream,
+                max_fps=self.max_fps,
+            ):
+                if self.stop:
                     break
-                else:
-                    self.frame_cv, frame_id = webcam_stream.read_opencv()
-                    if frame_id > 0 and frame_id != self.frame_id:
-                        self.frame_id = frame_id
-                        self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
-                        self.preproc_result = self.model.preprocess(self.frame_cv)
-                        self.img_in, self.img_dims = self.preproc_result
-                        self.queue_control = True
-
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(e)
+                preprocessing_result = self.model.preprocess(frame_data[2])
+                with self._frame_data_lock:
+                    self._frame_data = frame_data
+                    self._preprocessing_result = preprocessing_result
+                self._new_frame_captured.set()
+        except Exception as error:
+            self.stop = True
+            logger.exception(error)
 
     def inference_request_thread(self):
         """Manage the inference requests.
@@ -236,89 +227,52 @@ class Stream(BaseInterface):
         Processes preprocessed frames for inference, post-processes the predictions, and sends the results
         to registered callbacks.
         """
-        last_print = time.perf_counter()
-        print_ind = 0
-        print_chars = ["|", "/", "-", "\\"]
         while True:
-            if self.webcam_stream.stopped is True or self.stop:
+            if self.stop:
                 while len(self.on_stop_callbacks) > 0:
                     # run each onStop callback only once from this thread
                     cb = self.on_stop_callbacks.pop()
                     cb()
                 break
-            if self.queue_control:
-                while len(self.on_start_callbacks) > 0:
-                    # run each onStart callback only once from this thread
-                    cb = self.on_start_callbacks.pop()
-                    cb()
-
-                self.queue_control = False
-                frame_id = self.frame_id
-                inference_input = np.copy(self.frame_cv)
-                start = time.perf_counter()
-                predictions = self.model.predict(
-                    self.img_in,
-                )
-                predictions = self.model.postprocess(
-                    predictions,
-                    self.img_dims,
-                    class_agnostic_nms=self.class_agnostic_nms,
-                    confidence=self.confidence,
-                    iou_threshold=self.iou_threshold,
-                    max_candidates=self.max_candidates,
-                    max_detections=self.max_detections,
-                )
-
-                if self.json_response:
-                    predictions = self.model.make_response(
-                        predictions,
-                        self.img_dims,
-                    )[0]
-                    self.active_learning_middleware.register(
-                        inference_input=inference_input,
-                        prediction=predictions.dict(by_alias=True, exclude_none=True),
-                        prediction_type=self.task_type,
-                    )
-                    if self.use_bytetrack:
-                        detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True, exclude_none=True)
-                        )
-                        detections = self.byte_tracker.update_with_detections(
-                            detections
-                        )
-
-                        if detections.tracker_id is None:
-                            detections.tracker_id = np.array([], dtype=int)
-
-                        for pred, detect in zip(predictions.predictions, detections):
-                            pred.tracker_id = int(detect[4])
-                    predictions.frame_id = frame_id
-                    # predictions = predictions.json(exclude_none=True, by_alias=True)
-                    predictions = predictions.dict(by_alias=True, exclude_none=True)
+            self._new_frame_captured.wait()
+            self._new_frame_captured.clear()
+            while len(self.on_start_callbacks) > 0:
+                # run each onStart callback only once from this thread
+                cb = self.on_start_callbacks.pop()
+                cb()
+            with self._frame_data_lock:
+                frame_id = self._frame_data[1]
+                raw_inference_input = np.copy(self._frame_data[2])
+                preprocessed_inference_input = np.copy(self._preprocessing_result[0])
+                img_dims = copy(self._preprocessing_result[1])
+            predictions = self.model.predict(preprocessed_inference_input)
+            predictions = self.model.postprocess(
+                predictions,
+                img_dims,
+                class_agnostic_nms=self.class_agnostic_nms,
+                confidence=self.confidence,
+                iou_threshold=self.iou_threshold,
+                max_candidates=self.max_candidates,
+                max_detections=self.max_detections,
+            )
+            predictions = self.model.make_response(predictions, img_dims)[0]
+            predictions.frame_id = frame_id
+            predictions = predictions.dict(by_alias=True, exclude_none=True)
+            self.active_learning_middleware.register(
+                inference_input=raw_inference_input,
+                prediction=predictions,
+                prediction_type=self.task_type,
+            )
+            self.inference_response = predictions
+            self.frame_count += 1
+            for cb in self.on_prediction_callbacks:
+                if self.output_channel_order == "BGR":
+                    cb(predictions, self._frame_data[2])
                 else:
-                    pass
-                    # predictions = json.dumps(predictions)
-
-                self.inference_response = predictions
-                self.frame_count += 1
-
-                # if self.use_bytetrack:
-                #     predictions = detections
-
-                for cb in self.on_prediction_callbacks:
-                    if self.output_channel_order == "BGR":
-                        cb(predictions, self.frame_cv)
-                    else:
-                        cb(predictions, np.asarray(self.frame))
-
-                current = time.perf_counter()
-                self.webcam_stream.max_fps = 1 / (current - start)
-                logger.debug(f"FPS: {self.webcam_stream.max_fps:.2f}")
-
-                if time.perf_counter() - last_print > 1:
-                    # print(f"Streaming {print_chars[print_ind]}", end="\r")
-                    print_ind = (print_ind + 1) % 4
-                    last_print = time.perf_counter()
+                    cb(
+                        predictions,
+                        cv2.cvtColor(self._frame_data[2], cv2.COLOR_BGR2RGB),
+                    )
 
     def run_thread(self):
         """Run the preprocessing and inference threads.
