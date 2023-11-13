@@ -1,4 +1,4 @@
 faiss-cpu
 requests
-PIL
+Pillow
 flask
