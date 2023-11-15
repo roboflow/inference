@@ -13,6 +13,7 @@ from inference.core.env import (
     TAGS,
 )
 from inference.core.logger import logger
+from inference.core.utils.url_utils import wrap_url
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.version import __version__
@@ -128,7 +129,7 @@ class PingbackInfo:
             timestamp = str(int(time.time()))
             all_data["timestamp"] = timestamp
             self.window_start_timestamp = timestamp
-            res = requests.post(METRICS_URL, json=all_data)
+            res = requests.post(wrap_url(METRICS_URL), json=all_data)
             try:
                 api_key_safe_raise_for_status(response=res)
                 logger.debug(
