@@ -13,9 +13,9 @@ from inference.core.env import (
     TAGS,
 )
 from inference.core.logger import logger
-from inference.core.utils.url_utils import wrap_url
 from inference.core.managers.metrics import get_model_metrics, get_system_info
 from inference.core.utils.requests import api_key_safe_raise_for_status
+from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
 
 
