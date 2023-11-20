@@ -1,13 +1,11 @@
-import argparse
 from threading import Thread
-from typing import Optional, List
+from typing import List
 
 import cv2
 import numpy as np
 
 from inference.core.interfaces.camera.entities import StatusUpdate
 from inference.core.interfaces.camera.multiplexer import StreamMultiplexer
-from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.utils.preprocess import letterbox_image
 
@@ -21,12 +19,15 @@ SOURCES_LOOKUP = {
 }
 
 LOCAL_LOOKUP = {
-    "0": "rtsp://localhost:8554/live.stream",
-    "1": "rtsp://localhost:8554/live.stream",
-    "2": "rtsp://localhost:8554/live.stream",
-    "3": "rtsp://localhost:8554/live1.stream",
-    "4": "rtsp://localhost:8554/live1.stream",
-    "5": "rtsp://localhost:8554/live1.stream"
+    "0": "rtsp://localhost:8554/live0.stream",
+    "1": "rtsp://localhost:8554/live1.stream",
+    "2": "rtsp://localhost:8554/live2.stream",
+    "3": "rtsp://localhost:8554/live3.stream",
+    "4": "rtsp://localhost:8554/live4.stream",
+    "5": "rtsp://localhost:8554/live5.stream",
+    "6": "rtsp://localhost:8554/live6.stream",
+    "7": "rtsp://localhost:8554/live7.stream",
+    "8": "rtsp://localhost:8554/live8.stream",
 }
 
 STOP = False
@@ -34,7 +35,7 @@ STOP = False
 
 def main() -> None:
     stream_uris = list(LOCAL_LOOKUP.values())
-    cameras = [VideoSource.init(uri, status_update_handlers=[dump_status_update]) for uri in stream_uris]
+    cameras = [VideoSource.init(uri, status_update_handlers=[]) for uri in stream_uris]
     for camera in cameras:
         camera.start()
     multiplexer = StreamMultiplexer(sources=cameras)
@@ -56,7 +57,7 @@ def main() -> None:
             ],
             axis=1
         )
-        bottom_row = np.concatenate(
+        mid_row = np.concatenate(
             [
                 previous_frames[3],
                 np.zeros((480, 10, 3), dtype=np.uint8),
@@ -66,7 +67,24 @@ def main() -> None:
             ],
             axis=1
         )
-        image = np.concatenate([top_row, np.zeros((10, 1940, 3), dtype=np.uint8), bottom_row])
+        bottom_row = np.concatenate(
+            [
+                previous_frames[6],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[7],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[8],
+            ],
+            axis=1
+        )
+        image = np.concatenate(
+            [
+                top_row, np.zeros((10, 1940, 3), dtype=np.uint8),
+                mid_row, np.zeros((10, 1940, 3), dtype=np.uint8),
+                bottom_row
+            ],
+            axis=0
+        )
         cv2.imshow("Stream", image)
         cv2.waitKey(1)
     cv2.destroyAllWindows()
@@ -81,14 +99,19 @@ def command_thread(cameras: List[VideoSource]) -> None:
         if key == "q":
             continue
         elif key == "i":
-            print(cameras[idx].stream_properties)
+            print(cameras[idx].describe_source())
         elif key == "t":
-            cameras[idx].terminate()
+            for c in cameras:
+                c.terminate()
             STOP = True
         elif key == "p":
             cameras[idx].pause()
+        elif key == "m":
+            cameras[idx].mute()
         elif key == "r":
             cameras[idx].resume()
+        elif key == "re":
+            cameras[idx].restart()
 
 
 def dump_status_update(status_update: StatusUpdate) -> None:

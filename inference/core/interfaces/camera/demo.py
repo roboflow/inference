@@ -10,13 +10,14 @@ from inference.core.interfaces.camera.video_source import VideoSource
 
 
 def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
-    camera = VideoSource.init(stream_reference=stream_uri, status_update_handlers=[dump_status_update])
+    camera = VideoSource.init(stream_reference=stream_uri, status_update_handlers=[])
     camera.start()
     control_thread = Thread(target=command_thread, args=(camera, ))
     control_thread.start()
     for _, _, frame in get_video_frames_generator(stream=camera, max_fps=max_fps):
         cv2.imshow("Stream", frame)
         _ = cv2.waitKey(1)
+    print("DONE")
     cv2.destroyAllWindows()
     control_thread.join()
 
@@ -28,7 +29,7 @@ def command_thread(camera: VideoSource) -> None:
         if key == "q":
             continue
         elif key == "i":
-            print(camera.stream_properties)
+            print(camera.describe_source())
         elif key == "t":
             camera.terminate()
             stop = True

@@ -1,7 +1,7 @@
 import math
 import time
 from enum import Enum
-from typing import Generator, Iterable, Optional, Tuple, Union, List
+from typing import Generator, Iterable, Optional, Tuple, Union
 
 import numpy as np
 from supervision.utils.video import FPSMonitor
@@ -33,7 +33,8 @@ def get_video_frames_generator(
         yield from stream
         return None
     limiter_strategy = FPSLimiterStrategy.DROP
-    if stream.stream_properties.is_file:
+    stream_properties = stream.describe_source().stream_properties
+    if stream_properties is not None and stream_properties.is_file:
         limiter_strategy = FPSLimiterStrategy.WAIT
     yield from limit_frame_rate(
         frames_generator=stream, max_fps=max_fps, strategy=limiter_strategy
