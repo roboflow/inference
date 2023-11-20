@@ -28,7 +28,7 @@ from inference.core.interfaces.camera.entities import (
     FrameID,
 )
 from inference.core.interfaces.camera.utils import get_video_frames_generator
-from inference.core.interfaces.camera.video_stream import VideoStream
+from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.utils import translate_stream_reference
 from inference.core.logger import logger
 from inference.core.models.base import BaseInference
@@ -48,18 +48,14 @@ class Stream:
     """Roboflow defined stream interface for a general-purpose inference server.
 
     Attributes:
-        model_manager (ModelManager): The manager that handles model inference tasks.
-        model_registry (RoboflowModelRegistry): The registry to fetch model instances.
         api_key (str): The API key for accessing models.
         class_agnostic_nms (bool): Flag for class-agnostic non-maximum suppression.
         confidence (float): Confidence threshold for inference.
         iou_threshold (float): The intersection-over-union threshold for detection.
-        json_response (bool): Flag to toggle JSON response format.
         max_candidates (float): The maximum number of candidates for detection.
         max_detections (float): The maximum number of detections.
         model (str|Callable): The model to be used.
         stream_id (str): The ID of the stream to be used.
-        use_bytetrack (bool): Flag to use bytetrack,
 
     Methods:
         init_infer: Initialize the inference with a test frame.
@@ -116,10 +112,9 @@ class Stream:
         self.iou_threshold = iou_threshold
         self.max_candidates = max_candidates
         self.max_detections = max_detections
-        self.json_response = json_response
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
-        self.video_stream = VideoStream.init(
+        self.video_stream = VideoSource.init(
             stream_reference=self.stream_id,
             status_update_handlers=[log_video_stream_status],
         )
@@ -143,7 +138,6 @@ class Stream:
         if on_stop:
             self.on_stop_callbacks.append(on_stop)
         self._new_frame_captured = threading.Event()
-        self.init_infer()
         self.preproc_result = None
         self.inference_request_obj = None
         self.inference_response = None
@@ -160,8 +154,6 @@ class Stream:
         logger.info("Server initialized with settings:")
         logger.info(f"Stream ID: {self.stream_id}")
         logger.info(f"Model ID: {self.model_id}")
-        logger.info(f"Enforce FPS: {enforce_fps}")
-        logger.info(f"JSON Response: {self.json_response}")
         logger.info(f"Confidence: {self.confidence}")
         logger.info(f"Class Agnostic NMS: {self.class_agnostic_nms}")
         logger.info(f"IOU Threshold: {self.iou_threshold}")
@@ -188,17 +180,6 @@ class Stream:
         unsubscribe = lambda: self.on_prediction_callbacks.remove(callback)
         return unsubscribe
 
-    def init_infer(self):
-        """Initialize the inference with a test frame.
-
-        Creates a test frame and runs it through the entire inference process to ensure everything is working.
-        """
-        frame = Image.new("RGB", (640, 640), color="black")
-        self.model.infer(
-            frame, confidence=self.confidence, iou_threshold=self.iou_threshold
-        )
-        self.active_learning_middleware.start_registration_thread()
-
     def preprocess_thread(self):
         """Preprocess incoming frames for inference.
 
@@ -206,6 +187,7 @@ class Stream:
         inference.
         """
         try:
+            self.active_learning_middleware.start_registration_thread()
             for frame_data in get_video_frames_generator(
                 stream=self.video_stream,
                 max_fps=self.max_fps,

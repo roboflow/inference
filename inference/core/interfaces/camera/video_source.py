@@ -1,9 +1,10 @@
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from queue import Empty, Queue
+from queue import Queue, Empty
 from threading import Event, Thread
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union, Any
 
 import cv2
 import numpy as np
@@ -24,14 +25,17 @@ DEFAULT_BUFFER_SIZE = 64
 STATE_UPDATE_EVENT = "STREAM_STATE_UPDATE"
 STREAM_ERROR_EVENT = "STREAM_ERROR"
 FRAME_CAPTURED_EVENT = "FRAME_CAPTURED"
+FRAME_DROPPED_EVENT = "FRAME_DROPPED"
 FRAME_CONSUMED_EVENT = "FRAME_CONSUMED"
 
 
 class StreamState(Enum):
-    NOT_STARTED = "NOT STARTED"
+    NOT_STARTED = "NOT_STARTED"
     INITIALISING = "INITIALISING"
+    RESTARTING = "RESTARTING"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
+    MUTED = "MUTED"
     TERMINATING = "TERMINATING"
     ENDED = "ENDED"
     ERROR = "ERROR"
@@ -43,14 +47,29 @@ READ_ELIGIBLE_STATES = {
     StreamState.TERMINATING,
     StreamState.ENDED,
 }
-START_ELIGIBLE_STATES = {StreamState.NOT_STARTED}
-PAUSE_ELIGIBLE_STATES = {StreamState.PAUSED, StreamState.RUNNING}
-RESUME_ELIGIBLE_STATES = {StreamState.PAUSED, StreamState.RUNNING}
+START_ELIGIBLE_STATES = {StreamState.NOT_STARTED, StreamState.RESTARTING}
+PAUSE_ELIGIBLE_STATES = {StreamState.RUNNING}
+MUTE_ELIGIBLE_STATES = {StreamState.RUNNING}
+RESUME_ELIGIBLE_STATES = {StreamState.PAUSED, StreamState.MUTED}
 TERMINATE_ELIGIBLE_STATES = {
-    StreamState.INITIALISING,
+    StreamState.MUTED,
     StreamState.RUNNING,
     StreamState.PAUSED,
+    StreamState.TERMINATING,
 }
+RESTART_ELIGIBLE_STATES = {
+    StreamState.MUTED,
+    StreamState.RUNNING,
+    StreamState.PAUSED,
+    StreamState.ENDED,
+    StreamState.ERROR,
+}
+
+
+class BufferOverflowStrategy(Enum):
+    WAIT = "WAIT"
+    DROP_OLDEST = "DROP_OLDEST"
+    DROP_LATEST = "DROP_LATEST"
 
 
 @dataclass(frozen=True)
@@ -62,45 +81,70 @@ class StreamProperties:
     fps: float
 
 
-class VideoStream:
+class VideoSource:
     @classmethod
     def init(
         cls,
         stream_reference: Union[str, int],
         buffer_size: int = DEFAULT_BUFFER_SIZE,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
+        buffer_overflow_strategy: BufferOverflowStrategy = BufferOverflowStrategy.WAIT
     ):
         frames_buffer = Queue(maxsize=buffer_size)
         if status_update_handlers is None:
             status_update_handlers = []
-        stream = cv2.VideoCapture(stream_reference)
         return cls(
-            stream=stream,
+            stream_reference=stream_reference,
             frames_buffer=frames_buffer,
             status_update_handlers=status_update_handlers,
+            buffer_overflow_strategy=buffer_overflow_strategy,
         )
 
     def __init__(
         self,
-        stream: cv2.VideoCapture,
+        stream_reference: Union[str, int],
         frames_buffer: Queue,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
+        buffer_overflow_strategy: BufferOverflowStrategy,
     ):
-        self._stream = stream
-        self._stream_properties = discover_stream_properties(stream=stream)
+        self._stream_reference = stream_reference
+        self._stream: Optional[cv2.VideoCapture] = None
+        self._stream_properties: Optional[StreamProperties] = None
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
+        self._buffer_overflow_strategy = buffer_overflow_strategy
         self._state = StreamState.NOT_STARTED
         self._playback_allowed = Event()
+        self._frames_buffering_allowed = True
         self._stream_consumption_thread: Optional[Thread] = None
+
+    def restart(self) -> None:
+        if self._state not in RESTART_ELIGIBLE_STATES:
+            raise StreamOperationNotAllowedError(
+                f"Could not RESTART stream in state: {self._state}"
+            )
+        self._change_state(target_state=StreamState.RESTARTING)
+        self.terminate()
+        self._change_state(target_state=StreamState.RESTARTING)
+        self._playback_allowed = Event()
+        self._frames_buffering_allowed = True
+        self._stream: Optional[cv2.VideoCapture] = None
+        self._stream_properties: Optional[StreamProperties] = None
+        self.start()
 
     def start(self) -> None:
         if self._state not in START_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not START stream in state: {self._state}"
             )
+        self._change_state(target_state=StreamState.INITIALISING)
+        self._stream = cv2.VideoCapture(self._stream_reference)
+        if not self._stream.isOpened():
+            self._change_state(target_state=StreamState.ERROR)
+            raise RuntimeError(f"Cannot connect to video source under reference: {self._stream_reference}")
+        self._stream_properties = discover_stream_properties(stream=self._stream)
         self._playback_allowed.set()
-        self._stream_consumption_thread = Thread(target=self._consume_stream())
+        self._stream_consumption_thread = Thread(target=self._consume_stream)
         self._stream_consumption_thread.start()
 
     def terminate(self) -> None:
@@ -124,36 +168,49 @@ class VideoStream:
         self._playback_allowed.clear()
         self._change_state(target_state=StreamState.PAUSED)
 
+    def mute(self) -> None:
+        if self._state not in MUTE_ELIGIBLE_STATES:
+            raise StreamOperationNotAllowedError(
+                f"Could not MUTE stream in state: {self._state}"
+            )
+        self._frames_buffering_allowed = False
+        self._change_state(target_state=StreamState.MUTED)
+
     def resume(self) -> None:
         if self._state not in RESUME_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESUME stream in state: {self._state}"
             )
+        previous_state = self._state
         self._change_state(target_state=StreamState.RUNNING)
-        self._playback_allowed.set()
+        if previous_state is StreamState.PAUSED:
+            self._playback_allowed.set()
+        if previous_state is StreamState.MUTED:
+            self._frames_buffering_allowed = True
 
     def get_state(self) -> StreamState:
         return self._state
+
+    def frame_ready(self) -> bool:
+        return not self._frames_buffer.empty()
 
     def read_frame(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
         if self._state not in READ_ELIGIBLE_STATES:
             raise StreamReadNotFeasibleError(
                 f"Cannot retrieve video frame from stream in state: {self._state}"
             )
-        block = True
-        if self._state is StreamState.ENDED:
-            block = False
-        try:
-            frame_timestamp, frame_id, frame = self._frames_buffer.get(block=block)
-            self._send_status_update(
-                severity=UpdateSeverity.DEBUG,
-                event_type=FRAME_CONSUMED_EVENT,
-                payload={"frame_timestamp": frame_timestamp, "frame_id": frame_id},
-            )
-        except Empty as error:
+        result = self._frames_buffer.get()
+        if result is None:
+            self._frames_buffer.task_done()
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
-            ) from error
+            )
+        frame_timestamp, frame_id, frame = result
+        self._send_status_update(
+            severity=UpdateSeverity.DEBUG,
+            event_type=FRAME_CONSUMED_EVENT,
+            payload={"frame_timestamp": frame_timestamp, "frame_id": frame_id},
+        )
         self._frames_buffer.task_done()
         return frame_timestamp, frame_id, frame
 
@@ -167,10 +224,11 @@ class VideoStream:
             frame_counter = 0
             while self._stream.isOpened():
                 if self._state is StreamState.TERMINATING:
+                    self._frames_buffer.put(None)
                     break
                 self._playback_allowed.wait()
                 frame_timestamp = datetime.now()
-                success, frame = self._stream.read()
+                success = self._stream.grab()
                 if not success:
                     break
                 frame_counter += 1
@@ -182,7 +240,7 @@ class VideoStream:
                         "frame_id": frame_counter,
                     },
                 )
-                self._frames_buffer.put((frame_timestamp, frame_counter, frame))
+                self._consume_stream_frame(frame_timestamp=frame_timestamp, frame_counter=frame_counter)
             self._stream.release()
             self._change_state(target_state=StreamState.ENDED)
         except Exception as error:
@@ -197,6 +255,61 @@ class VideoStream:
                 event_type=STREAM_ERROR_EVENT,
                 payload=payload,
             )
+
+    def _consume_stream_frame(self, frame_timestamp: datetime, frame_counter: int) -> bool:
+        """
+        Returns: boolean flag with success status
+        """
+        if not self._frames_buffering_allowed:
+            self._send_status_update(
+                severity=UpdateSeverity.DEBUG,
+                event_type=FRAME_DROPPED_EVENT,
+                payload={
+                    "frame_timestamp": frame_timestamp,
+                    "frame_id": frame_counter,
+                },
+            )
+            return True
+        if not self._frames_buffer.full() or self._buffer_overflow_strategy is BufferOverflowStrategy.WAIT:
+            return self._process_stream_frame(frame_timestamp=frame_timestamp, frame_counter=frame_counter)
+        if self._buffer_overflow_strategy is BufferOverflowStrategy.DROP_OLDEST:
+            return self._process_stream_frame_dropping_oldest(
+                frame_timestamp=frame_timestamp,
+                frame_counter=frame_counter,
+            )
+        self._send_status_update(
+            severity=UpdateSeverity.DEBUG,
+            event_type=FRAME_DROPPED_EVENT,
+            payload={
+                "frame_timestamp": frame_timestamp,
+                "frame_id": frame_counter,
+            },
+        )
+        return True
+
+    def _process_stream_frame_dropping_oldest(self, frame_timestamp: datetime, frame_counter: int) -> bool:
+        try:
+            dropped_frame_timestamp, dropped_frame_counter, _ = self._frames_buffer.get_nowait()
+            self._frames_buffer.task_done()
+            self._send_status_update(
+                severity=UpdateSeverity.DEBUG,
+                event_type=FRAME_DROPPED_EVENT,
+                payload={
+                    "frame_timestamp": frame_timestamp,
+                    "frame_id": frame_counter,
+                },
+            )
+        except Empty:
+            # buffer may be emptied in the meantime, hence we ignore Empty
+            pass
+        return self._process_stream_frame(frame_timestamp=frame_timestamp, frame_counter=frame_counter)
+
+    def _process_stream_frame(self, frame_timestamp: datetime, frame_counter: int) -> bool:
+        success, frame = self._stream.retrieve()
+        if not success:
+            return False
+        self._frames_buffer.put((frame_timestamp, frame_counter, frame))
+        return True
 
     def _change_state(self, target_state: StreamState) -> None:
         payload = {
@@ -222,7 +335,7 @@ class VideoStream:
         for handler in self._status_update_handlers:
             handler(status_update)
 
-    def __iter__(self) -> "VideoStream":
+    def __iter__(self) -> "VideoSource":
         return self
 
     def __next__(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
@@ -247,3 +360,11 @@ def discover_stream_properties(stream: cv2.VideoCapture) -> StreamProperties:
         is_file=total_frames > 0,
         fps=fps,
     )
+
+
+def purge_queue(queue: Queue) -> Optional[Any]:
+    result = None
+    while not queue.empty():
+        result = queue.get()
+        queue.task_done()
+    return result

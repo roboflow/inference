@@ -1,6 +1,7 @@
+import math
 import time
 from enum import Enum
-from typing import Generator, Iterable, Optional, Tuple, Union
+from typing import Generator, Iterable, Optional, Tuple, Union, List
 
 import numpy as np
 from supervision.utils.video import FPSMonitor
@@ -9,8 +10,8 @@ from inference.core.interfaces.camera.entities import (
     FrameID,
     FrameTimestamp,
 )
-from inference.core.interfaces.camera.video_stream import (
-    VideoStream,
+from inference.core.interfaces.camera.video_source import (
+    VideoSource,
 )
 
 
@@ -20,16 +21,17 @@ class FPSLimiterStrategy(Enum):
 
 
 def get_video_frames_generator(
-    stream: Union[VideoStream, str, int],
+    stream: Union[VideoSource, str, int],
     max_fps: Optional[float] = None,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
-    if not issubclass(type(stream), VideoStream):
-        stream = VideoStream.init(
+    if not issubclass(type(stream), VideoSource):
+        stream = VideoSource.init(
             stream_reference=stream,
         )
         stream.start()
     if max_fps is None:
         yield from stream
+        return None
     limiter_strategy = FPSLimiterStrategy.DROP
     if stream.stream_properties.is_file:
         limiter_strategy = FPSLimiterStrategy.WAIT
@@ -43,14 +45,19 @@ def limit_frame_rate(
     max_fps: float,
     strategy: FPSLimiterStrategy,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
-    fps_monitor = FPSMonitor()
+    fps_monitor = FPSMonitor(sample_size=2*math.ceil(max_fps))
+    max_single_delay = 1 / max_fps
     for frame_data in frames_generator:
-        fps_monitor.tick()
         current_fps = fps_monitor()
+        if abs(current_fps) < 1e-5:
+            current_fps = max_fps
         if current_fps <= max_fps:
+            fps_monitor.tick()
             yield frame_data
+            continue
         if strategy is FPSLimiterStrategy.DROP:
             continue
-        delay = 1 / max_fps - 1 / current_fps
+        delay = min((1 / max_fps - 1 / current_fps) * len(fps_monitor.all_timestamps), max_single_delay)
         time.sleep(delay)
+        fps_monitor.tick()
         yield frame_data
