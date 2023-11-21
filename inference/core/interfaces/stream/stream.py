@@ -115,7 +115,7 @@ class Stream:
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
         self.video_stream = VideoSource.init(
-            stream_reference=self.stream_id,
+            video_reference=self.stream_id,
             status_update_handlers=[log_video_stream_status],
         )
         self.max_fps = max_fps

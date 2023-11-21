@@ -27,7 +27,7 @@ def get_video_frames_generator(
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
     if not issubclass(type(stream), VideoSource):
         stream = VideoSource.init(
-            stream_reference=stream,
+            video_reference=stream,
         )
         stream.start()
     if max_fps is None:

@@ -13,7 +13,7 @@ STOP = False
 
 def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
     global STOP
-    camera = VideoSource.init(stream_reference=stream_uri, status_update_handlers=[])
+    camera = VideoSource.init(video_reference=stream_uri, status_update_handlers=[])
     camera.start()
     control_thread = Thread(target=command_thread, args=(camera,))
     control_thread.start()

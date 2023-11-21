@@ -40,14 +40,6 @@ class StreamState(Enum):
     ERROR = "ERROR"
 
 
-READ_ELIGIBLE_STATES = {
-    StreamState.RUNNING,
-    StreamState.PAUSED,
-    StreamState.MUTED,
-    StreamState.TERMINATING,
-    StreamState.RESTARTING,
-    StreamState.ENDED,
-}
 START_ELIGIBLE_STATES = {StreamState.NOT_STARTED, StreamState.RESTARTING}
 PAUSE_ELIGIBLE_STATES = {StreamState.RUNNING}
 MUTE_ELIGIBLE_STATES = {StreamState.RUNNING}
@@ -65,7 +57,6 @@ RESTART_ELIGIBLE_STATES = {
     StreamState.ENDED,
     StreamState.ERROR,
 }
-EARLY_EOS_STATES = {StreamState.TERMINATING, StreamState.RESTARTING}
 
 
 class BufferFillingStrategy(Enum):
@@ -102,7 +93,7 @@ class VideoSource:
     @classmethod
     def init(
         cls,
-        stream_reference: Union[str, int],
+        video_reference: Union[str, int],
         buffer_size: int = DEFAULT_BUFFER_SIZE,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
@@ -112,7 +103,7 @@ class VideoSource:
         if status_update_handlers is None:
             status_update_handlers = []
         return cls(
-            stream_reference=stream_reference,
+            stream_reference=video_reference,
             frames_buffer=frames_buffer,
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=buffer_filling_strategy,
@@ -183,7 +174,6 @@ class VideoSource:
             self.resume()
         self._change_state(target_state=StreamState.TERMINATING)
         self._stream_consumption_thread.join()
-        _ = purge_queue(queue=self._frames_buffer, wait_on_empty=False)
         self._frames_buffer.join()
         if self._state is not StreamState.ERROR:
             self._change_state(target_state=StreamState.ENDED)
@@ -220,17 +210,9 @@ class VideoSource:
         return self._state
 
     def frame_ready(self) -> bool:
-        return not self._frames_buffer.empty() and self._state not in EARLY_EOS_STATES
+        return not self._frames_buffer.empty()
 
     def read_frame(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
-        if self._state not in READ_ELIGIBLE_STATES:
-            raise StreamReadNotFeasibleError(
-                f"Cannot retrieve video frame from stream in state: {self._state}"
-            )
-        if self._state in EARLY_EOS_STATES:
-            raise EndOfStreamError(
-                "Attempted to retrieve frame from stream that was requested to terminate."
-            )
         if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
             result = purge_queue(queue=self._frames_buffer)
         else:
