@@ -1,3 +1,5 @@
+import logging
+import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
@@ -6,13 +8,18 @@ from typing import Union, Optional, Callable, Tuple, Generator
 import numpy as np
 
 from inference.core.interfaces.camera.entities import FrameTimestamp, FrameID
+from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import VideoSource
+from inference.core.interfaces.stream.watchdog import (
+    PipelineWatchDog,
+    NullPipelineWatchdog,
+)
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.models.utils import get_roboflow_model
 
-COMMAND_QUEUE_SIZE = 64
 PREDICTIONS_QUEUE_SIZE = 256
+RESTART_ATTEMPT_DELAY = 1
 
 
 class InferencePipeline:
@@ -24,18 +31,24 @@ class InferencePipeline:
         video_reference: Union[str, int],
         on_prediction: Callable,
         max_fps: Optional[float] = None,
+        watchdog: Optional[PipelineWatchDog] = None,
     ) -> "InferencePipeline":
         model = get_roboflow_model(model_id=model_id, api_key=api_key)
-        video_source = VideoSource.init(video_reference=video_reference)
-        command_queue = Queue(maxsize=COMMAND_QUEUE_SIZE)
+        if watchdog is None:
+            watchdog = NullPipelineWatchdog()
+        video_source = VideoSource.init(
+            video_reference=video_reference,
+            status_update_handlers=[watchdog.on_video_source_status_update],
+        )
+        watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         return cls(
             model=model,
             video_source=video_source,
             on_prediction=on_prediction,
             max_fps=max_fps,
-            command_queue=command_queue,
             predictions_queue=predictions_queue,
+            watchdog=watchdog,
         )
 
     def __init__(
@@ -44,50 +57,65 @@ class InferencePipeline:
         video_source: VideoSource,
         on_prediction: Callable,
         max_fps: Optional[float],
-        command_queue: Queue,
         predictions_queue: Queue,
+        watchdog: PipelineWatchDog,
     ):
         self._model = model
         self._video_source = video_source
         self._on_prediction = on_prediction
         self._max_fps = max_fps
-        self._command_queue = command_queue
         self._predictions_queue = predictions_queue
+        self._watchdog = watchdog
         self._command_handler_thread: Optional[Thread] = None
         self._inference_thread: Optional[Thread] = None
         self._dispatching_thread: Optional[Thread] = None
         self._stop = False
         self._camera_restart_ongoing = False
 
-    def start(self) -> None:
-        self._command_handler_thread = Thread(target=self._handle_commands)
-        self._command_handler_thread.start()
+    def start(self, use_main_thread: bool = True) -> None:
         self._inference_thread = Thread(target=self._execute_inference)
         self._inference_thread.start()
-        self._dispatching_thread = Thread(target=self._dispatching_thread)
-        self._dispatching_thread.start()
+        if use_main_thread:
+            self._dispatch_inference_results()
+        else:
+            self._dispatching_thread = Thread(target=self._dispatch_inference_results)
+            self._dispatching_thread.start()
 
-    def stop(self) -> None:
-        pass
+    def terminate(self) -> None:
+        self._stop = True
+        self._video_source.terminate()
+
+    def pause_stream(self) -> None:
+        self._video_source.pause()
+
+    def mute_stream(self) -> None:
+        self._video_source.mute()
+
+    def resume_stream(self) -> None:
+        self._video_source.resume()
 
     def join(self) -> None:
-        self._command_handler_thread.join()
-        self._inference_thread.join()
-        self._dispatching_thread.join()
-
-    def _handle_commands(self) -> None:
-        while True:
-            command = self._command_queue.get()
-            if command is None:
-                break
+        if self._inference_thread is not None:
+            self._inference_thread.join()
+        if self._dispatching_thread is not None:
+            self._dispatching_thread.join()
 
     def _execute_inference(self) -> None:
         try:
             for timestamp, frame_id, frame in self._generate_frames():
+                self._watchdog.on_model_preprocessing_started(
+                    frame_timestamp=timestamp, frame_id=frame_id
+                )
                 preprocessed_image, preprocessing_metadata = self._model.preprocess(
                     frame
                 )
+                self._watchdog.on_model_inference_started(
+                    frame_timestamp=timestamp, frame_id=frame_id
+                )
                 predictions = self._model.predict(preprocessed_image)
+                self._watchdog.on_model_postprocessing_started(
+                    frame_timestamp=timestamp, frame_id=frame_id
+                )
                 predictions = self._model.postprocess(
                     predictions,
                     preprocessing_metadata,
@@ -100,6 +128,9 @@ class InferencePipeline:
                     by_alias=True,
                     exclude_none=True,
                 )
+                self._watchdog.on_model_prediction_ready(
+                    frame_timestamp=timestamp, frame_id=frame_id
+                )
                 self._predictions_queue.put((timestamp, frame_id, frame, predictions))
         finally:
             self._predictions_queue.put(None)
@@ -108,20 +139,21 @@ class InferencePipeline:
         while True:
             inference_results: Optional[
                 Tuple[datetime, int, np.ndarray, dict]
-            ] = self._command_queue.get()
+            ] = self._predictions_queue.get()
             if inference_results is None:
                 break
             timestamp, frame_id, frame, predictions = inference_results
             try:
-                self._on_prediction(predictions, frame)
-            except Exception:
-                pass
+                self._on_prediction(frame, predictions)
+            except Exception as error:
+                self._watchdog.on_error(context="predictions_dispatcher", error=error)
+                logging.warning(f"Error in results dispatching - {error}")
 
     def _generate_frames(
         self,
     ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
         self._video_source.start()
-        while not self._stop:
+        while True:
             allow_reconnect = (
                 not self._video_source.describe_source().stream_properties.is_file
             )
@@ -129,6 +161,18 @@ class InferencePipeline:
                 stream=self._video_source, max_fps=self._max_fps
             )
             if not allow_reconnect:
-                self._command_queue.put(None)
+                self.terminate()
                 break
-            self._video_source.restart()
+            if self._stop:
+                break
+            self._attempt_restart()
+
+    def _attempt_restart(self) -> None:
+        succeeded = False
+        while not self._stop and not succeeded:
+            try:
+                self._video_source.restart()
+                succeeded = True
+            except SourceConnectionError as error:
+                self._watchdog.on_error(context="stream_frames_generator", error=error)
+                time.sleep(RESTART_ATTEMPT_DELAY)

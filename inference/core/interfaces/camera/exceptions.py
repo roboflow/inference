@@ -6,9 +6,9 @@ class StreamOperationNotAllowedError(StreamError):
     pass
 
 
-class StreamReadNotFeasibleError(StreamError):
+class EndOfStreamError(StreamError):
     pass
 
 
-class EndOfStreamError(StreamError):
+class SourceConnectionError(StreamError):
     pass

@@ -17,7 +17,7 @@ from inference.core.interfaces.camera.entities import (
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     StreamOperationNotAllowedError,
-    StreamReadNotFeasibleError,
+    SourceConnectionError,
 )
 
 DEFAULT_BUFFER_SIZE = 64
@@ -49,6 +49,8 @@ TERMINATE_ELIGIBLE_STATES = {
     StreamState.RUNNING,
     StreamState.PAUSED,
     StreamState.RESTARTING,
+    StreamState.ENDED,
+    StreamState.ERROR,
 }
 RESTART_ELIGIBLE_STATES = {
     StreamState.MUTED,
@@ -153,7 +155,7 @@ class VideoSource:
         self._stream = cv2.VideoCapture(self._stream_reference)
         if not self._stream.isOpened():
             self._change_state(target_state=StreamState.ERROR)
-            raise RuntimeError(
+            raise SourceConnectionError(
                 f"Cannot connect to video source under reference: {self._stream_reference}"
             )
         self._stream_properties = discover_stream_properties(stream=self._stream)
@@ -357,7 +359,7 @@ class VideoSource:
         }
         self._state = target_state
         self._send_status_update(
-            severity=UpdateSeverity.DEBUG,
+            severity=UpdateSeverity.INFO,
             event_type=STATE_UPDATE_EVENT,
             payload=payload,
         )
