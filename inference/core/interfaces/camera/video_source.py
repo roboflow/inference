@@ -162,7 +162,9 @@ class VideoSource:
         self._stream = cv2.VideoCapture(self._stream_reference)
         if not self._stream.isOpened():
             self._change_state(target_state=StreamState.ERROR)
-            raise RuntimeError(f"Cannot connect to video source under reference: {self._stream_reference}")
+            raise RuntimeError(
+                f"Cannot connect to video source under reference: {self._stream_reference}"
+            )
         self._stream_properties = discover_stream_properties(stream=self._stream)
         if self._stream_properties.is_file:
             self._set_file_mode_buffering_strategies()
@@ -273,7 +275,6 @@ class VideoSource:
             self._change_state(target_state=StreamState.RUNNING)
             while self._stream.isOpened():
                 if self._state is StreamState.TERMINATING:
-                    self._frames_buffer.put(None)
                     break
                 self._playback_allowed.wait()
                 frame_timestamp = datetime.now()
@@ -290,6 +291,7 @@ class VideoSource:
                     },
                 )
                 self._consume_stream_frame(frame_timestamp=frame_timestamp)
+            self._frames_buffer.put(None)
             self._stream.release()
             self._change_state(target_state=StreamState.ENDED)
         except Exception as error:
@@ -319,7 +321,10 @@ class VideoSource:
                 },
             )
             return True
-        if not self._frames_buffer.full() or self._buffer_filling_strategy is BufferFillingStrategy.WAIT:
+        if (
+            not self._frames_buffer.full()
+            or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
+        ):
             return self._process_stream_frame(frame_timestamp=frame_timestamp)
         if self._buffer_filling_strategy is BufferFillingStrategy.DROP_OLDEST:
             return self._process_stream_frame_dropping_oldest(
@@ -337,7 +342,11 @@ class VideoSource:
 
     def _process_stream_frame_dropping_oldest(self, frame_timestamp: datetime) -> bool:
         try:
-            dropped_frame_timestamp, dropped_frame_counter, _ = self._frames_buffer.get_nowait()
+            (
+                dropped_frame_timestamp,
+                dropped_frame_counter,
+                _,
+            ) = self._frames_buffer.get_nowait()
             self._frames_buffer.task_done()
             self._send_status_update(
                 severity=UpdateSeverity.DEBUG,

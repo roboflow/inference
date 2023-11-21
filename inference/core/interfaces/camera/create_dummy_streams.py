@@ -8,14 +8,7 @@ from threading import Thread
 import yaml
 
 
-CONFIG = {
-    "protocols": ["tcp"],
-    "paths": {
-        "all": {
-            "source": "publisher"
-        }
-    }
-}
+CONFIG = {"protocols": ["tcp"], "paths": {"all": {"source": "publisher"}}}
 BASE_STREAM_URL = "rtsp://localhost:8554/live"
 
 
@@ -31,7 +24,9 @@ def main(video_dir: str, n: int) -> None:
             for idx, video_path in enumerate(video_paths):
                 stream_url = f"{BASE_STREAM_URL}{idx}.stream"
                 print(f"Streaming {video_path} under {stream_url}")
-                threads.append(stream_video(video_path=video_path, stream_url=stream_url))
+                threads.append(
+                    stream_video(video_path=video_path, stream_url=stream_url)
+                )
             for t in threads:
                 t.join()
     finally:
@@ -54,13 +49,14 @@ def kill_server() -> None:
 
 def stream_video(video_path: str, stream_url: str) -> Thread:
     return run_command_in_thread(
-        command=f'ffmpeg -re -stream_loop -1 -i '.split() +
-                [f"{video_path}"] + f'-f rtsp -rtsp_transport tcp {stream_url}'.split()
+        command=f"ffmpeg -re -stream_loop -1 -i ".split()
+        + [f"{video_path}"]
+        + f"-f rtsp -rtsp_transport tcp {stream_url}".split()
     )
 
 
 def run_command_in_thread(command: list) -> Thread:
-    thread = Thread(target=run_command, args=(command, ))
+    thread = Thread(target=run_command, args=(command,))
     thread.start()
     return thread
 
@@ -70,9 +66,13 @@ def run_command(command: list) -> int:
     return completed.returncode
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser("Script to run run dummy RTSP streams")
-    parser.add_argument("--video_dir", type=str, help="Directory with videos", required=True)
-    parser.add_argument("--n", type=int, help="Number of streams", required=False, default=6)
+    parser.add_argument(
+        "--video_dir", type=str, help="Directory with videos", required=True
+    )
+    parser.add_argument(
+        "--n", type=int, help="Number of streams", required=False, default=6
+    )
     args = parser.parse_args()
     main(video_dir=args.video_dir, n=args.n)

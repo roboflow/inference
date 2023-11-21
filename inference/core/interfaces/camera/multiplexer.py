@@ -8,7 +8,6 @@ from inference.core.interfaces.camera.video_source import VideoSource
 
 
 class StreamMultiplexer:
-
     def __init__(self, sources: List[VideoSource]):
         self._sources = sources
 

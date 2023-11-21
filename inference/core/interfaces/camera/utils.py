@@ -1,10 +1,8 @@
-import math
 import time
 from enum import Enum
 from typing import Generator, Iterable, Optional, Tuple, Union
 
 import numpy as np
-from supervision.utils.video import FPSMonitor
 
 from inference.core.interfaces.camera.entities import (
     FrameID,
@@ -13,6 +11,9 @@ from inference.core.interfaces.camera.entities import (
 from inference.core.interfaces.camera.video_source import (
     VideoSource,
 )
+
+
+MINIMAL_FPS = 0.01
 
 
 class FPSLimiterStrategy(Enum):
@@ -46,19 +47,29 @@ def limit_frame_rate(
     max_fps: float,
     strategy: FPSLimiterStrategy,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
-    fps_monitor = FPSMonitor(sample_size=2*math.ceil(max_fps))
-    max_single_delay = 1 / max_fps
+    rate_limiter = RateLimiter(desired_fps=max_fps)
     for frame_data in frames_generator:
-        current_fps = fps_monitor()
-        if abs(current_fps) < 1e-5:
-            current_fps = max_fps
-        if current_fps <= max_fps:
-            fps_monitor.tick()
+        delay = rate_limiter.estimate_next_tick_delay()
+        if delay <= 0.0:
+            rate_limiter.tick()
             yield frame_data
-            continue
-        if strategy is FPSLimiterStrategy.DROP:
-            continue
-        delay = min((1 / max_fps - 1 / current_fps) * len(fps_monitor.all_timestamps), max_single_delay)
-        time.sleep(delay)
-        fps_monitor.tick()
-        yield frame_data
+        if strategy is FPSLimiterStrategy.WAIT:
+            time.sleep(delay)
+            rate_limiter.tick()
+            yield frame_data
+
+
+class RateLimiter:
+    def __init__(self, desired_fps: Union[float, int]):
+        self._desired_fps = max(desired_fps, MINIMAL_FPS)
+        self._last_tick: Optional[float] = None
+
+    def tick(self) -> None:
+        self._last_tick = time.monotonic()
+
+    def estimate_next_tick_delay(self) -> float:
+        if self._last_tick is None:
+            return 0.0
+        desired_delay = 1 / self._desired_fps
+        time_since_last_tick = time.monotonic() - self._last_tick
+        return max(desired_delay - time_since_last_tick, 0.0)

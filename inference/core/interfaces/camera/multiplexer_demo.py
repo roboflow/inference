@@ -15,7 +15,7 @@ SOURCES_LOOKUP = {
     "elephants": "https://elephants.hls.camzonecdn.com/CamzoneStreams/elephants/chunklist.m3u8",
     "penguins": "https://zssd-penguin.hls.camzonecdn.com/CamzoneStreams/zssd-penguin/chunklist.m3u8",
     "polar-bears": "https://polarplunge.hls.camzonecdn.com/CamzoneStreams/polarplunge/chunklist.m3u8",
-    "giraffes": "https://zssd-kijami.hls.camzonecdn.com/CamzoneStreams/zssd-kijami/chunklist.m3u8"
+    "giraffes": "https://zssd-kijami.hls.camzonecdn.com/CamzoneStreams/zssd-kijami/chunklist.m3u8",
 }
 
 LOCAL_LOOKUP = {
@@ -39,14 +39,18 @@ def main() -> None:
     for camera in cameras:
         camera.start()
     multiplexer = StreamMultiplexer(sources=cameras)
-    control_thread = Thread(target=command_thread, args=(cameras, ))
+    control_thread = Thread(target=command_thread, args=(cameras,))
     control_thread.start()
-    previous_frames = [np.zeros((480, 640, 3), dtype=np.uint8) for _ in range(len(cameras))]
+    previous_frames = [
+        np.zeros((480, 640, 3), dtype=np.uint8) for _ in range(len(cameras))
+    ]
     while not STOP:
         new_frames = multiplexer.get_frames()
         for i in range(len(new_frames)):
             if new_frames[i] is not None:
-                previous_frames[i] = letterbox_image(image=new_frames[i][-1], desired_size=(640, 480))
+                previous_frames[i] = letterbox_image(
+                    image=new_frames[i][-1], desired_size=(640, 480)
+                )
         top_row = np.concatenate(
             [
                 previous_frames[0],
@@ -55,7 +59,7 @@ def main() -> None:
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[2],
             ],
-            axis=1
+            axis=1,
         )
         mid_row = np.concatenate(
             [
@@ -65,7 +69,7 @@ def main() -> None:
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[5],
             ],
-            axis=1
+            axis=1,
         )
         bottom_row = np.concatenate(
             [
@@ -75,15 +79,17 @@ def main() -> None:
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[8],
             ],
-            axis=1
+            axis=1,
         )
         image = np.concatenate(
             [
-                top_row, np.zeros((10, 1940, 3), dtype=np.uint8),
-                mid_row, np.zeros((10, 1940, 3), dtype=np.uint8),
-                bottom_row
+                top_row,
+                np.zeros((10, 1940, 3), dtype=np.uint8),
+                mid_row,
+                np.zeros((10, 1940, 3), dtype=np.uint8),
+                bottom_row,
             ],
-            axis=0
+            axis=0,
         )
         cv2.imshow("Stream", image)
         cv2.waitKey(1)
@@ -118,5 +124,5 @@ def dump_status_update(status_update: StatusUpdate) -> None:
     print(status_update)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
