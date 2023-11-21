@@ -76,6 +76,8 @@ CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
 
+CORE_MODEL_BAKLLAVA_ENABLED = str2bool(os.getenv("CORE_MODEL_BAKLLAVA_ENABLED", False))
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

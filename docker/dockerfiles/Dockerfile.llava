@@ -1,0 +1,38 @@
+FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-devel
+
+ 
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-pip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --upgrade pip
+# RUN python3 -m pip install bitsandbytes-cuda114
+WORKDIR /app
+
+COPY inference/models/bakllava/requirements.txt .
+RUN python3 -m pip install -r requirements.txt
+RUN git clone https://github.com/SkunkworksAI/BakLLaVA.git
+WORKDIR /app/BakLLaVA
+RUN python3 -m pip install .
+WORKDIR /app
+RUN python3 -m pip uninstall transformers -y
+RUN python3 -m pip install transformers==4.34.0
+
+COPY inference/models/bakllava .
+# # build bitsandbytes
+# RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+#     git \
+#     cmake \
+#     && rm -rf /var/lib/apt/lists/*
+# RUN git clone https://github.com/timdettmers/bitsandbytes.git
+# WORKDIR /app/bitsandbytes
+# ENV CUDA_VERSION=118
+# RUN make cuda11x
+# RUN python3 setup.py install
+
+# RUN rm /opt/conda/lib/python3.10/site-packages/bitsandbytes/libbitsandbytes_cpu.so
+# RUN python3 -c "from accelerate.utils import write_basic_config; write_basic_config(mixed_precision='fp8')"
+WORKDIR /app
+
+
+ENTRYPOINT python3 bakllava.py
