@@ -1,3 +1,5 @@
+import argparse
+import os
 from threading import Thread
 from typing import List
 
@@ -9,14 +11,7 @@ from inference.core.interfaces.camera.multiplexer import StreamMultiplexer
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.utils.preprocess import letterbox_image
 
-SOURCES_LOOKUP = {
-    "hippos": "https://zssd-hippo.hls.camzonecdn.com/CamzoneStreams/zssd-hippo/chunklist.m3u8",
-    "pandas": "https://zssd-panda.hls.camzonecdn.com/CamzoneStreams/zssd-panda/chunklist.m3u8",
-    "elephants": "https://elephants.hls.camzonecdn.com/CamzoneStreams/elephants/chunklist.m3u8",
-    "penguins": "https://zssd-penguin.hls.camzonecdn.com/CamzoneStreams/zssd-penguin/chunklist.m3u8",
-    "polar-bears": "https://polarplunge.hls.camzonecdn.com/CamzoneStreams/polarplunge/chunklist.m3u8",
-    "giraffes": "https://zssd-kijami.hls.camzonecdn.com/CamzoneStreams/zssd-kijami/chunklist.m3u8",
-}
+STREAM_SERVER_URL = os.getenv("STREAM_SERVER", "rtsp://localhost:8554")
 
 LOCAL_LOOKUP = {
     "0": "rtsp://localhost:8554/live0.stream",
@@ -33,8 +28,11 @@ LOCAL_LOOKUP = {
 STOP = False
 
 
-def main() -> None:
-    stream_uris = list(LOCAL_LOOKUP.values())
+def main(n: int) -> None:
+    stream_uris = []
+    for i in range(8):
+        stream_uris.append(f"{STREAM_SERVER_URL}/live{i % n}.stream")
+        stream_uris.append(f"{STREAM_SERVER_URL}/predictions{i % n}.stream")
     cameras = [VideoSource.init(uri, status_update_handlers=[]) for uri in stream_uris]
     for camera in cameras:
         camera.start()
@@ -51,43 +49,63 @@ def main() -> None:
                 previous_frames[i] = letterbox_image(
                     image=new_frames[i][-1], desired_size=(640, 480)
                 )
-        top_row = np.concatenate(
+        first_row = np.concatenate(
             [
                 previous_frames[0],
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[1],
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[2],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[3],
             ],
             axis=1,
         )
-        mid_row = np.concatenate(
+        second_row = np.concatenate(
             [
-                previous_frames[3],
-                np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[4],
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[5],
-            ],
-            axis=1,
-        )
-        bottom_row = np.concatenate(
-            [
+                np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[6],
                 np.zeros((480, 10, 3), dtype=np.uint8),
                 previous_frames[7],
-                np.zeros((480, 10, 3), dtype=np.uint8),
+            ],
+            axis=1,
+        )
+        third_row = np.concatenate(
+            [
                 previous_frames[8],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[9],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[10],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[11],
+            ],
+            axis=1,
+        )
+        forth_row = np.concatenate(
+            [
+                previous_frames[12],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[13],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[14],
+                np.zeros((480, 10, 3), dtype=np.uint8),
+                previous_frames[15],
             ],
             axis=1,
         )
         image = np.concatenate(
             [
-                top_row,
-                np.zeros((10, 1940, 3), dtype=np.uint8),
-                mid_row,
-                np.zeros((10, 1940, 3), dtype=np.uint8),
-                bottom_row,
+                first_row,
+                np.zeros((10, 2590, 3), dtype=np.uint8),
+                second_row,
+                np.zeros((10, 2590, 3), dtype=np.uint8),
+                third_row,
+                np.zeros((10, 2590, 3), dtype=np.uint8),
+                forth_row,
             ],
             axis=0,
         )
@@ -125,4 +143,9 @@ def dump_status_update(status_update: StatusUpdate) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser("DEMUX demo")
+    parser.add_argument(
+        "--n", type=int, help="Number of streams", required=False, default=6
+    )
+    args = parser.parse_args()
+    main(n=args.n)
