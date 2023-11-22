@@ -47,6 +47,7 @@ def limit_frame_rate(
         if delay <= 0.0:
             rate_limiter.tick()
             yield frame_data
+            continue
         if strategy is FPSLimiterStrategy.WAIT:
             time.sleep(delay)
             rate_limiter.tick()
@@ -54,6 +55,12 @@ def limit_frame_rate(
 
 
 class RateLimiter:
+    """
+    Implements rate upper-bound rate limiting by ensuring estimate_next_tick_delay()
+    to be at min 1 / desired_fps, not letting the client obeying outcomes to exceed
+    assumed rate.
+    """
+
     def __init__(self, desired_fps: Union[float, int]):
         self._desired_fps = max(desired_fps, MINIMAL_FPS)
         self._last_tick: Optional[float] = None
