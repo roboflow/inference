@@ -5,7 +5,6 @@ from functools import partial
 from threading import Thread
 from typing import Optional, Union
 
-import cv2
 import numpy as np
 import supervision as sv
 
@@ -54,7 +53,6 @@ def main(
     pipeline.join()
     ffmpeg_process.stdin.close()
     ffmpeg_process.wait()
-    cv2.destroyAllWindows()
 
 
 def on_prediction(image, predictions, ffmpeg_process):
