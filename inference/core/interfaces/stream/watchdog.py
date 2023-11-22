@@ -2,11 +2,12 @@ from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Iterable, TypeVar, List, Deque
+from typing import Deque, Iterable, List, Optional, TypeVar
 
 import supervision as sv
+
 from inference.core.interfaces.camera.entities import StatusUpdate, UpdateSeverity
-from inference.core.interfaces.camera.video_source import VideoSource, SourceMetadata
+from inference.core.interfaces.camera.video_source import SourceMetadata, VideoSource
 
 T = TypeVar("T")
 

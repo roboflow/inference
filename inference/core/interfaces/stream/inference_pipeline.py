@@ -3,17 +3,17 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
-from typing import Union, Optional, Callable, Tuple, Generator
+from typing import Callable, Generator, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.interfaces.camera.entities import FrameTimestamp, FrameID
+from inference.core.interfaces.camera.entities import FrameID, FrameTimestamp
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.watchdog import (
-    PipelineWatchDog,
     NullPipelineWatchdog,
+    PipelineWatchDog,
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.models.utils import get_roboflow_model

@@ -4,14 +4,8 @@ from typing import Generator, Iterable, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.interfaces.camera.entities import (
-    FrameID,
-    FrameTimestamp,
-)
-from inference.core.interfaces.camera.video_source import (
-    VideoSource,
-)
-
+from inference.core.interfaces.camera.entities import FrameID, FrameTimestamp
+from inference.core.interfaces.camera.video_source import VideoSource
 
 MINIMAL_FPS = 0.01
 

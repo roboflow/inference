@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from queue import Queue, Empty
-from threading import Event, Thread, Lock
-from typing import Callable, List, Optional, Tuple, Union, Any
+from queue import Empty, Queue
+from threading import Event, Lock, Thread
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -16,8 +16,8 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
-    StreamOperationNotAllowedError,
     SourceConnectionError,
+    StreamOperationNotAllowedError,
 )
 
 DEFAULT_BUFFER_SIZE = 64
