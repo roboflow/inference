@@ -31,7 +31,7 @@ def main() -> None:
         model_id="microsoft-coco/9",
         video_reference="rtsp://localhost:8554/live0.stream",
         on_prediction=on_prediction,
-        max_fps=6,
+        max_fps=None,
         watchdog=watchdog,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from queue import Queue, Empty
-from threading import Event, Thread
+from threading import Event, Thread, Lock
 from typing import Callable, List, Optional, Tuple, Union, Any
 
 import cv2
@@ -91,6 +91,16 @@ class SourceMetadata:
     buffer_consumption_strategy: Optional[BufferConsumptionStrategy]
 
 
+def lock_state_transition(
+    method: Callable[["VideoSource"], None]
+) -> Callable[["VideoSource"], None]:
+    def locked_executor(video_source: "VideoSource") -> None:
+        with video_source._state_change_lock:
+            return method(video_source)
+
+    return locked_executor
+
+
 class VideoSource:
     @classmethod
     def init(
@@ -132,81 +142,53 @@ class VideoSource:
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
         self._stream_consumption_thread: Optional[Thread] = None
+        self._state_change_lock = Lock()
 
+    @lock_state_transition
     def restart(self) -> None:
         if self._state not in RESTART_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESTART stream in state: {self._state}"
             )
-        self.terminate()
-        self._change_state(target_state=StreamState.RESTARTING)
-        self._playback_allowed = Event()
-        self._frames_buffering_allowed = True
-        self._stream: Optional[cv2.VideoCapture] = None
-        self._stream_properties: Optional[StreamProperties] = None
-        self.start()
+        self._restart()
 
+    @lock_state_transition
     def start(self) -> None:
         if self._state not in START_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not START stream in state: {self._state}"
             )
-        self._change_state(target_state=StreamState.INITIALISING)
-        self._stream = cv2.VideoCapture(self._stream_reference)
-        if not self._stream.isOpened():
-            self._change_state(target_state=StreamState.ERROR)
-            raise SourceConnectionError(
-                f"Cannot connect to video source under reference: {self._stream_reference}"
-            )
-        self._stream_properties = discover_stream_properties(stream=self._stream)
-        if self._stream_properties.is_file:
-            self._set_file_mode_buffering_strategies()
-        else:
-            self._set_stream_mode_buffering_strategies()
-        self._playback_allowed.set()
-        self._stream_consumption_thread = Thread(target=self._consume_stream)
-        self._stream_consumption_thread.start()
+        self._start()
 
+    @lock_state_transition
     def terminate(self) -> None:
         if self._state not in TERMINATE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not TERMINATE stream in state: {self._state}"
             )
-        if self._state in RESUME_ELIGIBLE_STATES:
-            self.resume()
-        self._change_state(target_state=StreamState.TERMINATING)
-        self._stream_consumption_thread.join()
-        self._frames_buffer.join()
-        if self._state is not StreamState.ERROR:
-            self._change_state(target_state=StreamState.ENDED)
+        self._terminate()
 
+    @lock_state_transition
     def pause(self) -> None:
         if self._state not in PAUSE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not PAUSE stream in state: {self._state}"
             )
-        self._playback_allowed.clear()
-        self._change_state(target_state=StreamState.PAUSED)
+        self._pause()
 
     def mute(self) -> None:
         if self._state not in MUTE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not MUTE stream in state: {self._state}"
             )
-        self._frames_buffering_allowed = False
-        self._change_state(target_state=StreamState.MUTED)
+        self._mute()
 
     def resume(self) -> None:
         if self._state not in RESUME_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESUME stream in state: {self._state}"
             )
-        previous_state = self._state
-        self._change_state(target_state=StreamState.RUNNING)
-        if previous_state is StreamState.PAUSED:
-            self._playback_allowed.set()
-        if previous_state is StreamState.MUTED:
-            self._frames_buffering_allowed = True
+        self._resume()
 
     def get_state(self) -> StreamState:
         return self._state
@@ -241,6 +223,57 @@ class VideoSource:
             buffer_filling_strategy=self._buffer_filling_strategy,
             buffer_consumption_strategy=self._buffer_consumption_strategy,
         )
+
+    def _restart(self) -> None:
+        self._terminate()
+        self._change_state(target_state=StreamState.RESTARTING)
+        self._playback_allowed = Event()
+        self._frames_buffering_allowed = True
+        self._stream: Optional[cv2.VideoCapture] = None
+        self._stream_properties: Optional[StreamProperties] = None
+        self._start()
+
+    def _start(self) -> None:
+        self._change_state(target_state=StreamState.INITIALISING)
+        self._stream = cv2.VideoCapture(self._stream_reference)
+        if not self._stream.isOpened():
+            self._change_state(target_state=StreamState.ERROR)
+            raise SourceConnectionError(
+                f"Cannot connect to video source under reference: {self._stream_reference}"
+            )
+        self._stream_properties = discover_stream_properties(stream=self._stream)
+        if self._stream_properties.is_file:
+            self._set_file_mode_buffering_strategies()
+        else:
+            self._set_stream_mode_buffering_strategies()
+        self._playback_allowed.set()
+        self._stream_consumption_thread = Thread(target=self._consume_stream)
+        self._stream_consumption_thread.start()
+
+    def _terminate(self) -> None:
+        if self._state in RESUME_ELIGIBLE_STATES:
+            self._resume()
+        self._change_state(target_state=StreamState.TERMINATING)
+        self._stream_consumption_thread.join()
+        self._frames_buffer.join()
+        if self._state is not StreamState.ERROR:
+            self._change_state(target_state=StreamState.ENDED)
+
+    def _pause(self) -> None:
+        self._playback_allowed.clear()
+        self._change_state(target_state=StreamState.PAUSED)
+
+    def _mute(self) -> None:
+        self._frames_buffering_allowed = False
+        self._change_state(target_state=StreamState.MUTED)
+
+    def _resume(self) -> None:
+        previous_state = self._state
+        self._change_state(target_state=StreamState.RUNNING)
+        if previous_state is StreamState.PAUSED:
+            self._playback_allowed.set()
+        if previous_state is StreamState.MUTED:
+            self._frames_buffering_allowed = True
 
     def _set_file_mode_buffering_strategies(self) -> None:
         if self._buffer_filling_strategy is None:
