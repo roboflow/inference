@@ -3,26 +3,14 @@ import pytest
 
 from inference.core.exceptions import PostProcessingError
 from inference.core.utils.postprocess import (
-    cosine_similarity,
-    crop_mask,
-    standardise_static_crop,
-    get_static_crop_dimensions,
-    shift_bboxes,
-    clip_boxes_coordinates,
+    clip_boxes_coordinates, clip_keypoints_coordinates, cosine_similarity,
+    crop_mask, get_static_crop_dimensions, post_process_bboxes,
+    post_process_keypoints, post_process_polygons, scale_bboxes,
+    scale_polygons, shift_bboxes, shift_keypoints, sigmoid,
+    standardise_static_crop, stretch_bboxes, stretch_keypoints,
     undo_image_padding_for_predicted_boxes,
-    stretch_bboxes,
-    post_process_bboxes,
-    sigmoid,
-    scale_bboxes,
-    undo_image_padding_for_predicted_polygons,
-    scale_polygons,
-    post_process_polygons,
-    shift_keypoints,
-    clip_keypoints_coordinates,
     undo_image_padding_for_predicted_keypoints,
-    stretch_keypoints,
-    post_process_keypoints,
-)
+    undo_image_padding_for_predicted_polygons)
 
 
 def test_cosine_similarity_against_vectors() -> None:

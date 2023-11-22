@@ -5,18 +5,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.entities.requests.inference import (
-    InferenceRequest,
-    CVInferenceRequest,
-)
+from inference.core.entities.requests.inference import (CVInferenceRequest,
+                                                        InferenceRequest)
 from inference.core.entities.responses.inference import StubResponse
-from inference.core.models.stubs import (
-    ModelStub,
-    ClassificationModelStub,
-    ObjectDetectionModelStub,
-    InstanceSegmentationModelStub,
-    KeypointsDetectionModelStub,
-)
+from inference.core.models.stubs import (ClassificationModelStub,
+                                         InstanceSegmentationModelStub,
+                                         KeypointsDetectionModelStub,
+                                         ModelStub, ObjectDetectionModelStub)
 
 
 @pytest.mark.parametrize(

@@ -5,20 +5,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.active_learning.configuration import (
-    initialize_sampling_methods,
-    get_roboflow_project_metadata,
-    prepare_active_learning_configuration,
-)
 from inference.core.active_learning import configuration
+from inference.core.active_learning.configuration import (
+    get_roboflow_project_metadata, initialize_sampling_methods,
+    prepare_active_learning_configuration)
 from inference.core.active_learning.entities import (
-    RoboflowProjectMetadata,
-    ActiveLearningConfiguration,
-    ImageDimensions,
-    BatchReCreationInterval,
-    StrategyLimit,
-    StrategyLimitType,
-)
+    ActiveLearningConfiguration, BatchReCreationInterval, ImageDimensions,
+    RoboflowProjectMetadata, StrategyLimit, StrategyLimitType)
 from inference.core.exceptions import ActiveLearningConfigurationError
 
 

@@ -1,12 +1,8 @@
 from unittest.mock import MagicMock
 
 from inference.core.active_learning.entities import (
-    ActiveLearningConfiguration,
-    ImageDimensions,
-    BatchReCreationInterval,
-    StrategyLimit,
-    StrategyLimitType,
-)
+    ActiveLearningConfiguration, BatchReCreationInterval, ImageDimensions,
+    StrategyLimit, StrategyLimitType)
 
 
 def test_init_active_learning_configuration_when_all_values_provided() -> None:

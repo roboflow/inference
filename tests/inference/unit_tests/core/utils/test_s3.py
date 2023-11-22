@@ -1,8 +1,8 @@
 from unittest import mock
 from unittest.mock import MagicMock, call
 
-from inference.core.utils.s3 import download_s3_files_to_directory
 from inference.core.utils import s3
+from inference.core.utils.s3 import download_s3_files_to_directory
 
 
 @mock.patch.object(s3.os, "makedirs")

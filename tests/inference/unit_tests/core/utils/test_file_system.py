@@ -4,15 +4,11 @@ import os.path
 import pytest
 from humanfriendly.testing import touch
 
-from inference.core.utils.file_system import (
-    read_json,
-    dump_json,
-    read_text_file,
-    dump_text_lines,
-    dump_bytes,
-    ensure_parent_dir_exists,
-    ensure_write_is_allowed,
-)
+from inference.core.utils.file_system import (dump_bytes, dump_json,
+                                              dump_text_lines,
+                                              ensure_parent_dir_exists,
+                                              ensure_write_is_allowed,
+                                              read_json, read_text_file)
 
 
 def test_read_json_when_file_does_not_exist(empty_local_dir: str) -> None:

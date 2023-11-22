@@ -3,13 +3,12 @@ import json
 import pytest
 
 from inference.core.active_learning.post_processing import (
-    encode_prediction,
-    adjust_points_coordinates_to_client_scaling_factor,
     adjust_bbox_coordinates_to_client_scaling_factor,
-    adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
+    adjust_points_coordinates_to_client_scaling_factor,
     adjust_prediction_to_client_scaling_factor,
-)
+    adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
+    encode_prediction)
 from inference.core.exceptions import PredictionFormatNotSupported
 
 

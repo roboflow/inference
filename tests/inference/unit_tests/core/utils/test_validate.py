@@ -1,4 +1,5 @@
-from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
+from inference.core.utils.validate import \
+    get_num_classes_from_model_prediction_shape
 
 
 def test_get_num_classes_from_model_prediction_shape():

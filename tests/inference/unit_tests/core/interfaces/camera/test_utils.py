@@ -1,23 +1,19 @@
 import time
-from typing import Generator, Optional, List
+from typing import Generator, List, Optional
 from unittest import mock
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-from inference.core.interfaces.camera.utils import (
-    RateLimiter,
-    limit_frame_rate,
-    FPSLimiterStrategy,
-    resolve_limiter_strategy,
-    get_video_frames_generator,
-)
 from inference.core.interfaces.camera import utils
-from inference.core.interfaces.camera.video_source import (
-    SourceProperties,
-    SourceMetadata,
-)
+from inference.core.interfaces.camera.utils import (FPSLimiterStrategy,
+                                                    RateLimiter,
+                                                    get_video_frames_generator,
+                                                    limit_frame_rate,
+                                                    resolve_limiter_strategy)
+from inference.core.interfaces.camera.video_source import (SourceMetadata,
+                                                           SourceProperties)
 
 
 def test_rate_limiter_when_no_ticks_were_registered() -> None:

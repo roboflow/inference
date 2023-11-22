@@ -5,11 +5,9 @@ from unittest.mock import MagicMock, call
 import numpy as np
 import pytest
 
-from inference.core.active_learning.middlewares import (
-    ActiveLearningMiddleware,
-    ThreadingActiveLearningMiddleware,
-)
 from inference.core.active_learning import middlewares
+from inference.core.active_learning.middlewares import (
+    ActiveLearningMiddleware, ThreadingActiveLearningMiddleware)
 
 
 @mock.patch.object(middlewares, "load_image")

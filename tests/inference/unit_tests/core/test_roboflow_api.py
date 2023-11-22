@@ -6,33 +6,29 @@ import pytest
 import requests.exceptions
 from requests_mock import Mocker
 
-from inference.core.env import API_BASE_URL
-from inference.core.exceptions import (
-    MalformedRoboflowAPIResponseError,
-    WorkspaceLoadError,
-    MissingDefaultModelError,
-    RoboflowAPIConnectionError,
-    RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError,
-    RoboflowAPIUnsuccessfulRequestError,
-    RoboflowAPIImageUploadRejectionError,
-    RoboflowAPIIAlreadyAnnotatedError,
-    RoboflowAPIIAnnotationRejectionError,
-)
 from inference.core import roboflow_api
-from inference.core.roboflow_api import (
-    wrap_roboflow_api_errors,
-    raise_from_lambda,
-    get_roboflow_workspace,
-    get_roboflow_dataset_type,
-    get_roboflow_model_type,
-    get_roboflow_model_data,
-    ModelEndpointType,
-    register_image_at_roboflow,
-    annotate_image_at_roboflow,
-    get_roboflow_labeling_batches,
-    get_roboflow_labeling_jobs,
-)
+from inference.core.env import API_BASE_URL
+from inference.core.exceptions import (MalformedRoboflowAPIResponseError,
+                                       MissingDefaultModelError,
+                                       RoboflowAPIConnectionError,
+                                       RoboflowAPIIAlreadyAnnotatedError,
+                                       RoboflowAPIIAnnotationRejectionError,
+                                       RoboflowAPIImageUploadRejectionError,
+                                       RoboflowAPINotAuthorizedError,
+                                       RoboflowAPINotNotFoundError,
+                                       RoboflowAPIUnsuccessfulRequestError,
+                                       WorkspaceLoadError)
+from inference.core.roboflow_api import (ModelEndpointType,
+                                         annotate_image_at_roboflow,
+                                         get_roboflow_dataset_type,
+                                         get_roboflow_labeling_batches,
+                                         get_roboflow_labeling_jobs,
+                                         get_roboflow_model_data,
+                                         get_roboflow_model_type,
+                                         get_roboflow_workspace,
+                                         raise_from_lambda,
+                                         register_image_at_roboflow,
+                                         wrap_roboflow_api_errors)
 from inference.core.utils.url_utils import wrap_url
 
 

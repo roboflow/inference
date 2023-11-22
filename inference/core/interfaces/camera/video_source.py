@@ -92,11 +92,11 @@ class SourceMetadata:
 
 
 def lock_state_transition(
-    method: Callable[["VideoSource"], None]
+    method: Callable[["VideoSource", ...], None]
 ) -> Callable[["VideoSource"], None]:
-    def locked_executor(video_source: "VideoSource") -> None:
+    def locked_executor(video_source: "VideoSource", *args, **kwargs) -> None:
         with video_source._state_change_lock:
-            return method(video_source)
+            return method(video_source, *args, **kwargs)
 
     return locked_executor
 
@@ -161,12 +161,12 @@ class VideoSource:
         self._start()
 
     @lock_state_transition
-    def terminate(self) -> None:
+    def terminate(self, wait_on_frames_consumption: bool = True) -> None:
         if self._state not in TERMINATE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not TERMINATE stream in state: {self._state}"
             )
-        self._terminate()
+        self._terminate(wait_on_frames_consumption=wait_on_frames_consumption)
 
     @lock_state_transition
     def pause(self) -> None:
@@ -224,8 +224,8 @@ class VideoSource:
             buffer_consumption_strategy=self._buffer_consumption_strategy,
         )
 
-    def _restart(self) -> None:
-        self._terminate()
+    def _restart(self, wait_on_frames_consumption: bool = True) -> None:
+        self._terminate(wait_on_frames_consumption=wait_on_frames_consumption)
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -250,12 +250,13 @@ class VideoSource:
         self._stream_consumption_thread = Thread(target=self._consume_stream)
         self._stream_consumption_thread.start()
 
-    def _terminate(self) -> None:
+    def _terminate(self, wait_on_frames_consumption: bool) -> None:
         if self._state in RESUME_ELIGIBLE_STATES:
             self._resume()
         self._change_state(target_state=StreamState.TERMINATING)
         self._stream_consumption_thread.join()
-        self._frames_buffer.join()
+        if wait_on_frames_consumption:
+            self._frames_buffer.join()
         if self._state is not StreamState.ERROR:
             self._change_state(target_state=StreamState.ENDED)
 

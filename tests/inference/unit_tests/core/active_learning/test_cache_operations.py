@@ -5,21 +5,19 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
+from inference.core.active_learning import cache_operations
 from inference.core.active_learning.cache_operations import (
-    generate_cache_key_for_active_learning_usage,
-    generate_cache_key_for_active_learning_usage_lock,
-    get_current_strategy_limit_usage,
-    set_current_strategy_limit_usage,
-    return_strategy_limit_usage_credit,
     consume_strategy_limit_usage_credit,
     datapoint_should_be_rejected_based_on_limit_usage,
     datapoint_should_be_rejected_based_on_strategy_usage_limits,
     find_strategy_with_spare_usage_credit,
-    lock_limits,
-    use_credit_of_matching_strategy,
-)
-from inference.core.active_learning import cache_operations
-from inference.core.active_learning.entities import StrategyLimitType, StrategyLimit
+    generate_cache_key_for_active_learning_usage,
+    generate_cache_key_for_active_learning_usage_lock,
+    get_current_strategy_limit_usage, lock_limits,
+    return_strategy_limit_usage_credit, set_current_strategy_limit_usage,
+    use_credit_of_matching_strategy)
+from inference.core.active_learning.entities import (StrategyLimit,
+                                                     StrategyLimitType)
 from inference.core.cache import MemoryCache
 
 

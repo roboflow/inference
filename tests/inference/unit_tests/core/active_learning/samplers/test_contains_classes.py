@@ -4,14 +4,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.active_learning.samplers.contains_classes import (
-    sample_based_on_classes,
-    initialize_classes_based_sampling,
-)
 from inference.core.active_learning.samplers import contains_classes
-from inference.core.constants import OBJECT_DETECTION_TASK, CLASSIFICATION_TASK
+from inference.core.active_learning.samplers.contains_classes import (
+    initialize_classes_based_sampling, sample_based_on_classes)
+from inference.core.constants import CLASSIFICATION_TASK, OBJECT_DETECTION_TASK
 from inference.core.exceptions import ActiveLearningConfigurationError
-
 
 MULTI_LABEL_CLASSIFICATION_PREDICTION = {
     "image": {"width": 416, "height": 416},

@@ -2,12 +2,10 @@ from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock
 
-from inference.core.active_learning.utils import (
-    generate_today_timestamp,
-    generate_start_timestamp_for_this_week,
-    generate_start_timestamp_for_this_month,
-)
 from inference.core.active_learning import utils
+from inference.core.active_learning.utils import (
+    generate_start_timestamp_for_this_month,
+    generate_start_timestamp_for_this_week, generate_today_timestamp)
 
 
 @mock.patch.object(utils, "datetime")

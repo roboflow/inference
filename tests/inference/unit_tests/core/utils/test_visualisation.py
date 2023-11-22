@@ -1,4 +1,5 @@
-from inference.core.entities.responses.inference import ObjectDetectionPrediction
+from inference.core.entities.responses.inference import \
+    ObjectDetectionPrediction
 from inference.core.utils.visualisation import bbox_to_points
 
 
