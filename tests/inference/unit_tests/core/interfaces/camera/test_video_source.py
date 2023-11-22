@@ -361,7 +361,136 @@ def test_terminate_muted_stream(local_video_path: str) -> None:
     # then - nothing hangs
 
 
+def test_pause_not_started_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    # when
+    with pytest.raises(StreamOperationNotAllowedError):
+        video_source.pause()
+
+
+def test_mute_not_started_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    # when
+    with pytest.raises(StreamOperationNotAllowedError):
+        video_source.mute()
+
+
+def test_restart_not_started_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    # when
+    with pytest.raises(StreamOperationNotAllowedError):
+        video_source.restart()
+
+
+def test_terminate_not_started_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    # when
+    with pytest.raises(StreamOperationNotAllowedError):
+        video_source.terminate()
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_pause_muted_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    try:
+        # when
+        video_source.start()
+        video_source.mute()
+
+        # then
+        with pytest.raises(StreamOperationNotAllowedError):
+            video_source.pause()
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_mute_paused_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    try:
+        # when
+        video_source.start()
+        video_source.pause()
+
+        # then
+        with pytest.raises(StreamOperationNotAllowedError):
+            video_source.mute()
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_pause_paused_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    try:
+        # when
+        video_source.start()
+        video_source.pause()
+
+        # then
+        with pytest.raises(StreamOperationNotAllowedError):
+            video_source.pause()
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_mute_muted_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+
+    try:
+        # when
+        video_source.start()
+        video_source.mute()
+
+        # then
+        with pytest.raises(StreamOperationNotAllowedError):
+            video_source.mute()
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_consumption_of_video_file_in_eager_mode(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(
+        video_reference=local_video_path,
+        buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
+        buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
+    )
+
+    try:
+        # when
+        frames_consumed = 0
+        video_source.start()
+        for _ in video_source:
+            frames_consumed += 1
+
+        # then
+        assert 0 <= frames_consumed <= 431
+    finally:
+        tear_down_source(video_source=video_source)
+
+
 def tear_down_source(video_source: VideoSource) -> None:
     video_source.terminate(wait_on_frames_consumption=False)
-    for _ in video_source:
-        pass
