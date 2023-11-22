@@ -5,7 +5,7 @@ from typing import Generator, Iterable, Optional, Tuple, Union
 import numpy as np
 
 from inference.core.interfaces.camera.entities import FrameID, FrameTimestamp
-from inference.core.interfaces.camera.video_source import VideoSource
+from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
 
 MINIMAL_FPS = 0.01
 
@@ -18,6 +18,7 @@ class FPSLimiterStrategy(Enum):
 def get_video_frames_generator(
     stream: Union[VideoSource, str, int],
     max_fps: Optional[float] = None,
+    limiter_strategy: Optional[FPSLimiterStrategy] = None,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
     if not issubclass(type(stream), VideoSource):
         stream = VideoSource.init(
@@ -27,13 +28,25 @@ def get_video_frames_generator(
     if max_fps is None:
         yield from stream
         return None
-    limiter_strategy = FPSLimiterStrategy.DROP
-    stream_properties = stream.describe_source().stream_properties
-    if stream_properties is not None and stream_properties.is_file:
-        limiter_strategy = FPSLimiterStrategy.WAIT
+    limiter_strategy = resolve_limiter_strategy(
+        explicitly_defined_strategy=limiter_strategy,
+        source_properties=stream.describe_source().source_properties,
+    )
     yield from limit_frame_rate(
         frames_generator=stream, max_fps=max_fps, strategy=limiter_strategy
     )
+
+
+def resolve_limiter_strategy(
+    explicitly_defined_strategy: Optional[FPSLimiterStrategy],
+    source_properties: Optional[SourceProperties],
+) -> FPSLimiterStrategy:
+    if explicitly_defined_strategy is not None:
+        return explicitly_defined_strategy
+    limiter_strategy = FPSLimiterStrategy.DROP
+    if source_properties is not None and source_properties.is_file:
+        limiter_strategy = FPSLimiterStrategy.WAIT
+    return limiter_strategy
 
 
 def limit_frame_rate(

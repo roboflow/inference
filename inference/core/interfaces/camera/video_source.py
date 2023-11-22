@@ -73,7 +73,7 @@ class BufferConsumptionStrategy(Enum):
 
 
 @dataclass(frozen=True)
-class StreamProperties:
+class SourceProperties:
     width: int
     height: int
     total_frames: int
@@ -83,7 +83,7 @@ class StreamProperties:
 
 @dataclass(frozen=True)
 class SourceMetadata:
-    stream_properties: Optional[StreamProperties]
+    source_properties: Optional[SourceProperties]
     source_reference: str
     buffer_size: int
     state: StreamState
@@ -132,7 +132,7 @@ class VideoSource:
     ):
         self._stream_reference = stream_reference
         self._stream: Optional[cv2.VideoCapture] = None
-        self._stream_properties: Optional[StreamProperties] = None
+        self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
         self._buffer_filling_strategy = buffer_filling_strategy
@@ -216,7 +216,7 @@ class VideoSource:
 
     def describe_source(self) -> SourceMetadata:
         return SourceMetadata(
-            stream_properties=self._stream_properties,
+            source_properties=self._source_properties,
             source_reference=self._stream_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
@@ -230,7 +230,7 @@ class VideoSource:
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
         self._stream: Optional[cv2.VideoCapture] = None
-        self._stream_properties: Optional[StreamProperties] = None
+        self._source_properties: Optional[SourceProperties] = None
         self._start()
 
     def _start(self) -> None:
@@ -241,8 +241,8 @@ class VideoSource:
             raise SourceConnectionError(
                 f"Cannot connect to video source under reference: {self._stream_reference}"
             )
-        self._stream_properties = discover_stream_properties(stream=self._stream)
-        if self._stream_properties.is_file:
+        self._source_properties = discover_source_properties(stream=self._stream)
+        if self._source_properties.is_file:
             self._set_file_mode_buffering_strategies()
         else:
             self._set_stream_mode_buffering_strategies()
@@ -422,12 +422,12 @@ class VideoSource:
         self._frames_buffer.join()
 
 
-def discover_stream_properties(stream: cv2.VideoCapture) -> StreamProperties:
+def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = stream.get(cv2.CAP_PROP_FPS)
     total_frames = int(stream.get(cv2.CAP_PROP_FRAME_COUNT))
-    return StreamProperties(
+    return SourceProperties(
         width=width,
         height=height,
         total_frames=total_frames,

@@ -3,8 +3,10 @@ from typing import Generator
 from unittest import mock
 from unittest.mock import MagicMock
 
-from inference.core.interfaces.camera.utils import RateLimiter, limit_frame_rate, FPSLimiterStrategy
+from inference.core.interfaces.camera.utils import RateLimiter, limit_frame_rate, FPSLimiterStrategy, \
+    resolve_limiter_strategy
 from inference.core.interfaces.camera import utils
+from inference.core.interfaces.camera.video_source import SourceProperties
 
 
 def test_rate_limiter_when_no_ticks_were_registered() -> None:
@@ -125,3 +127,53 @@ def generate_with_delay(items: int, delay: float) -> Generator[int, None, None]:
     for i in range(items):
         yield i
         time.sleep(delay)
+
+
+def test_resolve_limiter_strategy_when_strategy_defined_explicitly() -> None:
+    # when
+    result = resolve_limiter_strategy(
+        explicitly_defined_strategy=FPSLimiterStrategy.WAIT,
+        source_properties=None,
+    )
+
+    # then
+    assert result is FPSLimiterStrategy.WAIT
+
+
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_without_source_properties() -> None:
+    # when
+    result = resolve_limiter_strategy(
+        explicitly_defined_strategy=None,
+        source_properties=None,
+    )
+
+    # then
+    assert result is FPSLimiterStrategy.DROP
+
+
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_file_source() -> None:
+    # given
+    source_properties = SourceProperties(width=100, height=100, total_frames=10, is_file=True, fps=25)
+
+    # when
+    result = resolve_limiter_strategy(
+        explicitly_defined_strategy=None,
+        source_properties=source_properties,
+    )
+
+    # then
+    assert result is FPSLimiterStrategy.WAIT
+
+
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_stream_source() -> None:
+    # given
+    source_properties = SourceProperties(width=100, height=100, total_frames=-1, is_file=False, fps=25)
+
+    # when
+    result = resolve_limiter_strategy(
+        explicitly_defined_strategy=None,
+        source_properties=source_properties,
+    )
+
+    # then
+    assert result is FPSLimiterStrategy.DROP

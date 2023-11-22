@@ -155,7 +155,7 @@ class InferencePipeline:
         self._video_source.start()
         while True:
             allow_reconnect = (
-                not self._video_source.describe_source().stream_properties.is_file
+                not self._video_source.describe_source().source_properties.is_file
             )
             yield from get_video_frames_generator(
                 stream=self._video_source, max_fps=self._max_fps
