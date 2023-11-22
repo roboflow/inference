@@ -1,16 +1,24 @@
 import time
 from datetime import datetime
 from queue import Queue
+from threading import Thread
 
 import cv2
 import pytest
 
 from inference.core.interfaces.camera.exceptions import (
-    SourceConnectionError, StreamOperationNotAllowedError)
+    SourceConnectionError,
+    StreamOperationNotAllowedError,
+)
 from inference.core.interfaces.camera.video_source import (
-    FRAME_CAPTURED_EVENT, BufferConsumptionStrategy, BufferFillingStrategy,
-    SourceMetadata, StreamState, VideoSource, discover_source_properties,
-    purge_queue)
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+    SourceMetadata,
+    StreamState,
+    VideoSource,
+    discover_source_properties,
+    purge_queue,
+)
 
 
 def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
@@ -134,11 +142,7 @@ def test_video_source_describe_source_when_valid_video_reference_consumption_sta
 @pytest.mark.slow
 def test_pausing_video_stream(local_video_path: str) -> None:
     # given
-    captures = []
-    video_source = VideoSource.init(
-        video_reference=local_video_path,
-        status_update_handlers=[lambda e: captures.append(e)],
-    )
+    video_source = VideoSource.init(video_reference=local_video_path)
     pause_resume_delay = 0.2
 
     try:
@@ -169,11 +173,7 @@ def test_pausing_video_stream(local_video_path: str) -> None:
 @pytest.mark.slow
 def test_muting_video_stream(local_video_path: str) -> None:
     # given
-    captures = []
-    video_source = VideoSource.init(
-        video_reference=local_video_path,
-        status_update_handlers=[lambda e: captures.append(e)],
-    )
+    video_source = VideoSource.init(video_reference=local_video_path)
 
     try:
         # when
@@ -187,6 +187,178 @@ def test_muting_video_stream(local_video_path: str) -> None:
 
     finally:
         tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_restart_paused_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_before_restart = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_before_restart.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    try:
+        # when
+        video_source.start()
+        frame = video_source.read_frame()
+        last_id_before_restart = frame[1]
+        capture_thread.start()
+        video_source.pause()
+        restart_timestamp = datetime.now()
+        video_source.restart()
+        capture_thread.join()
+        frame_after_restart = video_source.read_frame()
+
+        # then
+        for frame_before_restart in frames_before_restart:
+            last_id_before_restart = frame_before_restart[1]
+        assert frame_after_restart[1] == last_id_before_restart + 1
+        assert (frame_after_restart[0] - restart_timestamp).total_seconds() > 0
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_restart_muted_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_before_restart = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_before_restart.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    try:
+        # when
+        video_source.start()
+        frame = video_source.read_frame()
+        last_id_before_restart = frame[1]
+        capture_thread.start()
+        video_source.mute()
+        restart_timestamp = datetime.now()
+        video_source.restart()
+        capture_thread.join()
+        frame_after_restart = video_source.read_frame()
+
+        # then
+        for frame_before_restart in frames_before_restart:
+            last_id_before_restart = frame_before_restart[1]
+        assert frame_after_restart[1] == last_id_before_restart + 1
+        assert (frame_after_restart[0] - restart_timestamp).total_seconds() > 0
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_restart_running_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_before_restart = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_before_restart.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    try:
+        # when
+        video_source.start()
+        frame = video_source.read_frame()
+        last_id_before_restart = frame[1]
+        capture_thread.start()
+        restart_timestamp = datetime.now()
+        video_source.restart()
+        capture_thread.join()
+        frame_after_restart = video_source.read_frame()
+
+        # then
+        for frame_before_restart in frames_before_restart:
+            last_id_before_restart = frame_before_restart[1]
+        assert frame_after_restart[1] == last_id_before_restart + 1
+        assert (frame_after_restart[0] - restart_timestamp).total_seconds() > 0
+    finally:
+        tear_down_source(video_source=video_source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_terminate_runninh_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_captured = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_captured.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    # when
+    video_source.start()
+    _ = video_source.read_frame()
+    capture_thread.start()
+    video_source.terminate()
+    capture_thread.join()
+
+    # then - nothing hangs
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_terminate_paused_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_captured = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_captured.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    # when
+    video_source.start()
+    _ = video_source.read_frame()
+    video_source.pause()
+    capture_thread.start()
+    video_source.terminate()
+    capture_thread.join()
+
+    # then - nothing hangs
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_terminate_muted_stream(local_video_path: str) -> None:
+    # given
+    video_source = VideoSource.init(video_reference=local_video_path)
+    frames_captured = []
+
+    def capture_frames() -> None:
+        for f in video_source:
+            frames_captured.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    # when
+    video_source.start()
+    _ = video_source.read_frame()
+    video_source.mute()
+    capture_thread.start()
+    video_source.terminate()
+    capture_thread.join()
+
+    # then - nothing hangs
 
 
 def tear_down_source(video_source: VideoSource) -> None:

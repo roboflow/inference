@@ -9,12 +9,22 @@ import pytest
 
 from inference.core.active_learning import core
 from inference.core.active_learning.core import (
-    collect_tags, execute_datapoint_registration, execute_sampling,
-    is_prediction_registration_forbidden, prepare_image_to_registration,
-    register_datapoint_at_roboflow, safe_register_image_at_roboflow)
+    collect_tags,
+    execute_datapoint_registration,
+    execute_sampling,
+    is_prediction_registration_forbidden,
+    prepare_image_to_registration,
+    register_datapoint_at_roboflow,
+    safe_register_image_at_roboflow,
+)
 from inference.core.active_learning.entities import (
-    ActiveLearningConfiguration, BatchReCreationInterval, ImageDimensions,
-    SamplingMethod, StrategyLimit, StrategyLimitType)
+    ActiveLearningConfiguration,
+    BatchReCreationInterval,
+    ImageDimensions,
+    SamplingMethod,
+    StrategyLimit,
+    StrategyLimitType,
+)
 from inference.core.exceptions import RoboflowAPIConnectionError
 
 

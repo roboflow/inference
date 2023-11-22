@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 
 from inference.core.active_learning.samplers import random
-from inference.core.active_learning.samplers.random import \
-    initialize_random_sampling
+from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.exceptions import ActiveLearningConfigurationError
 
 

@@ -145,12 +145,12 @@ class VideoSource:
         self._state_change_lock = Lock()
 
     @lock_state_transition
-    def restart(self) -> None:
+    def restart(self, wait_on_frames_consumption: bool = True) -> None:
         if self._state not in RESTART_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESTART stream in state: {self._state}"
             )
-        self._restart()
+        self._restart(wait_on_frames_consumption=wait_on_frames_consumption)
 
     @lock_state_transition
     def start(self) -> None:

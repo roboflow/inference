@@ -7,8 +7,10 @@ import pytest
 
 from inference.core.active_learning.samplers import number_of_detections
 from inference.core.active_learning.samplers.number_of_detections import (
-    initialize_detections_number_based_sampling, is_in_range,
-    sample_based_on_detections_number)
+    initialize_detections_number_based_sampling,
+    is_in_range,
+    sample_based_on_detections_number,
+)
 from inference.core.constants import CLASSIFICATION_TASK, OBJECT_DETECTION_TASK
 from inference.core.exceptions import ActiveLearningConfigurationError
 

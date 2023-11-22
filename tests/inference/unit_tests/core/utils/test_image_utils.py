@@ -12,17 +12,29 @@ from PIL import Image
 from requests_mock import Mocker
 
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.exceptions import (InputFormatInferenceFailed,
-                                       InputImageLoadError,
-                                       InvalidImageTypeDeclared,
-                                       InvalidNumpyInput)
+from inference.core.exceptions import (
+    InputFormatInferenceFailed,
+    InputImageLoadError,
+    InvalidImageTypeDeclared,
+    InvalidNumpyInput,
+)
 from inference.core.utils import image_utils
 from inference.core.utils.image_utils import (
-    ImageType, attempt_loading_image_from_string, choose_image_decoding_flags,
-    convert_gray_image_to_bgr, extract_image_payload_and_type, load_image,
-    load_image_base64, load_image_from_buffer, load_image_from_encoded_bytes,
-    load_image_from_numpy_str, load_image_from_url, load_image_rgb,
-    load_image_with_inferred_type, load_image_with_known_type)
+    ImageType,
+    attempt_loading_image_from_string,
+    choose_image_decoding_flags,
+    convert_gray_image_to_bgr,
+    extract_image_payload_and_type,
+    load_image,
+    load_image_base64,
+    load_image_from_buffer,
+    load_image_from_encoded_bytes,
+    load_image_from_numpy_str,
+    load_image_from_url,
+    load_image_rgb,
+    load_image_with_inferred_type,
+    load_image_with_known_type,
+)
 
 
 @pytest.mark.parametrize(

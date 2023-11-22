@@ -13,11 +13,13 @@ from inference.core.active_learning.cache_operations import (
     find_strategy_with_spare_usage_credit,
     generate_cache_key_for_active_learning_usage,
     generate_cache_key_for_active_learning_usage_lock,
-    get_current_strategy_limit_usage, lock_limits,
-    return_strategy_limit_usage_credit, set_current_strategy_limit_usage,
-    use_credit_of_matching_strategy)
-from inference.core.active_learning.entities import (StrategyLimit,
-                                                     StrategyLimitType)
+    get_current_strategy_limit_usage,
+    lock_limits,
+    return_strategy_limit_usage_credit,
+    set_current_strategy_limit_usage,
+    use_credit_of_matching_strategy,
+)
+from inference.core.active_learning.entities import StrategyLimit, StrategyLimitType
 from inference.core.cache import MemoryCache
 
 

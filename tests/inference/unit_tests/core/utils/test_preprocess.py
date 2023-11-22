@@ -7,10 +7,14 @@ import pytest
 from inference.core.exceptions import PreProcessingError
 from inference.core.utils import preprocess
 from inference.core.utils.preprocess import (
-    ContrastAdjustmentType, apply_contrast_adjustment,
+    ContrastAdjustmentType,
+    apply_contrast_adjustment,
     contrast_adjustments_should_be_applied,
-    grayscale_conversion_should_be_applied, prepare,
-    static_crop_should_be_applied, take_static_crop)
+    grayscale_conversion_should_be_applied,
+    prepare,
+    static_crop_should_be_applied,
+    take_static_crop,
+)
 
 
 @mock.patch.object(preprocess, "DISABLE_PREPROC_STATIC_CROP", False)

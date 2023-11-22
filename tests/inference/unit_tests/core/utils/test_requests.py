@@ -1,9 +1,11 @@
 import pytest
 from requests import HTTPError, Response
 
-from inference.core.utils.requests import (API_KEY_PATTERN,
-                                           api_key_safe_raise_for_status,
-                                           deduct_api_key)
+from inference.core.utils.requests import (
+    API_KEY_PATTERN,
+    api_key_safe_raise_for_status,
+    deduct_api_key,
+)
 
 
 def test_deduce_api_key_when_no_api_key_available() -> None:

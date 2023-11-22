@@ -7,11 +7,18 @@ import pytest
 
 from inference.core.active_learning import configuration
 from inference.core.active_learning.configuration import (
-    get_roboflow_project_metadata, initialize_sampling_methods,
-    prepare_active_learning_configuration)
+    get_roboflow_project_metadata,
+    initialize_sampling_methods,
+    prepare_active_learning_configuration,
+)
 from inference.core.active_learning.entities import (
-    ActiveLearningConfiguration, BatchReCreationInterval, ImageDimensions,
-    RoboflowProjectMetadata, StrategyLimit, StrategyLimitType)
+    ActiveLearningConfiguration,
+    BatchReCreationInterval,
+    ImageDimensions,
+    RoboflowProjectMetadata,
+    StrategyLimit,
+    StrategyLimitType,
+)
 from inference.core.exceptions import ActiveLearningConfigurationError
 
 

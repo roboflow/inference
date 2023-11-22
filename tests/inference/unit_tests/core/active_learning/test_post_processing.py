@@ -8,7 +8,8 @@ from inference.core.active_learning.post_processing import (
     adjust_points_coordinates_to_client_scaling_factor,
     adjust_prediction_to_client_scaling_factor,
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
-    encode_prediction)
+    encode_prediction,
+)
 from inference.core.exceptions import PredictionFormatNotSupported
 
 
