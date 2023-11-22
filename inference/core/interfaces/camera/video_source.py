@@ -418,9 +418,6 @@ class VideoSource:
         except EndOfStreamError:
             raise StopIteration()
 
-    def __del__(self) -> None:
-        self._frames_buffer.join()
-
 
 def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))

@@ -4,6 +4,7 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from inference.core.interfaces.camera.utils import RateLimiter, limit_frame_rate, FPSLimiterStrategy, \
     resolve_limiter_strategy, get_video_frames_generator
@@ -276,6 +277,53 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_str
     assert all(diff >= 0.02 for diff in timestamp_differences)
     assert results == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert dummy_source.start_called is True
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_get_video_frames_generator_against_real_video_without_rate_limit(local_video_path: str) -> None:
+    # when
+    results = list(get_video_frames_generator(stream=local_video_path))
+
+    # then
+    assert len(results) == 431
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await_strategy(local_video_path: str) -> None:
+    # when
+    results, results_timestamp = [], []
+    for result in get_video_frames_generator(
+        stream=local_video_path,
+        max_fps=200,
+    ):
+        results_timestamp.append(time.monotonic())
+        results.append(result)
+
+    # then
+    timestamp_differences = get_differences(results_timestamp)
+    assert all(diff >= 0.005 for diff in timestamp_differences)
+    assert len(results) == 431
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_strategy(local_video_path: str) -> None:
+    # when
+    results, results_timestamp = [], []
+    for result in get_video_frames_generator(
+        stream=local_video_path,
+        max_fps=200,
+        limiter_strategy=FPSLimiterStrategy.DROP
+    ):
+        results_timestamp.append(time.monotonic())
+        results.append(result)
+
+    # then
+    timestamp_differences = get_differences(results_timestamp)
+    assert all(diff >= 0.005 for diff in timestamp_differences)
+    assert 0 <= len(results) <= 431
 
 
 class DummyVideoSource:
