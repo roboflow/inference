@@ -153,3 +153,5 @@ inference_cli/version.py
 inference_sdk/version.py
 
 **/.DS_Store
+
+development
