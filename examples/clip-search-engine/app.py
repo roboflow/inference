@@ -65,11 +65,9 @@ else:
     index = faiss.IndexFlatL2(512)
     file_names = []
 
-    TRAIN_IMAGES = os.path.join(args.dataset_path, "train")
-
-    for frame_name in os.listdir(TRAIN_IMAGES):
+    for frame_name in os.listdir(args.dataset_path):
         try:
-            frame = Image.open(os.path.join(TRAIN_IMAGES, frame_name))
+            frame = Image.open(os.path.join(args.dataset_path, frame_name))
         except IOError:
             print("error computing embedding for", frame_name)
             continue
@@ -89,12 +87,14 @@ else:
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
-        file = request.files["file"]
+        file = request.files["image"]
         query = get_image_embedding(Image.open(file))
 
         _, I = index.search(np.array(query).astype(np.float32), 3)
 
-        images = [os.path.join(TRAIN_IMAGES, file_names[i]) for i in I[0]]
+        images = [file_names[i] for i in I[0]]
+
+        print(images)
 
         return render_template("index.html", images=images)
 

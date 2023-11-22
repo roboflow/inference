@@ -33,7 +33,7 @@ def check_latest_release_against_current():
     get_latest_release_version()
     if latest_release is not None and latest_release != __version__:
         logger.warning(
-            f"Your inference package version {__version__} is out of date! Please upgrade to version {latest_release} of inference for the latest features and bug fixes by running `pip install --upgrade roboflow-inference`."
+            f"Your inference package version {__version__} is out of date! Please upgrade to version {latest_release} of inference for the latest features and bug fixes by running `pip install --upgrade inference`."
         )
 
 
