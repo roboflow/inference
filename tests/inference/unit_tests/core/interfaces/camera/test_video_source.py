@@ -292,7 +292,7 @@ def test_restart_running_stream(local_video_path: str) -> None:
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
-def test_terminate_runninh_stream(local_video_path: str) -> None:
+def test_terminate_running_stream(local_video_path: str) -> None:
     # given
     video_source = VideoSource.init(video_reference=local_video_path)
     frames_captured = []
