@@ -42,7 +42,7 @@ def handle_command(cmd_payload: dict):
         case "restart":
             was_processed, data = container.restart()
         case "stop":
-            was_processed, data = container.terminate()
+            was_processed, data = container.stop()
         case "ping":
             was_processed, data = container.ping()
         case "snapshot":

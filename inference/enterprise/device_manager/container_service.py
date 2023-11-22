@@ -54,7 +54,7 @@ class InferServerContainer:
 
     def stop(self):
         try:
-            self.container.terminate()
+            self.container.stop()
             return True, None
         except Exception as e:
             logger.error(e)
