@@ -1,12 +1,12 @@
 import time
-from typing import Generator
+from typing import Generator, Optional
 from unittest import mock
 from unittest.mock import MagicMock
 
 from inference.core.interfaces.camera.utils import RateLimiter, limit_frame_rate, FPSLimiterStrategy, \
-    resolve_limiter_strategy
+    resolve_limiter_strategy, get_video_frames_generator
 from inference.core.interfaces.camera import utils
-from inference.core.interfaces.camera.video_source import SourceProperties
+from inference.core.interfaces.camera.video_source import SourceProperties, SourceMetadata
 
 
 def test_rate_limiter_when_no_ticks_were_registered() -> None:
@@ -123,12 +123,6 @@ def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_slow() -> N
     assert result == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
-def generate_with_delay(items: int, delay: float) -> Generator[int, None, None]:
-    for i in range(items):
-        yield i
-        time.sleep(delay)
-
-
 def test_resolve_limiter_strategy_when_strategy_defined_explicitly() -> None:
     # when
     result = resolve_limiter_strategy(
@@ -177,3 +171,87 @@ def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video
 
     # then
     assert result is FPSLimiterStrategy.DROP
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_get_video_frames_generator_when_fps_modulation_disabled(init_mock: MagicMock) -> None:
+    # given
+    dummy_source = DummyVideoSource(items=10, delay=0.01)
+    init_mock.return_value = dummy_source
+
+    # when
+    result = list(get_video_frames_generator(stream="source-ref"))
+
+    # then
+    assert dummy_source.start_called is True
+    assert result == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_file(init_mock: MagicMock) -> None:
+    # given
+    dummy_source = DummyVideoSource(items=10, delay=0.01)
+    init_mock.return_value = dummy_source
+
+    # when
+    result = list(get_video_frames_generator(stream="source-ref"))
+
+    # then
+    assert dummy_source.start_called is True
+    assert result == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_stream(init_mock: MagicMock) -> None:
+    # given
+    dummy_source = DummyVideoSource(items=10, delay=0.01)
+    init_mock.return_value = dummy_source
+
+    # when
+    result = list(get_video_frames_generator(stream="source-ref"))
+
+    # then
+    assert dummy_source.start_called is True
+    assert result == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+@mock.patch.object(utils.VideoSource, "init")
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_stream(init_mock: MagicMock) -> None:
+    # given
+    dummy_source = DummyVideoSource(items=10, delay=0.01)
+    init_mock.return_value = dummy_source
+
+    # when
+    result = list(get_video_frames_generator(stream="source-ref"))
+
+    # then
+    assert dummy_source.start_called is True
+    assert result == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+class DummyVideoSource:
+
+    def __init__(self, items: int, delay: float, source_properties: Optional[SourceProperties] = None):
+        self._stream = generate_with_delay(items=items, delay=delay)
+        self._source_properties = source_properties
+        self.start_called = False
+
+    def start(self) -> None:
+        self.start_called = True
+
+    def describe_source(self) -> SourceMetadata:
+        metadata_mock = MagicMock()
+        metadata_mock.source_properties = self._source_properties
+        return metadata_mock
+
+    def __iter__(self) -> "DummyVideoSource":
+        return self
+
+    def __next__(self) -> int:
+        return next(self._stream)
+
+
+def generate_with_delay(items: int, delay: float) -> Generator[int, None, None]:
+    for i in range(items):
+        yield i
+        time.sleep(delay)
