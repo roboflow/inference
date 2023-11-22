@@ -2,10 +2,7 @@ import os.path
 
 import pytest
 
-ASSETS_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__),
-    "assets"
-))
+ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 
 
 @pytest.fixture

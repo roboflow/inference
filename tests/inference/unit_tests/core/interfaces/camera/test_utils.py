@@ -6,10 +6,18 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.core.interfaces.camera.utils import RateLimiter, limit_frame_rate, FPSLimiterStrategy, \
-    resolve_limiter_strategy, get_video_frames_generator
+from inference.core.interfaces.camera.utils import (
+    RateLimiter,
+    limit_frame_rate,
+    FPSLimiterStrategy,
+    resolve_limiter_strategy,
+    get_video_frames_generator,
+)
 from inference.core.interfaces.camera import utils
-from inference.core.interfaces.camera.video_source import SourceProperties, SourceMetadata
+from inference.core.interfaces.camera.video_source import (
+    SourceProperties,
+    SourceMetadata,
+)
 
 
 def test_rate_limiter_when_no_ticks_were_registered() -> None:
@@ -37,7 +45,9 @@ def test_rate_limiter_when_invalid_fps_registered() -> None:
 
 
 @mock.patch.object(utils, "time")
-def test_rate_limiter_when_next_tick_should_be_executed_immediately(time_mock: MagicMock) -> None:
+def test_rate_limiter_when_next_tick_should_be_executed_immediately(
+    time_mock: MagicMock,
+) -> None:
     # given
     time_mock.monotonic.side_effect = [100.0, 100.110]
     limiter = RateLimiter(desired_fps=10.0)
@@ -73,9 +83,7 @@ def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_fast() -> N
     # when
     results, results_timestamp = [], []
     for result in limit_frame_rate(
-        frames_generator=frames_generator,
-        max_fps=100,
-        strategy=FPSLimiterStrategy.DROP
+        frames_generator=frames_generator, max_fps=100, strategy=FPSLimiterStrategy.DROP
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -93,9 +101,7 @@ def test_limit_frame_rate_when_frames_to_be_dropped_and_stream_is_to_slow() -> N
     # when
     results, results_timestamp = [], []
     for result in limit_frame_rate(
-            frames_generator=frames_generator,
-            max_fps=100,
-            strategy=FPSLimiterStrategy.DROP
+        frames_generator=frames_generator, max_fps=100, strategy=FPSLimiterStrategy.DROP
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -113,9 +119,9 @@ def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_fast() -> N
     # when
     results, results_timestamp = [], []
     for result in limit_frame_rate(
-            frames_generator=frames_generator,
-            max_fps=100,
-            strategy=FPSLimiterStrategy.WAIT,
+        frames_generator=frames_generator,
+        max_fps=100,
+        strategy=FPSLimiterStrategy.WAIT,
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -133,9 +139,9 @@ def test_limit_frame_rate_when_frames_to_be_awaited_and_stream_is_to_slow() -> N
     # when
     results, results_timestamp = [], []
     for result in limit_frame_rate(
-            frames_generator=frames_generator,
-            max_fps=100,
-            strategy=FPSLimiterStrategy.WAIT,
+        frames_generator=frames_generator,
+        max_fps=100,
+        strategy=FPSLimiterStrategy.WAIT,
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -157,7 +163,9 @@ def test_resolve_limiter_strategy_when_strategy_defined_explicitly() -> None:
     assert result is FPSLimiterStrategy.WAIT
 
 
-def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_without_source_properties() -> None:
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_without_source_properties() -> (
+    None
+):
     # when
     result = resolve_limiter_strategy(
         explicitly_defined_strategy=None,
@@ -168,9 +176,13 @@ def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_without_sourc
     assert result is FPSLimiterStrategy.DROP
 
 
-def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_file_source() -> None:
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_file_source() -> (
+    None
+):
     # given
-    source_properties = SourceProperties(width=100, height=100, total_frames=10, is_file=True, fps=25)
+    source_properties = SourceProperties(
+        width=100, height=100, total_frames=10, is_file=True, fps=25
+    )
 
     # when
     result = resolve_limiter_strategy(
@@ -182,9 +194,13 @@ def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video
     assert result is FPSLimiterStrategy.WAIT
 
 
-def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_stream_source() -> None:
+def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video_stream_source() -> (
+    None
+):
     # given
-    source_properties = SourceProperties(width=100, height=100, total_frames=-1, is_file=False, fps=25)
+    source_properties = SourceProperties(
+        width=100, height=100, total_frames=-1, is_file=False, fps=25
+    )
 
     # when
     result = resolve_limiter_strategy(
@@ -197,7 +213,9 @@ def test_resolve_limiter_strategy_when_automatic_choice_to_be_made_against_video
 
 
 @mock.patch.object(utils.VideoSource, "init")
-def test_get_video_frames_generator_when_fps_modulation_disabled(init_mock: MagicMock) -> None:
+def test_get_video_frames_generator_when_fps_modulation_disabled(
+    init_mock: MagicMock,
+) -> None:
     # given
     dummy_source = DummyVideoSource(items=10, delay=0.01)
     init_mock.return_value = dummy_source
@@ -212,10 +230,16 @@ def test_get_video_frames_generator_when_fps_modulation_disabled(init_mock: Magi
 
 
 @mock.patch.object(utils.VideoSource, "init")
-def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_file(init_mock: MagicMock) -> None:
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_file(
+    init_mock: MagicMock,
+) -> None:
     # given
-    source_properties = SourceProperties(width=100, height=100, total_frames=10, is_file=True, fps=25)
-    dummy_source = DummyVideoSource(items=10, delay=0.01, source_properties=source_properties)
+    source_properties = SourceProperties(
+        width=100, height=100, total_frames=10, is_file=True, fps=25
+    )
+    dummy_source = DummyVideoSource(
+        items=10, delay=0.01, source_properties=source_properties
+    )
     init_mock.return_value = dummy_source
 
     # when
@@ -235,17 +259,23 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_fi
 
 
 @mock.patch.object(utils.VideoSource, "init")
-def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_stream(init_mock: MagicMock) -> None:
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_stream(
+    init_mock: MagicMock,
+) -> None:
     # given
-    source_properties = SourceProperties(width=100, height=100, total_frames=-1, is_file=False, fps=25)
-    dummy_source = DummyVideoSource(items=10, delay=0.01, source_properties=source_properties)
+    source_properties = SourceProperties(
+        width=100, height=100, total_frames=-1, is_file=False, fps=25
+    )
+    dummy_source = DummyVideoSource(
+        items=10, delay=0.01, source_properties=source_properties
+    )
     init_mock.return_value = dummy_source
 
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-            stream="source-ref",
-            max_fps=50,
+        stream="source-ref",
+        max_fps=50,
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -258,7 +288,9 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
 
 
 @mock.patch.object(utils.VideoSource, "init")
-def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_stream(init_mock: MagicMock) -> None:
+def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_stream(
+    init_mock: MagicMock,
+) -> None:
     # given
     dummy_source = DummyVideoSource(items=10, delay=0.02)
     init_mock.return_value = dummy_source
@@ -266,8 +298,8 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_str
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-            stream="source-ref",
-            max_fps=200,
+        stream="source-ref",
+        max_fps=200,
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -281,7 +313,9 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_str
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
-def test_get_video_frames_generator_against_real_video_without_rate_limit(local_video_path: str) -> None:
+def test_get_video_frames_generator_against_real_video_without_rate_limit(
+    local_video_path: str,
+) -> None:
     # when
     results = list(get_video_frames_generator(stream=local_video_path))
 
@@ -291,7 +325,9 @@ def test_get_video_frames_generator_against_real_video_without_rate_limit(local_
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
-def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await_strategy(local_video_path: str) -> None:
+def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await_strategy(
+    local_video_path: str,
+) -> None:
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
@@ -309,13 +345,13 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
-def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_strategy(local_video_path: str) -> None:
+def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_strategy(
+    local_video_path: str,
+) -> None:
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream=local_video_path,
-        max_fps=200,
-        limiter_strategy=FPSLimiterStrategy.DROP
+        stream=local_video_path, max_fps=200, limiter_strategy=FPSLimiterStrategy.DROP
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
@@ -327,8 +363,12 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_
 
 
 class DummyVideoSource:
-
-    def __init__(self, items: int, delay: float, source_properties: Optional[SourceProperties] = None):
+    def __init__(
+        self,
+        items: int,
+        delay: float,
+        source_properties: Optional[SourceProperties] = None,
+    ):
         self._stream = generate_with_delay(items=items, delay=delay)
         self._source_properties = source_properties
         self.start_called = False
