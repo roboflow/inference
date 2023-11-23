@@ -7,9 +7,10 @@ import cv2
 from inference.core.utils.preprocess import letterbox_image
 
 
-def main(video: Union[str, int], display: int) -> None:
+def main(video: Union[str, int], display: int, each_nth: int) -> None:
     stream = cv2.VideoCapture(video)
     fps_monitor = sv.FPSMonitor()
+    frames_counter = 0
     while stream.isOpened():
         status = stream.grab()
         fps_monitor.tick()
@@ -19,6 +20,8 @@ def main(video: Union[str, int], display: int) -> None:
             print("EOS")
             break
         if display > 0:
+            if frames_counter % each_nth != 0:
+                continue
             status, image = stream.retrieve()
             if not status:
                 print("EOS")
@@ -28,6 +31,7 @@ def main(video: Union[str, int], display: int) -> None:
             key = cv2.waitKey(1)
             if key == ord("q"):
                 break
+        frames_counter += 1
     print("DONE")
 
 
@@ -35,5 +39,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Camera test script")
     parser.add_argument("--video", required=False, default=0)
     parser.add_argument("--display", type=int, required=False, default=1)
+    parser.add_argument("--each_nth", type=int, required=False, default=1)
     args = parser.parse_args()
-    main(video=args.video, display=args.display)
+    main(video=args.video, display=args.display, each_nth=args.each_nth)
