@@ -490,14 +490,10 @@ class VideoConsumer:
         Returns: boolean flag with success status
         """
         if not frames_buffering_allowed:
-            send_status_update(
-                severity=UpdateSeverity.DEBUG,
-                event_type=FRAME_DROPPED_EVENT,
-                payload={
-                    "frame_timestamp": frame_timestamp,
-                    "frame_id": self._frame_counter,
-                    "cause": "Buffering not allowed at the moment",
-                },
+            send_frame_drop_update(
+                frame_timestamp=frame_timestamp,
+                frame_id=self._frame_counter,
+                cause="Buffering not allowed at the moment",
                 status_update_handlers=self._status_update_handlers,
             )
             return True
@@ -505,14 +501,10 @@ class VideoConsumer:
             declared_source_fps=declared_source_fps
         ):
             self._adaptive_frames_dropped_in_row += 1
-            send_status_update(
-                severity=UpdateSeverity.DEBUG,
-                event_type=FRAME_DROPPED_EVENT,
-                payload={
-                    "frame_timestamp": frame_timestamp,
-                    "frame_id": self._frame_counter,
-                    "cause": "adaptive_strategy",
-                },
+            send_frame_drop_update(
+                frame_timestamp=frame_timestamp,
+                frame_id=self._frame_counter,
+                cause="ADAPTIVE strategy",
                 status_update_handlers=self._status_update_handlers,
             )
             return True
@@ -530,14 +522,10 @@ class VideoConsumer:
                 video=video,
                 buffer=buffer,
             )
-        send_status_update(
-            severity=UpdateSeverity.DEBUG,
-            event_type=FRAME_DROPPED_EVENT,
-            payload={
-                "frame_timestamp": frame_timestamp,
-                "frame_id": self._frame_counter,
-                "cause": "DROP_LATEST strategy",
-            },
+        send_frame_drop_update(
+            frame_timestamp=frame_timestamp,
+            frame_id=self._frame_counter,
+            cause="DROP_LATEST strategy",
             status_update_handlers=self._status_update_handlers,
         )
         return True
@@ -590,26 +578,11 @@ class VideoConsumer:
         video: cv2.VideoCapture,
         buffer: Queue,
     ) -> bool:
-        try:
-            (
-                dropped_frame_timestamp,
-                dropped_frame_counter,
-                _,
-            ) = buffer.get_nowait()
-            buffer.task_done()
-            send_status_update(
-                severity=UpdateSeverity.DEBUG,
-                event_type=FRAME_DROPPED_EVENT,
-                payload={
-                    "frame_timestamp": frame_timestamp,
-                    "frame_id": self._frame_counter,
-                    "cause": "DROP_OLDEST strategy",
-                },
-                status_update_handlers=self._status_update_handlers,
-            )
-        except Empty:
-            # buffer may be emptied in the meantime, hence we ignore Empty
-            pass
+        drop_single_frame_from_buffer(
+            buffer=buffer,
+            cause="DROP_OLDEST strategy",
+            status_update_handlers=self._status_update_handlers,
+        )
         return self._decode_stream_frame(
             frame_timestamp=frame_timestamp, video=video, buffer=buffer
         )
@@ -626,6 +599,47 @@ class VideoConsumer:
             return False
         buffer.put((frame_timestamp, self._frame_counter, frame))
         return True
+
+
+def drop_single_frame_from_buffer(
+    buffer: Queue,
+    cause: str,
+    status_update_handlers: List[Callable[[StatusUpdate], None]],
+) -> None:
+    try:
+        (
+            dropped_frame_timestamp,
+            dropped_frame_counter,
+            _,
+        ) = buffer.get_nowait()
+        buffer.task_done()
+        send_frame_drop_update(
+            frame_timestamp=dropped_frame_timestamp,
+            frame_id=dropped_frame_counter,
+            cause=cause,
+            status_update_handlers=status_update_handlers,
+        )
+    except Empty:
+        # buffer may be emptied in the meantime, hence we ignore Empty
+        pass
+
+
+def send_frame_drop_update(
+    frame_timestamp: datetime,
+    frame_id: int,
+    cause: str,
+    status_update_handlers: List[Callable[[StatusUpdate], None]],
+) -> None:
+    send_status_update(
+        severity=UpdateSeverity.DEBUG,
+        event_type=FRAME_DROPPED_EVENT,
+        payload={
+            "frame_timestamp": frame_timestamp,
+            "frame_id": frame_id,
+            "cause": cause,
+        },
+        status_update_handlers=status_update_handlers,
+    )
 
 
 def send_status_update(

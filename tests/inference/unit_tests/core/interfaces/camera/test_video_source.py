@@ -4,9 +4,11 @@ from queue import Queue
 from threading import Thread
 
 import cv2
+import numpy as np
 import supervision as sv
 import pytest
 
+from inference.core.interfaces.camera.entities import StatusUpdate, UpdateSeverity
 from inference.core.interfaces.camera.exceptions import (
     SourceConnectionError,
     StreamOperationNotAllowedError,
@@ -18,7 +20,7 @@ from inference.core.interfaces.camera.video_source import (
     StreamState,
     VideoSource,
     discover_source_properties,
-    purge_queue,
+    purge_queue, drop_single_frame_from_buffer,
 )
 
 
@@ -516,3 +518,50 @@ def test_consumption_of_video_file_in_eager_mode(local_video_path: str) -> None:
 
 def tear_down_source(video_source: VideoSource) -> None:
     video_source.terminate(wait_on_frames_consumption=False)
+
+
+def test_drop_single_frame_from_buffer_when_buffer_is_empty() -> None:
+    # given
+    buffer = Queue()
+    updates = []
+
+    def handle_status_updates(status_update: StatusUpdate) -> None:
+        updates.append(status_update)
+
+    # when
+    drop_single_frame_from_buffer(
+        buffer=buffer,
+        cause="some",
+        status_update_handlers=[handle_status_updates]
+    )
+
+    # then
+    assert len(updates) == 0
+
+
+def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
+    # given
+    buffer = Queue()
+    updates = []
+    frame_timestamp = datetime.now()
+    buffer.put((frame_timestamp, 37, np.zeros((128, 128, 3), dtype=np.uint8)))
+
+    def handle_status_updates(status_update: StatusUpdate) -> None:
+        updates.append(status_update)
+
+    # when
+    drop_single_frame_from_buffer(
+        buffer=buffer,
+        cause="some",
+        status_update_handlers=[handle_status_updates]
+    )
+
+    # then
+    assert len(updates) == 1
+    assert updates[0].payload == {
+        "frame_timestamp": frame_timestamp,
+        "frame_id": 37,
+        "cause": "some",
+    }
+    assert updates[0].severity is UpdateSeverity.DEBUG
+    assert updates[0].event_type == "FRAME_DROPPED"
