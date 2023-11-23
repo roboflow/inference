@@ -107,6 +107,16 @@ def lock_state_transition(
     return locked_executor
 
 
+ARTIFICIAL_FRAMES = [
+    np.zeros((2160, 3840, 3), dtype=np.uint8)
+    for _ in range(3840)
+]
+
+for i in range(len(ARTIFICIAL_FRAMES)):
+    ARTIFICIAL_FRAMES[i][:, i-30:i+30, :] = 255
+
+
+
 class VideoSource:
     @classmethod
     def init(
@@ -386,7 +396,8 @@ class VideoSource:
         return self._process_stream_frame(frame_timestamp=frame_timestamp)
 
     def _process_stream_frame(self, frame_timestamp: datetime) -> bool:
-        success, frame = self._stream.retrieve()
+        # success, frame = self._stream.retrieve()
+        success, frame = True, ARTIFICIAL_FRAMES[self._frame_counter % len(ARTIFICIAL_FRAMES)]
         if not success:
             return False
         self._frames_buffer.put((frame_timestamp, self._frame_counter, frame))
