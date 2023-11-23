@@ -21,7 +21,7 @@ from inference.core.interfaces.camera.video_source import (
     StreamState,
     VideoSource,
     discover_source_properties,
-    purge_queue, drop_single_frame_from_buffer, decode_video_frame_to_buffer,
+    purge_queue, drop_single_frame_from_buffer, decode_video_frame_to_buffer, VideoConsumer, SourceProperties,
 )
 
 
@@ -614,3 +614,207 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
     assert result is True
     assert fps_monitor() > 0
     assert buffer.get_nowait() == (frame_timestamp, 1, image)
+
+
+def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = False
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue()
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is False
+    assert buffer.empty() is True
+
+
+def test_stream_consumption_when_buffering_not_allowed() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue()
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=False
+    )
+
+    # then
+    assert result is True
+    assert buffer.empty() is True
+
+
+def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_failed() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    video.retrieve.return_value = (False, None)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue()
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is False
+    assert buffer.empty() is True
+
+
+def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_succeed() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=None,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue()
+    buffer.put((datetime.now(), -2, image))
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is True
+    assert buffer.get_nowait()[1] == -2
+    buffered_result = buffer.get_nowait()
+    assert issubclass(type(buffered_result[0]), datetime)
+    assert buffered_result[1] == 1
+    assert buffered_result[2] is image
+
+
+def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=BufferFillingStrategy.DROP_LATEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue(maxsize=1)
+    buffer.put((datetime.now(), -2, image))
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is True
+    assert buffer.get_nowait()[1] == -2
+
+
+def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -> None:
+    # given
+    consumer = VideoConsumer(
+        buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue(maxsize=2)
+    buffer.put((datetime.now(), -2, image))
+    buffer.put((datetime.now(), -1, image))
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is True
+    assert buffer.get_nowait()[1] == -1
+    buffered_result = buffer.get_nowait()
+    assert issubclass(type(buffered_result[0]), datetime)
+    assert buffered_result[1] == 1
+    assert buffered_result[2] is image
+    assert buffer.empty() is True
+
+
+def assembly_dummy_source_properties(is_file: bool, fps: float) -> SourceProperties:
+    return SourceProperties(
+        width=128,
+        height=128,
+        total_frames=-1 if is_file else 10,
+        is_file=is_file,
+        fps=fps,
+    )

@@ -139,8 +139,8 @@ class VideoSource:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        adaptive_mode_stream_pace_tolerance: int = DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
-        adaptive_mode_reader_pace_tolerance: int = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
+        adaptive_mode_stream_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
+        adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     ):
@@ -394,8 +394,8 @@ class VideoConsumer:
     def __init__(
         self,
         buffer_filling_strategy: Optional[BufferFillingStrategy],
-        adaptive_mode_stream_pace_tolerance: int,
-        adaptive_mode_reader_pace_tolerance: int,
+        adaptive_mode_stream_pace_tolerance: float,
+        adaptive_mode_reader_pace_tolerance: float,
         minimum_adaptive_mode_samples: int,
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
@@ -588,7 +588,7 @@ class VideoConsumer:
             frame_id=self._frame_counter,
             video=video,
             buffer=buffer,
-            decoding_pace_monitor=self._decoding_pace_monitor
+            decoding_pace_monitor=self._decoding_pace_monitor,
         )
 
     def _decode_video_frame_to_buffer(
@@ -706,6 +706,3 @@ def decode_video_frame_to_buffer(
     decoding_pace_monitor.tick()
     buffer.put((frame_timestamp, frame_id, frame))
     return True
-
-
-
