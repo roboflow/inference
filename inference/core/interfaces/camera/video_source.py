@@ -1,4 +1,5 @@
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -405,6 +406,7 @@ class VideoConsumer:
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
     ) -> "VideoConsumer":
+        minimum_adaptive_mode_samples = max(minimum_adaptive_mode_samples, 2)
         reader_pace_monitor = sv.FPSMonitor(
             sample_size=10 * minimum_adaptive_mode_samples
         )
@@ -597,9 +599,14 @@ class VideoConsumer:
         ):
             # not enough observations
             return False
-        reader_pace = self._reader_pace_monitor()
+        actual_reader_pace = get_fps_if_tick_happens_now(
+            fps_monitor=self._reader_pace_monitor
+        )
         decoding_pace = self._decoding_pace_monitor()
-        if decoding_pace - reader_pace > self._adaptive_mode_reader_pace_tolerance:
+        if (
+            decoding_pace - actual_reader_pace
+            > self._adaptive_mode_reader_pace_tolerance
+        ):
             # we are too fast for the reader - time to save compute on decoding
             return True
         return False
@@ -738,3 +745,12 @@ def decode_video_frame_to_buffer(
     decoding_pace_monitor.tick()
     buffer.put((frame_timestamp, frame_id, frame))
     return True
+
+
+def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:
+    if len(fps_monitor.all_timestamps) == 0:
+        return 0.0
+    min_reader_timestamp = fps_monitor.all_timestamps[0]
+    now = time.monotonic()
+    reader_taken_time = now - min_reader_timestamp
+    return (len(fps_monitor.all_timestamps) + 1) / reader_taken_time

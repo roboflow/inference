@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
+from unittest import mock
 from unittest.mock import MagicMock
 
 import cv2
@@ -22,7 +23,9 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     discover_source_properties,
     purge_queue, drop_single_frame_from_buffer, decode_video_frame_to_buffer, VideoConsumer, SourceProperties,
+    get_fps_if_tick_happens_now,
 )
+from inference.core.interfaces.camera import video_source
 
 
 def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
@@ -910,7 +913,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
 
 
 @pytest.mark.slow
-def test_stream_consumption_when_adaptive_strategy_is_disabled_when_announced_fps_is_not_given_and_consumer_actively_read() -> None:
+def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_is_not_given_and_consumer_actively_read() -> None:
     # given
     consumer = VideoConsumer.init(
         buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
@@ -967,6 +970,85 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_when_announced_fp
     assert buffer_content[2][1] == 3
     assert buffer_content[3][1] == 4
     assert buffer.empty() is True
+
+
+@pytest.mark.slow
+def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_lag() -> None:
+    # given
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=100.0,
+        adaptive_mode_reader_pace_tolerance=0.1,
+        minimum_adaptive_mode_samples=2,
+        maximum_adaptive_frames_dropped_in_row=10,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=100)
+    buffer = Queue()
+
+    # when
+    results = []
+    buffer_content = []
+    consumer.reset(source_properties=source_properties)
+    for _ in range(3):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=None,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+        time.sleep(0.01)
+        buffer_content.append(buffer.get_nowait())
+        consumer.notify_frame_consumed()
+    for _ in range(100):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=None,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+    while not buffer.empty():
+        buffer_content.append(buffer.get_nowait())
+        consumer.notify_frame_consumed()
+
+    # then
+    # Reader acked only minimal number of frames - over time we expect decoding pace to vanish, and
+    # we will start dropping frames
+    assert results == [True] * 103
+    assert len(buffer_content) < 103
+    assert buffer.empty() is True
+
+
+def test_get_fps_if_tick_happens_now_when_monitor_has_no_ticks_registered() -> None:
+    # given
+    monitor = sv.FPSMonitor()
+
+    # when
+    result = get_fps_if_tick_happens_now(fps_monitor=monitor)
+
+    # then
+    assert abs(result) < 1e-5
+
+
+@mock.patch.object(video_source.time, "monotonic")
+def test_get_fps_if_tick_happens_now_when_monitor_has_tick_registered(monotonic_mock: MagicMock) -> None:
+    # given
+    monitor = sv.FPSMonitor()
+    monitor.all_timestamps.append(0.1)
+    monotonic_mock.return_value = 0.2
+
+    # when
+    result = get_fps_if_tick_happens_now(fps_monitor=monitor)
+
+    # then
+    # 10ms per two tics, so 20fps
+    assert abs(result - 20) < 1e-5
 
 
 def assembly_dummy_source_properties(is_file: bool, fps: float) -> SourceProperties:
