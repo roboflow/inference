@@ -7,9 +7,9 @@ from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, List, Optional, Protocol, Tuple, Union
 
-import supervision as sv
 import cv2
 import numpy as np
+import supervision as sv
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import (
