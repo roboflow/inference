@@ -4,6 +4,7 @@ from queue import Queue
 from threading import Thread
 
 import cv2
+import supervision as sv
 import pytest
 
 from inference.core.interfaces.camera.exceptions import (
@@ -45,6 +46,27 @@ def test_purge_queue_when_non_empty_queue_given() -> None:
     # then
     assert result is 3
     assert queue.empty() is True
+
+
+def test_purge_queue_when_non_empty_queue_given_with_fps_monitor() -> None:
+    # given
+    successful_reads = []
+
+    def on_successful_read() -> None:
+        successful_reads.append(1)
+
+    queue = Queue()
+    queue.put(1)
+    queue.put(2)
+    queue.put(3)
+
+    # when
+    result = purge_queue(queue=queue, on_successful_read=on_successful_read)
+
+    # then
+    assert result is 3
+    assert queue.empty() is True
+    assert len(successful_reads) == 3
 
 
 def test_discover_source_properties_when_local_file_given(

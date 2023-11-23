@@ -10,6 +10,7 @@ import supervision as sv
 import cv2
 import numpy as np
 
+from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     FrameID,
     FrameTimestamp,
@@ -146,16 +147,20 @@ class VideoSource:
         frames_buffer = Queue(maxsize=buffer_size)
         if status_update_handlers is None:
             status_update_handlers = []
-        return cls(
-            stream_reference=video_reference,
-            frames_buffer=frames_buffer,
-            status_update_handlers=status_update_handlers,
+        video_consumer = VideoConsumer(
             buffer_filling_strategy=buffer_filling_strategy,
-            buffer_consumption_strategy=buffer_consumption_strategy,
             adaptive_mode_stream_pace_tolerance=adaptive_mode_stream_pace_tolerance,
             adaptive_mode_reader_pace_tolerance=adaptive_mode_reader_pace_tolerance,
             minimum_adaptive_mode_samples=minimum_adaptive_mode_samples,
             maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
+            status_update_handlers=status_update_handlers,
+        )
+        return cls(
+            stream_reference=video_reference,
+            frames_buffer=frames_buffer,
+            status_update_handlers=status_update_handlers,
+            buffer_consumption_strategy=buffer_consumption_strategy,
+            video_consumer=video_consumer,
         )
 
     def __init__(
@@ -163,37 +168,16 @@ class VideoSource:
         stream_reference: Union[str, int],
         frames_buffer: Queue,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
-        buffer_filling_strategy: Optional[BufferFillingStrategy],
-        buffer_consumption_strategy: Optional[BufferFillingStrategy],
-        adaptive_mode_stream_pace_tolerance: int,
-        adaptive_mode_reader_pace_tolerance: int,
-        minimum_adaptive_mode_samples: int,
-        maximum_adaptive_frames_dropped_in_row: int,
+        buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+        video_consumer: "VideoConsumer",
     ):
         self._stream_reference = stream_reference
-        self._stream: Optional[cv2.VideoCapture] = None
+        self._video: Optional[cv2.VideoCapture] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
-        self._buffer_filling_strategy = buffer_filling_strategy
-        self._frame_counter = 0
         self._buffer_consumption_strategy = buffer_consumption_strategy
-        self._adaptive_mode_stream_pace_tolerance = adaptive_mode_stream_pace_tolerance
-        self._adaptive_mode_reader_pace_tolerance = adaptive_mode_reader_pace_tolerance
-        self._minimum_adaptive_mode_samples = minimum_adaptive_mode_samples
-        self._maximum_adaptive_frames_dropped_in_row = (
-            maximum_adaptive_frames_dropped_in_row
-        )
-        self._adaptive_frames_dropped_in_row = 0
-        self._reader_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
-        self._stream_consumption_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
-        self._decoding_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
+        self._video_consumer = video_consumer
         self._state = StreamState.NOT_STARTED
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -254,20 +238,24 @@ class VideoSource:
 
     def read_frame(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
         if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
-            result = purge_queue(queue=self._frames_buffer)
+            result = purge_queue(
+                queue=self._frames_buffer,
+                on_successful_read=self._video_consumer.notify_frame_consumed,
+            )
         else:
             result = self._frames_buffer.get()
             self._frames_buffer.task_done()
-            self._reader_pace_monitor.tick()
+            self._video_consumer.notify_frame_consumed()
         if result is None:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
             )
         frame_timestamp, frame_id, frame = result
-        self._send_status_update(
+        send_status_update(
             severity=UpdateSeverity.DEBUG,
             event_type=FRAME_CONSUMED_EVENT,
             payload={"frame_timestamp": frame_timestamp, "frame_id": frame_id},
+            status_update_handlers=self._status_update_handlers,
         )
         return frame_timestamp, frame_id, frame
 
@@ -277,7 +265,7 @@ class VideoSource:
             source_reference=self._stream_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
-            buffer_filling_strategy=self._buffer_filling_strategy,
+            buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,
             buffer_consumption_strategy=self._buffer_consumption_strategy,
         )
 
@@ -286,29 +274,26 @@ class VideoSource:
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
-        self._stream: Optional[cv2.VideoCapture] = None
+        self._video: Optional[cv2.VideoCapture] = None
         self._source_properties: Optional[SourceProperties] = None
         self._start()
 
     def _start(self) -> None:
         self._change_state(target_state=StreamState.INITIALISING)
-        self._stream = cv2.VideoCapture(self._stream_reference)
-        if not self._stream.isOpened():
+        self._video = cv2.VideoCapture(self._stream_reference)
+        if not self._video.isOpened():
             self._change_state(target_state=StreamState.ERROR)
             raise SourceConnectionError(
                 f"Cannot connect to video source under reference: {self._stream_reference}"
             )
-        self._source_properties = discover_source_properties(stream=self._stream)
+        self._source_properties = discover_source_properties(stream=self._video)
+        self._video_consumer.reset(source_properties=self._source_properties)
         if self._source_properties.is_file:
-            self._set_file_mode_buffering_strategies()
+            self._set_file_mode_consumption_strategies()
         else:
-            self._set_stream_mode_buffering_strategies()
-        self._reader_pace_monitor.reset()
-        self._stream_consumption_pace_monitor.reset()
-        self._decoding_pace_monitor.reset()
-        self._adaptive_frames_dropped_in_row = 0
+            self._set_stream_mode_consumption_strategies()
         self._playback_allowed.set()
-        self._stream_consumption_thread = Thread(target=self._consume_stream)
+        self._stream_consumption_thread = Thread(target=self._consume_video)
         self._stream_consumption_thread.start()
 
     def _terminate(self, wait_on_frames_consumption: bool) -> None:
@@ -333,47 +318,39 @@ class VideoSource:
         previous_state = self._state
         self._change_state(target_state=StreamState.RUNNING)
         if previous_state is StreamState.PAUSED:
-            self._stream_consumption_pace_monitor.reset()
+            self._video_consumer.reset_stream_consumption_pace()
             self._playback_allowed.set()
         if previous_state is StreamState.MUTED:
             self._frames_buffering_allowed = True
 
-    def _set_file_mode_buffering_strategies(self) -> None:
-        if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.WAIT
+    def _set_file_mode_consumption_strategies(self) -> None:
         if self._buffer_consumption_strategy is None:
             self._buffer_consumption_strategy = BufferConsumptionStrategy.LAZY
 
-    def _set_stream_mode_buffering_strategies(self) -> None:
-        if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+    def _set_stream_mode_consumption_strategies(self) -> None:
         if self._buffer_consumption_strategy is None:
             self._buffer_consumption_strategy = BufferConsumptionStrategy.EAGER
 
-    def _consume_stream(self) -> None:
+    def _consume_video(self) -> None:
         try:
             self._change_state(target_state=StreamState.RUNNING)
-            while self._stream.isOpened():
+            declared_source_fps = None
+            if self._source_properties is not None:
+                declared_source_fps = self._source_properties.fps
+            while self._video.isOpened():
                 if self._state is StreamState.TERMINATING:
                     break
                 self._playback_allowed.wait()
-                frame_timestamp = datetime.now()
-                success = self._stream.grab()
-                self._stream_consumption_pace_monitor.tick()
+                success = self._video_consumer.consume_frame(
+                    video=self._video,
+                    declared_source_fps=declared_source_fps,
+                    buffer=self._frames_buffer,
+                    frames_buffering_allowed=self._frames_buffering_allowed,
+                )
                 if not success:
                     break
-                self._frame_counter += 1
-                self._send_status_update(
-                    severity=UpdateSeverity.DEBUG,
-                    event_type=FRAME_CAPTURED_EVENT,
-                    payload={
-                        "frame_timestamp": frame_timestamp,
-                        "frame_id": self._frame_counter,
-                    },
-                )
-                self._consume_stream_frame(frame_timestamp=frame_timestamp)
             self._frames_buffer.put(None)
-            self._stream.release()
+            self._video.release()
             self._change_state(target_state=StreamState.ENDED)
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
@@ -382,29 +359,153 @@ class VideoSource:
                 "error_message": str(error),
                 "error_context": "stream_consumer_thread",
             }
-            self._send_status_update(
+            send_status_update(
                 severity=UpdateSeverity.ERROR,
                 event_type=STREAM_ERROR_EVENT,
                 payload=payload,
+                status_update_handlers=self._status_update_handlers,
             )
+            logger.exception("Encountered error in video consumption thread")
 
-    def _consume_stream_frame(self, frame_timestamp: datetime) -> bool:
+    def _change_state(self, target_state: StreamState) -> None:
+        payload = {
+            "previous_state": self._state,
+            "new_state": target_state,
+        }
+        self._state = target_state
+        send_status_update(
+            severity=UpdateSeverity.INFO,
+            event_type=STATE_UPDATE_EVENT,
+            payload=payload,
+            status_update_handlers=self._status_update_handlers,
+        )
+
+    def __iter__(self) -> "VideoSource":
+        return self
+
+    def __next__(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
+        try:
+            return self.read_frame()
+        except EndOfStreamError:
+            raise StopIteration()
+
+
+class VideoConsumer:
+    def __init__(
+        self,
+        buffer_filling_strategy: Optional[BufferFillingStrategy],
+        adaptive_mode_stream_pace_tolerance: int,
+        adaptive_mode_reader_pace_tolerance: int,
+        minimum_adaptive_mode_samples: int,
+        maximum_adaptive_frames_dropped_in_row: int,
+        status_update_handlers: List[Callable[[StatusUpdate], None]],
+    ):
+        self._buffer_filling_strategy = buffer_filling_strategy
+        self._frame_counter = 0
+        self._adaptive_mode_stream_pace_tolerance = adaptive_mode_stream_pace_tolerance
+        self._adaptive_mode_reader_pace_tolerance = adaptive_mode_reader_pace_tolerance
+        self._minimum_adaptive_mode_samples = minimum_adaptive_mode_samples
+        self._maximum_adaptive_frames_dropped_in_row = (
+            maximum_adaptive_frames_dropped_in_row
+        )
+        self._adaptive_frames_dropped_in_row = 0
+        self._reader_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        self._stream_consumption_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        self._decoding_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        self._status_update_handlers = status_update_handlers
+
+    @property
+    def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
+        return self._buffer_filling_strategy
+
+    def reset(self, source_properties: SourceProperties) -> None:
+        if source_properties.is_file:
+            self._set_file_mode_buffering_strategies()
+        else:
+            self._set_stream_mode_buffering_strategies()
+        self._reader_pace_monitor.reset()
+        self.reset_stream_consumption_pace()
+        self._decoding_pace_monitor.reset()
+        self._adaptive_frames_dropped_in_row = 0
+
+    def reset_stream_consumption_pace(self) -> None:
+        self._stream_consumption_pace_monitor.reset()
+
+    def notify_frame_consumed(self) -> None:
+        self._reader_pace_monitor.tick()
+
+    def consume_frame(
+        self,
+        video: cv2.VideoCapture,
+        declared_source_fps: Optional[float],
+        buffer: Queue,
+        frames_buffering_allowed: bool,
+    ) -> bool:
+        frame_timestamp = datetime.now()
+        success = video.grab()
+        self._stream_consumption_pace_monitor.tick()
+        if not success:
+            return False
+        self._frame_counter += 1
+        send_status_update(
+            severity=UpdateSeverity.DEBUG,
+            event_type=FRAME_CAPTURED_EVENT,
+            payload={
+                "frame_timestamp": frame_timestamp,
+                "frame_id": self._frame_counter,
+            },
+            status_update_handlers=self._status_update_handlers,
+        )
+        self._consume_stream_frame(
+            video=video,
+            declared_source_fps=declared_source_fps,
+            frame_timestamp=frame_timestamp,
+            buffer=buffer,
+            frames_buffering_allowed=frames_buffering_allowed,
+        )
+
+    def _set_file_mode_buffering_strategies(self) -> None:
+        if self._buffer_filling_strategy is None:
+            self._buffer_filling_strategy = BufferFillingStrategy.WAIT
+
+    def _set_stream_mode_buffering_strategies(self) -> None:
+        if self._buffer_filling_strategy is None:
+            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+
+    def _consume_stream_frame(
+        self,
+        video: cv2.VideoCapture,
+        declared_source_fps: Optional[float],
+        frame_timestamp: datetime,
+        buffer: Queue,
+        frames_buffering_allowed: bool,
+    ) -> bool:
         """
         Returns: boolean flag with success status
         """
-        if not self._frames_buffering_allowed:
-            self._send_status_update(
+        if not frames_buffering_allowed:
+            send_status_update(
                 severity=UpdateSeverity.DEBUG,
                 event_type=FRAME_DROPPED_EVENT,
                 payload={
                     "frame_timestamp": frame_timestamp,
                     "frame_id": self._frame_counter,
+                    "cause": "Buffering not allowed at the moment",
                 },
+                status_update_handlers=self._status_update_handlers,
             )
             return True
-        if self._frame_should_be_adaptively_dropped():
+        if self._frame_should_be_adaptively_dropped(
+            declared_source_fps=declared_source_fps
+        ):
             self._adaptive_frames_dropped_in_row += 1
-            self._send_status_update(
+            send_status_update(
                 severity=UpdateSeverity.DEBUG,
                 event_type=FRAME_DROPPED_EVENT,
                 payload={
@@ -412,19 +513,24 @@ class VideoSource:
                     "frame_id": self._frame_counter,
                     "cause": "adaptive_strategy",
                 },
+                status_update_handlers=self._status_update_handlers,
             )
             return True
         self._adaptive_frames_dropped_in_row = 0
         if (
-            not self._frames_buffer.full()
+            not buffer.full()
             or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
         ):
-            return self._process_stream_frame(frame_timestamp=frame_timestamp)
+            return self._decode_stream_frame(
+                frame_timestamp=frame_timestamp, video=video, buffer=buffer
+            )
         if self._buffer_filling_strategy is BufferFillingStrategy.DROP_OLDEST:
             return self._process_stream_frame_dropping_oldest(
                 frame_timestamp=frame_timestamp,
+                video=video,
+                buffer=buffer,
             )
-        self._send_status_update(
+        send_status_update(
             severity=UpdateSeverity.DEBUG,
             event_type=FRAME_DROPPED_EVENT,
             payload={
@@ -432,10 +538,13 @@ class VideoSource:
                 "frame_id": self._frame_counter,
                 "cause": "DROP_LATEST strategy",
             },
+            status_update_handlers=self._status_update_handlers,
         )
         return True
 
-    def _frame_should_be_adaptively_dropped(self) -> bool:
+    def _frame_should_be_adaptively_dropped(
+        self, declared_source_fps: Optional[float]
+    ) -> bool:
         if self._buffer_filling_strategy not in ADAPTIVE_STRATEGIES:
             return False
         if (
@@ -451,8 +560,8 @@ class VideoSource:
             return False
         stream_consumption_pace = self._stream_consumption_pace_monitor()
         announced_stream_fps = stream_consumption_pace
-        if self._source_properties is not None and self._source_properties.fps > 0:
-            announced_stream_fps = self._source_properties.fps
+        if declared_source_fps is not None and declared_source_fps > 0:
+            announced_stream_fps = declared_source_fps
         if (
             announced_stream_fps - stream_consumption_pace
             > self._adaptive_mode_stream_pace_tolerance
@@ -475,15 +584,20 @@ class VideoSource:
             return True
         return False
 
-    def _process_stream_frame_dropping_oldest(self, frame_timestamp: datetime) -> bool:
+    def _process_stream_frame_dropping_oldest(
+        self,
+        frame_timestamp: datetime,
+        video: cv2.VideoCapture,
+        buffer: Queue,
+    ) -> bool:
         try:
             (
                 dropped_frame_timestamp,
                 dropped_frame_counter,
                 _,
-            ) = self._frames_buffer.get_nowait()
-            self._frames_buffer.task_done()
-            self._send_status_update(
+            ) = buffer.get_nowait()
+            buffer.task_done()
+            send_status_update(
                 severity=UpdateSeverity.DEBUG,
                 event_type=FRAME_DROPPED_EVENT,
                 payload={
@@ -491,52 +605,43 @@ class VideoSource:
                     "frame_id": self._frame_counter,
                     "cause": "DROP_OLDEST strategy",
                 },
+                status_update_handlers=self._status_update_handlers,
             )
         except Empty:
             # buffer may be emptied in the meantime, hence we ignore Empty
             pass
-        return self._process_stream_frame(frame_timestamp=frame_timestamp)
+        return self._decode_stream_frame(
+            frame_timestamp=frame_timestamp, video=video, buffer=buffer
+        )
 
-    def _process_stream_frame(self, frame_timestamp: datetime) -> bool:
-        success, frame = self._stream.retrieve()
+    def _decode_stream_frame(
+        self,
+        frame_timestamp: datetime,
+        video: cv2.VideoCapture,
+        buffer: Queue,
+    ) -> bool:
+        success, frame = video.retrieve()
         self._decoding_pace_monitor.tick()
         if not success:
             return False
-        self._frames_buffer.put((frame_timestamp, self._frame_counter, frame))
+        buffer.put((frame_timestamp, self._frame_counter, frame))
         return True
 
-    def _change_state(self, target_state: StreamState) -> None:
-        payload = {
-            "previous_state": self._state,
-            "new_state": target_state,
-        }
-        self._state = target_state
-        self._send_status_update(
-            severity=UpdateSeverity.INFO,
-            event_type=STATE_UPDATE_EVENT,
-            payload=payload,
-        )
 
-    def _send_status_update(
-        self, severity: UpdateSeverity, event_type: str, payload: dict
-    ) -> None:
-        status_update = StatusUpdate(
-            timestamp=datetime.now(),
-            severity=severity,
-            event_type=event_type,
-            payload=payload,
-        )
-        for handler in self._status_update_handlers:
-            handler(status_update)
-
-    def __iter__(self) -> "VideoSource":
-        return self
-
-    def __next__(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
-        try:
-            return self.read_frame()
-        except EndOfStreamError:
-            raise StopIteration()
+def send_status_update(
+    severity: UpdateSeverity,
+    event_type: str,
+    payload: dict,
+    status_update_handlers: List[Callable[[StatusUpdate], None]],
+) -> None:
+    status_update = StatusUpdate(
+        timestamp=datetime.now(),
+        severity=severity,
+        event_type=event_type,
+        payload=payload,
+    )
+    for handler in status_update_handlers:
+        handler(status_update)
 
 
 def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
@@ -556,17 +661,15 @@ def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
 def purge_queue(
     queue: Queue,
     wait_on_empty: bool = True,
-    pace_monitor: Optional[sv.FPSMonitor] = None,
+    on_successful_read: Callable[[], None] = lambda: None,
 ) -> Optional[Any]:
     result = None
     if queue.empty() and wait_on_empty:
         result = queue.get()
         queue.task_done()
-        if pace_monitor is not None:
-            pace_monitor.tick()
+        on_successful_read()
     while not queue.empty():
         result = queue.get()
         queue.task_done()
-        if pace_monitor is not None:
-            pace_monitor.tick()
+        on_successful_read()
     return result
