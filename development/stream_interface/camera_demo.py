@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 from threading import Thread
 from typing import Optional
 
@@ -20,20 +21,28 @@ def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
     control_thread = Thread(target=command_thread, args=(camera,))
     control_thread.start()
     fps_monitor = sv.FPSMonitor()
-    for _, _, frame in get_video_frames_generator(stream=camera, max_fps=max_fps):
+    previous_frame_id = 0
+    for grabbing_time, frame_id, frame in get_video_frames_generator(stream=camera, max_fps=max_fps):
         fps_monitor.tick()
         fps_value = fps_monitor()
         resized_frame = letterbox_image(frame, desired_size=(1280, 720))
+        dropped_frames = frame_id - previous_frame_id - 1
         resized_frame = cv2.putText(
-            resized_frame, f"FPS: {round(fps_value, 2)}", (9, 709),
-            cv2.FONT_HERSHEY_SIMPLEX, 1.02, (0, 0, 0), 5
+            resized_frame, f"DROPPED FRAMES: {dropped_frames}", (10, 630),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
+        )
+        latency = round((datetime.now() - grabbing_time).total_seconds() * 1000, 2)
+        resized_frame = cv2.putText(
+            resized_frame, f"LATENCY: {latency} ms", (10, 670),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
         )
         resized_frame = cv2.putText(
             resized_frame, f"FPS: {round(fps_value, 2)}", (10, 710),
-            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
         )
         cv2.imshow("Stream", resized_frame)
         _ = cv2.waitKey(1)
+        previous_frame_id = frame_id
     STOP = True
     print("DONE")
     cv2.destroyAllWindows()
