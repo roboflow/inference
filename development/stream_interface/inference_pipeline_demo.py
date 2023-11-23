@@ -1,10 +1,12 @@
 import argparse
 import os
 import subprocess
+from datetime import datetime
 from functools import partial
 from threading import Thread
 from typing import Optional, Union
 
+import cv2
 import numpy as np
 import supervision as sv
 
@@ -34,15 +36,19 @@ def main(
     model_type: str,
     stream_id: int,
     max_fps: Optional[Union[int, float]],
+    enable_stats: int,
 ) -> None:
     global STOP
     watchdog = BasePipelineWatchDog()
     ffmpeg_process = open_ffmpeg_stream_process(stream_id=stream_id)
+    fps_monitor = sv.FPSMonitor()
     pipeline = InferencePipeline.init(
         api_key=os.environ["API_KEY"],
         model_id=MODELS[model_type.lower()],
         video_reference=f"{STREAM_SERVER_URL}/live{stream_id}.stream",
-        on_prediction=partial(on_prediction, ffmpeg_process=ffmpeg_process),
+        on_prediction=partial(
+            on_prediction, ffmpeg_process=ffmpeg_process, fps_monitor=fps_monitor, enable_stats=enable_stats
+        ),
         max_fps=max_fps,
         watchdog=watchdog,
     )
@@ -55,12 +61,32 @@ def main(
     ffmpeg_process.wait()
 
 
-def on_prediction(image, predictions, ffmpeg_process):
+def on_prediction(
+    frame_timestamp: datetime,
+    frame_id: int,
+    image: np.ndarray,
+    predictions: dict,
+    ffmpeg_process: subprocess.Popen,
+    fps_monitor: sv.FPSMonitor,
+    enable_stats: int,
+) -> None:
+    fps_monitor.tick()
+    fps_value = fps_monitor()
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
     image = annotator.annotate(scene=image, detections=detections, labels=labels)
-    image = letterbox_image(image, desired_size=(640, 480))[:, :, ::-1]
-    ffmpeg_process.stdin.write(image.astype(np.uint8).tobytes())
+    image = letterbox_image(image, desired_size=(640, 480))
+    if enable_stats:
+        latency = round((datetime.now() - frame_timestamp).total_seconds() * 1000, 2)
+        image = cv2.putText(
+            image, f"LATENCY: {latency} ms", (10, 400),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
+        )
+        image = cv2.putText(
+            image, f"FPS: {round(fps_value, 2)}", (10, 450),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
+        )
+    ffmpeg_process.stdin.write(image[:, :, ::-1].astype(np.uint8).tobytes())
 
 
 def open_ffmpeg_stream_process(stream_id: int) -> subprocess.Popen:
@@ -111,9 +137,17 @@ if __name__ == "__main__":
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--enable_stats",
+        help=f"Flag to decide if stats to be displayed - pass 0 to disable",
+        required=False,
+        type=int,
+        default=1,
+    )
     args = parser.parse_args()
     main(
         model_type=args.model_type,
         stream_id=args.stream_id,
         max_fps=args.max_fps,
+        enable_stats=args.enable_stats,
     )

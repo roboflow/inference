@@ -23,8 +23,11 @@ from inference.core.interfaces.camera.exceptions import (
 )
 
 DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
-DEFAULT_ADAPTIVE_MODE_TOLERANCE = int(
-    os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_TOLERANCE", "2")
+DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = float(
+    os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", "0.1")
+)
+DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE = float(
+    os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE", "5.0")
 )
 DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
     os.getenv("VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES", "10")
@@ -135,7 +138,8 @@ class VideoSource:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        adaptive_mode_tolerance: int = DEFAULT_ADAPTIVE_MODE_TOLERANCE,
+        adaptive_mode_stream_pace_tolerance: int = DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
+        adaptive_mode_reader_pace_tolerance: int = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     ):
@@ -148,7 +152,8 @@ class VideoSource:
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=buffer_filling_strategy,
             buffer_consumption_strategy=buffer_consumption_strategy,
-            adaptive_mode_tolerance=adaptive_mode_tolerance,
+            adaptive_mode_stream_pace_tolerance=adaptive_mode_stream_pace_tolerance,
+            adaptive_mode_reader_pace_tolerance=adaptive_mode_reader_pace_tolerance,
             minimum_adaptive_mode_samples=minimum_adaptive_mode_samples,
             maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
         )
@@ -160,7 +165,8 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_filling_strategy: Optional[BufferFillingStrategy],
         buffer_consumption_strategy: Optional[BufferFillingStrategy],
-        adaptive_mode_tolerance: int,
+        adaptive_mode_stream_pace_tolerance: int,
+        adaptive_mode_reader_pace_tolerance: int,
         minimum_adaptive_mode_samples: int,
         maximum_adaptive_frames_dropped_in_row: int,
     ):
@@ -172,15 +178,22 @@ class VideoSource:
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
         self._buffer_consumption_strategy = buffer_consumption_strategy
-        self._adaptive_mode_tolerance = adaptive_mode_tolerance
+        self._adaptive_mode_stream_pace_tolerance = adaptive_mode_stream_pace_tolerance
+        self._adaptive_mode_reader_pace_tolerance = adaptive_mode_reader_pace_tolerance
         self._minimum_adaptive_mode_samples = minimum_adaptive_mode_samples
         self._maximum_adaptive_frames_dropped_in_row = (
             maximum_adaptive_frames_dropped_in_row
         )
         self._adaptive_frames_dropped_in_row = 0
-        self._reader_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
-        self._stream_consumption_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
-        self._decoding_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
+        self._reader_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        self._stream_consumption_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        self._decoding_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
         self._state = StreamState.NOT_STARTED
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -442,26 +455,23 @@ class VideoSource:
             announced_stream_fps = self._source_properties.fps
         if (
             announced_stream_fps - stream_consumption_pace
-            > self._adaptive_mode_tolerance
+            > self._adaptive_mode_stream_pace_tolerance
         ):
             # cannot keep up with stream emission
-            print(
-                "announced_stream_fps - stream_consumption_pace triggered",
-                announced_stream_fps,
-                stream_consumption_pace,
-            )
             return True
         if (
-            (len(self._reader_pace_monitor.all_timestamps) < self._minimum_adaptive_mode_samples) or
-            (len(self._decoding_pace_monitor.all_timestamps) < self._minimum_adaptive_mode_samples)
+            len(self._reader_pace_monitor.all_timestamps)
+            < self._minimum_adaptive_mode_samples
+        ) or (
+            len(self._decoding_pace_monitor.all_timestamps)
+            < self._minimum_adaptive_mode_samples
         ):
             # not enough observations
             return False
         reader_pace = self._reader_pace_monitor()
         decoding_pace = self._decoding_pace_monitor()
-        if decoding_pace - reader_pace > 5:
+        if decoding_pace - reader_pace > self._adaptive_mode_reader_pace_tolerance:
             # we are too fast for the reader - time to save compute on decoding
-            print("stream_consumption_pace - reader_pace triggered", stream_consumption_pace, reader_pace)
             return True
         return False
 
@@ -543,7 +553,11 @@ def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     )
 
 
-def purge_queue(queue: Queue, wait_on_empty: bool = True, pace_monitor: Optional[sv.FPSMonitor] = None) -> Optional[Any]:
+def purge_queue(
+    queue: Queue,
+    wait_on_empty: bool = True,
+    pace_monitor: Optional[sv.FPSMonitor] = None,
+) -> Optional[Any]:
     result = None
     if queue.empty() and wait_on_empty:
         result = queue.get()

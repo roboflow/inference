@@ -144,7 +144,7 @@ class InferencePipeline:
                 break
             timestamp, frame_id, frame, predictions = inference_results
             try:
-                self._on_prediction(frame, predictions)
+                self._on_prediction(timestamp, frame_id, frame, predictions)
             except Exception as error:
                 self._watchdog.on_error(context="predictions_dispatcher", error=error)
                 logging.warning(f"Error in results dispatching - {error}")
