@@ -589,3 +589,28 @@ def test_decode_video_frame_to_buffer_when_frame_could_not_be_retrieved() -> Non
     assert result is False
     assert abs(fps_monitor()) < 1e-5
     assert buffer.empty() is True
+
+
+def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
+    # given
+    video = MagicMock()
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    fps_monitor = sv.FPSMonitor()
+    fps_monitor.tick()
+    frame_timestamp = datetime.now()
+    buffer = Queue()
+
+    # when
+    result = decode_video_frame_to_buffer(
+        frame_timestamp=frame_timestamp,
+        frame_id=1,
+        video=video,
+        buffer=buffer,
+        decoding_pace_monitor=fps_monitor,
+    )
+
+    # then
+    assert result is True
+    assert fps_monitor() > 0
+    assert buffer.get_nowait() == (frame_timestamp, 1, image)
