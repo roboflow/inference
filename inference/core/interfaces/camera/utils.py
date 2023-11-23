@@ -16,24 +16,24 @@ class FPSLimiterStrategy(Enum):
 
 
 def get_video_frames_generator(
-    stream: Union[VideoSource, str, int],
+    video: Union[VideoSource, str, int],
     max_fps: Optional[float] = None,
     limiter_strategy: Optional[FPSLimiterStrategy] = None,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
-    if not issubclass(type(stream), VideoSource):
-        stream = VideoSource.init(
-            video_reference=stream,
+    if not issubclass(type(video), VideoSource):
+        video = VideoSource.init(
+            video_reference=video,
         )
-        stream.start()
+        video.start()
     if max_fps is None:
-        yield from stream
+        yield from video
         return None
     limiter_strategy = resolve_limiter_strategy(
         explicitly_defined_strategy=limiter_strategy,
-        source_properties=stream.describe_source().source_properties,
+        source_properties=video.describe_source().source_properties,
     )
     yield from limit_frame_rate(
-        frames_generator=stream, max_fps=max_fps, strategy=limiter_strategy
+        frames_generator=video, max_fps=max_fps, strategy=limiter_strategy
     )
 
 

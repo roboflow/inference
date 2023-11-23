@@ -23,7 +23,7 @@ def main(stream_uri: str, max_fps: Optional[int] = None, processing_time: float 
     control_thread.start()
     fps_monitor = sv.FPSMonitor()
     previous_frame_id = 0
-    for grabbing_time, frame_id, frame in get_video_frames_generator(stream=camera, max_fps=max_fps):
+    for grabbing_time, frame_id, frame in get_video_frames_generator(video=camera, max_fps=max_fps):
         fps_monitor.tick()
         fps_value = fps_monitor()
         resized_frame = letterbox_image(frame, desired_size=(1280, 720))

@@ -222,7 +222,7 @@ def test_get_video_frames_generator_when_fps_modulation_disabled(
 
     # when
 
-    result = list(get_video_frames_generator(stream="source-ref"))
+    result = list(get_video_frames_generator(video="source-ref"))
 
     # then
     assert dummy_source.start_called is True
@@ -245,7 +245,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_video_fi
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream="source-ref",
+        video="source-ref",
         max_fps=50,
     ):
         results_timestamp.append(time.monotonic())
@@ -274,7 +274,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream="source-ref",
+        video="source-ref",
         max_fps=50,
     ):
         results_timestamp.append(time.monotonic())
@@ -298,7 +298,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_slow_str
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream="source-ref",
+        video="source-ref",
         max_fps=200,
     ):
         results_timestamp.append(time.monotonic())
@@ -317,7 +317,7 @@ def test_get_video_frames_generator_against_real_video_without_rate_limit(
     local_video_path: str,
 ) -> None:
     # when
-    results = list(get_video_frames_generator(stream=local_video_path))
+    results = list(get_video_frames_generator(video=local_video_path))
 
     # then
     assert len(results) == 431
@@ -331,7 +331,7 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream=local_video_path,
+        video=local_video_path,
         max_fps=200,
     ):
         results_timestamp.append(time.monotonic())
@@ -351,7 +351,7 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_drop_
     # when
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
-        stream=local_video_path, max_fps=200, limiter_strategy=FPSLimiterStrategy.DROP
+        video=local_video_path, max_fps=200, limiter_strategy=FPSLimiterStrategy.DROP
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)

@@ -462,7 +462,7 @@ class VideoConsumer:
             },
             status_update_handlers=self._status_update_handlers,
         )
-        self._consume_stream_frame(
+        return self._consume_stream_frame(
             video=video,
             declared_source_fps=declared_source_fps,
             frame_timestamp=frame_timestamp,
