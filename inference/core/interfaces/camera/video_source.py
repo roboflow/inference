@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -20,7 +21,7 @@ from inference.core.interfaces.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 
-DEFAULT_BUFFER_SIZE = 64
+DEFAULT_BUFFER_SIZE = int(os.getenv("DECODING_BUFFER_SIZE", "64"))
 STATE_UPDATE_EVENT = "STREAM_STATE_UPDATE"
 STREAM_ERROR_EVENT = "STREAM_ERROR"
 FRAME_CAPTURED_EVENT = "FRAME_CAPTURED"
