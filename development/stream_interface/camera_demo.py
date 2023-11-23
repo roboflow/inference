@@ -8,7 +8,7 @@ import supervision as sv
 
 from inference.core.interfaces.camera.entities import StatusUpdate
 from inference.core.interfaces.camera.utils import get_video_frames_generator
-from inference.core.interfaces.camera.video_source import VideoSource, BufferFillingStrategy
+from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.utils.preprocess import letterbox_image
 
 STOP = False
@@ -16,7 +16,7 @@ STOP = False
 
 def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
     global STOP
-    camera = VideoSource.init(video_reference=stream_uri)
+    camera = VideoSource.init(video_reference=stream_uri, status_update_handlers=[])
     camera.start()
     control_thread = Thread(target=command_thread, args=(camera,))
     control_thread.start()

@@ -26,7 +26,12 @@ DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
 DEFAULT_ADAPTIVE_MODE_TOLERANCE = int(
     os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_TOLERANCE", "2")
 )
-
+DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
+    os.getenv("VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES", "10")
+)
+DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
+    os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
+)
 
 STATE_UPDATE_EVENT = "STREAM_STATE_UPDATE"
 STREAM_ERROR_EVENT = "STREAM_ERROR"
@@ -131,6 +136,8 @@ class VideoSource:
         buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         adaptive_mode_tolerance: int = DEFAULT_ADAPTIVE_MODE_TOLERANCE,
+        minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+        maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     ):
         frames_buffer = Queue(maxsize=buffer_size)
         if status_update_handlers is None:
@@ -142,6 +149,8 @@ class VideoSource:
             buffer_filling_strategy=buffer_filling_strategy,
             buffer_consumption_strategy=buffer_consumption_strategy,
             adaptive_mode_tolerance=adaptive_mode_tolerance,
+            minimum_adaptive_mode_samples=minimum_adaptive_mode_samples,
+            maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
         )
 
     def __init__(
@@ -152,6 +161,8 @@ class VideoSource:
         buffer_filling_strategy: Optional[BufferFillingStrategy],
         buffer_consumption_strategy: Optional[BufferFillingStrategy],
         adaptive_mode_tolerance: int,
+        minimum_adaptive_mode_samples: int,
+        maximum_adaptive_frames_dropped_in_row: int,
     ):
         self._stream_reference = stream_reference
         self._stream: Optional[cv2.VideoCapture] = None
@@ -162,6 +173,11 @@ class VideoSource:
         self._frame_counter = 0
         self._buffer_consumption_strategy = buffer_consumption_strategy
         self._adaptive_mode_tolerance = adaptive_mode_tolerance
+        self._minimum_adaptive_mode_samples = minimum_adaptive_mode_samples
+        self._maximum_adaptive_frames_dropped_in_row = (
+            maximum_adaptive_frames_dropped_in_row
+        )
+        self._adaptive_frames_dropped_in_row = 0
         self._reader_pace_monitor = sv.FPSMonitor()
         self._stream_consumption_pace_monitor = sv.FPSMonitor()
         self._state = StreamState.NOT_STARTED
@@ -275,6 +291,7 @@ class VideoSource:
             self._set_stream_mode_buffering_strategies()
         self._reader_pace_monitor.reset()
         self._stream_consumption_pace_monitor.reset()
+        self._adaptive_frames_dropped_in_row = 0
         self._playback_allowed.set()
         self._stream_consumption_thread = Thread(target=self._consume_stream)
         self._stream_consumption_thread.start()
@@ -371,6 +388,7 @@ class VideoSource:
             )
             return True
         if self._frame_should_be_adaptively_dropped():
+            self._adaptive_frames_dropped_in_row += 1
             self._send_status_update(
                 severity=UpdateSeverity.DEBUG,
                 event_type=FRAME_DROPPED_EVENT,
@@ -381,6 +399,7 @@ class VideoSource:
                 },
             )
             return True
+        self._adaptive_frames_dropped_in_row = 0
         if (
             not self._frames_buffer.full()
             or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
@@ -404,7 +423,15 @@ class VideoSource:
     def _frame_should_be_adaptively_dropped(self) -> bool:
         if self._buffer_filling_strategy not in ADAPTIVE_STRATEGIES:
             return False
-        if self._stream_consumption_pace_monitor.all_timestamps < 2:
+        if (
+            self._adaptive_frames_dropped_in_row
+            >= self._maximum_adaptive_frames_dropped_in_row
+        ):
+            return False
+        if (
+            len(self._stream_consumption_pace_monitor.all_timestamps)
+            < self._minimum_adaptive_mode_samples
+        ):
             # not enough observations
             return False
         stream_consumption_pace = self._stream_consumption_pace_monitor()
@@ -416,14 +443,23 @@ class VideoSource:
             > self._adaptive_mode_tolerance
         ):
             # cannot keep up with stream emission
+            print(
+                "announced_stream_fps - stream_consumption_pace triggered",
+                announced_stream_fps,
+                stream_consumption_pace,
+            )
             return True
-        if self._reader_pace_monitor.all_timestamps < 2:
+        if (
+            len(self._reader_pace_monitor.all_timestamps)
+            < self._minimum_adaptive_mode_samples
+        ):
             # not enough observations
             return False
         reader_pace = self._reader_pace_monitor()
-        if stream_consumption_pace - reader_pace > self._adaptive_mode_tolerance:
-            # we are too fast for the reader - time to save compute on decoding
-            return True
+        # if stream_consumption_pace - reader_pace > self._adaptive_mode_tolerance:
+        #     # we are too fast for the reader - time to save compute on decoding
+        #     print("stream_consumption_pace - reader_pace triggered", stream_consumption_pace, reader_pace)
+        #     return True
         return False
 
     def _process_stream_frame_dropping_oldest(self, frame_timestamp: datetime) -> bool:
