@@ -1,4 +1,5 @@
 import argparse
+import time
 from datetime import datetime
 from threading import Thread
 from typing import Optional
@@ -43,6 +44,7 @@ def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
         cv2.imshow("Stream", resized_frame)
         _ = cv2.waitKey(1)
         previous_frame_id = frame_id
+        time.sleep(0.05)
     STOP = True
     print("DONE")
     cv2.destroyAllWindows()

@@ -178,8 +178,9 @@ class VideoSource:
             maximum_adaptive_frames_dropped_in_row
         )
         self._adaptive_frames_dropped_in_row = 0
-        self._reader_pace_monitor = sv.FPSMonitor()
-        self._stream_consumption_pace_monitor = sv.FPSMonitor()
+        self._reader_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
+        self._stream_consumption_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
+        self._decoding_pace_monitor = sv.FPSMonitor(sample_size=10*minimum_adaptive_mode_samples)
         self._state = StreamState.NOT_STARTED
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -239,12 +240,12 @@ class VideoSource:
         return not self._frames_buffer.empty()
 
     def read_frame(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
-        self._reader_pace_monitor.tick()
         if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
             result = purge_queue(queue=self._frames_buffer)
         else:
             result = self._frames_buffer.get()
             self._frames_buffer.task_done()
+            self._reader_pace_monitor.tick()
         if result is None:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
@@ -291,6 +292,7 @@ class VideoSource:
             self._set_stream_mode_buffering_strategies()
         self._reader_pace_monitor.reset()
         self._stream_consumption_pace_monitor.reset()
+        self._decoding_pace_monitor.reset()
         self._adaptive_frames_dropped_in_row = 0
         self._playback_allowed.set()
         self._stream_consumption_thread = Thread(target=self._consume_stream)
@@ -450,16 +452,17 @@ class VideoSource:
             )
             return True
         if (
-            len(self._reader_pace_monitor.all_timestamps)
-            < self._minimum_adaptive_mode_samples
+            (len(self._reader_pace_monitor.all_timestamps) < self._minimum_adaptive_mode_samples) or
+            (len(self._decoding_pace_monitor.all_timestamps) < self._minimum_adaptive_mode_samples)
         ):
             # not enough observations
             return False
         reader_pace = self._reader_pace_monitor()
-        # if stream_consumption_pace - reader_pace > self._adaptive_mode_tolerance:
-        #     # we are too fast for the reader - time to save compute on decoding
-        #     print("stream_consumption_pace - reader_pace triggered", stream_consumption_pace, reader_pace)
-        #     return True
+        decoding_pace = self._decoding_pace_monitor()
+        if decoding_pace - reader_pace > 5:
+            # we are too fast for the reader - time to save compute on decoding
+            print("stream_consumption_pace - reader_pace triggered", stream_consumption_pace, reader_pace)
+            return True
         return False
 
     def _process_stream_frame_dropping_oldest(self, frame_timestamp: datetime) -> bool:
@@ -486,6 +489,7 @@ class VideoSource:
 
     def _process_stream_frame(self, frame_timestamp: datetime) -> bool:
         success, frame = self._stream.retrieve()
+        self._decoding_pace_monitor.tick()
         if not success:
             return False
         self._frames_buffer.put((frame_timestamp, self._frame_counter, frame))
@@ -539,12 +543,16 @@ def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     )
 
 
-def purge_queue(queue: Queue, wait_on_empty: bool = True) -> Optional[Any]:
+def purge_queue(queue: Queue, wait_on_empty: bool = True, pace_monitor: Optional[sv.FPSMonitor] = None) -> Optional[Any]:
     result = None
     if queue.empty() and wait_on_empty:
         result = queue.get()
         queue.task_done()
+        if pace_monitor is not None:
+            pace_monitor.tick()
     while not queue.empty():
         result = queue.get()
         queue.task_done()
+        if pace_monitor is not None:
+            pace_monitor.tick()
     return result
