@@ -89,6 +89,10 @@ ADAPTIVE_STRATEGIES = {
     BufferFillingStrategy.ADAPTIVE_DROP_LATEST,
     BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
 }
+DROP_OLDEST_STRATEGIES = {
+    BufferFillingStrategy.DROP_OLDEST,
+    BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+}
 
 
 class BufferConsumptionStrategy(Enum):
@@ -147,7 +151,7 @@ class VideoSource:
         frames_buffer = Queue(maxsize=buffer_size)
         if status_update_handlers is None:
             status_update_handlers = []
-        video_consumer = VideoConsumer(
+        video_consumer = VideoConsumer.init(
             buffer_filling_strategy=buffer_filling_strategy,
             adaptive_mode_stream_pace_tolerance=adaptive_mode_stream_pace_tolerance,
             adaptive_mode_reader_pace_tolerance=adaptive_mode_reader_pace_tolerance,
@@ -391,6 +395,37 @@ class VideoSource:
 
 
 class VideoConsumer:
+    @classmethod
+    def init(
+        cls,
+        buffer_filling_strategy: Optional[BufferFillingStrategy],
+        adaptive_mode_stream_pace_tolerance: float,
+        adaptive_mode_reader_pace_tolerance: float,
+        minimum_adaptive_mode_samples: int,
+        maximum_adaptive_frames_dropped_in_row: int,
+        status_update_handlers: List[Callable[[StatusUpdate], None]],
+    ) -> "VideoConsumer":
+        reader_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        stream_consumption_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        decoding_pace_monitor = sv.FPSMonitor(
+            sample_size=10 * minimum_adaptive_mode_samples
+        )
+        return cls(
+            buffer_filling_strategy=buffer_filling_strategy,
+            adaptive_mode_stream_pace_tolerance=adaptive_mode_stream_pace_tolerance,
+            adaptive_mode_reader_pace_tolerance=adaptive_mode_reader_pace_tolerance,
+            minimum_adaptive_mode_samples=minimum_adaptive_mode_samples,
+            maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
+            status_update_handlers=status_update_handlers,
+            reader_pace_monitor=reader_pace_monitor,
+            stream_consumption_pace_monitor=stream_consumption_pace_monitor,
+            decoding_pace_monitor=decoding_pace_monitor,
+        )
+
     def __init__(
         self,
         buffer_filling_strategy: Optional[BufferFillingStrategy],
@@ -399,6 +434,9 @@ class VideoConsumer:
         minimum_adaptive_mode_samples: int,
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
+        reader_pace_monitor: sv.FPSMonitor,
+        stream_consumption_pace_monitor: sv.FPSMonitor,
+        decoding_pace_monitor: sv.FPSMonitor,
     ):
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
@@ -409,15 +447,9 @@ class VideoConsumer:
             maximum_adaptive_frames_dropped_in_row
         )
         self._adaptive_frames_dropped_in_row = 0
-        self._reader_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
-        self._stream_consumption_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
-        self._decoding_pace_monitor = sv.FPSMonitor(
-            sample_size=10 * minimum_adaptive_mode_samples
-        )
+        self._reader_pace_monitor = reader_pace_monitor
+        self._stream_consumption_pace_monitor = stream_consumption_pace_monitor
+        self._decoding_pace_monitor = decoding_pace_monitor
         self._status_update_handlers = status_update_handlers
 
     @property
@@ -516,7 +548,7 @@ class VideoConsumer:
             return self._decode_video_frame_to_buffer(
                 frame_timestamp=frame_timestamp, video=video, buffer=buffer
             )
-        if self._buffer_filling_strategy is BufferFillingStrategy.DROP_OLDEST:
+        if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
                 frame_timestamp=frame_timestamp,
                 video=video,
@@ -542,7 +574,7 @@ class VideoConsumer:
             return False
         if (
             len(self._stream_consumption_pace_monitor.all_timestamps)
-            < self._minimum_adaptive_mode_samples
+            <= self._minimum_adaptive_mode_samples
         ):
             # not enough observations
             return False
@@ -558,10 +590,10 @@ class VideoConsumer:
             return True
         if (
             len(self._reader_pace_monitor.all_timestamps)
-            < self._minimum_adaptive_mode_samples
+            <= self._minimum_adaptive_mode_samples
         ) or (
             len(self._decoding_pace_monitor.all_timestamps)
-            < self._minimum_adaptive_mode_samples
+            <= self._minimum_adaptive_mode_samples
         ):
             # not enough observations
             return False

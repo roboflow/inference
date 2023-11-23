@@ -618,7 +618,7 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
 
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -647,7 +647,7 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
 
 def test_stream_consumption_when_buffering_not_allowed() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -676,7 +676,7 @@ def test_stream_consumption_when_buffering_not_allowed() -> None:
 
 def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_failed() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -706,7 +706,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
 
 def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_succeed() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=None,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -742,7 +742,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
 
 def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=BufferFillingStrategy.DROP_LATEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -774,7 +774,7 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
 
 def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -> None:
     # given
-    consumer = VideoConsumer(
+    consumer = VideoConsumer.init(
         buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
         adaptive_mode_stream_pace_tolerance=0.1,
         adaptive_mode_reader_pace_tolerance=5.0,
@@ -807,6 +807,165 @@ def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -
     assert issubclass(type(buffered_result[0]), datetime)
     assert buffered_result[1] == 1
     assert buffered_result[2] is image
+    assert buffer.empty() is True
+
+
+def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due_to_not_enough_observations() -> None:
+    # given
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=5.0,
+        minimum_adaptive_mode_samples=10,
+        maximum_adaptive_frames_dropped_in_row=16,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    buffer = Queue(maxsize=2)
+    buffer.put((datetime.now(), -2, image))
+    buffer.put((datetime.now(), -1, image))
+
+    # when
+    consumer.reset(source_properties=source_properties)
+    result = consumer.consume_frame(
+        video=video,
+        declared_source_fps=source_properties.fps,
+        buffer=buffer,
+        frames_buffering_allowed=True
+    )
+
+    # then
+    assert result is True
+    assert buffer.get_nowait()[1] == -1
+    buffered_result = buffer.get_nowait()
+    assert issubclass(type(buffered_result[0]), datetime)
+    assert buffered_result[1] == 1
+    assert buffered_result[2] is image
+    assert buffer.empty() is True
+
+
+@pytest.mark.slow
+def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_decoding_after_series_of_preventions() -> None:
+    # given
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=0.1,
+        adaptive_mode_reader_pace_tolerance=200.0,
+        minimum_adaptive_mode_samples=2,
+        maximum_adaptive_frames_dropped_in_row=4,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=200)
+    buffer = Queue(maxsize=2)
+    buffer.put((datetime.now(), -2, image))
+    buffer.put((datetime.now(), -1, image))
+
+    # when
+    results = []
+    buffer_content = []
+    consumer.reset(source_properties=source_properties)
+    for _ in range(2):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=source_properties.fps,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+        time.sleep(0.01)
+    buffer_content.append(buffer.get_nowait())
+    consumer.notify_frame_consumed()
+    buffer_content.append(buffer.get_nowait())
+    consumer.notify_frame_consumed()
+    for _ in range(6):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=source_properties.fps,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+        time.sleep(0.01)
+    buffer_content.append(buffer.get_nowait())
+    consumer.notify_frame_consumed()
+
+    # then
+    # First two frames will cause decoding, then 4 will be dropped due to not
+    # keeping up to 200fps stream (we emit at 100fps), next will be submitted to buffer,
+    # but since we are still lagging, the last frame will be rejected
+    assert results == [True] * 8
+    assert len(buffer_content) == 3
+    assert buffer_content[0][1] == 1
+    assert buffer_content[1][1] == 2
+    assert buffer_content[2][1] == 7
+    assert buffer.empty() is True
+
+
+@pytest.mark.slow
+def test_stream_consumption_when_adaptive_strategy_is_disabled_when_announced_fps_is_not_given_and_consumer_actively_read() -> None:
+    # given
+    consumer = VideoConsumer.init(
+        buffer_filling_strategy=BufferFillingStrategy.ADAPTIVE_DROP_OLDEST,
+        adaptive_mode_stream_pace_tolerance=5.0,
+        adaptive_mode_reader_pace_tolerance=200.0,
+        minimum_adaptive_mode_samples=2,
+        maximum_adaptive_frames_dropped_in_row=4,
+        status_update_handlers=[],
+    )
+    video = MagicMock()
+    video.grab.return_value = True
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    video.retrieve.return_value = (True, image)
+    source_properties = assembly_dummy_source_properties(is_file=True, fps=200)
+    buffer = Queue(maxsize=2)
+    buffer.put((datetime.now(), -2, image))
+    buffer.put((datetime.now(), -1, image))
+
+    # when
+    results = []
+    buffer_content = []
+    consumer.reset(source_properties=source_properties)
+    for _ in range(2):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=None,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+        time.sleep(0.01)
+    buffer_content.append(buffer.get_nowait())
+    consumer.notify_frame_consumed()
+    buffer_content.append(buffer.get_nowait())
+    consumer.notify_frame_consumed()
+    for _ in range(2):
+        result = consumer.consume_frame(
+            video=video,
+            declared_source_fps=None,
+            buffer=buffer,
+            frames_buffering_allowed=True
+        )
+        results.append(result)
+        buffer_content.append(buffer.get_nowait())
+        consumer.notify_frame_consumed()
+        time.sleep(0.01)
+
+    # then
+    # As stream FPS is not announced - we cannot reject any frame
+    assert results == [True] * 4
+    assert len(buffer_content) == 4
+    assert buffer_content[0][1] == 1
+    assert buffer_content[1][1] == 2
+    assert buffer_content[2][1] == 3
+    assert buffer_content[3][1] == 4
     assert buffer.empty() is True
 
 
