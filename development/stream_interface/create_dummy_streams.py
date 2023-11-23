@@ -4,7 +4,6 @@ import subprocess
 import tempfile
 from glob import glob
 from threading import Thread
-
 import yaml
 
 
@@ -13,7 +12,8 @@ BASE_STREAM_URL = "rtsp://localhost:8554/live"
 
 
 def main(video_dir: str, n: int) -> None:
-    video_paths = glob(os.path.join(video_dir, "*.mp4"))[:n]
+    video_paths = glob(os.path.join(video_dir, "*.mp4")) + glob(os.path.join(video_dir, "*.webm"))
+    video_paths = video_paths[:n]
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = os.path.join(tmp_dir, "rtsp-simple-server.yml")

@@ -3,10 +3,12 @@ from threading import Thread
 from typing import Optional
 
 import cv2
+import supervision as sv
 
 from inference.core.interfaces.camera.entities import StatusUpdate
 from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import VideoSource
+from inference.core.utils.preprocess import letterbox_image
 
 STOP = False
 
@@ -17,8 +19,20 @@ def main(stream_uri: str, max_fps: Optional[int] = None) -> None:
     camera.start()
     control_thread = Thread(target=command_thread, args=(camera,))
     control_thread.start()
+    fps_monitor = sv.FPSMonitor()
     for _, _, frame in get_video_frames_generator(stream=camera, max_fps=max_fps):
-        cv2.imshow("Stream", frame)
+        fps_monitor.tick()
+        fps_value = fps_monitor()
+        resized_frame = letterbox_image(frame, desired_size=(1280, 720))
+        resized_frame = cv2.putText(
+            resized_frame, f"FPS: {round(fps_value, 2)}", (9, 709),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.02, (0, 0, 0), 5
+        )
+        resized_frame = cv2.putText(
+            resized_frame, f"FPS: {round(fps_value, 2)}", (10, 710),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2
+        )
+        cv2.imshow("Stream", resized_frame)
         _ = cv2.waitKey(1)
     STOP = True
     print("DONE")
