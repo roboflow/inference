@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
+from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
@@ -20,7 +21,7 @@ from inference.core.interfaces.camera.video_source import (
     StreamState,
     VideoSource,
     discover_source_properties,
-    purge_queue, drop_single_frame_from_buffer,
+    purge_queue, drop_single_frame_from_buffer, decode_video_frame_to_buffer,
 )
 
 
@@ -565,3 +566,26 @@ def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
     }
     assert updates[0].severity is UpdateSeverity.DEBUG
     assert updates[0].event_type == "FRAME_DROPPED"
+
+
+def test_decode_video_frame_to_buffer_when_frame_could_not_be_retrieved() -> None:
+    # given
+    video = MagicMock()
+    video.retrieve.return_value = (False, None)
+    fps_monitor = sv.FPSMonitor()
+    fps_monitor.tick()
+    buffer = Queue()
+
+    # when
+    result = decode_video_frame_to_buffer(
+        frame_timestamp=datetime.now(),
+        frame_id=1,
+        video=video,
+        buffer=buffer,
+        decoding_pace_monitor=fps_monitor,
+    )
+
+    # then
+    assert result is False
+    assert abs(fps_monitor()) < 1e-5
+    assert buffer.empty() is True

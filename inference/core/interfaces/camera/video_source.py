@@ -513,7 +513,7 @@ class VideoConsumer:
             not buffer.full()
             or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
         ):
-            return self._decode_stream_frame(
+            return self._decode_video_frame_to_buffer(
                 frame_timestamp=frame_timestamp, video=video, buffer=buffer
             )
         if self._buffer_filling_strategy is BufferFillingStrategy.DROP_OLDEST:
@@ -583,11 +583,15 @@ class VideoConsumer:
             cause="DROP_OLDEST strategy",
             status_update_handlers=self._status_update_handlers,
         )
-        return self._decode_stream_frame(
-            frame_timestamp=frame_timestamp, video=video, buffer=buffer
+        return decode_video_frame_to_buffer(
+            frame_timestamp=frame_timestamp,
+            frame_id=self._frame_counter,
+            video=video,
+            buffer=buffer,
+            decoding_pace_monitor=self._decoding_pace_monitor
         )
 
-    def _decode_stream_frame(
+    def _decode_video_frame_to_buffer(
         self,
         frame_timestamp: datetime,
         video: cv2.VideoCapture,
@@ -599,6 +603,37 @@ class VideoConsumer:
             return False
         buffer.put((frame_timestamp, self._frame_counter, frame))
         return True
+
+
+def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
+    width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = stream.get(cv2.CAP_PROP_FPS)
+    total_frames = int(stream.get(cv2.CAP_PROP_FRAME_COUNT))
+    return SourceProperties(
+        width=width,
+        height=height,
+        total_frames=total_frames,
+        is_file=total_frames > 0,
+        fps=fps,
+    )
+
+
+def purge_queue(
+    queue: Queue,
+    wait_on_empty: bool = True,
+    on_successful_read: Callable[[], None] = lambda: None,
+) -> Optional[Any]:
+    result = None
+    if queue.empty() and wait_on_empty:
+        result = queue.get()
+        queue.task_done()
+        on_successful_read()
+    while not queue.empty():
+        result = queue.get()
+        queue.task_done()
+        on_successful_read()
+    return result
 
 
 def drop_single_frame_from_buffer(
@@ -658,32 +693,19 @@ def send_status_update(
         handler(status_update)
 
 
-def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
-    width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = stream.get(cv2.CAP_PROP_FPS)
-    total_frames = int(stream.get(cv2.CAP_PROP_FRAME_COUNT))
-    return SourceProperties(
-        width=width,
-        height=height,
-        total_frames=total_frames,
-        is_file=total_frames > 0,
-        fps=fps,
-    )
+def decode_video_frame_to_buffer(
+    frame_timestamp: datetime,
+    frame_id: int,
+    video: cv2.VideoCapture,
+    buffer: Queue,
+    decoding_pace_monitor: sv.FPSMonitor,
+) -> bool:
+    success, frame = video.retrieve()
+    if not success:
+        return False
+    decoding_pace_monitor.tick()
+    buffer.put((frame_timestamp, frame_id, frame))
+    return True
 
 
-def purge_queue(
-    queue: Queue,
-    wait_on_empty: bool = True,
-    on_successful_read: Callable[[], None] = lambda: None,
-) -> Optional[Any]:
-    result = None
-    if queue.empty() and wait_on_empty:
-        result = queue.get()
-        queue.task_done()
-        on_successful_read()
-    while not queue.empty():
-        result = queue.get()
-        queue.task_done()
-        on_successful_read()
-    return result
+
