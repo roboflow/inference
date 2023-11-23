@@ -12,6 +12,7 @@ def main(video: Union[str, int], display: int, each_nth: int) -> None:
     fps_monitor = sv.FPSMonitor()
     frames_counter = 0
     while stream.isOpened():
+        print(frames_counter, frames_counter % each_nth)
         status = stream.grab()
         fps_monitor.tick()
         fps_value = fps_monitor()
@@ -19,18 +20,18 @@ def main(video: Union[str, int], display: int, each_nth: int) -> None:
         if not status:
             print("EOS")
             break
-        if display > 0:
-            if frames_counter % each_nth != 0:
-                continue
-            status, image = stream.retrieve()
-            if not status:
-                print("EOS")
-                break
-            image = letterbox_image(image=image, desired_size=(1280, 720))
-            cv2.imshow("stream", image)
-            key = cv2.waitKey(1)
-            if key == ord("q"):
-                break
+        if frames_counter % each_nth != 0 and display > 0:
+            frames_counter += 1
+            continue
+        status, image = stream.retrieve()
+        if not status:
+            print("EOS")
+            break
+        image = letterbox_image(image=image, desired_size=(1280, 720))
+        cv2.imshow("stream", image)
+        key = cv2.waitKey(1)
+        if key == ord("q"):
+            break
         frames_counter += 1
     print("DONE")
 
