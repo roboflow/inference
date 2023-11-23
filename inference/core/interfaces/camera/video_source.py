@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Protocol, Tuple, Union
 
 import cv2
 import numpy as np
@@ -91,8 +91,13 @@ class SourceMetadata:
     buffer_consumption_strategy: Optional[BufferConsumptionStrategy]
 
 
+class VideoSourceMethod(Protocol):
+    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None:
+        ...
+
+
 def lock_state_transition(
-    method: Callable[["VideoSource", ...], None]
+    method: VideoSourceMethod,
 ) -> Callable[["VideoSource"], None]:
     def locked_executor(video_source: "VideoSource", *args, **kwargs) -> None:
         with video_source._state_change_lock:
