@@ -1,43 +1,22 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Deque, Iterable, List, Optional, TypeVar
+from typing import Any, Deque, Iterable, List, Optional, TypeVar
 
 import supervision as sv
 
 from inference.core.interfaces.camera.entities import StatusUpdate, UpdateSeverity
-from inference.core.interfaces.camera.video_source import SourceMetadata, VideoSource
+from inference.core.interfaces.camera.video_source import VideoSource
+from inference.core.interfaces.stream.entities import (
+    LatencyMonitorReport,
+    ModelActivityEvent,
+    PipelineStateReport,
+)
 
 T = TypeVar("T")
 
 MAX_LATENCY_CONTEXT = 64
 MAX_UPDATES_CONTEXT = 512
-
-
-@dataclass(frozen=True)
-class ModelActivityEvent:
-    frame_decoding_timestamp: datetime
-    event_timestamp: datetime
-    frame_id: int
-
-
-@dataclass(frozen=True)
-class LatencyMonitorReport:
-    frame_decoding_latency: Optional[float]
-    pre_processing_latency: Optional[float]
-    inference_latency: Optional[float]
-    post_processing_latency: Optional[float]
-    model_latency: Optional[float]
-    e2e_latency: Optional[float]
-
-
-@dataclass(frozen=True)
-class PipelineStateReport:
-    video_source_status_updates: List[StatusUpdate]
-    latency_report: LatencyMonitorReport
-    inference_throughput: float
-    source_metadata: Optional[SourceMetadata]
 
 
 class PipelineWatchDog(ABC):
@@ -158,83 +137,55 @@ class LatencyMonitor:
         self._generate_report()
 
     def summarise_reports(self) -> LatencyMonitorReport:
-        frame_decoding_latencies = [
-            r.frame_decoding_latency
-            for r in self._reports
-            if r.frame_decoding_latency is not None
-        ]
-        pre_processing_latencies = [
-            r.pre_processing_latency
-            for r in self._reports
-            if r.pre_processing_latency is not None
-        ]
-        inference_latencies = [
-            r.inference_latency
-            for r in self._reports
-            if r.inference_latency is not None
-        ]
-        pos_processing_latencies = [
-            r.post_processing_latency
-            for r in self._reports
-            if r.post_processing_latency is not None
-        ]
-        model_latencies = [
-            r.model_latency for r in self._reports if r.model_latency is not None
-        ]
-        e2e_latencies = [
-            r.e2e_latency for r in self._reports if r.e2e_latency is not None
-        ]
+        avg_frame_decoding_latency = average_property_values(
+            examined_objects=self._reports, property_name="frame_decoding_latency"
+        )
+        avg_pre_processing_latency = average_property_values(
+            examined_objects=self._reports, property_name="pre_processing_latency"
+        )
+        avg_inference_latency = average_property_values(
+            examined_objects=self._reports, property_name="inference_latency"
+        )
+        avg_pos_processing_latency = average_property_values(
+            examined_objects=self._reports, property_name="post_processing_latency"
+        )
+        avg_model_latency = average_property_values(
+            examined_objects=self._reports, property_name="model_latency"
+        )
+        avg_e2e_latency = average_property_values(
+            examined_objects=self._reports, property_name="e2e_latency"
+        )
         return LatencyMonitorReport(
-            frame_decoding_latency=safe_average(values=frame_decoding_latencies),
-            pre_processing_latency=safe_average(values=pre_processing_latencies),
-            inference_latency=safe_average(values=inference_latencies),
-            post_processing_latency=safe_average(values=pos_processing_latencies),
-            model_latency=safe_average(values=model_latencies),
-            e2e_latency=safe_average(values=e2e_latencies),
+            frame_decoding_latency=avg_frame_decoding_latency,
+            pre_processing_latency=avg_pre_processing_latency,
+            inference_latency=avg_inference_latency,
+            post_processing_latency=avg_pos_processing_latency,
+            model_latency=avg_model_latency,
+            e2e_latency=avg_e2e_latency,
         )
 
     def _generate_report(self) -> None:
-        (
-            frame_decoding_latency,
-            pre_processing_latency,
-            inference_latency,
-            post_processing_latency,
-            model_latency,
-            e2e_latency,
-        ) = (None, None, None, None, None, None)
+        frame_decoding_latency = None
         if self._preprocessing_start_event is not None:
             frame_decoding_latency = (
                 self._preprocessing_start_event.event_timestamp
                 - self._preprocessing_start_event.frame_decoding_timestamp
             ).total_seconds()
-        if events_compatible(
-            [self._preprocessing_start_event, self._inference_start_event]
-        ):
-            pre_processing_latency = (
-                self._inference_start_event.event_timestamp
-                - self._preprocessing_start_event.event_timestamp
-            ).total_seconds()
-        if events_compatible(
-            [self._inference_start_event, self._postprocessing_start_event]
-        ):
-            inference_latency = (
-                self._postprocessing_start_event.event_timestamp
-                - self._inference_start_event.event_timestamp
-            ).total_seconds()
-        if events_compatible(
-            [self._prediction_ready_event, self._postprocessing_start_event]
-        ):
-            post_processing_latency = (
-                self._prediction_ready_event.event_timestamp
-                - self._postprocessing_start_event.event_timestamp
-            ).total_seconds()
-        if events_compatible(
-            [self._preprocessing_start_event, self._prediction_ready_event]
-        ):
-            model_latency = (
-                self._prediction_ready_event.event_timestamp
-                - self._preprocessing_start_event.event_timestamp
-            ).total_seconds()
+        event_pairs = [
+            (self._preprocessing_start_event, self._inference_start_event),
+            (self._inference_start_event, self._postprocessing_start_event),
+            (self._postprocessing_start_event, self._prediction_ready_event),
+            (self._preprocessing_start_event, self._prediction_ready_event),
+        ]
+        event_pairs_results = []
+        for earlier_event, later_event in event_pairs:
+            latency = compute_events_latency(
+                earlier_event=earlier_event,
+                later_event=later_event,
+            )
+            event_pairs_results.append(latency)
+        pre_processing_latency, inference_latency, post_processing_latency, model_latency = event_pairs_results
+        e2e_latency = None
         if self._prediction_ready_event is not None:
             e2e_latency = (
                 self._prediction_ready_event.event_timestamp
@@ -252,17 +203,14 @@ class LatencyMonitor:
         )
 
 
-def events_compatible(events: List[Optional[ModelActivityEvent]]) -> bool:
-    if not all_not_empty(sequence=events):
-        return False
-    if len(events) == 0:
-        return False
-    frame_ids = [e.frame_id for e in events]
-    return all(e == frame_ids[0] for e in frame_ids)
+def average_property_values(examined_objects: Iterable, property_name: str) -> Optional[float]:
+    values = get_not_empty_properties(examined_objects=examined_objects, property_name=property_name)
+    return safe_average(values=values)
 
 
-def all_not_empty(sequence: Iterable[Optional[T]]) -> bool:
-    return all(e is not None for e in sequence)
+def get_not_empty_properties(examined_objects: Iterable, property_name: str) -> List[Any]:
+    results = [getattr(examined_object, property_name, None) for examined_object in examined_objects]
+    return [e for e in results if e is not None]
 
 
 def safe_average(values: List[float]) -> Optional[float]:
@@ -271,7 +219,30 @@ def safe_average(values: List[float]) -> Optional[float]:
     return sum(values) / len(values)
 
 
+def compute_events_latency(
+    earlier_event: Optional[ModelActivityEvent],
+    later_event: Optional[ModelActivityEvent]
+) -> Optional[float]:
+    if not are_events_compatible(events=[earlier_event, later_event]):
+        return None
+    return (later_event.event_timestamp - earlier_event.event_timestamp).total_seconds()
+
+
+def are_events_compatible(events: List[Optional[ModelActivityEvent]]) -> bool:
+    if any(e is None for e in events):
+        return False
+    if len(events) == 0:
+        return False
+    frame_ids = [e.frame_id for e in events]
+    return all(e == frame_ids[0] for e in frame_ids)
+
+
 class BasePipelineWatchDog(PipelineWatchDog):
+    """
+    Implementation to be used from single inference thread, as it keeps
+    state assumed to represent status of consecutive stage of prediction process
+    in latency monitor.
+    """
     def __init__(self):
         super().__init__()
         self._video_source: Optional[VideoSource] = None
@@ -283,7 +254,7 @@ class BasePipelineWatchDog(PipelineWatchDog):
         self._video_source = video_source
 
     def on_status_update(self, status_update: StatusUpdate) -> None:
-        if status_update.severity is UpdateSeverity.DEBUG:
+        if status_update.severity.value <= UpdateSeverity.DEBUG.value:
             return None
         self._stream_updates.append(status_update)
 

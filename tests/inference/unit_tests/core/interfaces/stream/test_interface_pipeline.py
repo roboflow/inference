@@ -6,19 +6,26 @@ from typing import Tuple, List, Optional
 import numpy as np
 import pytest
 
-from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse, ObjectDetectionPrediction, \
-    InferenceResponseImage
+from inference.core.entities.responses.inference import (
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+    InferenceResponseImage,
+)
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
-from inference.core.interfaces.camera.video_source import lock_state_transition, VideoSource, SourceMetadata, \
-    StreamState, SourceProperties
+from inference.core.interfaces.camera.video_source import (
+    lock_state_transition,
+    VideoSource,
+    SourceMetadata,
+    StreamState,
+    SourceProperties,
+)
 from inference.core.interfaces.stream.entities import ObjectDetectionInferenceConfig
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
 class VideoSourceStub:
-
     def __init__(self, frames_number: int, is_file: bool, rounds: int = 0):
         self._frames_number = frames_number
         self._is_file = is_file
@@ -77,17 +84,16 @@ class VideoSourceStub:
         return VideoFrame(
             image=np.zeros((128, 128, 3), dtype=np.uint8),
             frame_id=self._frame_id,
-            frame_timestamp=datetime.now()
+            frame_timestamp=datetime.now(),
         )
 
 
 class ModelStub:
-
     def preprocess(self, image: np.ndarray) -> Tuple[np.ndarray, dict]:
         return image, {}
 
     def predict(self, image: np.ndarray) -> Tuple[np.ndarray, ...]:
-        return (image, )
+        return (image,)
 
     def postprocess(
         self,
@@ -128,7 +134,9 @@ class ModelStub:
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
-def test_inference_pipeline_works_correctly_against_video_file(local_video_path: str) -> None:
+def test_inference_pipeline_works_correctly_against_video_file(
+    local_video_path: str,
+) -> None:
     # given
     model = ModelStub()
     video_source = VideoSource.init(video_reference=local_video_path)
@@ -139,7 +147,9 @@ def test_inference_pipeline_works_correctly_against_video_file(local_video_path:
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(confidence=0.5, iou_threshold=0.5)
+    inference_config = ObjectDetectionInferenceConfig.init(
+        confidence=0.5, iou_threshold=0.5
+    )
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         model=model,
@@ -160,10 +170,15 @@ def test_inference_pipeline_works_correctly_against_video_file(local_video_path:
 
     # then
     assert len(predictions) == 431 * 2, "Not all video frames processed"
-    assert [p[0].frame_id for p in predictions] == list(range(1, 431 * 2 + 1)), "Order of prediction frames violated"
+    assert [p[0].frame_id for p in predictions] == list(
+        range(1, 431 * 2 + 1)
+    ), "Order of prediction frames violated"
 
 
-def test_inference_pipeline_works_correctly_against_stream_including_reconnections() -> None:
+@pytest.mark.parametrize("use_main_thread", [True, False])
+def test_inference_pipeline_works_correctly_against_stream_including_reconnections(
+    use_main_thread: bool,
+) -> None:
     # given
     model = ModelStub()
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=2)
@@ -175,7 +190,9 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(confidence=0.5, iou_threshold=0.5)
+    inference_config = ObjectDetectionInferenceConfig.init(
+        confidence=0.5, iou_threshold=0.5
+    )
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         model=model,
@@ -194,9 +211,11 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     video_source.on_end = stop
 
     # when
-    inference_pipeline.start()
+    inference_pipeline.start(use_main_thread=use_main_thread)
     inference_pipeline.join()
 
     # then
     assert len(predictions) == 200, "Not all video frames processed"
-    assert [p[0].frame_id for p in predictions] == list(range(1, 201)), "Order of prediction frames violated"
+    assert [p[0].frame_id for p in predictions] == list(
+        range(1, 201)
+    ), "Order of prediction frames violated"

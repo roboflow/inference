@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Dict, Optional, Union
+from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 from inference.core.env import (
     CLASS_AGNOSTIC_NMS_ENV,
@@ -12,6 +13,8 @@ from inference.core.env import (
     MAX_CANDIDATES_ENV,
     MAX_DETECTIONS_ENV,
 )
+from inference.core.interfaces.camera.entities import StatusUpdate
+from inference.core.interfaces.camera.video_source import SourceMetadata
 from inference.core.utils.environment import safe_env_to_type, str2bool
 
 ObjectDetectionPrediction = dict
@@ -83,3 +86,28 @@ class ObjectDetectionInferenceConfig:
         ]:
             result[field] = getattr(self, field, None)
         return {name: value for name, value in result.items() if value is not None}
+
+
+@dataclass(frozen=True)
+class ModelActivityEvent:
+    frame_decoding_timestamp: datetime
+    event_timestamp: datetime
+    frame_id: int
+
+
+@dataclass(frozen=True)
+class LatencyMonitorReport:
+    frame_decoding_latency: Optional[float] = None
+    pre_processing_latency: Optional[float] = None
+    inference_latency: Optional[float] = None
+    post_processing_latency: Optional[float] = None
+    model_latency: Optional[float] = None
+    e2e_latency: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class PipelineStateReport:
+    video_source_status_updates: List[StatusUpdate]
+    latency_report: LatencyMonitorReport
+    inference_throughput: float
+    source_metadata: Optional[SourceMetadata]
