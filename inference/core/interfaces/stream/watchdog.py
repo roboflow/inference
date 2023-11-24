@@ -184,7 +184,12 @@ class LatencyMonitor:
                 later_event=later_event,
             )
             event_pairs_results.append(latency)
-        pre_processing_latency, inference_latency, post_processing_latency, model_latency = event_pairs_results
+        (
+            pre_processing_latency,
+            inference_latency,
+            post_processing_latency,
+            model_latency,
+        ) = event_pairs_results
         e2e_latency = None
         if self._prediction_ready_event is not None:
             e2e_latency = (
@@ -203,13 +208,22 @@ class LatencyMonitor:
         )
 
 
-def average_property_values(examined_objects: Iterable, property_name: str) -> Optional[float]:
-    values = get_not_empty_properties(examined_objects=examined_objects, property_name=property_name)
+def average_property_values(
+    examined_objects: Iterable, property_name: str
+) -> Optional[float]:
+    values = get_not_empty_properties(
+        examined_objects=examined_objects, property_name=property_name
+    )
     return safe_average(values=values)
 
 
-def get_not_empty_properties(examined_objects: Iterable, property_name: str) -> List[Any]:
-    results = [getattr(examined_object, property_name, None) for examined_object in examined_objects]
+def get_not_empty_properties(
+    examined_objects: Iterable, property_name: str
+) -> List[Any]:
+    results = [
+        getattr(examined_object, property_name, None)
+        for examined_object in examined_objects
+    ]
     return [e for e in results if e is not None]
 
 
@@ -221,7 +235,7 @@ def safe_average(values: List[float]) -> Optional[float]:
 
 def compute_events_latency(
     earlier_event: Optional[ModelActivityEvent],
-    later_event: Optional[ModelActivityEvent]
+    later_event: Optional[ModelActivityEvent],
 ) -> Optional[float]:
     if not are_events_compatible(events=[earlier_event, later_event]):
         return None
@@ -243,6 +257,7 @@ class BasePipelineWatchDog(PipelineWatchDog):
     state assumed to represent status of consecutive stage of prediction process
     in latency monitor.
     """
+
     def __init__(self):
         super().__init__()
         self._video_source: Optional[VideoSource] = None
