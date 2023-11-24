@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import supervision as sv
 
+from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
@@ -62,9 +63,7 @@ def main(
 
 
 def on_prediction(
-    frame_timestamp: datetime,
-    frame_id: int,
-    image: np.ndarray,
+    video_frame: VideoFrame,
     predictions: dict,
     ffmpeg_process: subprocess.Popen,
     fps_monitor: sv.FPSMonitor,
@@ -74,10 +73,10 @@ def on_prediction(
     fps_value = fps_monitor()
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
-    image = annotator.annotate(scene=image, detections=detections, labels=labels)
+    image = annotator.annotate(scene=video_frame.image, detections=detections, labels=labels)
     image = letterbox_image(image, desired_size=(640, 480))
     if enable_stats:
-        latency = round((datetime.now() - frame_timestamp).total_seconds() * 1000, 2)
+        latency = round((datetime.now() - video_frame.frame_timestamp).total_seconds() * 1000, 2)
         image = cv2.putText(
             image, f"LATENCY: {latency} ms", (10, 400),
             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2

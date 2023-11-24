@@ -17,6 +17,7 @@ from inference.core.interfaces.camera.entities import (
     FrameTimestamp,
     StatusUpdate,
     UpdateSeverity,
+    VideoFrame,
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
@@ -241,28 +242,30 @@ class VideoSource:
     def frame_ready(self) -> bool:
         return not self._frames_buffer.empty()
 
-    def read_frame(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
+    def read_frame(self) -> VideoFrame:
         if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
-            result = purge_queue(
+            video_frame: Optional[VideoFrame] = purge_queue(
                 queue=self._frames_buffer,
                 on_successful_read=self._video_consumer.notify_frame_consumed,
             )
         else:
-            result = self._frames_buffer.get()
+            video_frame: Optional[VideoFrame] = self._frames_buffer.get()
             self._frames_buffer.task_done()
             self._video_consumer.notify_frame_consumed()
-        if result is None:
+        if video_frame is None:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
             )
-        frame_timestamp, frame_id, frame = result
         send_status_update(
             severity=UpdateSeverity.DEBUG,
             event_type=FRAME_CONSUMED_EVENT,
-            payload={"frame_timestamp": frame_timestamp, "frame_id": frame_id},
+            payload={
+                "frame_timestamp": video_frame.frame_timestamp,
+                "frame_id": video_frame.frame_id,
+            },
             status_update_handlers=self._status_update_handlers,
         )
-        return frame_timestamp, frame_id, frame
+        return video_frame
 
     def describe_source(self) -> SourceMetadata:
         return SourceMetadata(
@@ -547,8 +550,12 @@ class VideoConsumer:
             not buffer.full()
             or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
         ):
-            return self._decode_video_frame_to_buffer(
-                frame_timestamp=frame_timestamp, video=video, buffer=buffer
+            return decode_video_frame_to_buffer(
+                frame_timestamp=frame_timestamp,
+                frame_id=self._frame_counter,
+                video=video,
+                buffer=buffer,
+                decoding_pace_monitor=self._decoding_pace_monitor,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -630,19 +637,6 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
         )
 
-    def _decode_video_frame_to_buffer(
-        self,
-        frame_timestamp: datetime,
-        video: cv2.VideoCapture,
-        buffer: Queue,
-    ) -> bool:
-        success, frame = video.retrieve()
-        self._decoding_pace_monitor.tick()
-        if not success:
-            return False
-        buffer.put((frame_timestamp, self._frame_counter, frame))
-        return True
-
 
 def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -681,15 +675,11 @@ def drop_single_frame_from_buffer(
     status_update_handlers: List[Callable[[StatusUpdate], None]],
 ) -> None:
     try:
-        (
-            dropped_frame_timestamp,
-            dropped_frame_counter,
-            _,
-        ) = buffer.get_nowait()
+        video_frame = buffer.get_nowait()
         buffer.task_done()
         send_frame_drop_update(
-            frame_timestamp=dropped_frame_timestamp,
-            frame_id=dropped_frame_counter,
+            frame_timestamp=video_frame.frame_timestamp,
+            frame_id=video_frame.frame_id,
             cause=cause,
             status_update_handlers=status_update_handlers,
         )
@@ -739,11 +729,14 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
 ) -> bool:
-    success, frame = video.retrieve()
+    success, image = video.retrieve()
     if not success:
         return False
     decoding_pace_monitor.tick()
-    buffer.put((frame_timestamp, frame_id, frame))
+    video_frame = VideoFrame(
+        image=image, frame_id=frame_id, frame_timestamp=frame_timestamp
+    )
+    buffer.put(video_frame)
     return True
 
 

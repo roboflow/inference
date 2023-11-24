@@ -7,7 +7,11 @@ from typing import Callable, Generator, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.interfaces.camera.entities import FrameID, FrameTimestamp
+from inference.core.interfaces.camera.entities import (
+    FrameID,
+    FrameTimestamp,
+    VideoFrame,
+)
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import VideoSource
@@ -102,19 +106,22 @@ class InferencePipeline:
 
     def _execute_inference(self) -> None:
         try:
-            for timestamp, frame_id, frame in self._generate_frames():
+            for video_frame in self._generate_frames():
                 self._watchdog.on_model_preprocessing_started(
-                    frame_timestamp=timestamp, frame_id=frame_id
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
                 )
                 preprocessed_image, preprocessing_metadata = self._model.preprocess(
-                    frame
+                    video_frame.image
                 )
                 self._watchdog.on_model_inference_started(
-                    frame_timestamp=timestamp, frame_id=frame_id
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
                 )
                 predictions = self._model.predict(preprocessed_image)
                 self._watchdog.on_model_postprocessing_started(
-                    frame_timestamp=timestamp, frame_id=frame_id
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
                 )
                 predictions = self._model.postprocess(
                     predictions,
@@ -129,29 +136,28 @@ class InferencePipeline:
                     exclude_none=True,
                 )
                 self._watchdog.on_model_prediction_ready(
-                    frame_timestamp=timestamp, frame_id=frame_id
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
                 )
-                self._predictions_queue.put((timestamp, frame_id, frame, predictions))
+                self._predictions_queue.put((video_frame, predictions))
         finally:
             self._predictions_queue.put(None)
 
     def _dispatch_inference_results(self) -> None:
         while True:
-            inference_results: Optional[
-                Tuple[datetime, int, np.ndarray, dict]
-            ] = self._predictions_queue.get()
+            inference_results: Optional[VideoFrame] = self._predictions_queue.get()
             if inference_results is None:
                 break
-            timestamp, frame_id, frame, predictions = inference_results
+            video_frame, predictions = inference_results
             try:
-                self._on_prediction(timestamp, frame_id, frame, predictions)
+                self._on_prediction(video_frame, predictions)
             except Exception as error:
                 self._watchdog.on_error(context="predictions_dispatcher", error=error)
                 logging.warning(f"Error in results dispatching - {error}")
 
     def _generate_frames(
         self,
-    ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
+    ) -> Generator[VideoFrame, None, None]:
         self._video_source.start()
         while True:
             allow_reconnect = (

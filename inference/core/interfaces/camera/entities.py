@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
+import numpy as np
+
 FrameTimestamp = datetime
 FrameID = int
 
@@ -20,3 +22,10 @@ class StatusUpdate:
     severity: UpdateSeverity
     event_type: str
     payload: dict
+
+
+@dataclass(frozen=True)
+class VideoFrame:
+    image: np.ndarray
+    frame_id: int
+    frame_timestamp: datetime

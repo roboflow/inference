@@ -4,7 +4,11 @@ from typing import Generator, Iterable, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.interfaces.camera.entities import FrameID, FrameTimestamp
+from inference.core.interfaces.camera.entities import (
+    FrameID,
+    FrameTimestamp,
+    VideoFrame,
+)
 from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
 
 MINIMAL_FPS = 0.01
@@ -19,7 +23,7 @@ def get_video_frames_generator(
     video: Union[VideoSource, str, int],
     max_fps: Optional[float] = None,
     limiter_strategy: Optional[FPSLimiterStrategy] = None,
-) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
+) -> Generator[VideoFrame, None, None]:
     if not issubclass(type(video), VideoSource):
         video = VideoSource.init(
             video_reference=video,

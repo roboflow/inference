@@ -23,17 +23,17 @@ def main(stream_uri: str, max_fps: Optional[int] = None, processing_time: float 
     control_thread.start()
     fps_monitor = sv.FPSMonitor()
     previous_frame_id = 0
-    for grabbing_time, frame_id, frame in get_video_frames_generator(video=camera, max_fps=max_fps):
+    for video_frame in get_video_frames_generator(video=camera, max_fps=max_fps):
         fps_monitor.tick()
         fps_value = fps_monitor()
-        resized_frame = letterbox_image(frame, desired_size=(1280, 720))
+        resized_frame = letterbox_image(video_frame.image, desired_size=(1280, 720))
         if enable_stats:
-            dropped_frames = frame_id - previous_frame_id - 1
+            dropped_frames = video_frame.frame_id - previous_frame_id - 1
             resized_frame = cv2.putText(
                 resized_frame, f"DROPPED FRAMES: {dropped_frames}", (10, 630),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
             )
-            latency = round((datetime.now() - grabbing_time).total_seconds() * 1000, 2)
+            latency = round((datetime.now() - video_frame.frame_timestamp).total_seconds() * 1000, 2)
             resized_frame = cv2.putText(
                 resized_frame, f"LATENCY: {latency} ms", (10, 670),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2
@@ -44,7 +44,7 @@ def main(stream_uri: str, max_fps: Optional[int] = None, processing_time: float 
             )
         cv2.imshow("Stream", resized_frame)
         _ = cv2.waitKey(1)
-        previous_frame_id = frame_id
+        previous_frame_id = video_frame.frame_id
         time.sleep(processing_time)
     STOP = True
     print("DONE")

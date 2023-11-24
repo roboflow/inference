@@ -35,7 +35,7 @@ def main(n: int) -> None:
         for i in range(len(new_frames)):
             if new_frames[i] is not None:
                 previous_frames[i] = letterbox_image(
-                    image=new_frames[i][-1], desired_size=(640, 480)
+                    image=new_frames[i].image, desired_size=(640, 480)
                 )
         first_row = np.concatenate(
             [
