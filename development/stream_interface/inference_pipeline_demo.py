@@ -12,13 +12,14 @@ import supervision as sv
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_predictions, display_image
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
 )
+from inference.core.utils.environment import str2bool
 from inference.core.utils.preprocess import letterbox_image
 
-annotator = sv.BoxAnnotator()
 
 STOP = False
 
@@ -37,18 +38,25 @@ def main(
     model_type: str,
     stream_id: int,
     max_fps: Optional[Union[int, float]],
-    enable_stats: int,
+    enable_stats: bool,
+    stream_output: bool,
 ) -> None:
     global STOP
     watchdog = BasePipelineWatchDog()
-    ffmpeg_process = open_ffmpeg_stream_process(stream_id=stream_id)
-    fps_monitor = sv.FPSMonitor()
+    ffmpeg_process = None
+    if stream_output:
+        ffmpeg_process = open_ffmpeg_stream_process(stream_id=stream_id)
+        on_frame_rendered = partial(stream_prediction, ffmpeg_process=ffmpeg_process)
+    else:
+        on_frame_rendered = display_image
     pipeline = InferencePipeline.init(
         api_key=os.environ["API_KEY"],
         model_id=MODELS[model_type.lower()],
         video_reference=f"{STREAM_SERVER_URL}/live{stream_id}.stream",
         on_prediction=partial(
-            on_prediction, ffmpeg_process=ffmpeg_process, fps_monitor=fps_monitor, enable_stats=enable_stats
+            render_predictions,
+            display_statistics=enable_stats,
+            on_frame_rendered=on_frame_rendered,
         ),
         max_fps=max_fps,
         watchdog=watchdog,
@@ -58,33 +66,12 @@ def main(
     pipeline.start()
     STOP = True
     pipeline.join()
-    ffmpeg_process.stdin.close()
-    ffmpeg_process.wait()
+    if ffmpeg_process is not None:
+        ffmpeg_process.stdin.close()
+        ffmpeg_process.wait()
 
 
-def on_prediction(
-    video_frame: VideoFrame,
-    predictions: dict,
-    ffmpeg_process: subprocess.Popen,
-    fps_monitor: sv.FPSMonitor,
-    enable_stats: int,
-) -> None:
-    fps_monitor.tick()
-    fps_value = fps_monitor()
-    labels = [p["class"] for p in predictions["predictions"]]
-    detections = sv.Detections.from_roboflow(predictions)
-    image = annotator.annotate(scene=video_frame.image, detections=detections, labels=labels)
-    image = letterbox_image(image, desired_size=(640, 480))
-    if enable_stats:
-        latency = round((datetime.now() - video_frame.frame_timestamp).total_seconds() * 1000, 2)
-        image = cv2.putText(
-            image, f"LATENCY: {latency} ms", (10, 400),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
-        )
-        image = cv2.putText(
-            image, f"FPS: {round(fps_value, 2)}", (10, 450),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2
-        )
+def stream_prediction(image: np.ndarray, ffmpeg_process: subprocess.Popen) -> None:
     ffmpeg_process.stdin.write(image[:, :, ::-1].astype(np.uint8).tobytes())
 
 
@@ -140,8 +127,15 @@ if __name__ == "__main__":
         "--enable_stats",
         help=f"Flag to decide if stats to be displayed - pass 0 to disable",
         required=False,
-        type=int,
-        default=1,
+        type=str2bool,
+        default=True,
+    )
+    parser.add_argument(
+        "--stream_output",
+        help=f"Flag to decide if output to be streamed or displayed on screen",
+        required=False,
+        type=str2bool,
+        default=False,
     )
     args = parser.parse_args()
     main(
@@ -149,4 +143,5 @@ if __name__ == "__main__":
         stream_id=args.stream_id,
         max_fps=args.max_fps,
         enable_stats=args.enable_stats,
+        stream_output=args.stream_output,
     )
