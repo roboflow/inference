@@ -1,5 +1,5 @@
 import os
-from typing import Any, List, Optional, Union, Type, TypeVar, Callable
+from typing import Any, Callable, List, Optional, Type, TypeVar, Union
 
 from inference.core.exceptions import InvalidEnvironmentVariableError
 

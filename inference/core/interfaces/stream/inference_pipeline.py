@@ -4,26 +4,26 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
-from typing import Callable, Generator, Optional, Union, List
+from typing import Callable, Generator, List, Optional, Union
 
 from inference.core import logger
 from inference.core.env import API_KEY_ENV_NAMES
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
-    VideoFrame,
     StatusUpdate,
     UpdateSeverity,
+    VideoFrame,
 )
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.utils import get_video_frames_generator
 from inference.core.interfaces.camera.video_source import (
-    VideoSource,
-    BufferFillingStrategy,
     BufferConsumptionStrategy,
+    BufferFillingStrategy,
+    VideoSource,
 )
 from inference.core.interfaces.stream.entities import (
-    ObjectDetectionPrediction,
     ObjectDetectionInferenceConfig,
+    ObjectDetectionPrediction,
 )
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,

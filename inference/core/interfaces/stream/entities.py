@@ -1,18 +1,18 @@
 from dataclasses import dataclass
-from typing import Optional, Dict, Union
+from typing import Dict, Optional, Union
 
 from inference.core.env import (
     CLASS_AGNOSTIC_NMS_ENV,
-    IOU_THRESHOLD_ENV,
-    MAX_CANDIDATES_ENV,
-    MAX_DETECTIONS_ENV,
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
     DEFAULT_IOU_THRESHOLD,
     DEFAULT_MAX_CANDIDATES,
     DEFAULT_MAX_DETECTIONS,
+    IOU_THRESHOLD_ENV,
+    MAX_CANDIDATES_ENV,
+    MAX_DETECTIONS_ENV,
 )
-from inference.core.utils.environment import str2bool, safe_env_to_type
+from inference.core.utils.environment import safe_env_to_type, str2bool
 
 ObjectDetectionPrediction = dict
 
