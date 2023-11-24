@@ -186,7 +186,6 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     predictions = []
 
     def on_prediction(video_frame: VideoFrame, prediction: dict) -> None:
-        print(video_frame.frame_id)
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
@@ -218,4 +217,50 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     assert len(predictions) == 200, "Not all video frames processed"
     assert [p[0].frame_id for p in predictions] == list(
         range(1, 201)
+    ), "Order of prediction frames violated"
+
+
+@pytest.mark.parametrize("use_main_thread", [True, False])
+def test_inference_pipeline_works_correctly_against_stream_including_dispatching_errors(
+    use_main_thread: bool,
+) -> None:
+    # given
+    model = ModelStub()
+    video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=1)
+    watchdog = BasePipelineWatchDog()
+    predictions = []
+
+    def on_prediction(video_frame: VideoFrame, prediction: dict) -> None:
+        predictions.append((video_frame, prediction))
+        raise Exception()
+
+    status_update_handlers = [watchdog.on_status_update]
+    inference_config = ObjectDetectionInferenceConfig.init(
+        confidence=0.5, iou_threshold=0.5
+    )
+    predictions_queue = Queue(maxsize=512)
+    inference_pipeline = InferencePipeline(
+        model=model,
+        video_source=video_source,
+        on_prediction=on_prediction,
+        max_fps=None,
+        predictions_queue=predictions_queue,
+        watchdog=watchdog,
+        status_update_handlers=status_update_handlers,
+        inference_config=inference_config,
+    )
+
+    def stop() -> None:
+        inference_pipeline._stop = True
+
+    video_source.on_end = stop
+
+    # when
+    inference_pipeline.start(use_main_thread=use_main_thread)
+    inference_pipeline.join()
+
+    # then
+    assert len(predictions) == 100, "Not all video frames processed"
+    assert [p[0].frame_id for p in predictions] == list(
+        range(1, 101)
     ), "Order of prediction frames violated"
