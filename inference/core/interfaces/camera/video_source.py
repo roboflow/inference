@@ -59,7 +59,11 @@ class StreamState(Enum):
     ERROR = "ERROR"
 
 
-START_ELIGIBLE_STATES = {StreamState.NOT_STARTED, StreamState.RESTARTING}
+START_ELIGIBLE_STATES = {
+    StreamState.NOT_STARTED,
+    StreamState.RESTARTING,
+    StreamState.ENDED,
+}
 PAUSE_ELIGIBLE_STATES = {StreamState.RUNNING}
 MUTE_ELIGIBLE_STATES = {StreamState.RUNNING}
 RESUME_ELIGIBLE_STATES = {StreamState.PAUSED, StreamState.MUTED}

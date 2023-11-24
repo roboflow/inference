@@ -24,7 +24,7 @@ def get_video_frames_generator(
     max_fps: Optional[float] = None,
     limiter_strategy: Optional[FPSLimiterStrategy] = None,
 ) -> Generator[VideoFrame, None, None]:
-    if not issubclass(type(video), VideoSource):
+    if issubclass(type(video), str) or issubclass(type(video), int):
         video = VideoSource.init(
             video_reference=video,
         )

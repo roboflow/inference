@@ -1,7 +1,7 @@
 import json
-from datetime import datetime
 import socket
-from typing import Tuple, Optional, Callable, List
+from datetime import datetime
+from typing import Callable, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -76,12 +76,9 @@ def render_statistics(
 
 
 class UDPSink:
-
     @classmethod
     def init(cls, ip_address: str, port: int) -> "UDPSink":
-        udp_socket = socket.socket(
-            family=socket.AF_INET, type=socket.SOCK_DGRAM
-        )
+        udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
@@ -105,7 +102,7 @@ class UDPSink:
         inference_metadata = {
             "frame_id": video_frame.frame_id,
             "frame_decoding_time": video_frame.frame_timestamp.isoformat(),
-            "emission_time": datetime.now().isoformat()
+            "emission_time": datetime.now().isoformat(),
         }
         predictions["inference_metadata"] = inference_metadata
         serialised_predictions = json.dumps(predictions).encode("utf-8")

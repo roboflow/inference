@@ -164,8 +164,8 @@ def test_video_source_describe_source_when_valid_video_reference_consumption_sta
     try:
         # when
         source.start()
-        result = source.describe_source()
         _ = source.read_frame()
+        result = source.describe_source()
 
         # then
         assert result.source_properties.is_file is True
@@ -453,6 +453,7 @@ def test_pause_muted_stream_fails(local_video_path: str) -> None:
     try:
         # when
         source.start()
+        _ = source.read_frame()
         source.mute()
 
         # then
@@ -471,6 +472,7 @@ def test_mute_paused_stream_fails(local_video_path: str) -> None:
     try:
         # when
         source.start()
+        _ = source.read_frame()
         source.pause()
 
         # then
@@ -489,6 +491,7 @@ def test_pause_paused_stream_fails(local_video_path: str) -> None:
     try:
         # when
         source.start()
+        _ = source.read_frame()
         source.pause()
 
         # then
@@ -507,6 +510,7 @@ def test_mute_muted_stream_fails(local_video_path: str) -> None:
     try:
         # when
         source.start()
+        _ = source.read_frame()
         source.mute()
 
         # then

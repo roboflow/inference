@@ -155,10 +155,12 @@ def test_inference_pipeline_works_correctly_against_video_file(local_video_path:
     # when
     inference_pipeline.start()
     inference_pipeline.join()
+    inference_pipeline.start()
+    inference_pipeline.join()
 
     # then
-    assert len(predictions) == 431, "Not all video frames processed"
-    assert [p[0].frame_id for p in predictions] == list(range(1, 432)), "Order of prediction frames violated"
+    assert len(predictions) == 431 * 2, "Not all video frames processed"
+    assert [p[0].frame_id for p in predictions] == list(range(1, 431 * 2 + 1)), "Order of prediction frames violated"
 
 
 def test_inference_pipeline_works_correctly_against_stream_including_reconnections() -> None:

@@ -31,7 +31,9 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.models.utils import get_roboflow_model
 
-PREDICTIONS_QUEUE_SIZE = int(os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512))
+PREDICTIONS_QUEUE_SIZE = int(
+    os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)
+)
 RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
