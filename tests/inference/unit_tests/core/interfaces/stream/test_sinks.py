@@ -7,7 +7,7 @@ import numpy as np
 from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse, ObjectDetectionPrediction, \
     InferenceResponseImage
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.sinks import render_predictions, UDPSink
+from inference.core.interfaces.stream.sinks import render_predictions, UDPSink, multi_sink
 
 
 def test_render_predictions_completes_successfully() -> None:
@@ -82,3 +82,32 @@ def test_udp_sends_data_through_socket() -> None:
     assert decoded_message["inference_metadata"]["frame_id"] == 1
     assert decoded_message["inference_metadata"]["frame_decoding_time"] == frame_timestamp.isoformat()
     assert "emission_time" in decoded_message["inference_metadata"]
+
+
+def test_multi_sink_when_error_occurs() -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+    )
+    predictions = {"some": "prediction"}
+
+    calls = []
+
+    def faulty_sink(frame: VideoFrame, predict: dict) -> None:
+        calls.append((frame, predict))
+        raise Exception()
+
+
+    # when
+    multi_sink(video_frame=video_frame, predictions=predictions, sinks=[faulty_sink, faulty_sink])
+
+    # then
+    assert len(calls) == 2
+    assert calls[0] == (video_frame, predictions)
+    assert calls[1] == (video_frame, predictions)
+
+
+def test_multi_sink_when_no_error_occurs() -> None:
+    pass
