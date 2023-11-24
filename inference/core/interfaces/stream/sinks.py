@@ -1,9 +1,13 @@
+import json
 from datetime import datetime
-from typing import Tuple, Optional, Callable
+import socket
+from typing import Tuple, Optional, Callable, List
 
 import cv2
 import numpy as np
 import supervision as sv
+
+from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.utils.preprocess import letterbox_image
 
@@ -69,3 +73,61 @@ def render_statistics(
             2,
         )
     return image
+
+
+class UDPSink:
+
+    @classmethod
+    def init(cls, ip_address: str, port: int) -> "UDPSink":
+        udp_socket = socket.socket(
+            family=socket.AF_INET, type=socket.SOCK_DGRAM
+        )
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1)
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
+        return cls(
+            ip_address=ip_address,
+            port=port,
+            udp_socket=udp_socket,
+        )
+
+    def __init__(self, ip_address: str, port: int, udp_socket: socket.socket):
+        self._ip_address = ip_address
+        self._port = port
+        self._socket = udp_socket
+
+    def send_predictions(
+        self,
+        video_frame: VideoFrame,
+        predictions: dict,
+    ) -> None:
+        inference_metadata = {
+            "frame_id": video_frame.frame_id,
+            "frame_decoding_time": video_frame.frame_timestamp.isoformat(),
+            "emission_time": datetime.now().isoformat()
+        }
+        predictions["inference_metadata"] = inference_metadata
+        serialised_predictions = json.dumps(predictions).encode("utf-8")
+        self._socket.sendto(
+            serialised_predictions,
+            (
+                self._ip_address,
+                self._port,
+            ),
+        )
+
+
+def multi_sink(
+    video_frame: VideoFrame,
+    predictions: dict,
+    sinks: List[Callable[[VideoFrame, dict], None]],
+) -> None:
+    for sink in sinks:
+        try:
+            sink(video_frame, predictions)
+        except Exception as error:
+            logger.error(
+                f"Could not sent prediction with frame_id={video_frame.frame_id} to sink {sink.__name__} "
+                f"due to error: {error}."
+            )

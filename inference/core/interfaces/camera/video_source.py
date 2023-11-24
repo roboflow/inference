@@ -309,7 +309,8 @@ class VideoSource:
         if self._state in RESUME_ELIGIBLE_STATES:
             self._resume()
         self._change_state(target_state=StreamState.TERMINATING)
-        self._stream_consumption_thread.join()
+        if self._stream_consumption_thread is not None:
+            self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
             self._frames_buffer.join()
         if self._state is not StreamState.ERROR:

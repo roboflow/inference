@@ -12,7 +12,7 @@ import supervision as sv
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_predictions, display_image
+from inference.core.interfaces.stream.sinks import render_predictions, display_image, UDPSink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
@@ -32,6 +32,8 @@ MODELS = {
 }
 
 STREAM_SERVER_URL = os.getenv("STREAM_SERVER", "rtsp://localhost:8554")
+UDP_SERVER_HOST = os.getenv("UDP_SERVER_HOST", "127.0.0.1")
+UDP_SERVER_PORT = int(os.getenv("UDP_SERVER_PORT", "9999"))
 
 
 def main(
@@ -39,25 +41,36 @@ def main(
     stream_id: int,
     max_fps: Optional[Union[int, float]],
     enable_stats: bool,
-    stream_output: bool,
+    output_type: str,
 ) -> None:
     global STOP
     watchdog = BasePipelineWatchDog()
     ffmpeg_process = None
-    if stream_output:
+    sinks = []
+    if "video_stream" in output_type:
         ffmpeg_process = open_ffmpeg_stream_process(stream_id=stream_id)
         on_frame_rendered = partial(stream_prediction, ffmpeg_process=ffmpeg_process)
-    else:
-        on_frame_rendered = display_image
-    pipeline = InferencePipeline.init(
-        api_key=os.environ["API_KEY"],
-        model_id=MODELS[model_type.lower()],
-        video_reference=f"{STREAM_SERVER_URL}/live{stream_id}.stream",
-        on_prediction=partial(
+        on_prediction = partial(
             render_predictions,
             display_statistics=enable_stats,
             on_frame_rendered=on_frame_rendered,
-        ),
+        )
+        sinks.append(on_prediction)
+    if "udp_stream" in output_type:
+        udp_sink = UDPSink.init(ip_address=UDP_SERVER_HOST, port=UDP_SERVER_PORT)
+        on_prediction = udp_sink.send_predictions
+        sinks.append(on_prediction)
+    if "display" in output_type:
+        on_prediction = partial(
+            render_predictions,
+            display_statistics=enable_stats,
+        )
+        sinks.append(on_prediction)
+    on_prediction = partial(multi_sink, sinks=sinks)
+    pipeline = InferencePipeline.init(
+        model_id=MODELS[model_type.lower()],
+        video_reference=f"{STREAM_SERVER_URL}/live{stream_id}.stream",
+        on_prediction=on_prediction,
         max_fps=max_fps,
         watchdog=watchdog,
     )
@@ -131,11 +144,11 @@ if __name__ == "__main__":
         default=True,
     )
     parser.add_argument(
-        "--stream_output",
+        "--output_type",
         help=f"Flag to decide if output to be streamed or displayed on screen",
         required=False,
-        type=str2bool,
-        default=False,
+        type=str,
+        default="screen",
     )
     args = parser.parse_args()
     main(
@@ -143,5 +156,5 @@ if __name__ == "__main__":
         stream_id=args.stream_id,
         max_fps=args.max_fps,
         enable_stats=args.enable_stats,
-        stream_output=args.stream_output,
+        output_type=args.output_type,
     )
