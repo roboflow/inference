@@ -31,8 +31,8 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.models.utils import get_roboflow_model
 
-PREDICTIONS_QUEUE_SIZE = 256
-RESTART_ATTEMPT_DELAY = 1
+PREDICTIONS_QUEUE_SIZE = int(os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512))
+RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
 SOURCE_CONNECTION_LOST_EVENT = "SOURCE_CONNECTION_LOST"
@@ -40,6 +40,7 @@ INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT = "INFERENCE_RESULTS_DISPATCHING_ERROR
 INFERENCE_THREAD_STARTED_EVENT = "INFERENCE_THREAD_STARTED"
 INFERENCE_THREAD_FINISHED_EVENT = "INFERENCE_THREAD_FINISHED"
 INFERENCE_COMPLETED_EVENT = "INFERENCE_COMPLETED"
+INFERENCE_ERROR_EVENT = "INFERENCE_ERROR"
 
 
 class InferencePipeline:
@@ -128,6 +129,7 @@ class InferencePipeline:
         self._inference_config = inference_config
 
     def start(self, use_main_thread: bool = True) -> None:
+        self._stop = False
         self._inference_thread = Thread(target=self._execute_inference)
         self._inference_thread.start()
         if use_main_thread:
@@ -152,8 +154,10 @@ class InferencePipeline:
     def join(self) -> None:
         if self._inference_thread is not None:
             self._inference_thread.join()
+            self._inference_thread = None
         if self._dispatching_thread is not None:
             self._dispatching_thread.join()
+            self._dispatching_thread = None
 
     def _execute_inference(self) -> None:
         send_inference_pipeline_status_update(
@@ -209,6 +213,19 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
+        except Exception as error:
+            payload = {
+                "error_type": error.__class__.__name__,
+                "error_message": str(error),
+                "error_context": "inference_thread",
+            }
+            send_inference_pipeline_status_update(
+                severity=UpdateSeverity.ERROR,
+                event_type=INFERENCE_ERROR_EVENT,
+                payload=payload,
+                status_update_handlers=self._status_update_handlers,
+            )
+            logger.exception(f"Encountered inference error: {error}")
         finally:
             self._predictions_queue.put(None)
             send_inference_pipeline_status_update(
@@ -222,6 +239,7 @@ class InferencePipeline:
         while True:
             inference_results: Optional[VideoFrame] = self._predictions_queue.get()
             if inference_results is None:
+                self._predictions_queue.task_done()
                 break
             video_frame, predictions = inference_results
             try:
@@ -239,6 +257,8 @@ class InferencePipeline:
                     status_update_handlers=self._status_update_handlers,
                 )
                 logger.warning(f"Error in results dispatching - {error}")
+            finally:
+                self._predictions_queue.task_done()
 
     def _generate_frames(
         self,
