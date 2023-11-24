@@ -5,16 +5,13 @@ from datetime import datetime
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, List, Optional, Protocol, Tuple, Union
+from typing import Any, Callable, List, Optional, Protocol, Union
 
 import cv2
-import numpy as np
 import supervision as sv
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import (
-    FrameID,
-    FrameTimestamp,
     StatusUpdate,
     UpdateSeverity,
     VideoFrame,
@@ -39,11 +36,15 @@ DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
     os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
 
-STATE_UPDATE_EVENT = "STREAM_STATE_UPDATE"
-STREAM_ERROR_EVENT = "STREAM_ERROR"
+VIDEO_SOURCE_CONTEXT = "video_source"
+VIDEO_CONSUMER_CONTEXT = "video_consumer"
+SOURCE_STATE_UPDATE_EVENT = "SOURCE_STATE_UPDATE"
+SOURCE_ERROR_EVENT = "SOURCE_ERROR"
 FRAME_CAPTURED_EVENT = "FRAME_CAPTURED"
 FRAME_DROPPED_EVENT = "FRAME_DROPPED"
 FRAME_CONSUMED_EVENT = "FRAME_CONSUMED"
+VIDEO_CONSUMPTION_STARTED_EVENT = "VIDEO_CONSUMPTION_STARTED"
+VIDEO_CONSUMPTION_FINISHED_EVENT = "VIDEO_CONSUMPTION_FINISHED"
 
 
 class StreamState(Enum):
@@ -256,7 +257,7 @@ class VideoSource:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
             )
-        send_status_update(
+        send_video_source_status_update(
             severity=UpdateSeverity.DEBUG,
             event_type=FRAME_CONSUMED_EVENT,
             payload={
@@ -340,6 +341,12 @@ class VideoSource:
             self._buffer_consumption_strategy = BufferConsumptionStrategy.EAGER
 
     def _consume_video(self) -> None:
+        send_video_source_status_update(
+            severity=UpdateSeverity.INFO,
+            event_type=VIDEO_CONSUMPTION_STARTED_EVENT,
+            status_update_handlers=self._status_update_handlers,
+        )
+        logger.info(f"Video consumption started")
         try:
             self._change_state(target_state=StreamState.RUNNING)
             declared_source_fps = None
@@ -360,6 +367,12 @@ class VideoSource:
             self._frames_buffer.put(None)
             self._video.release()
             self._change_state(target_state=StreamState.ENDED)
+            send_video_source_status_update(
+                severity=UpdateSeverity.INFO,
+                event_type=VIDEO_CONSUMPTION_FINISHED_EVENT,
+                status_update_handlers=self._status_update_handlers,
+            )
+            logger.info(f"Video consumption finished")
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
             payload = {
@@ -367,9 +380,9 @@ class VideoSource:
                 "error_message": str(error),
                 "error_context": "stream_consumer_thread",
             }
-            send_status_update(
+            send_video_source_status_update(
                 severity=UpdateSeverity.ERROR,
-                event_type=STREAM_ERROR_EVENT,
+                event_type=SOURCE_ERROR_EVENT,
                 payload=payload,
                 status_update_handlers=self._status_update_handlers,
             )
@@ -381,9 +394,9 @@ class VideoSource:
             "new_state": target_state,
         }
         self._state = target_state
-        send_status_update(
+        send_video_source_status_update(
             severity=UpdateSeverity.INFO,
-            event_type=STATE_UPDATE_EVENT,
+            event_type=SOURCE_STATE_UPDATE_EVENT,
             payload=payload,
             status_update_handlers=self._status_update_handlers,
         )
@@ -391,7 +404,7 @@ class VideoSource:
     def __iter__(self) -> "VideoSource":
         return self
 
-    def __next__(self) -> Tuple[FrameTimestamp, FrameID, np.ndarray]:
+    def __next__(self) -> VideoFrame:
         try:
             return self.read_frame()
         except EndOfStreamError:
@@ -490,7 +503,7 @@ class VideoConsumer:
         if not success:
             return False
         self._frame_counter += 1
-        send_status_update(
+        send_video_source_status_update(
             severity=UpdateSeverity.DEBUG,
             event_type=FRAME_CAPTURED_EVENT,
             payload={
@@ -694,7 +707,7 @@ def send_frame_drop_update(
     cause: str,
     status_update_handlers: List[Callable[[StatusUpdate], None]],
 ) -> None:
-    send_status_update(
+    send_video_source_status_update(
         severity=UpdateSeverity.DEBUG,
         event_type=FRAME_DROPPED_EVENT,
         payload={
@@ -703,23 +716,34 @@ def send_frame_drop_update(
             "cause": cause,
         },
         status_update_handlers=status_update_handlers,
+        sub_context=VIDEO_CONSUMER_CONTEXT,
     )
 
 
-def send_status_update(
+def send_video_source_status_update(
     severity: UpdateSeverity,
     event_type: str,
-    payload: dict,
     status_update_handlers: List[Callable[[StatusUpdate], None]],
+    sub_context: Optional[str] = None,
+    payload: Optional[dict] = None,
 ) -> None:
+    if payload is None:
+        payload = {}
+    context = VIDEO_SOURCE_CONTEXT
+    if sub_context is not None:
+        context = f"{context}.{sub_context}"
     status_update = StatusUpdate(
         timestamp=datetime.now(),
         severity=severity,
         event_type=event_type,
         payload=payload,
+        context=context,
     )
     for handler in status_update_handlers:
-        handler(status_update)
+        try:
+            handler(status_update)
+        except Exception as error:
+            logger.warning(f"Could not execute handler update. Cause: {error}")
 
 
 def decode_video_frame_to_buffer(

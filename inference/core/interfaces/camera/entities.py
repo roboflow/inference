@@ -22,10 +22,11 @@ class StatusUpdate:
     severity: UpdateSeverity
     event_type: str
     payload: dict
+    context: str
 
 
 @dataclass(frozen=True)
 class VideoFrame:
     image: np.ndarray
-    frame_id: int
-    frame_timestamp: datetime
+    frame_id: FrameID
+    frame_timestamp: FrameTimestamp

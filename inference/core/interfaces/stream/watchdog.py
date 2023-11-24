@@ -11,9 +11,8 @@ from inference.core.interfaces.camera.video_source import SourceMetadata, VideoS
 
 T = TypeVar("T")
 
-MAX_ERROR_CONTEXT = 64
 MAX_LATENCY_CONTEXT = 64
-MAX_STREAM_UPDATES_CONTEXT = 128
+MAX_UPDATES_CONTEXT = 512
 
 
 @dataclass(frozen=True)
@@ -34,15 +33,7 @@ class LatencyMonitorReport:
 
 
 @dataclass(frozen=True)
-class ErrorDescription:
-    context: str
-    error_type: str
-    error_message: str
-
-
-@dataclass(frozen=True)
 class PipelineStateReport:
-    error_traces: List[ErrorDescription]
     video_source_status_updates: List[StatusUpdate]
     latency_report: LatencyMonitorReport
     inference_throughput: float
@@ -58,7 +49,7 @@ class PipelineWatchDog(ABC):
         pass
 
     @abstractmethod
-    def on_video_source_status_update(self, status_update: StatusUpdate) -> None:
+    def on_status_update(self, status_update: StatusUpdate) -> None:
         pass
 
     @abstractmethod
@@ -83,10 +74,6 @@ class PipelineWatchDog(ABC):
     def on_model_prediction_ready(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
-        pass
-
-    @abstractmethod
-    def on_error(self, context: str, error: Exception) -> None:
         pass
 
     @abstractmethod
@@ -98,7 +85,7 @@ class NullPipelineWatchdog(PipelineWatchDog):
     def register_video_source(self, video_source: VideoSource) -> None:
         pass
 
-    def on_video_source_status_update(self, status_update: StatusUpdate) -> None:
+    def on_status_update(self, status_update: StatusUpdate) -> None:
         pass
 
     def on_model_preprocessing_started(
@@ -119,9 +106,6 @@ class NullPipelineWatchdog(PipelineWatchDog):
     def on_model_prediction_ready(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
-        pass
-
-    def on_error(self, context: str, error: Exception) -> None:
         pass
 
     def get_report(self) -> Optional[PipelineStateReport]:
@@ -293,13 +277,12 @@ class BasePipelineWatchDog(PipelineWatchDog):
         self._video_source: Optional[VideoSource] = None
         self._inference_throughput_monitor = sv.FPSMonitor()
         self._latency_monitor = LatencyMonitor()
-        self._error_traces = deque(maxlen=MAX_ERROR_CONTEXT)
-        self._stream_updates = deque(maxlen=MAX_STREAM_UPDATES_CONTEXT)
+        self._stream_updates = deque(maxlen=MAX_UPDATES_CONTEXT)
 
     def register_video_source(self, video_source: VideoSource) -> None:
         self._video_source = video_source
 
-    def on_video_source_status_update(self, status_update: StatusUpdate) -> None:
+    def on_status_update(self, status_update: StatusUpdate) -> None:
         if status_update.severity is UpdateSeverity.DEBUG:
             return None
         self._stream_updates.append(status_update)
@@ -333,20 +316,11 @@ class BasePipelineWatchDog(PipelineWatchDog):
         )
         self._inference_throughput_monitor.tick()
 
-    def on_error(self, context: str, error: Exception) -> None:
-        error_description = ErrorDescription(
-            context=context,
-            error_type=error.__class__.__name__,
-            error_message=str(error),
-        )
-        self._error_traces.append(error_description)
-
     def get_report(self) -> PipelineStateReport:
         source_metadata = None
         if self._video_source is not None:
             source_metadata = self._video_source.describe_source()
         return PipelineStateReport(
-            error_traces=list(self._error_traces),
             video_source_status_updates=list(self._stream_updates),
             latency_report=self._latency_monitor.summarise_reports(),
             inference_throughput=self._inference_throughput_monitor(),

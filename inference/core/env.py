@@ -29,7 +29,8 @@ API_BASE_URL = os.getenv(
 API_DEBUG = os.getenv("API_DEBUG", False)
 
 # API key, default is None
-API_KEY = os.getenv("ROBOFLOW_API_KEY", None) or os.getenv("API_KEY", None)
+API_KEY_ENV_NAMES = ["ROBOFLOW_API_KEY", "API_KEY"]
+API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1], None)
 
 # AWS access key ID, default is None
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
@@ -56,10 +57,16 @@ GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 
 # Class agnostic NMS flag, default is False
-CLASS_AGNOSTIC_NMS = str2bool(os.getenv("CLASS_AGNOSTIC_NMS", False))
+CLASS_AGNOSTIC_NMS_ENV = "CLASS_AGNOSTIC_NMS"
+DEFAULT_CLASS_AGNOSTIC_NMS = False
+CLASS_AGNOSTIC_NMS = str2bool(
+    os.getenv(CLASS_AGNOSTIC_NMS_ENV, DEFAULT_CLASS_AGNOSTIC_NMS)
+)
 
 # Confidence threshold, default is 50%
-CONFIDENCE = float(os.getenv("CONFIDENCE", 0.5))
+CONFIDENCE_ENV = "CONFIDENCE"
+DEFAULT_CONFIDENCE = 0.5
+CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
 
 # Flag to enable core models, default is True
 CORE_MODELS_ENABLED = str2bool(os.getenv("CORE_MODELS_ENABLED", True))
@@ -121,7 +128,9 @@ FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 HOST = os.getenv("HOST", "0.0.0.0")
 
 # IoU threshold, default is 0.5
-IOU_THRESHOLD = float(os.getenv("IOU_THRESHOLD", 0.5))
+IOU_THRESHOLD_ENV = "IOU_THRESHOLD"
+DEFAULT_IOU_THRESHOLD = 0.5
+IOU_THRESHOLD = float(os.getenv(IOU_THRESHOLD_ENV, DEFAULT_IOU_THRESHOLD))
 
 # IP broadcast address, default is "127.0.0.1"
 IP_BROADCAST_ADDR = os.getenv("IP_BROADCAST_ADDR", "127.0.0.1")
@@ -155,10 +164,14 @@ else:
     MAX_BATCH_SIZE = float("inf")
 
 # Maximum number of candidates, default is 3000
-MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", 3000))
+MAX_CANDIDATES_ENV = "MAX_CANDIDATES"
+DEFAULT_MAX_CANDIDATES = 3000
+MAX_CANDIDATES = int(os.getenv(MAX_CANDIDATES_ENV, DEFAULT_MAX_CANDIDATES))
 
 # Maximum number of detections, default is 300
-MAX_DETECTIONS = int(os.getenv("MAX_DETECTIONS", 300))
+MAX_DETECTIONS_ENV = "MAX_DETECTIONS"
+DEFAULT_MAX_DETECTIONS = 300
+MAX_DETECTIONS = int(os.getenv(MAX_DETECTIONS_ENV, DEFAULT_MAX_DETECTIONS))
 
 # Loop interval for expiration of memory cache, default is 5
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
