@@ -99,7 +99,6 @@ def test_multi_sink_when_error_occurs() -> None:
         calls.append((frame, predict))
         raise Exception()
 
-
     # when
     multi_sink(video_frame=video_frame, predictions=predictions, sinks=[faulty_sink, faulty_sink])
 
@@ -110,4 +109,23 @@ def test_multi_sink_when_error_occurs() -> None:
 
 
 def test_multi_sink_when_no_error_occurs() -> None:
-    pass
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+    )
+    predictions = {"some": "prediction"}
+
+    calls = []
+
+    def correct_sink(frame: VideoFrame, predict: dict) -> None:
+        calls.append((frame, predict))
+
+    # when
+    multi_sink(video_frame=video_frame, predictions=predictions, sinks=[correct_sink, correct_sink])
+
+    # then
+    assert len(calls) == 2
+    assert calls[0] == (video_frame, predictions)
+    assert calls[1] == (video_frame, predictions)
