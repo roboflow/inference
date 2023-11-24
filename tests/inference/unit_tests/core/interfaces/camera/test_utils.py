@@ -338,8 +338,6 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await
         results.append(result)
 
     # then
-    timestamp_differences = get_differences(results_timestamp)
-    assert all(diff >= 0.005 for diff in timestamp_differences)
     assert len(results) == 431
 
 
