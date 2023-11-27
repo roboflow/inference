@@ -113,7 +113,7 @@ class DispatchModelManager(ModelManager):
         super().__init__(model_registry, models)
         self.checker = checker
 
-    async def model_infer(self, model_id: str, request: InferenceRequest):
+    async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)

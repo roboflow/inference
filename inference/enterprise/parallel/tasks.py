@@ -57,7 +57,7 @@ def preprocess(request: Dict):
         with shm_manager(shm):
             shared = np.ndarray(image.shape, dtype=image.dtype, buffer=shm.buf)
             shared[:] = image[:]
-            shm_metadata = SharedMemoryMetadata(shm.name, image.shape, image.dtype)
+            shm_metadata = SharedMemoryMetadata(shm.name, image.shape, image.dtype.name)
             queue_infer_task(
                 redis_client, shm_metadata, request, preprocess_return_metadata
             )
