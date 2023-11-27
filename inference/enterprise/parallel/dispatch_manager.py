@@ -1,8 +1,7 @@
 import asyncio
 import json
-from dataclasses import dataclass
 from time import perf_counter, time
-from typing import Any, Coroutine, Optional
+from typing import Any, List, Dict, Optional
 
 from redis import Redis
 
@@ -22,6 +21,7 @@ from inference.enterprise.parallel.utils import (
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
 )
+from inference.core.registries.base import ModelRegistry
 
 NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 
@@ -32,19 +32,14 @@ class ResultsChecker:
     keeping track of running requests, and awaiting their results.
     """
 
-    def __init__(self):
-        self.tasks = []
+    def __init__(self, redis: Redis):
+        self.tasks: Dict[str, asyncio.Event] = {}
         self.dones = dict()
         self.errors = dict()
         self.running = True
+        self.redis = redis
 
-    def add_redis(self, r: Redis):
-        """
-        After instantiation, give results checker a redis object
-        """
-        self.r = r
-
-    async def add_task(self, t, request):
+    async def add_task(self, task_id: str, request: InferenceRequest):
         """
         Wait until there's available cylce to queue a task.
         When there are cycles, add the task's id to a list to keep track of its results,
@@ -53,20 +48,23 @@ class ResultsChecker:
         interval = 0.1
         while len(self.tasks) > NUM_PARALLEL_TASKS:
             await asyncio.sleep(interval)
-        self.tasks.append(t)
+        self.tasks[task_id] = asyncio.Event()
         preprocess.s(request.dict()).delay()
-        self.r.set(TASK_STATUS_KEY.format(t), INITIAL_STATE)
+        self.redis.set(TASK_STATUS_KEY.format(task_id), INITIAL_STATE)
 
-    def check_task(self, t: str) -> Any:
+    def get_result(self, task_id: str) -> Any:
         """
         Check the done tasks and errored tasks for this task id.
         """
-        if t in self.dones:
-            return self.dones.pop(t)
-        if t in self.errors:
-            message = self.errors.pop(t)
+        if task_id in self.dones:
+            return self.dones.pop(task_id)
+        elif task_id in self.errors:
+            message = self.errors.pop(task_id)
             raise Exception(message)
-        return NOT_FINISHED_RESPONSE
+        else:
+            raise RuntimeError(
+                "Task result not found in either success or error dict. Unreachable"
+            )
 
     async def loop(self):
         """
@@ -75,46 +73,47 @@ class ResultsChecker:
         """
         interval = 0.1
         while self.running:
-            tasks = [t for t in self.tasks]
-            task_names = [TASK_STATUS_KEY.format(id_) for id_ in tasks]
-            donenesses = self.r.mget(task_names)
-            donenesses = [int(d) for d in donenesses]
-            for id_, doneness in zip(tasks, donenesses):
-                if doneness in [SUCCESS_STATE, FAILURE_STATE]:
-                    pipe = self.r.pipeline()
-                    pipe.get(TASK_RESULT_KEY.format(id_))
-                    pipe.delete(TASK_RESULT_KEY.format(id_))
-                    pipe.delete(TASK_STATUS_KEY.format(id_))
-                    result, _, _ = pipe.execute()
-                    self.tasks.remove(id_)
-                    if doneness == SUCCESS_STATE:
-                        self.dones[id_] = result
-                    if doneness == FAILURE_STATE:
-                        self.errors[id_] = result
+            self.check_tasks([t for t in self.tasks])
             await asyncio.sleep(interval)
 
-    async def wait_for_response(self, key):
-        interval = 0.1
-        while True:
-            result = self.check_task(key)
-            if result is not NOT_FINISHED_RESPONSE:
-                return result
-            await asyncio.sleep(interval)
+    def check_tasks(self, task_ids: List[str]):
+        task_names = [TASK_STATUS_KEY.format(id_) for id_ in task_ids]
+        donenesses = self.redis.mget(task_names)
+        donenesses = [int(d) for d in donenesses]
+        for id_, doneness in zip(task_ids, donenesses):
+            if doneness in [SUCCESS_STATE, FAILURE_STATE]:
+                self.handle_result(id_, doneness)
+
+    def handle_result(self, task_id: str, doneness: int):
+        pipe = self.redis.pipeline()
+        pipe.get(TASK_RESULT_KEY.format(task_id))
+        pipe.delete(TASK_RESULT_KEY.format(task_id))
+        pipe.delete(TASK_STATUS_KEY.format(task_id))
+        result, _, _ = pipe.execute()
+        if doneness == SUCCESS_STATE:
+            self.dones[task_id] = result
+        elif doneness == FAILURE_STATE:
+            self.errors[task_id] = result
+        else:
+            raise RuntimeError(f"Unspecified state {doneness}. Unreachable")
+        self.tasks.pop(task_id).set()
+
+    async def wait_for_response(self, key: str):
+        await self.tasks[key].wait()
+        return self.get_result(key)
 
 
-@dataclass
 class DispatchModelManager(ModelManager):
-    def __post_init__(self):
-        if REDIS_HOST is None:
-            raise ValueError(
-                "Set REDIS_HOST and REDIS_PORT to use DispatchModelManager"
-            )
-
-        self.redis: Redis = Redis(REDIS_HOST, REDIS_PORT, decode_responses=True)
+    def __init__(
+        self,
+        model_registry: ModelRegistry,
+        checker: ResultsChecker,
+        models: Optional[dict] = None,
+    ):
+        super().__init__(model_registry, models)
+        self.checker = checker
 
     async def model_infer(self, model_id: str, request: InferenceRequest):
-        assert model_id == request.model_id
-        assert request.api_key is not None
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
@@ -145,21 +144,13 @@ class DispatchModelManager(ModelManager):
             response.time = perf_counter() - t
             responses.append(response)
 
+        if request.visualize_predictions:
+            for response in responses:
+                response.visualization = self.draw_predictions(request, response)
+
         if list_mode:
             return responses
         return responses[0]
-
-    def add_checker(self, checker):
-        self._checker = checker
-
-    @property
-    def checker(self) -> ResultsChecker:
-        try:
-            return self._checker
-        except AttributeError:
-            raise AttributeError(
-                "Call self.add_checker with a results checker before using"
-            )
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: str = None

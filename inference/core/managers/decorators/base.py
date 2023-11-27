@@ -6,6 +6,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.env import API_KEY
 
 
 class ModelManagerDecorator(ModelManager):
@@ -102,6 +103,8 @@ class ModelManagerDecorator(ModelManager):
         Returns:
             str: The task type.
         """
+        if api_key is None:
+            api_key = API_KEY
         return self.model_manager.get_task_type(model_id, api_key=api_key)
 
     def get_class_names(self, model_id):

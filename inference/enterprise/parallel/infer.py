@@ -4,9 +4,11 @@ import time
 from multiprocessing import shared_memory
 from threading import Thread
 from typing import Dict, List, Tuple
+from dataclasses import asdict
 
 import numpy as np
 from redis import ConnectionPool, Redis
+import asyncio
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -18,86 +20,26 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.models.roboflow import RoboflowInferenceModel
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.tasks import postprocess
-from inference.enterprise.parallel.utils import failure_handler, shm_manager
+from inference.enterprise.parallel.utils import (
+    failure_handler,
+    shm_manager,
+    SharedMemoryMetadata,
+)
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
 
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
-BATCH_SIZE = min(MAX_BATCH_SIZE, 128)
-
-
-def get_requested_model_names(redis: Redis):
-    request_counts = redis.hgetall("requests")
-    model_names = [
-        model_name for model_name, count in request_counts.items() if int(count) > 0
-    ]
-    return model_names
-
-
-def get_batch(redis: Redis, model_names: List[str]) -> Tuple[List[Dict], str]:
-    batch_sizes = [
-        RoboflowInferenceModel.model_metadata_from_memcache_endpoint(m)["batch_size"]
-        for m in model_names
-    ]
-    batch_sizes = [b if not isinstance(b, str) else BATCH_SIZE for b in batch_sizes]
-    batches = [
-        redis.zrange(f"infer:{m}", 0, b - 1, withscores=True)
-        for m, b in zip(model_names, batch_sizes)
-    ]
-    now = time.time()
-    average_ages = [np.mean([float(b[1]) - now for b in batch]) for batch in batches]
-    lengths = [
-        len(batch) / batch_size for batch, batch_size in zip(batches, batch_sizes)
-    ]
-    fitnesses = [age / 30 + length for age, length in zip(average_ages, lengths)]
-    model_index = fitnesses.index(max(fitnesses))
-    batch = batches[model_index]
-    selected_model = model_names[model_index]
-    redis.zrem(f"infer:{selected_model}", *[b[0] for b in batch])
-    redis.hincrby(f"requests", selected_model, -len(batch))
-    batch = [json.loads(b[0]) for b in batch]
-    return batch, selected_model
-
-
-def load_batch(
-    batch: List[Dict[str, str]], shms: List[shared_memory.SharedMemory]
-) -> Tuple[List[np.ndarray], List[Dict]]:
-    images = []
-    preproc_return_metadatas = []
-    for b, shm in zip(batch, shms):
-        image = np.ndarray(b["image_shape"], dtype=b["image_dtype"], buffer=shm.buf)
-        images.append(image)
-        preproc_return_metadatas.append(b["metadata"])
-    return images, preproc_return_metadatas
-
-
-def write_response(
-    im_arrs: Tuple[np.ndarray, ...],
-    request: InferenceRequest,
-    preproc_return_metadata: Dict,
-):
-    shms = [shared_memory.SharedMemory(create=True, size=im.nbytes) for im in im_arrs]
-    with shm_manager(*shms, close_on_success=False):
-        returns = []
-        for im_arr, shm in zip(im_arrs, shms):
-            shared = np.ndarray(im_arr.shape, dtype=im_arr.dtype, buffer=shm.buf)
-            shared[:] = im_arr[:]
-            return_val = {
-                "chunk_name": shm.name,
-                "image_shape": im_arr.shape,
-                "image_dtype": im_arr.dtype.name,
-            }
-            shm.close()
-            returns.append(return_val)
-
-        postprocess.s(tuple(returns), request.dict(), preproc_return_metadata).delay()
+BATCH_SIZE = MAX_BATCH_SIZE
+if BATCH_SIZE == float("inf"):
+    BATCH_SIZE = 128
+AGE_TRADEOFF_SECONDS_FACTOR = 30
 
 
 class InferServer:
-    def __init__(self) -> None:
-        pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-        self.redis = Redis(connection_pool=pool, decode_responses=True)
+    def __init__(self, redis: Redis) -> None:
+        self.redis = redis
         model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
         model_manager = ModelManager(model_registry)
         self.model_manager = WithFixedSizeCache(
@@ -105,26 +47,14 @@ class InferServer:
         )
         self.running = True
         self.wait = 0
-        self.response_queue = []
-        self.write_thread = Thread(target=self.write_responses)
-        self.write_thread.start()
-
-    def write_responses(self):
-        while True:
-            try:
-                if not self.response_queue:
-                    time.sleep(0.002)
-                    continue
-                response = self.response_queue.pop(0)
-                write_response(*response)
-            except:
-                pass
+        self.background_tasks = set()
 
     def infer_loop(self):
         while self.running:
             try:
                 self.infer()
-            except:
+            except Exception as error:
+                logger.warning("Encountered error in infer loop:\n" + str(error))
                 continue
 
     def infer(self):
@@ -137,34 +67,134 @@ class InferServer:
             return
 
         if self.wait:
-            print(f"waited {(time.time() - self.wait):3f} seconds for batch")
+            logger.info(f"waited {(time.time() - self.wait):3f} seconds for batch")
 
         batch, model_id = get_batch(self.redis, model_names)
-        print(f"Predicting on batch of size {len(batch)}")
+        logger.info(f"Predicting on batch of size {len(batch)}")
         with failure_handler(self.redis, *[b["request"]["id"] for b in batch]):
             self.model_manager.add_model(model_id, batch[0]["request"]["api_key"])
             model_type = self.model_manager.get_task_type(model_id)
             for b in batch:
                 request = request_from_type(model_type, b["request"])
                 b["request"] = request
+                b["shm_metadata"] = SharedMemoryMetadata(**b["shm_metadata"])
+
             metadata_processed = time.perf_counter()
-            print(f"Took {(metadata_processed - start):3f} seconds to process metadata")
-            with shm_manager(*[b["chunk_name"] for b in batch]) as shms:
+            logger.info(f"Took {(metadata_processed - start):3f} seconds to process metadata")
+            with shm_manager(
+                *[b["shm_metadata"].shm_name for b in batch], unlink_on_success=True
+            ) as shms:
                 images, preproc_return_metadatas = load_batch(batch, shms)
                 loaded = time.perf_counter()
-                print(f"Took {(loaded - metadata_processed):3f} seconds to load batch")
+                logger.info(f"Took {(loaded - metadata_processed):3f} seconds to load batch")
                 outputs = self.model_manager.predict(model_id, images)
                 inferred = time.perf_counter()
-                print(f"Took {(inferred - loaded):3f} seconds to infer")
+                logger.info(f"Took {(inferred - loaded):3f} seconds to infer")
                 for output, b, metadata in zip(
                     zip(*outputs), batch, preproc_return_metadatas
                 ):
-                    self.response_queue.append((output, b["request"], metadata))
+                    task = asyncio.create_task(
+                        write_infer_arrays_and_launch_postprocess(
+                            output, b["request"], metadata
+                        )
+                    )
+                    self.background_tasks.add(task)
+                    task.add_done_callback(self.background_tasks.discard)
                 written = time.perf_counter()
-                print(f"Took {(written - inferred):3f} seconds to write responses")
+                logger.info(f"Took {(written - inferred):3f} seconds to write responses")
 
         self.wait = 0
 
 
+def get_requested_model_names(redis: Redis) -> List[str]:
+    request_counts = redis.hgetall("requests")
+    model_names = [
+        model_name for model_name, count in request_counts.items() if int(count) > 0
+    ]
+    return model_names
+
+
+def get_batch(redis: Redis, model_names: List[str]) -> Tuple[List[Dict], str]:
+    """
+    Run a heuristic to select the best batch to infer on
+    redis[Redis]: redis client
+    model_names[List[str]]: list of models with nonzero number of requests
+    returns:
+        Tuple[List[Dict], str]
+        List[Dict] represents a batch of request dicts
+        str is the model id
+    """
+    batch_sizes = [
+        RoboflowInferenceModel.model_metadata_from_memcache_endpoint(m)["batch_size"]
+        for m in model_names
+    ]
+    batch_sizes = [b if not isinstance(b, str) else BATCH_SIZE for b in batch_sizes]
+    batches = [
+        redis.zrange(f"infer:{m}", 0, b - 1, withscores=True)
+        for m, b in zip(model_names, batch_sizes)
+    ]
+    model_index = select_best_inference_batch(batches)
+    batch = batches[model_index]
+    selected_model = model_names[model_index]
+    redis.zrem(f"infer:{selected_model}", *[b[0] for b in batch])
+    redis.hincrby(f"requests", selected_model, -len(batch))
+    batch = [json.loads(b[0]) for b in batch]
+    return batch, selected_model
+
+
+def select_best_inference_batch(batches):
+    batch_sizes = [b if not isinstance(b, str) else BATCH_SIZE for b in batch_sizes]
+    now = time.time()
+    average_ages = [np.mean([float(b[1]) - now for b in batch]) for batch in batches]
+    lengths = [
+        len(batch) / batch_size for batch, batch_size in zip(batches, batch_sizes)
+    ]
+    fitnesses = [
+        age / AGE_TRADEOFF_SECONDS_FACTOR + length
+        for age, length in zip(average_ages, lengths)
+    ]
+    model_index = fitnesses.index(max(fitnesses))
+    return model_index
+
+
+def load_batch(
+    batch: List[Dict[str, str]], shms: List[shared_memory.SharedMemory]
+) -> Tuple[List[np.ndarray], List[Dict]]:
+    images = []
+    preproc_return_metadatas = []
+    for b, shm in zip(batch, shms):
+        shm_metadata: SharedMemoryMetadata = b["shm_metadata"]
+        image = np.ndarray(
+            shm_metadata.array_shape, dtype=shm_metadata.array_dtype, buffer=shm.buf
+        )
+        images.append(image)
+        preproc_return_metadatas.append(b["preprocess_metadata"])
+    return images, preproc_return_metadatas
+
+
+async def write_infer_arrays_and_launch_postprocess(
+    arrs: Tuple[np.ndarray, ...],
+    request: InferenceRequest,
+    preproc_return_metadata: Dict,
+):
+    """Write inference results to shared memory and launch the postprocessing task"""
+    shms = [shared_memory.SharedMemory(create=True, size=arr.nbytes) for arr in arrs]
+    with shm_manager(*shms):
+        shm_metadatas = []
+        for arr, shm in zip(arrs, shms):
+            shared = np.ndarray(arr.shape, dtype=arr.dtype, buffer=shm.buf)
+            shared[:] = arr[:]
+            shm_metadata = SharedMemoryMetadata(
+                shm_name=shm.name, array_shape=arr.shape, array_dtype=arr.dtype
+            )
+            shm_metadatas.append(asdict(shm_metadata))
+
+        postprocess.s(
+            tuple(shm_metadatas), request.dict(), preproc_return_metadata
+        ).delay()
+
+
 if __name__ == "__main__":
-    InferServer().infer_loop()
+    pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    redis = Redis(connection_pool=pool)
+    InferServer(redis).infer_loop()

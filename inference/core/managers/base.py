@@ -27,7 +27,7 @@ class ModelManager:
 
     def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
         self.model_registry = model_registry
-        self._models = models if models is not None else {}
+        self._models: Dict[str, Model] = models if models is not None else {}
 
     def init_pingback(self):
         """Initializes pingback mechanism."""

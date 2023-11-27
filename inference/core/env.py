@@ -255,6 +255,6 @@ INFER_BUCKET = os.getenv(
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", False))
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
 
+# Number inflight async tasks for async model manager
 NUM_PARALLEL_TASKS = os.getenv("NUM_PARALLEL_TASKS", 1000)
-
 STUB_CACHE_SIZE = os.getenv("STUB_CACHE_SIZE", 256)
