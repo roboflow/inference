@@ -53,7 +53,7 @@ class InferencePipeline:
         video_reference: Union[str, int],
         on_prediction: Callable[[VideoFrame, ObjectDetectionPrediction], None],
         api_key: Optional[str] = None,
-        max_fps: Optional[float] = None,
+        max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
@@ -64,6 +64,67 @@ class InferencePipeline:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
     ) -> "InferencePipeline":
+        """
+        This class creates the abstraction for making inferences from CV models against video stream.
+        It allows to choose Object Detection model from Roboflow platform and run predictions against
+        video streams - just by the price of specifying which model to use and what to do with predictions.
+
+        It allows to set the model post-processing parameters (via .init() or env) and intercept updates
+        related to state of pipeline via `PipelineWatchDog` abstraction (although that is something probably
+        useful only for advanced use-cases).
+
+        For maximum efficiency, all separate chunks of processing: video decoding, inference, results dispatching
+        are handled by separate threads.
+
+        Given that reference to stream is passed and connectivity is lost - it attempts to re-connect with delay.
+
+        Args:
+            model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
+            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
+                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            on_prediction (Callable[[VideoFrame, ObjectDetectionPrediction], None]): Function to be called
+                once prediction is ready - passing both decoded frame, their metadata and dict with standard
+                Roboflow Object Detection prediction.
+            api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
+                and "API_KEY" variables. API key, passed in some form is required.
+            max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
+                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
+                on single machine making tradeoff between number of frames and number of streams handled. Disabled
+                by default.
+            watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
+                inference pipeline - if not given null implementation (doing nothing) will be used.
+            status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
+                status updates of all elements of the pipeline. Should be used only if detailed inspection of
+                pipeline behaviour in time is needed. Please point out that handlers should be possible to be executed
+                fast - otherwise they will impair pipeline performance. All errors will be logged as warnings
+                without re-raising. Default: None.
+            source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
+                video stream decoding behaviour. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
+                video stream frames consumption. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
+                env variable "CLASS_AGNOSTIC_NMS" with default "False"
+            confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
+                env variable "CONFIDENCE" with default "0.5"
+            iou_threshold (Optional[float]): Parameter of model post-processing. If not given - value checked in
+                env variable "IOU_THRESHOLD" with default "0.5"
+            max_candidates (Optional[int]): Parameter of model post-processing. If not given - value checked in
+                env variable "MAX_CANDIDATES" with default "3000"
+            max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
+                env variable "MAX_DETECTIONS" with default "300"
+
+        Other ENV variables involved in low-level configuration:
+        * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
+        * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
+
+        Returns: Instance of InferencePipeline
+
+        Throws:
+            * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
+                always if connection to stream is lost.
+        """
         if api_key is None:
             api_key = os.environ.get(API_KEY_ENV_NAMES[0], None) or os.environ.get(
                 API_KEY_ENV_NAMES[1], None

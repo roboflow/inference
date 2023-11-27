@@ -233,7 +233,14 @@ class VideoSource:
         one consuming it and manipulating source state. Implementation of user interface is thread-safe, although
         stream it is meant to be consumed by a single thread only.
 
-         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
+        ENV variables involved:
+        * VIDEO_SOURCE_BUFFER_SIZE - default: 64
+        * VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE - default: 0.1
+        * VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE - default: 5.0
+        * VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES - default: 10
+        * VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW - default: 16
+
+        As an `inference` user, please use .init() method instead of constructor to instantiate objects.
 
         Args:
             video_reference (Union[str, int]): Either str with file or stream reference, or int representing device ID
