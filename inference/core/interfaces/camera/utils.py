@@ -21,9 +21,32 @@ class FPSLimiterStrategy(Enum):
 
 def get_video_frames_generator(
     video: Union[VideoSource, str, int],
-    max_fps: Optional[float] = None,
+    max_fps: Optional[Union[float, int]] = None,
     limiter_strategy: Optional[FPSLimiterStrategy] = None,
 ) -> Generator[VideoFrame, None, None]:
+    """
+    Util function to create a frames generator from `VideoSource` with possibility to
+    limit FPS of consumed frames and dictate what to do if frames are produced to fast.
+
+    Args:
+        video (Union[VideoSource, str, int]): Either instance of VideoSource or video reference accepted
+            by VideoSource.init(...)
+        max_fps (Optional[Union[float, int]]): value of maximum FPS rate of generated frames - can be used to limit
+            generation frequency
+        limiter_strategy (Optional[FPSLimiterStrategy]): strategy used to deal with frames decoding exceeding
+            limit of `max_fps`. By default - for files, in the interest of processing all frames -
+            generation will be awaited, for streams - frames will be dropped on the floor.
+    Returns: generator of `VideoFrame`
+
+    Example:
+        ```python
+        >>> for frame in get_video_frames_generator(
+        ...    video="./some.mp4",
+        ...    max_fps=50,
+        ... ):
+        >>>     pass
+        ```
+    """
     if issubclass(type(video), str) or issubclass(type(video), int):
         video = VideoSource.init(
             video_reference=video,
@@ -55,7 +78,7 @@ def resolve_limiter_strategy(
 
 def limit_frame_rate(
     frames_generator: Iterable[Tuple[FrameTimestamp, FrameID, np.ndarray]],
-    max_fps: float,
+    max_fps: Union[float, int],
     strategy: FPSLimiterStrategy,
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
     rate_limiter = RateLimiter(desired_fps=max_fps)

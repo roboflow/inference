@@ -621,6 +621,20 @@ class VideoSource:
         return self
 
     def __next__(self) -> VideoFrame:
+        """
+        Method allowing to use `VideoSource` convenient to read frames
+
+        Returns: VideoFrame
+
+        Example:
+            ```python
+            >>> source = VideoSource.init(video_reference="./some.mp4")
+            >>> source.start()
+
+            >>> for frame in source:
+            >>>     pass
+            ```
+        """
         try:
             return self.read_frame()
         except EndOfStreamError:
