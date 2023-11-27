@@ -60,7 +60,7 @@ def limit_frame_rate(
 ) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
     rate_limiter = RateLimiter(desired_fps=max_fps)
     for frame_data in frames_generator:
-        delay = rate_limiter.estimate_next_tick_delay()
+        delay = rate_limiter.estimate_next_action_delay()
         if delay <= 0.0:
             rate_limiter.tick()
             yield frame_data
@@ -85,7 +85,7 @@ class RateLimiter:
     def tick(self) -> None:
         self._last_tick = time.monotonic()
 
-    def estimate_next_tick_delay(self) -> float:
+    def estimate_next_action_delay(self) -> float:
         if self._last_tick is None:
             return 0.0
         desired_delay = 1 / self._desired_fps
