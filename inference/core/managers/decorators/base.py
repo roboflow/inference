@@ -4,9 +4,9 @@ import numpy as np
 
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.env import API_KEY
 
 
 class ModelManagerDecorator(ModelManager):

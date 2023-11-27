@@ -1,7 +1,7 @@
 from contextlib import contextmanager
-from multiprocessing import shared_memory
-from typing import Union, List
 from dataclasses import dataclass
+from multiprocessing import shared_memory
+from typing import List, Union
 
 from redis import Redis
 

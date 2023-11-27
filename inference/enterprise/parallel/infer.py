@@ -1,15 +1,15 @@
+import asyncio
 import json
 import logging
 import time
-from multiprocessing import shared_memory
-from threading import Thread
-from queue import Queue
-from typing import Dict, List, Tuple
 from dataclasses import asdict
+from multiprocessing import shared_memory
+from queue import Queue
+from threading import Thread
+from typing import Dict, List, Tuple
 
 import numpy as np
 from redis import ConnectionPool, Redis
-import asyncio
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -22,9 +22,9 @@ from inference.core.models.roboflow import RoboflowInferenceModel
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.tasks import postprocess
 from inference.enterprise.parallel.utils import (
+    SharedMemoryMetadata,
     failure_handler,
     shm_manager,
-    SharedMemoryMetadata,
 )
 
 logging.basicConfig(level=logging.INFO)

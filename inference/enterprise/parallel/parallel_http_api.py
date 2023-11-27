@@ -1,8 +1,8 @@
 import asyncio
+
 from inference.core.interfaces.http.http_api import HttpInterface
-from inference.enterprise.parallel.dispatch_manager import (
-    DispatchModelManager,
-)
+from inference.enterprise.parallel.dispatch_manager import DispatchModelManager
+
 
 class ParallelHttpInterface(HttpInterface):
     def __init__(self, model_manager: DispatchModelManager, root_path: str = None):

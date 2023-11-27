@@ -1,11 +1,11 @@
 import json
+from dataclasses import asdict
 from multiprocessing import shared_memory
 from typing import Dict, List, Tuple
 
 import numpy as np
 from celery import Celery
 from redis import ConnectionPool, Redis
-from dataclasses import asdict
 
 import inference.enterprise.parallel.celeryconfig
 from inference.core.entities.requests.inference import (
@@ -24,9 +24,9 @@ from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
+    SharedMemoryMetadata,
     failure_handler,
     shm_manager,
-    SharedMemoryMetadata,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 

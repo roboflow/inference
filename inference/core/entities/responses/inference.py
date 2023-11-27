@@ -287,6 +287,7 @@ def response_from_type(model_type, response_dict):
     else:
         raise ValueError(f"Uknown task type {model_type}")
 
+
 class StubResponse(InferenceResponse, WithVisualizationResponse):
     is_stub: bool = Field(description="Field to mark prediction type as stub")
     model_id: str = Field(description="Identifier of a model stub that was called")
