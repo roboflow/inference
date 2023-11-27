@@ -135,7 +135,11 @@ def register_datapoint_at_roboflow(
         batch_name=batch_name,
         tags=tags,
     )
-    if not configuration.persist_predictions or roboflow_image_id is None:
+    if is_prediction_registration_forbidden(
+        prediction=prediction,
+        persist_predictions=configuration.persist_predictions,
+        roboflow_image_id=roboflow_image_id,
+    ):
         return None
     encoded_prediction, prediction_file_type = encode_prediction(
         prediction=prediction, prediction_type=prediction_type
@@ -200,3 +204,15 @@ def safe_register_image_at_roboflow(
                 project=configuration.dataset_id,
                 strategy_name=strategy_with_spare_credit,
             )
+
+
+def is_prediction_registration_forbidden(
+    prediction: Prediction,
+    persist_predictions: bool,
+    roboflow_image_id: Optional[str],
+) -> bool:
+    return (
+        roboflow_image_id is None
+        or persist_predictions is False
+        or prediction.get("is_stub", False) is True
+    )

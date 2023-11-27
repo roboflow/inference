@@ -50,9 +50,10 @@ def adjust_prediction_to_client_scaling_factor(
 def predictions_should_not_be_post_processed(
     prediction: dict, prediction_type: PredictionType
 ) -> bool:
-    # excluding from post-processing classification output and empty predictions
+    # excluding from post-processing classification output, stub-output and empty predictions
     return (
-        "predictions" not in prediction
+        "is_stub" in prediction
+        or "predictions" not in prediction
         or CLASSIFICATION_TASK in prediction_type
         or len(prediction["predictions"]) == 0
     )
