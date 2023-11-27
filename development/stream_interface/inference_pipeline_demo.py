@@ -12,7 +12,7 @@ import supervision as sv
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_predictions, display_image, UDPSink, multi_sink
+from inference.core.interfaces.stream.sinks import render_boxes, display_image, UDPSink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
@@ -51,7 +51,7 @@ def main(
         ffmpeg_process = open_ffmpeg_stream_process(stream_id=stream_id)
         on_frame_rendered = partial(stream_prediction, ffmpeg_process=ffmpeg_process)
         on_prediction = partial(
-            render_predictions,
+            render_boxes,
             display_statistics=enable_stats,
             on_frame_rendered=on_frame_rendered,
         )
@@ -62,7 +62,7 @@ def main(
         sinks.append(on_prediction)
     if "display" in output_type:
         on_prediction = partial(
-            render_predictions,
+            render_boxes,
             display_statistics=enable_stats,
         )
         sinks.append(on_prediction)

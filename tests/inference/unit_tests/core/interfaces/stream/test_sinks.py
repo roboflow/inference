@@ -11,13 +11,13 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.sinks import (
-    render_predictions,
+    render_boxes,
     UDPSink,
     multi_sink,
 )
 
 
-def test_render_predictions_completes_successfully() -> None:
+def test_render_boxes_completes_successfully() -> None:
     # given
     video_frame = VideoFrame(
         image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
@@ -49,7 +49,7 @@ def test_render_predictions_completes_successfully() -> None:
         captured_images.append(image)
 
     # when
-    render_predictions(
+    render_boxes(
         video_frame=video_frame,
         predictions=predictions,
         on_frame_rendered=capture_image,

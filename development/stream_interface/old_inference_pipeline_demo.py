@@ -13,7 +13,7 @@ import supervision as sv
 from inference import Stream
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_predictions, display_image
+from inference.core.interfaces.stream.sinks import render_boxes, display_image
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
