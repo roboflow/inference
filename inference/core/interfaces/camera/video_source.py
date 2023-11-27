@@ -155,6 +155,105 @@ class VideoSource:
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     ):
+        """
+        This class is meant to represent abstraction over video sources - both video files and
+        on-line streams that are possible to be consumed and used by other components of `inference`
+        library.
+
+        Before digging into details of the class behaviour, it is advised to familiarise with the following
+        concepts and implementation assumptions:
+
+        1. Video file can be accessed from local (or remote) storage by the consumer in a pace dictated by
+            its processing capabilities. If processing is faster than the frame rate of video, operations
+            may be executed in a time shorter than the time of video playback. In the opposite case - consumer
+            may freely decode and process frames in its own pace, without risk for failures due to temporal
+            dependencies of processing - this is classical offline processing example.
+        2. Video streams, on the other hand, usually need to be consumed in a pace near to their frame-rate -
+            in other words - this is on-line processing example. Consumer being faster than incoming stream
+            frames cannot utilise its resources to the full extent as not-yet-delivered data would be needed.
+            Slow consumer, however, may not be able to process everything on time and to keep up with the pace
+            of stream - some frames would need to be dropped. Otherwise - over time, consumer could go out of
+            sync with the stream causing decoding failures or unpredictable behavior.
+
+        To fit those two types of video sources, `VideoSource` introduces the concept of buffered decoding of
+        video stream (like at the YouTube - player buffers some frames that are soon to be displayed).
+        The way on how buffer is filled and consumed dictates the behavior of `VideoSource`.
+
+        Starting from `BufferFillingStrategy` - we have 3 basic options:
+        * WAIT: in case of slow video consumption, when buffer is full - `VideoSource` will wait for
+        the empty spot in buffer before next frame will be processed - this is suitable in cases when
+        we want to ensure EACH FRAME of the video to be processed
+        * DROP_OLDEST: when buffer is full, the frame that sits there for the longest time will be dropped -
+        this is suitable for cases when we want to process the most recent frames possible
+        * DROP_LATEST: when buffer is full, the newly decoded frame is dropped - useful in cases when
+        it is expected to have processing performance drops, but we would like to consume portions of
+        video that are locally smooth - but this is probably the least common use-case.
+
+        On top of that - there are two ADAPTIVE strategies: ADAPTIVE_DROP_OLDEST and ADAPTIVE_DROP_LATEST,
+        which are equivalent to DROP_OLDEST and DROP_LATEST with adaptive decoding feature enabled. The notion
+        of that mode will be described later.
+
+        Naturally, decoded frames must also be consumed. `VideoSource` provides a handy interface for reading
+        a video source frames by a SINGLE consumer. Consumption strategy can also be dictated via
+        `BufferConsumptionStrategy`:
+        * LAZY - consume all the frames from decoding buffer one-by-one
+        * EAGER - at each readout - take all frames already buffered, drop all of them apart from the most recent
+
+        In consequence - there are various combinations of `BufferFillingStrategy` and `BufferConsumptionStrategy`.
+        The most popular would be:
+        * `BufferFillingStrategy.WAIT` and `BufferConsumptionStrategy.LAZY` - to always decode and process each and
+            every frame of the source (useful while processing video files - and default behaviour enforced by
+            `inference` if there is no explicit configuration)
+        * `BufferFillingStrategy.DROP_OLDEST` and `BufferConsumptionStrategy.EAGER` - to always process the most
+            recent frames of source (useful while processing video streams when low latency [real-time experience]
+            is required - ADAPTIVE version of this is default for streams)
+
+        ADAPTIVE strategies were introduced to handle corner-cases, when consumer hardware is not capable to consume
+        video stream and process frames at the same time (for instance - Nvidia Jetson devices running processing
+        against hi-res streams with high FPS ratio). It acts with buffer in nearly the same way as `DROP_OLDEST`
+        and `DROP_LATEST` strategies, but there are two more conditions that may influence frame drop:
+        * announced rate of source - which in fact dictate the pace of frames grabbing from incoming stream that
+        MUST be met by consumer to avoid strange decoding issues causing decoder to fail - if the pace of frame grabbing
+        deviates too much - decoding will be postponed, and frames dropped to grab next ones sooner
+        * consumption rate - in resource constraints environment, not only decoding is problematic from the performance
+        perspective - but also heavy processing. If consumer is not quick enough - allocating more useful resources
+        for decoding frames that may never be processed is a waste. That's why - if decoding happens more frequently
+        than consumption of frame - ADAPTIVE mode causes decoding to be done in a slower pace and more frames are just
+        grabbed and dropped on the floor.
+        ADAPTIVE mode increases latency slightly, but may be the only way to operate in some cases.
+        Behaviour of adaptive mode, including the maximum acceptable deviations of frames grabbing pace from source,
+        reader pace and maximum number of consecutive frames dropped in ADAPTIVE mode are configurable by clients,
+        with reasonable defaults being set.
+
+        `VideoSource` emits events regarding its activity - which can be intercepted by custom handlers. Take
+        into account that they are always executed in context of thread invoking them (and should be fast to complete,
+        otherwise may block the flow of stream consumption). All errors raised will be emitted as logger warnings only.
+
+        `VideoSource` implementation is naturally multithreading, with different thread decoding video and different
+        one consuming it and manipulating source state. Implementation of user interface is thread-safe, although
+        stream it is meant to be consumed by a single thread only.
+
+         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
+
+        Args:
+            video_reference (Union[str, int]): Either str with file or stream reference, or int representing device ID
+            buffer_size (int): size of decoding buffer
+            status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers for status updates
+            buffer_filling_strategy (Optional[BufferFillingStrategy]): Settings for buffer filling strategy - if not
+                given - automatic choice regarding source type will be applied
+            buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Settings for buffer consumption strategy,
+                if not given - automatic choice regarding source type will be applied
+            adaptive_mode_stream_pace_tolerance (float): Maximum deviation between frames grabbing pace and stream pace
+                that will not trigger adaptive mode frame drop
+            adaptive_mode_reader_pace_tolerance (float): Maximum deviation between decoding pace and stream consumption
+                pace that will not trigger adaptive mode frame drop
+            minimum_adaptive_mode_samples (int): Minimal number of frames to be used to establish actual pace of
+                processing, before adaptive mode can drop any frame
+            maximum_adaptive_frames_dropped_in_row (int): Maximum number of frames dropped in row due to application of
+                adaptive strategy
+
+        Returns: Instance of `VideoSource` class
+        """
         frames_buffer = Queue(maxsize=buffer_size)
         if status_update_handlers is None:
             status_update_handlers = []
@@ -197,6 +296,24 @@ class VideoSource:
 
     @lock_state_transition
     def restart(self, wait_on_frames_consumption: bool = True) -> None:
+        """
+        Method to restart source consumption. Eligible to be used in states:
+        [MUTED, RUNNING, PAUSED, ENDED, ERROR].
+        End state:
+        * INITIALISING - that should change into RUNNING once first frame is ready to be grabbed
+        * ERROR - if it was not possible to connect with source
+
+        Thread safe - only one transition of states possible at the time.
+
+        Args:
+            wait_on_frames_consumption (bool): Flag telling if all frames from buffer must be consumed before
+                completion of this operation.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+            * SourceConnectionError: if source cannot be connected
+        """
         if self._state not in RESTART_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESTART stream in state: {self._state}"
@@ -205,6 +322,20 @@ class VideoSource:
 
     @lock_state_transition
     def start(self) -> None:
+        """
+        Method to be used to start source consumption. Eligible to be used in states:
+        [NOT_STARTED, ENDED, (RESTARTING - which is internal state only)]
+        End state:
+        * INITIALISING - that should change into RUNNING once first frame is ready to be grabbed
+        * ERROR - if it was not possible to connect with source
+
+        Thread safe - only one transition of states possible at the time.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+            * SourceConnectionError: if source cannot be connected
+        """
         if self._state not in START_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not START stream in state: {self._state}"
@@ -213,6 +344,25 @@ class VideoSource:
 
     @lock_state_transition
     def terminate(self, wait_on_frames_consumption: bool = True) -> None:
+        """
+        Method to be used to terminate source consumption. Eligible to be used in states:
+        [MUTED, RUNNING, PAUSED, ENDED, ERROR, (RESTARTING - which is internal state only)]
+        End state:
+        * ENDED - indicating success of the process
+        * ERROR - if error with processing occurred
+
+        Must be used to properly dispose resources at the end.
+
+        Thread safe - only one transition of states possible at the time.
+
+        Args:
+            wait_on_frames_consumption (bool): Flag telling if all frames from buffer must be consumed before
+                completion of this operation.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+        """
         if self._state not in TERMINATE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not TERMINATE stream in state: {self._state}"
@@ -221,20 +371,63 @@ class VideoSource:
 
     @lock_state_transition
     def pause(self) -> None:
+        """
+        Method to be used to pause source consumption. During pause - no new frames are consumed.
+        Used on on-line streams for too long may cause stream disconnection.
+        Eligible to be used in states:
+        [RUNNING]
+        End state:
+        * PAUSED
+
+        Thread safe - only one transition of states possible at the time.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+        """
         if self._state not in PAUSE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not PAUSE stream in state: {self._state}"
             )
         self._pause()
 
+    @lock_state_transition
     def mute(self) -> None:
+        """
+        Method to be used to mute source consumption. Muting is an equivalent of pause for stream - where
+        frames grabbing is not put on hold, just new frames decoding and buffering is not allowed - causing
+        intermediate frames to be dropped. May be also used against files, although arguably less useful.
+        Eligible to be used in states:
+        [RUNNING]
+        End state:
+        * MUTED
+
+        Thread safe - only one transition of states possible at the time.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+        """
         if self._state not in MUTE_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not MUTE stream in state: {self._state}"
             )
         self._mute()
 
+    @lock_state_transition
     def resume(self) -> None:
+        """
+        Method to recover from pause or mute into running state.
+        [PAUSED, MUTED]
+        End state:
+        * RUNNING
+
+        Thread safe - only one transition of states possible at the time.
+
+        Returns: None
+        Throws:
+            * StreamOperationNotAllowedError: if executed in context of incorrect state of the source
+        """
         if self._state not in RESUME_ELIGIBLE_STATES:
             raise StreamOperationNotAllowedError(
                 f"Could not RESUME stream in state: {self._state}"
@@ -242,12 +435,29 @@ class VideoSource:
         self._resume()
 
     def get_state(self) -> StreamState:
+        """
+        Method to get current state of the `VideoSource`
+
+        Returns: StreamState
+        """
         return self._state
 
     def frame_ready(self) -> bool:
+        """
+        Method to check if decoded frame is ready for consumer
+
+        Returns: boolean flag indicating frame readiness
+        """
         return not self._frames_buffer.empty()
 
     def read_frame(self) -> VideoFrame:
+        """
+        Method to be used by the consumer to get decoded source frame.
+
+        Returns: VideoFrame object with decoded frame and its metadata.
+        Throws:
+            * EndOfStreamError: when trying to get the frame from closed source.
+        """
         if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
             video_frame: Optional[VideoFrame] = purge_queue(
                 queue=self._frames_buffer,
@@ -312,12 +522,13 @@ class VideoSource:
     def _terminate(self, wait_on_frames_consumption: bool) -> None:
         if self._state in RESUME_ELIGIBLE_STATES:
             self._resume()
+        previous_state = self._state
         self._change_state(target_state=StreamState.TERMINATING)
         if self._stream_consumption_thread is not None:
             self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
             self._frames_buffer.join()
-        if self._state is not StreamState.ERROR:
+        if previous_state is not StreamState.ERROR:
             self._change_state(target_state=StreamState.ENDED)
 
     def _pause(self) -> None:
@@ -417,6 +628,11 @@ class VideoSource:
 
 
 class VideoConsumer:
+    """
+    This class should be consumed as part of internal implementation.
+    It provides abstraction around stream consumption strategies.
+    """
+
     @classmethod
     def init(
         cls,

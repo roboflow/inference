@@ -1,3 +1,8 @@
+"""
+This module contains component intended to use in combination with `InferencePipeline` to ensure
+observability. Please consider them internal details of implementation.
+"""
+
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime

@@ -267,9 +267,10 @@ class InferencePipeline:
     ) -> Generator[VideoFrame, None, None]:
         self._video_source.start()
         while True:
-            allow_reconnect = (
-                not self._video_source.describe_source().source_properties.is_file
-            )
+            source_properties = self._video_source.describe_source().source_properties
+            if source_properties is None:
+                break
+            allow_reconnect = not source_properties.is_file
             yield from get_video_frames_generator(
                 video=self._video_source, max_fps=self._max_fps
             )
