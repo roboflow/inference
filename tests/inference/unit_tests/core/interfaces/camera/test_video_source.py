@@ -48,7 +48,9 @@ def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
     result = purge_queue(queue=queue, wait_on_empty=False)
 
     # then
-    assert result is None
+    assert (
+        result is None
+    ), "Purging empty queue should yield empty result when waiting is not desired"
 
 
 def test_purge_queue_when_non_empty_queue_given() -> None:
@@ -62,11 +64,15 @@ def test_purge_queue_when_non_empty_queue_given() -> None:
     result = purge_queue(queue=queue)
 
     # then
-    assert result is 3
-    assert queue.empty() is True
+    assert (
+        result is 3
+    ), "As a result of non-empty queue purge - last inserted value should be returned"
+    assert (
+        queue.empty() is True
+    ), "After purge - queue must be empty if there is no external producer"
 
 
-def test_purge_queue_when_non_empty_queue_given_with_fps_monitor() -> None:
+def test_purge_queue_when_non_empty_queue_given_with_callback() -> None:
     # given
     successful_reads = []
 
@@ -79,12 +85,15 @@ def test_purge_queue_when_non_empty_queue_given_with_fps_monitor() -> None:
     queue.put(3)
 
     # when
-    result = purge_queue(queue=queue, on_successful_read=on_successful_read)
+    _ = purge_queue(queue=queue, on_successful_read=on_successful_read)
 
     # then
-    assert result is 3
-    assert queue.empty() is True
-    assert len(successful_reads) == 3
+    assert (
+        queue.empty() is True
+    ), "After purge - queue must be empty if there is no external producer"
+    assert (
+        len(successful_reads) == 3
+    ), "Callback should be called each time result is taken out from queue"
 
 
 def test_discover_source_properties_when_local_file_given(
@@ -97,11 +106,11 @@ def test_discover_source_properties_when_local_file_given(
     result = discover_source_properties(stream=video)
 
     # then
-    assert result.is_file is True
-    assert result.total_frames == 431
-    assert result.height == 240
-    assert result.width == 426
-    assert abs(result.fps - 30.0) < 1e-5
+    assert result.is_file is True, "Path refers to video file, not stream"
+    assert result.total_frames == 431, "This video has 431 frames in total"
+    assert result.height == 240, "Video height is 240"
+    assert result.width == 426, "Video height is 426"
+    assert abs(result.fps - 30.0) < 1e-5, "Video file FPS is around 30"
 
 
 def test_video_source_throwing_error_when_invalid_video_reference_given() -> None:
@@ -128,7 +137,7 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
         state=StreamState.NOT_STARTED,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
-    )
+    ), "Source description must denote NOT_STARTED state and invalid source reference"
 
 
 def test_video_source_describe_source_when_invalid_video_reference_consumption_started() -> (
@@ -150,7 +159,7 @@ def test_video_source_describe_source_when_invalid_video_reference_consumption_s
         state=StreamState.ERROR,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
-    )
+    ), "Source description must denote error regarding to connection to invalid source"
 
 
 @pytest.mark.timeout(90)
@@ -168,11 +177,21 @@ def test_video_source_describe_source_when_valid_video_reference_consumption_sta
         result = source.describe_source()
 
         # then
-        assert result.source_properties.is_file is True
-        assert result.source_reference == local_video_path
-        assert result.state is StreamState.RUNNING
-        assert result.buffer_filling_strategy is BufferFillingStrategy.WAIT
-        assert result.buffer_consumption_strategy is BufferConsumptionStrategy.LAZY
+        assert (
+            result.source_properties.is_file is True
+        ), "Video file given to VideoSource, not stream"
+        assert (
+            result.source_reference == local_video_path
+        ), "Source reference must match passed video path"
+        assert (
+            result.state is StreamState.RUNNING
+        ), "After reading first frame, before consumption of all frames in default mode, RUNNING is expected state"
+        assert (
+            result.buffer_filling_strategy is BufferFillingStrategy.WAIT
+        ), "Default strategy for filling buffer for video files is WAIT"
+        assert (
+            result.buffer_consumption_strategy is BufferConsumptionStrategy.LAZY
+        ), "Default strategy for consuming buffer for video files is WAIT"
 
     finally:
         tear_down_source(source=source)
@@ -205,7 +224,7 @@ def test_pausing_video_stream(local_video_path: str) -> None:
         assert (
             first_frame_after_resume.frame_timestamp
             - last_frame_before_resume.frame_timestamp
-        ).total_seconds() >= pause_resume_delay
+        ).total_seconds() >= pause_resume_delay, "Between first frame decoded after resume and last before pause must a break - at least as long as in between of .pause() and .resume() operations"
     finally:
         tear_down_source(source=source)
 
@@ -260,10 +279,14 @@ def test_restart_paused_stream_for_video_preserves_frames_continuity(
         # then
         for frame_before_restart in frames_before_restart:
             last_id_before_restart = frame_before_restart.frame_id
-        assert frame_after_restart.frame_id == last_id_before_restart + 1
+        assert (
+            frame_after_restart.frame_id == last_id_before_restart + 1
+        ), "Next frame after restart has next consecutive id after the last one before restart"
         assert (
             frame_after_restart.frame_timestamp - restart_timestamp
-        ).total_seconds() > 0
+        ).total_seconds() > 0, (
+            "First frame after restart cannot be decoded faster than restart happens"
+        )
     finally:
         tear_down_source(source=source)
 
@@ -295,7 +318,9 @@ def test_restart_muted_stream_completes_successfully(local_video_path: str) -> N
         # then
         assert (
             frame_after_restart.frame_timestamp - restart_timestamp
-        ).total_seconds() > 0
+        ).total_seconds() > 0, (
+            "First frame after restart cannot be decoded faster than restart happens"
+        )
     finally:
         tear_down_source(source=source)
 
@@ -329,10 +354,14 @@ def test_restart_running_stream_preserves_frame_id_continuity(
         # then
         for frame_before_restart in frames_before_restart:
             last_id_before_restart = frame_before_restart.frame_id
-        assert frame_after_restart.frame_id == last_id_before_restart + 1
+        assert (
+            frame_after_restart.frame_id == last_id_before_restart + 1
+        ), "Next frame after restart has next consecutive id after the last one before restart"
         assert (
             frame_after_restart.frame_timestamp - restart_timestamp
-        ).total_seconds() > 0
+        ).total_seconds() > 0, (
+            "First frame after restart cannot be decoded faster than restart happens"
+        )
     finally:
         tear_down_source(source=source)
 
@@ -540,7 +569,9 @@ def test_consumption_of_video_file_in_eager_mode_ends_successfully(
             frames_consumed += 1
 
         # then
-        assert 0 <= frames_consumed <= 431
+        assert (
+            0 <= frames_consumed <= 431
+        ), "Video has 431 frames, and that's maximum amount that should be processed, some frames may be dropped"
     finally:
         tear_down_source(source=source)
 
@@ -559,7 +590,9 @@ def test_drop_single_frame_from_buffer_when_buffer_is_empty() -> None:
     )
 
     # then
-    assert len(updates) == 0
+    assert (
+        len(updates) == 0
+    ), "No updates should be emitted once there was nothing to be dropped"
 
 
 def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
@@ -583,14 +616,16 @@ def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
     )
 
     # then
-    assert len(updates) == 1
+    assert len(updates) == 1, "Exactly one frame can be dropped - emitting one update"
     assert updates[0].payload == {
         "frame_timestamp": frame_timestamp,
         "frame_id": 37,
         "cause": "some",
-    }
-    assert updates[0].severity is UpdateSeverity.DEBUG
-    assert updates[0].event_type == "FRAME_DROPPED"
+    }, "Dropped frames details must match content of the buffer"
+    assert (
+        updates[0].severity is UpdateSeverity.DEBUG
+    ), "Severity of DROP event is DEBUG"
+    assert updates[0].event_type == "FRAME_DROPPED", "Event type must match"
 
 
 def test_decode_video_frame_to_buffer_when_frame_could_not_be_retrieved() -> None:
@@ -611,9 +646,11 @@ def test_decode_video_frame_to_buffer_when_frame_could_not_be_retrieved() -> Non
     )
 
     # then
-    assert result is False
-    assert abs(fps_monitor()) < 1e-5
-    assert buffer.empty() is True
+    assert result is False, "Success status on failure must be False"
+    assert len(fps_monitor.all_timestamps) == 1, "FPS monitor tick must not be emitted"
+    assert (
+        buffer.empty() is True
+    ), "Nothing can be pushed to buffer once frame decoding failed"
 
 
 def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
@@ -636,11 +673,13 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
     )
 
     # then
-    assert result is True
-    assert fps_monitor() > 0
+    assert result is True, "Success status on decoding must be denoted"
+    assert (
+        len(fps_monitor.all_timestamps) == 2
+    ), "FPS monitor tick must be emitted on success"
     assert buffer.get_nowait() == VideoFrame(
         image=image, frame_id=1, frame_timestamp=frame_timestamp
-    )
+    ), "Decoded frame must be saved into buffer"
 
 
 def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
@@ -668,8 +707,10 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     )
 
     # then
-    assert result is False
-    assert buffer.empty() is True
+    assert (
+        result is False
+    ), "Failure status must be denoted, once grabbing frame is unsuccessful"
+    assert buffer.empty() is True, "On failure, nothing can be populated into buffer"
 
 
 def test_stream_consumption_when_buffering_not_allowed() -> None:
@@ -697,8 +738,12 @@ def test_stream_consumption_when_buffering_not_allowed() -> None:
     )
 
     # then
-    assert result is True
-    assert buffer.empty() is True
+    assert (
+        result is True
+    ), "Success status must be denoted, once grabbing frame is successful"
+    assert (
+        buffer.empty() is True
+    ), "Despite success in frame grabbing, frames buffering is not allowed, so buffer must not be populated with frame"
 
 
 def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_failed() -> (
@@ -729,8 +774,12 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
     )
 
     # then
-    assert result is False
-    assert buffer.empty() is True
+    assert (
+        result is False
+    ), "Failure status must be denoted, once grabbing frame is successful but decoding failed"
+    assert (
+        buffer.empty() is True
+    ), "On decoding failure, nothing can be populated into buffer"
 
 
 def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_succeed() -> (
@@ -763,11 +812,17 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
     )
 
     # then
-    assert result is True
-    assert buffer.get_nowait().frame_id == -2
+    assert result is True, "Operation status must be denoted"
+    assert (
+        buffer.get_nowait().frame_id == -2
+    ), "Previously injected video frame must be possible to recover from buffer"
     buffered_result = buffer.get_nowait()
-    assert buffered_result.frame_id == 1
-    assert buffered_result.image is image
+    assert (
+        buffered_result.frame_id == 1
+    ), "Newly decoded frame must be possible to be received from the buffer"
+    assert (
+        buffered_result.image is image
+    ), "Newly decoded frame must be possible to be received from the buffer"
 
 
 def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -> None:
@@ -798,8 +853,10 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
     )
 
     # then
-    assert result is True
-    assert buffer.get_nowait().frame_id == -2
+    assert result is True, "Operation status must be denoted"
+    assert (
+        buffer.get_nowait().frame_id == -2
+    ), "Buffer must contain old frame, as due to strategy, new one should be dropped"
 
 
 def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -> None:
@@ -831,12 +888,20 @@ def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -
     )
 
     # then
-    assert result is True
-    assert buffer.get_nowait().frame_id == -1
+    assert result is True, "Operation status must be denoted"
+    assert (
+        buffer.get_nowait().frame_id == -1
+    ), "Latest frame, with id=-2 must be dropped once new arrives"
     buffered_result = buffer.get_nowait()
-    assert buffered_result.frame_id == 1
-    assert buffered_result.image is image
-    assert buffer.empty() is True
+    assert (
+        buffered_result.frame_id == 1
+    ), "Newly decoded frame must be possible to be received from the buffer"
+    assert (
+        buffered_result.image is image
+    ), "Newly decoded frame must be possible to be received from the buffer"
+    assert (
+        buffer.empty() is True
+    ), "Only 2 frames can be in the buffer, so after both being consumed - buffer is empty"
 
 
 def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due_to_not_enough_observations() -> (
@@ -870,12 +935,20 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
     )
 
     # then
-    assert result is True
-    assert buffer.get_nowait().frame_id == -1
+    assert result is True, "Operation status must be denoted"
+    assert (
+        buffer.get_nowait().frame_id == -1
+    ), "Latest frame, with id=-2 must be dropped once new arrives and ADAPTIVE strategy does not block it"
     buffered_result = buffer.get_nowait()
-    assert buffered_result.frame_id == 1
-    assert buffered_result.image is image
-    assert buffer.empty() is True
+    assert (
+        buffered_result.frame_id == 1
+    ), "Newly decoded frame must be possible to be received from the buffer"
+    assert (
+        buffered_result.image is image
+    ), "Newly decoded frame must be possible to be received from the buffer"
+    assert (
+        buffer.empty() is True
+    ), "Only 2 frames can be in the buffer, so after both being consumed - buffer is empty"
 
 
 @pytest.mark.slow
@@ -933,11 +1006,19 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
     # First two frames will cause decoding, then 4 will be dropped due to not
     # keeping up to 200fps stream (we emit at 100fps), next will be submitted to buffer,
     # but since we are still lagging, the last frame will be rejected
-    assert results == [True] * 8
-    assert len(buffer_content) == 3
-    assert buffer_content[0].frame_id == 1
-    assert buffer_content[1].frame_id == 2
-    assert buffer_content[2].frame_id == 7
+    assert results == [True] * 8, "All of operation should succeed"
+    assert (
+        len(buffer_content) == 3
+    ), "During processing, 3 buffered frames should be consumed"
+    assert (
+        buffer_content[0].frame_id == 1
+    ), "First frame in the buffer is to be the newly decoded one with id 1, as adaptive strategy should not reach the readiness for rejection"
+    assert (
+        buffer_content[1].frame_id == 2
+    ), "Second frame in the buffer is to be the newly decoded one with id 1, as adaptive strategy should not reach the readiness for rejection"
+    assert (
+        buffer_content[2].frame_id == 7
+    ), "After second frame being processed, next 4 (due to `maximum_adaptive_frames_dropped_in_row` parameter) should be rejected as consumer lags, lettiong frame 7 do be emitted"
     assert buffer.empty() is True
 
 
@@ -994,13 +1075,23 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
 
     # then
     # As stream FPS is not announced - we cannot reject any frame
-    assert results == [True] * 4
-    assert len(buffer_content) == 4
-    assert buffer_content[0].frame_id == 1
-    assert buffer_content[1].frame_id == 2
-    assert buffer_content[2].frame_id == 3
-    assert buffer_content[3].frame_id == 4
-    assert buffer.empty() is True
+    assert results == [True] * 4, "All of operation should succeed"
+    assert (
+        len(buffer_content) == 4
+    ), "We should be able to grab all new frames from buffer"
+    assert (
+        buffer_content[0].frame_id == 1
+    ), "Adaptive strategy should not prevent natural flow of decoding, hence frame 1 is first"
+    assert (
+        buffer_content[1].frame_id == 2
+    ), "Adaptive strategy should not prevent natural flow of decoding, hence frame 2 is second"
+    assert (
+        buffer_content[2].frame_id == 3
+    ), "Adaptive strategy should not prevent natural flow of decoding, hence frame 3 is third"
+    assert (
+        buffer_content[3].frame_id == 4
+    ), "Adaptive strategy should not prevent natural flow of decoding, hence frame 4 is fourth"
+    assert buffer.empty() is True, "Everything should be consumed from buffer"
 
 
 @pytest.mark.slow
@@ -1053,9 +1144,11 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
     # then
     # Reader acked only minimal number of frames - over time we expect decoding pace to vanish, and
     # we will start dropping frames
-    assert results == [True] * 103
-    assert len(buffer_content) < 103
-    assert buffer.empty() is True
+    assert results == [True] * 103, "All of operation should succeed"
+    assert (
+        len(buffer_content) < 103
+    ), "With delay in stream consumption, not all frames can be processed as adaptive strategy taking into account reader pace should trigger decoding prevention"
+    assert buffer.empty() is True, "Everything should be consumed from buffer"
 
 
 def test_get_fps_if_tick_happens_now_when_monitor_has_no_ticks_registered() -> None:
@@ -1066,7 +1159,9 @@ def test_get_fps_if_tick_happens_now_when_monitor_has_no_ticks_registered() -> N
     result = get_fps_if_tick_happens_now(fps_monitor=monitor)
 
     # then
-    assert abs(result) < 1e-5
+    assert (
+        abs(result) < 1e-5
+    ), "Once no ticks was emitted previously, 0 should be reported"
 
 
 @mock.patch.object(video_source.time, "monotonic")
@@ -1082,8 +1177,10 @@ def test_get_fps_if_tick_happens_now_when_monitor_has_tick_registered(
     result = get_fps_if_tick_happens_now(fps_monitor=monitor)
 
     # then
-    # 10ms per two tics, so 20fps
-    assert abs(result - 20) < 1e-5
+    # 100ms per two tics, so 20fps
+    assert (
+        abs(result - 20) < 1e-5
+    ), "Two ticks happened in 109ms, so 20 ticks per second expected"
 
 
 def assembly_dummy_source_properties(is_file: bool, fps: float) -> SourceProperties:

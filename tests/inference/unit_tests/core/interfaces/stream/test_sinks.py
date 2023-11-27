@@ -56,8 +56,14 @@ def test_render_predictions_completes_successfully() -> None:
     )
 
     # then
-    assert len(captured_images) == 1
-    assert captured_images[0].shape == (720, 1280, 3)
+    assert (
+        len(captured_images) == 1
+    ), "One capture_image() side effect expected after rendering"
+    assert captured_images[0].shape == (
+        720,
+        1280,
+        3,
+    ), "capture_image() should be called against resized image dictated by default parameter"
 
 
 def test_udp_sends_data_through_socket() -> None:
@@ -82,9 +88,14 @@ def test_udp_sends_data_through_socket() -> None:
 
     # then
     socket.sendto.assert_called_once()
-    assert socket.sendto.call_args[0][1] == ("127.0.0.1", 9090)
+    assert socket.sendto.call_args[0][1] == (
+        "127.0.0.1",
+        9090,
+    ), "Data must be sent to 127.0.0.1:9090"
     decoded_message = json.loads(socket.sendto.call_args[0][0])
-    assert decoded_message["some"] == "prediction"
+    assert (
+        decoded_message["some"] == "prediction"
+    ), "Payload of message that was sent must match the prediction emitted"
     assert decoded_message["inference_metadata"]["frame_id"] == 1
     assert (
         decoded_message["inference_metadata"]["frame_decoding_time"]
@@ -116,9 +127,15 @@ def test_multi_sink_when_error_occurs() -> None:
     )
 
     # then
-    assert len(calls) == 2
-    assert calls[0] == (video_frame, predictions)
-    assert calls[1] == (video_frame, predictions)
+    assert len(calls) == 2, "Despite error in sink, all handlers mus be called"
+    assert calls[0] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
+    assert calls[1] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
 
 
 def test_multi_sink_when_no_error_occurs() -> None:
@@ -143,6 +160,12 @@ def test_multi_sink_when_no_error_occurs() -> None:
     )
 
     # then
-    assert len(calls) == 2
-    assert calls[0] == (video_frame, predictions)
-    assert calls[1] == (video_frame, predictions)
+    assert len(calls) == 2, "All handlers must be called"
+    assert calls[0] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
+    assert calls[1] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
