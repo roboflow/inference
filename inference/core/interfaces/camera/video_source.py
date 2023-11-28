@@ -1,4 +1,3 @@
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +10,13 @@ import cv2
 import supervision as sv
 
 from inference.core import logger
+from inference.core.env import (
+    DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
+    DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE,
+    DEFAULT_BUFFER_SIZE,
+    DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
+    DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+)
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
@@ -20,20 +26,6 @@ from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
     SourceConnectionError,
     StreamOperationNotAllowedError,
-)
-
-DEFAULT_BUFFER_SIZE = int(os.getenv("VIDEO_SOURCE_BUFFER_SIZE", "64"))
-DEFAULT_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE = float(
-    os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_STREAM_PACE_TOLERANCE", "0.1")
-)
-DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE = float(
-    os.getenv("VIDEO_SOURCE_ADAPTIVE_MODE_READER_PACE_TOLERANCE", "5.0")
-)
-DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
-    os.getenv("VIDEO_SOURCE_MINIMUM_ADAPTIVE_MODE_SAMPLES", "10")
-)
-DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
-    os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
 
 VIDEO_SOURCE_CONTEXT = "video_source"

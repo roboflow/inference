@@ -1,4 +1,3 @@
-import os
 import time
 from datetime import datetime
 from queue import Queue
@@ -6,7 +5,12 @@ from threading import Thread
 from typing import Callable, Generator, List, Optional, Union
 
 from inference.core import logger
-from inference.core.env import API_KEY_ENV_NAMES
+from inference.core.env import (
+    API_KEY,
+    API_KEY_ENV_NAMES,
+    PREDICTIONS_QUEUE_SIZE,
+    RESTART_ATTEMPT_DELAY,
+)
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
@@ -31,10 +35,6 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.models.utils import get_roboflow_model
 
-PREDICTIONS_QUEUE_SIZE = int(
-    os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)
-)
-RESTART_ATTEMPT_DELAY = int(os.getenv("INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY", 1))
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
 SOURCE_CONNECTION_LOST_EVENT = "SOURCE_CONNECTION_LOST"
@@ -126,9 +126,7 @@ class InferencePipeline:
                 always if connection to stream is lost.
         """
         if api_key is None:
-            api_key = os.environ.get(API_KEY_ENV_NAMES[0], None) or os.environ.get(
-                API_KEY_ENV_NAMES[1], None
-            )
+            api_key = API_KEY
         if api_key is None:
             raise MissingApiKeyError(
                 "Could not initialise InferencePipeline, as API key is missing either in initializer parameters "
