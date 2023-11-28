@@ -6,18 +6,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inference.core.entities.types import TaskType, ModelType
-from inference.core.exceptions import (
-    ModelNotRecognisedError,
-)
+from inference.core.entities.types import ModelType, TaskType
+from inference.core.exceptions import ModelNotRecognisedError
+from inference.core.registries import roboflow
 from inference.core.registries.roboflow import (
+    RoboflowModelRegistry,
     get_model_metadata_from_cache,
+    get_model_type,
     model_metadata_content_is_invalid,
     save_model_metadata_in_cache,
-    get_model_type,
-    RoboflowModelRegistry,
 )
-from inference.core.registries import roboflow
 
 
 @mock.patch.object(roboflow, "construct_model_type_cache_path")

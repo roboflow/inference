@@ -8,3 +8,4 @@ black
 isort
 flake8
 rich
+pytest-timeout>=2.2.0

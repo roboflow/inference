@@ -5,20 +5,20 @@ from unittest.mock import MagicMock, call
 
 from humanfriendly.testing import touch
 
+from inference.core.cache import model_artifacts
 from inference.core.cache.model_artifacts import (
-    initialise_cache,
     are_all_files_cached,
+    clear_cache,
+    get_cache_dir,
+    get_cache_file_path,
+    initialise_cache,
     is_file_cached,
-    load_text_file_from_cache,
     load_json_from_cache,
+    load_text_file_from_cache,
     save_bytes_in_cache,
     save_json_in_cache,
     save_text_lines_in_cache,
-    get_cache_file_path,
-    get_cache_dir,
-    clear_cache,
 )
-from inference.core.cache import model_artifacts
 from tests.inference.unit_tests.core.utils.test_file_system import (
     assert_bytes_file_content_correct,
     assert_text_file_content_correct,
