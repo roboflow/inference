@@ -1,11 +1,15 @@
-from typing import Optional
+from typing import List, Optional, Tuple
+
+import numpy as np
 
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
+from inference.core.models.types import PreprocessReturnMetadata
 
 
-class ModelManagerDecorator:
+class ModelManagerDecorator(ModelManager):
     """Basic decorator, it acts like a `ModelManager` and contains a `ModelManager`.
 
     Args:
@@ -25,6 +29,14 @@ class ModelManagerDecorator:
         keys: Returns the keys (model IDs) from the manager.
     """
 
+    @property
+    def _models(self):
+        raise ValueError("Should only be accessing self.model_manager._models")
+
+    @property
+    def model_registry(self):
+        raise ValueError("Should only be accessing self.model_manager.model_registry")
+
     def __init__(self, model_manager: ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
@@ -42,7 +54,7 @@ class ModelManagerDecorator:
             return
         self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias)
 
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Processes a complete inference request.
@@ -54,7 +66,7 @@ class ModelManagerDecorator:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        return self.model_manager.infer_from_request(model_id, request, **kwargs)
+        return await self.model_manager.infer_from_request(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request.
@@ -82,7 +94,7 @@ class ModelManagerDecorator:
         """
         return self.model_manager.preprocess(model_id, request)
 
-    def get_task_type(self, model_id: str) -> str:
+    def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Gets the task type associated with a model.
 
         Args:
@@ -91,7 +103,9 @@ class ModelManagerDecorator:
         Returns:
             str: The task type.
         """
-        return self.model_manager.get_task_type(model_id)
+        if api_key is None:
+            api_key = API_KEY
+        return self.model_manager.get_task_type(model_id, api_key=api_key)
 
     def get_class_names(self, model_id):
         """Gets the class names for a given model.
@@ -155,3 +169,23 @@ class ModelManagerDecorator:
 
     def models(self):
         return self.model_manager.models()
+
+    def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
+        return self.model_manager.predict(model_id, *args, **kwargs)
+
+    def postprocess(
+        self,
+        model_id: str,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        *args,
+        **kwargs
+    ) -> List[List[float]]:
+        return self.model_manager.postprocess(
+            model_id, predictions, preprocess_return_metadata, *args, **kwargs
+        )
+
+    def make_response(
+        self, model_id: str, predictions: List[List[float]], *args, **kwargs
+    ) -> InferenceResponse:
+        return self.model_manager.make_response(model_id, predictions, *args, **kwargs)

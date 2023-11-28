@@ -1,13 +1,15 @@
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field, validator
 
-from inference.core.entities.common import ApiKey
-from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.inference import (
+    BaseRequest,
+    InferenceRequestImage,
+)
 from inference.core.env import CLIP_VERSION_ID
 
 
-class ClipInferenceRequest(BaseModel):
+class ClipInferenceRequest(BaseRequest):
     """Request for CLIP inference.
 
     Attributes:
@@ -15,12 +17,20 @@ class ClipInferenceRequest(BaseModel):
         clip_version_id (Optional[str]): The version ID of CLIP to be used for this request.
     """
 
-    api_key: Optional[str] = ApiKey
     clip_version_id: Optional[str] = Field(
         default=CLIP_VERSION_ID,
         example="ViT-B-16",
         description="The version ID of CLIP to be used for this request. Must be one of RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, and ViT-L-14.",
     )
+    model_id: Optional[str] = Field()
+
+    @validator("model_id", always=True)
+    def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
+        if values.get("clip_version_id") is None:
+            return None
+        return f"clip/{values['clip_version_id']}"
 
 
 class ClipImageEmbeddingRequest(ClipInferenceRequest):

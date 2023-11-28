@@ -1,7 +1,7 @@
 import base64
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -272,6 +272,20 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
         alias="class", default="face", description="The predicted class label"
     )
     landmarks: Union[List[Point], List[Point3D]]
+
+
+def response_from_type(model_type, response_dict):
+    if model_type == "classification":
+        try:
+            return ClassificationInferenceResponse(**response_dict)
+        except ValidationError:
+            return MultiLabelClassificationInferenceResponse(**response_dict)
+    elif model_type == "instance-segmentation":
+        return InstanceSegmentationInferenceResponse(**response_dict)
+    elif model_type == "object-detection":
+        return ObjectDetectionInferenceResponse(**response_dict)
+    else:
+        raise ValueError(f"Uknown task type {model_type}")
 
 
 class StubResponse(InferenceResponse, WithVisualizationResponse):

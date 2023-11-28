@@ -27,10 +27,12 @@ class ActiveLearningManager(ModelManager):
         self._cache = cache
         self._middlewares = middlewares if middlewares is not None else {}
 
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
-        prediction = super().infer_from_request(model_id=model_id, request=request)
+        prediction = await super().infer_from_request(
+            model_id=model_id, request=request
+        )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
         if not active_learning_eligible:
             return prediction
@@ -103,10 +105,12 @@ class ActiveLearningManager(ModelManager):
 
 
 class BackgroundTaskActiveLearningManager(ActiveLearningManager):
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
-        prediction = super().infer_from_request(model_id=model_id, request=request)
+        prediction = await super().infer_from_request(
+            model_id=model_id, request=request
+        )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
         if not active_learning_eligible:
             return prediction
