@@ -8,7 +8,7 @@ BUFFER_SIZE = 65535
 
 def main() -> None:
     udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-    udp_socket.bind(("0.0.0.0", PORT))
+    udp_socket.bind(("127.0.0.1", PORT))
     try:
         while True:
             message, _ = udp_socket.recvfrom(BUFFER_SIZE)
