@@ -124,7 +124,7 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request, **kwargs)
+        return self._models[model_id].infer_from_request(request)
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
