@@ -144,7 +144,7 @@ import numpy as np
 
 from inference.core.interfaces.camera.entities import VideoFrame
 
-def on_prediction(video_frame: VideoFrame, predictions: dict) -> None:
+def on_prediction(predictions: dict, video_frame: VideoFrame) -> None:
     pass
 ```
 

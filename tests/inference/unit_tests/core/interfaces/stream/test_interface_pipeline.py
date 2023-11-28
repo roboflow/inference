@@ -143,7 +143,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
     watchdog = BasePipelineWatchDog()
     predictions = []
 
-    def on_prediction(video_frame: VideoFrame, prediction: dict) -> None:
+    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
@@ -185,7 +185,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     watchdog = BasePipelineWatchDog()
     predictions = []
 
-    def on_prediction(video_frame: VideoFrame, prediction: dict) -> None:
+    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
@@ -230,7 +230,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     watchdog = BasePipelineWatchDog()
     predictions = []
 
-    def on_prediction(video_frame: VideoFrame, prediction: dict) -> None:
+    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
         predictions.append((video_frame, prediction))
         raise Exception()
 

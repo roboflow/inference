@@ -21,8 +21,8 @@ def display_image(image: np.ndarray) -> None:
 
 
 def render_boxes(
-    video_frame: VideoFrame,
     predictions: dict,
+    video_frame: VideoFrame,
     annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
     display_size: Optional[Tuple[int, int]] = (1280, 720),
     fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
@@ -36,8 +36,8 @@ def render_boxes(
     One may configure default behaviour, for instance to display latency and throughput statistics.
 
     Args:
-        video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
         predictions (dict): Roboflow object detection predictions with Bounding Boxes
+        video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
         annotator (sv.BoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
             default is used.
         display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output
@@ -152,16 +152,16 @@ class UDPSink:
 
     def send_predictions(
         self,
-        video_frame: VideoFrame,
         predictions: dict,
+        video_frame: VideoFrame,
     ) -> None:
         """
         Method to send predictions via UDP socket. Useful in combination with `InferencePipeline` as
         a sink for predictions.
 
         Args:
-            video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
             predictions (dict): Roboflow object detection predictions with Bounding Boxes
+            video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
 
         Returns: None
         Side effects: Sends serialised `predictions` and `video_frame` metadata via the UDP socket as
@@ -203,9 +203,9 @@ class UDPSink:
 
 
 def multi_sink(
-    video_frame: VideoFrame,
     predictions: dict,
-    sinks: List[Callable[[VideoFrame, dict], None]],
+    video_frame: VideoFrame,
+    sinks: List[Callable[[dict, VideoFrame], None]],
 ) -> None:
     """
     Helper util useful to combine multiple sinks together, while using `InferencePipeline`.
@@ -242,9 +242,9 @@ def multi_sink(
     """
     for sink in sinks:
         try:
-            sink(video_frame, predictions)
+            sink(predictions, video_frame)
         except Exception as error:
             logger.error(
-                f"Could not sent prediction with frame_id={video_frame.frame_id} to sink {sink.__name__} "
+                f"Could not sent prediction with frame_id={video_frame.frame_id} to sink "
                 f"due to error: {error}."
             )

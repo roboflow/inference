@@ -2,7 +2,7 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Thread
-from typing import Callable, Generator, List, Optional, Union
+from typing import Callable, Generator, List, Optional, Tuple, Union
 
 from inference.core import logger
 from inference.core.env import (
@@ -51,7 +51,7 @@ class InferencePipeline:
         cls,
         model_id: str,
         video_reference: Union[str, int],
-        on_prediction: Callable[[VideoFrame, ObjectDetectionPrediction], None],
+        on_prediction: Callable[[ObjectDetectionPrediction, VideoFrame], None],
         api_key: Optional[str] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
@@ -82,7 +82,7 @@ class InferencePipeline:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
             video_reference (Union[str, int]): Reference of source to be used to make predictions against.
                 It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
-            on_prediction (Callable[[VideoFrame, ObjectDetectionPrediction], None]): Function to be called
+            on_prediction (Callable[ObjectDetectionPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
                 Roboflow Object Detection prediction.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
@@ -168,7 +168,7 @@ class InferencePipeline:
         self,
         model: OnnxRoboflowInferenceModel,
         video_source: VideoSource,
-        on_prediction: Callable[[VideoFrame, ObjectDetectionPrediction], None],
+        on_prediction: Callable[[ObjectDetectionPrediction, VideoFrame], None],
         max_fps: Optional[float],
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
@@ -264,7 +264,7 @@ class InferencePipeline:
                     frame_timestamp=video_frame.frame_timestamp,
                     frame_id=video_frame.frame_id,
                 )
-                self._predictions_queue.put((video_frame, predictions))
+                self._predictions_queue.put((predictions, video_frame))
                 send_inference_pipeline_status_update(
                     severity=UpdateSeverity.DEBUG,
                     event_type=INFERENCE_COMPLETED_EVENT,
@@ -298,13 +298,15 @@ class InferencePipeline:
 
     def _dispatch_inference_results(self) -> None:
         while True:
-            inference_results: Optional[VideoFrame] = self._predictions_queue.get()
+            inference_results: Optional[
+                Tuple[dict, VideoFrame]
+            ] = self._predictions_queue.get()
             if inference_results is None:
                 self._predictions_queue.task_done()
                 break
-            video_frame, predictions = inference_results
+            predictions, video_frame = inference_results
             try:
-                self._on_prediction(video_frame, predictions)
+                self._on_prediction(predictions, video_frame)
             except Exception as error:
                 payload = {
                     "error_type": error.__class__.__name__,

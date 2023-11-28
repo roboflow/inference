@@ -115,7 +115,7 @@ def test_multi_sink_when_error_occurs() -> None:
 
     calls = []
 
-    def faulty_sink(frame: VideoFrame, predict: dict) -> None:
+    def faulty_sink(predict: dict, frame: VideoFrame) -> None:
         calls.append((frame, predict))
         raise Exception()
 
@@ -149,7 +149,7 @@ def test_multi_sink_when_no_error_occurs() -> None:
 
     calls = []
 
-    def correct_sink(frame: VideoFrame, predict: dict) -> None:
+    def correct_sink(predict: dict, frame: VideoFrame) -> None:
         calls.append((frame, predict))
 
     # when
