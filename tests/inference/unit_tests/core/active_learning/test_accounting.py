@@ -1,12 +1,12 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+from inference.core.active_learning import accounting
 from inference.core.active_learning.accounting import (
-    get_matching_labeling_batch,
     get_images_in_labeling_jobs_of_specific_batch,
+    get_matching_labeling_batch,
     image_can_be_submitted_to_batch,
 )
-from inference.core.active_learning import accounting
 
 
 def test_get_matching_labeling_batch_when_matching_batch_exists() -> None:

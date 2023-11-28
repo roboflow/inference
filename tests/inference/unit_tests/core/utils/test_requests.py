@@ -1,10 +1,10 @@
 import pytest
-from requests import Response, HTTPError
+from requests import HTTPError, Response
 
 from inference.core.utils.requests import (
     API_KEY_PATTERN,
-    deduct_api_key,
     api_key_safe_raise_for_status,
+    deduct_api_key,
 )
 
 

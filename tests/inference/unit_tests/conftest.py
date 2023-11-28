@@ -7,8 +7,8 @@ from typing import Generator
 
 import cv2
 import numpy as np
-from PIL import Image
 from _pytest.fixtures import fixture
+from PIL import Image
 
 ASSETS_DIR_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 
