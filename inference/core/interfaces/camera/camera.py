@@ -1,3 +1,4 @@
+import os
 import time
 from threading import Thread
 
@@ -34,6 +35,18 @@ class WebcamStream:
         self.enforce_fps = enforce_fps
         self.frame_id = 0
         self.vcap = cv2.VideoCapture(self.stream_id)
+
+        for key in os.environ:
+            if key.startswith("CV2_CAP_PROP"):
+                opencv_prop = key[4:]
+                opencv_constant = getattr(cv2, opencv_prop, None)
+                if opencv_constant is not None:
+                    value = int(os.getenv(key))
+                    self.vcap.set(opencv_constant, value)
+                    logger.info(f"set {opencv_prop} to {value}")
+                else:
+                    logger.warn(f"Property {opencv_prop} not found in cv2")
+
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.file_mode = self.vcap.get(cv2.CAP_PROP_FRAME_COUNT) > 0

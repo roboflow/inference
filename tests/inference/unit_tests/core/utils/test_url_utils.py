@@ -1,8 +1,8 @@
 from unittest import mock
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
-from inference.core.utils.url_utils import wrap_url
 from inference.core.utils import url_utils
+from inference.core.utils.url_utils import wrap_url
 
 
 @mock.patch.object(url_utils, "LICENSE_SERVER", "licence-server.com")

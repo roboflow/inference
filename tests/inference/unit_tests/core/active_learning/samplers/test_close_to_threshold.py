@@ -4,23 +4,20 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.core.active_learning.samplers import close_to_threshold
 from inference.core.active_learning.samplers.close_to_threshold import (
-    is_close_to_threshold,
+    class_to_be_excluded,
     count_detections_close_to_threshold,
     detections_are_close_to_threshold,
-    multi_label_classification_prediction_is_close_to_threshold,
-    multi_class_classification_prediction_is_close_to_threshold,
-    class_to_be_excluded,
-    prediction_is_close_to_threshold,
-    is_prediction_a_stub,
-    sample_close_to_threshold,
     initialize_close_to_threshold_sampling,
+    is_close_to_threshold,
+    is_prediction_a_stub,
+    multi_class_classification_prediction_is_close_to_threshold,
+    multi_label_classification_prediction_is_close_to_threshold,
+    prediction_is_close_to_threshold,
+    sample_close_to_threshold,
 )
-from inference.core.active_learning.samplers import close_to_threshold
-from inference.core.constants import (
-    CLASSIFICATION_TASK,
-    OBJECT_DETECTION_TASK,
-)
+from inference.core.constants import CLASSIFICATION_TASK, OBJECT_DETECTION_TASK
 from inference.core.exceptions import ActiveLearningConfigurationError
 
 OBJECT_DETECTION_PREDICTION = {

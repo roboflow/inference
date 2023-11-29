@@ -1,13 +1,15 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field, root_validator, validator
 
-from inference.core.entities.common import ApiKey
-from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.inference import (
+    BaseRequest,
+    InferenceRequestImage,
+)
 from inference.core.env import SAM_VERSION_ID
 
 
-class SamInferenceRequest(BaseModel):
+class SamInferenceRequest(BaseRequest):
     """SAM inference request.
 
     Attributes:
@@ -15,12 +17,21 @@ class SamInferenceRequest(BaseModel):
         sam_version_id (Optional[str]): The version ID of SAM to be used for this request.
     """
 
-    api_key: Optional[str] = ApiKey
     sam_version_id: Optional[str] = Field(
         default=SAM_VERSION_ID,
         example="vit_h",
         description="The version ID of SAM to be used for this request. Must be one of vit_h, vit_l, or vit_b.",
     )
+
+    model_id: Optional[str] = Field()
+
+    @validator("model_id", always=True)
+    def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
+        if values.get("sam_version_id") is None:
+            return None
+        return f"sam/{values['sam_version_id']}"
 
 
 class SamEmbeddingRequest(SamInferenceRequest):

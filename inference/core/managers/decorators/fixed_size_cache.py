@@ -54,7 +54,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             pass
         return super().remove(model_id)
 
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Processes a complete inference request and updates the cache.
@@ -68,7 +68,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         """
         self._key_queue.remove(model_id)
         self._key_queue.append(model_id)
-        return super().infer_from_request(model_id, request, **kwargs)
+        return await super().infer_from_request(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.

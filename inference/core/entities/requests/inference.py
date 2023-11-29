@@ -1,22 +1,35 @@
 from typing import Any, List, Optional, Union
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
 
-class InferenceRequest(BaseModel):
+class BaseRequest(BaseModel):
+    """Base request for inference.
+
+    Attributes:
+        id (str_): A unique request identifier.
+        api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
+        start (Optional[float]): start time of request
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    api_key: Optional[str] = ApiKey
+    start: Optional[float] = None
+
+
+class InferenceRequest(BaseRequest):
     """Base request for inference.
 
     Attributes:
         model_id (str): A unique model identifier.
         model_type (Optional[str]): The type of the model, usually referring to what task the model performs.
-        api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
     """
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
-    api_key: Optional[str] = ApiKey
 
 
 class InferenceRequestImage(BaseModel):
@@ -186,3 +199,14 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         example=False,
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
+
+
+def request_from_type(model_type, request_dict):
+    if model_type == "classification":
+        return ClassificationInferenceRequest(**request_dict)
+    elif model_type == "instance-segmentation":
+        return InstanceSegmentationInferenceRequest(**request_dict)
+    elif model_type == "object-detection":
+        return ObjectDetectionInferenceRequest(**request_dict)
+    else:
+        raise ValueError(f"Uknown task type {model_type}")

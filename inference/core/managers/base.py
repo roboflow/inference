@@ -18,7 +18,7 @@ from inference.core.exceptions import InferenceModelNotFound
 from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
-from inference.core.models.base import Model
+from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
 
 
@@ -27,7 +27,7 @@ class ModelManager:
 
     def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
         self.model_registry = model_registry
-        self._models = models if models is not None else {}
+        self._models: Dict[str, Model] = models if models is not None else {}
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -68,7 +68,7 @@ class ModelManager:
         if model_id not in self:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
 
-    def infer_from_request(
+    async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Runs inference on the specified model with the given request.
@@ -80,9 +80,10 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self.check_for_model(model_id)
         try:
-            rtn_val = self._models[model_id].infer_from_request(request)
+            rtn_val = await self.model_infer(
+                model_id=model_id, request=request, **kwargs
+            )
             finish_time = time.time()
             if not DISABLE_INFERENCE_CACHE:
                 cache.zadd(
@@ -94,7 +95,7 @@ class ModelManager:
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
-                        "request": request.dict(),
+                        "request": jsonable_encoder(request.dict()),
                         "response": jsonable_encoder(rtn_val),
                     },
                     score=finish_time,
@@ -112,11 +113,18 @@ class ModelManager:
                 )
                 cache.zadd(
                     f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                    value={"request": request.dict(), "error": str(e)},
+                    value={
+                        "request": jsonable_encoder(request.dict()),
+                        "error": str(e),
+                    },
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
                 )
             raise
+
+    async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
+        self.check_for_model(model_id)
+        return self._models[model_id].infer_from_request(request)
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
@@ -134,7 +142,12 @@ class ModelManager:
         return self._models[model_id].make_response(predictions, *args, **kwargs)
 
     def postprocess(
-        self, model_id: str, predictions: np.ndarray, *args, **kwargs
+        self,
+        model_id: str,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        *args,
+        **kwargs,
     ) -> List[List[float]]:
         """Processes the model's predictions after inference.
 
@@ -146,9 +159,11 @@ class ModelManager:
             List[List[float]]: The post-processed predictions.
         """
         self.check_for_model(model_id)
-        return self._models[model_id].postprocess(predictions, *args, **kwargs)
+        return self._models[model_id].postprocess(
+            predictions, preprocess_return_metadata, *args, **kwargs
+        )
 
-    def predict(self, model_id: str, *args, **kwargs) -> np.ndarray:
+    def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
         """Runs prediction on the specified model.
 
         Args:
@@ -167,7 +182,7 @@ class ModelManager:
 
     def preprocess(
         self, model_id: str, request: InferenceRequest
-    ) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         """Preprocesses the request before inference.
 
         Args:
@@ -178,7 +193,7 @@ class ModelManager:
             Tuple[np.ndarray, List[Tuple[int, int]]]: The preprocessed data.
         """
         self.check_for_model(model_id)
-        return self._models[model_id].preprocess(request)
+        return self._models[model_id].preprocess(**request.dict())
 
     def get_class_names(self, model_id):
         """Retrieves the class names for a given model.
@@ -192,7 +207,7 @@ class ModelManager:
         self.check_for_model(model_id)
         return self._models[model_id].class_names
 
-    def get_task_type(self, model_id: str) -> str:
+    def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Retrieves the task type for a given model.
 
         Args:

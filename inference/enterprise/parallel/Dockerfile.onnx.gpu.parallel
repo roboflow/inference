@@ -1,0 +1,61 @@
+FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+
+WORKDIR /app
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.gpu.txt \
+    requirements/requirements.waf.txt \
+    requirements/requirements.gaze.txt \
+    requirements/requirements.parallel.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.sam.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    -r requirements.gpu.txt \
+    -r requirements.waf.txt \
+    -r requirements.gaze.txt \
+    -r requirements.parallel.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+RUN apt-get update && apt-get install -y lsb-release curl gpg
+RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
+RUN apt-get update && apt-get install -y redis
+RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
+WORKDIR /app/
+COPY inference inference
+COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV NUM_CELERY_WORKERS=12
+ENV PYTHONPATH=/app/
+ENV REDIS_HOST="localhost"
+ENV REDIS_PORT="6380"
+ENV CORE_MODELS_ENABLED=false
+
+
+ENTRYPOINT redis-server --io-threads 8 --save "" --port $REDIS_PORT & \
+    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 1 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING -Ofair & \
+    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 1 --concurrency $NUM_CELERY_WORKERS -Q post --loglevel=WARNING -Ofair & \
+    python3 inference/enterprise/parallel/infer.py & \
+    uvicorn parallel_http:app --workers $NUM_WORKERS --host $HOST --port $PORT --timeout-keep-alive 100 && fg
