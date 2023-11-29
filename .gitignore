@@ -153,3 +153,4 @@ inference_cli/version.py
 inference_sdk/version.py
 
 **/.DS_Store
+!tests/inference/unit_tests/core/interfaces/assets/*.mp4

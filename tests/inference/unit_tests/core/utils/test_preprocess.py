@@ -5,16 +5,16 @@ import numpy as np
 import pytest
 
 from inference.core.exceptions import PreProcessingError
+from inference.core.utils import preprocess
 from inference.core.utils.preprocess import (
-    static_crop_should_be_applied,
-    contrast_adjustments_should_be_applied,
-    grayscale_conversion_should_be_applied,
-    take_static_crop,
     ContrastAdjustmentType,
     apply_contrast_adjustment,
+    contrast_adjustments_should_be_applied,
+    grayscale_conversion_should_be_applied,
     prepare,
+    static_crop_should_be_applied,
+    take_static_crop,
 )
-from inference.core.utils import preprocess
 
 
 @mock.patch.object(preprocess, "DISABLE_PREPROC_STATIC_CROP", False)

@@ -7,24 +7,24 @@ import cv2
 import numpy as np
 import pytest
 
+from inference.core.active_learning import core
 from inference.core.active_learning.core import (
-    execute_sampling,
-    prepare_image_to_registration,
     collect_tags,
-    safe_register_image_at_roboflow,
-    register_datapoint_at_roboflow,
     execute_datapoint_registration,
+    execute_sampling,
     is_prediction_registration_forbidden,
+    prepare_image_to_registration,
+    register_datapoint_at_roboflow,
+    safe_register_image_at_roboflow,
 )
 from inference.core.active_learning.entities import (
-    SamplingMethod,
-    ImageDimensions,
     ActiveLearningConfiguration,
     BatchReCreationInterval,
+    ImageDimensions,
+    SamplingMethod,
     StrategyLimit,
     StrategyLimitType,
 )
-from inference.core.active_learning import core
 from inference.core.exceptions import RoboflowAPIConnectionError
 
 

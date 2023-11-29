@@ -3,7 +3,7 @@ from typing import Union
 import pytest
 
 from inference.core.exceptions import InvalidEnvironmentVariableError
-from inference.core.utils.environment import str2bool, safe_split_value
+from inference.core.utils.environment import safe_split_value, str2bool
 
 
 def test_str2bool_when_non_boolean_value_given() -> None:

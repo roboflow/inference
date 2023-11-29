@@ -26,8 +26,7 @@ model_manager = WithFixedSizeCache(
     model_manager,
     max_size=MAX_ACTIVE_MODELS
 )
-
-model_manager.model_manager.init_pingback()
+model_manager.init_pingback()
 interface = HttpInterface(model_manager)
 app = interface.app
 # Setup Prometheus scraping endpoint at /metrics

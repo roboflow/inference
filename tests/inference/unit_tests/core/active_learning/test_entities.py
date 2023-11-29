@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 from inference.core.active_learning.entities import (
     ActiveLearningConfiguration,
-    ImageDimensions,
     BatchReCreationInterval,
+    ImageDimensions,
     StrategyLimit,
     StrategyLimitType,
 )
