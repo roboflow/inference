@@ -105,7 +105,7 @@ class ModelStub:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
     ) -> List[List[float]]:
-        return [[]]
+        return self.make_response([], {})
 
     def make_response(
         self,
