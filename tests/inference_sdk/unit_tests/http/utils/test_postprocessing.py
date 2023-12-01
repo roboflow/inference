@@ -251,6 +251,25 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_factor_is_not_e
     assert result is prediction
 
 
+def test_adjust_prediction_to_client_scaling_factor_when_sstub_prediction_is_received() -> (
+    None
+):
+    # given
+    prediction = {
+        "time": 0.0002442499971948564,
+        "is_stub": True,
+        "model_id": "instance-seg/0",
+        "task_type": "instance-segmentation"
+    }
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=2.0
+    )
+
+    # then
+    assert result is prediction
+
+
 def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_classification() -> (
     None
 ):

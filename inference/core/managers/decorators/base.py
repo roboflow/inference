@@ -4,6 +4,7 @@ import numpy as np
 
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
 from inference.core.models.types import PreprocessReturnMetadata
 
@@ -54,7 +55,7 @@ class ModelManagerDecorator(ModelManager):
         self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias)
 
     async def infer_from_request(
-        self, model_id: str, request: InferenceRequest
+        self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         """Processes a complete inference request.
 
@@ -65,7 +66,7 @@ class ModelManagerDecorator(ModelManager):
         Returns:
             InferenceResponse: The response from the inference.
         """
-        return await self.model_manager.infer_from_request(model_id, request)
+        return await self.model_manager.infer_from_request(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request.
@@ -102,6 +103,8 @@ class ModelManagerDecorator(ModelManager):
         Returns:
             str: The task type.
         """
+        if api_key is None:
+            api_key = API_KEY
         return self.model_manager.get_task_type(model_id, api_key=api_key)
 
     def get_class_names(self, model_id):

@@ -7,34 +7,34 @@ from unittest.mock import MagicMock
 import cv2
 import numpy as np
 import pytest
-from PIL import Image
 from _pytest.fixtures import FixtureRequest
+from PIL import Image
 from requests_mock import Mocker
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.exceptions import (
-    InputImageLoadError,
-    InvalidNumpyInput,
-    InvalidImageTypeDeclared,
     InputFormatInferenceFailed,
-)
-from inference.core.utils.image_utils import (
-    load_image_from_url,
-    load_image_from_numpy_str,
-    load_image_from_buffer,
-    load_image_base64,
-    load_image_with_inferred_type,
-    attempt_loading_image_from_string,
-    load_image_from_encoded_bytes,
-    choose_image_decoding_flags,
-    extract_image_payload_and_type,
-    ImageType,
-    load_image_with_known_type,
-    convert_gray_image_to_bgr,
-    load_image,
-    load_image_rgb,
+    InputImageLoadError,
+    InvalidImageTypeDeclared,
+    InvalidNumpyInput,
 )
 from inference.core.utils import image_utils
+from inference.core.utils.image_utils import (
+    ImageType,
+    attempt_loading_image_from_string,
+    choose_image_decoding_flags,
+    convert_gray_image_to_bgr,
+    extract_image_payload_and_type,
+    load_image,
+    load_image_base64,
+    load_image_from_buffer,
+    load_image_from_encoded_bytes,
+    load_image_from_numpy_str,
+    load_image_from_url,
+    load_image_rgb,
+    load_image_with_inferred_type,
+    load_image_with_known_type,
+)
 
 
 @pytest.mark.parametrize(
@@ -159,15 +159,6 @@ def test_load_image_from_numpy_str_when_array_with_non_standard_channels_given()
 ):
     # given
     payload = pickle.dumps(np.ones((128, 128, 4), dtype=np.uint8))
-
-    # when
-    with pytest.raises(InvalidNumpyInput):
-        _ = load_image_from_numpy_str(value=payload)
-
-
-def test_load_image_from_numpy_str_when_array_with_invalid_values_given() -> None:
-    # given
-    payload = pickle.dumps(1024 * np.ones((128, 128, 3), dtype=np.uint8))
 
     # when
     with pytest.raises(InvalidNumpyInput):

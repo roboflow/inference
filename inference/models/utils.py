@@ -1,3 +1,10 @@
+from inference.core.env import API_KEY
+from inference.core.models.stubs import (
+    ClassificationModelStub,
+    InstanceSegmentationModelStub,
+    KeypointsDetectionModelStub,
+    ObjectDetectionModelStub,
+)
 from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
@@ -12,12 +19,14 @@ from inference.models import (
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
 ROBOFLOW_MODEL_TYPES = {
+    ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
     ("classification", "yolov8n"): YOLOv8Classification,
     ("classification", "yolov8s"): YOLOv8Classification,
     ("classification", "yolov8m"): YOLOv8Classification,
     ("classification", "yolov8l"): YOLOv8Classification,
     ("classification", "yolov8x"): YOLOv8Classification,
+    ("object-detection", "stub"): ObjectDetectionModelStub,
     ("object-detection", "yolov5"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v2s"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6n"): YOLOv5ObjectDetection,
@@ -32,6 +41,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov8m"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
+    ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
         "yolov5-seg",
@@ -108,6 +118,7 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov8-seg",
     ): YOLOv8InstanceSegmentation,
+    ("keypoints-detection", "stub"): KeypointsDetectionModelStub,
     ("keypoints-detection", "yolov8n"): YOLOv8KeypointsDetection,
     ("keypoints-detection", "yolov8s"): YOLOv8KeypointsDetection,
     ("keypoints-detection", "yolov8m"): YOLOv8KeypointsDetection,
@@ -149,6 +160,6 @@ except:
     pass
 
 
-def get_roboflow_model(model_id, api_key=None, **kwargs):
+def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

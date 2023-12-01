@@ -6,14 +6,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.exceptions import ModelArtefactError
-from inference.core.models.roboflow import (
-    is_model_artefacts_bucket_available,
-    color_mapping_available_in_environment,
-    get_color_mapping_from_environment,
-    class_mapping_not_available_in_environment,
-    get_class_names_from_environment_file,
-)
 from inference.core.models import roboflow
+from inference.core.models.roboflow import (
+    class_mapping_not_available_in_environment,
+    color_mapping_available_in_environment,
+    get_class_names_from_environment_file,
+    get_color_mapping_from_environment,
+    is_model_artefacts_bucket_available,
+)
 
 
 @mock.patch.object(roboflow, "AWS_ACCESS_KEY_ID", None)

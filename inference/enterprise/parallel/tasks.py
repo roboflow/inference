@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 from multiprocessing import shared_memory
 from typing import Dict, List, Tuple
 
@@ -21,8 +22,7 @@ from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
-    TASK_RESULT_KEY,
-    TASK_STATUS_KEY,
+    SharedMemoryMetadata,
     failure_handler,
     shm_manager,
 )
@@ -38,74 +38,42 @@ model_manager = WithFixedSizeCache(
 )
 
 
-def queue_infer_task(
-    redis: Redis,
-    shm_name: str,
-    image: np.ndarray,
-    request: InferenceRequest,
-    preprocess_return_metadata: Dict,
-):
-    request.image.value = None
-    return_vals = {
-        "chunk_name": shm_name,
-        "image_shape": image.shape,
-        "image_dtype": image.dtype.name,
-        "request": request.dict(),
-        "metadata": preprocess_return_metadata,
-    }
-    return_vals = json.dumps(return_vals)
-    pipe = redis.pipeline()
-    pipe.zadd(f"infer:{request.model_id}", {return_vals: request.start})
-    pipe.hincrby(f"requests", request.model_id, 1)
-    pipe.execute()
-
-
-def write_response(redis: Redis, response: InferenceResponse, request_id: str):
-    response = response.json(exclude_none=True, by_alias=True)
-    pipe = redis.pipeline()
-    pipe.set(TASK_RESULT_KEY.format(request_id), response)
-    pipe.set(TASK_STATUS_KEY.format(request_id), SUCCESS_STATE)
-    pipe.execute()
-
-
 @app.task(queue="pre")
 def preprocess(request: Dict):
-    r = Redis(connection_pool=pool, decode_responses=True)
-    with failure_handler(r, request["id"]):
+    redis_client = Redis(connection_pool=pool)
+    with failure_handler(redis_client, request["id"]):
         model_manager.add_model(request["model_id"], request["api_key"])
         model_type = model_manager.get_task_type(request["model_id"])
         request = request_from_type(model_type, request)
         image, preprocess_return_metadata = model_manager.preprocess(
             request.model_id, request
         )
+        # multi image requests are split into single image requests upstream and rebatched later
         image = image[0]
+        request.image.value = None  # avoid writing image again since it's in memory
         shm = shared_memory.SharedMemory(create=True, size=image.nbytes)
-        with shm_manager(shm, close_on_success=False):
+        with shm_manager(shm):
             shared = np.ndarray(image.shape, dtype=image.dtype, buffer=shm.buf)
             shared[:] = image[:]
-            shm.close()
-            queue_infer_task(r, shm.name, image, request, preprocess_return_metadata)
-
-
-def load_outputs(
-    shm_info_list: Dict, shms: List[shared_memory.SharedMemory]
-) -> Tuple[np.ndarray, ...]:
-    outputs = []
-    for args, shm in zip(shm_info_list, shms):
-        output = np.ndarray(
-            [1] + args["image_shape"], dtype=args["image_dtype"], buffer=shm.buf
-        )
-        outputs.append(output)
-    return tuple(outputs)
+            shm_metadata = SharedMemoryMetadata(shm.name, image.shape, image.dtype.name)
+            queue_infer_task(
+                redis_client, shm_metadata, request, preprocess_return_metadata
+            )
 
 
 @app.task(queue="post")
 def postprocess(
-    shm_info_list: List[Dict], request: Dict, preproc_return_metadata: Dict
+    shm_info_list: Tuple[Dict], request: Dict, preproc_return_metadata: Dict
 ):
-    r = Redis(connection_pool=pool, decode_responses=True)
-    with failure_handler(r, request["id"]):
-        with shm_manager(*[shm["chunk_name"] for shm in shm_info_list]) as shms:
+    redis_client = Redis(connection_pool=pool)
+    shm_info_list: List[SharedMemoryMetadata] = [
+        SharedMemoryMetadata(**metadata) for metadata in shm_info_list
+    ]
+    with failure_handler(redis_client, request["id"]):
+        with shm_manager(
+            *[shm_metadata.shm_name for shm_metadata in shm_info_list],
+            unlink_on_success=True,
+        ) as shms:
             model_manager.add_model(request["model_id"], request["api_key"])
             model_type = model_manager.get_task_type(request["model_id"])
             request = request_from_type(model_type, request)
@@ -124,4 +92,39 @@ def postprocess(
             )
 
             response = model_manager.make_response(request.model_id, *results)[0]
-            write_response(r, response, request.id)
+            write_response(redis_client, response, request.id)
+
+
+def load_outputs(
+    shm_info_list: List[SharedMemoryMetadata], shms: List[shared_memory.SharedMemory]
+) -> Tuple[np.ndarray, ...]:
+    outputs = []
+    for args, shm in zip(shm_info_list, shms):
+        output = np.ndarray(
+            [1] + args.array_shape, dtype=args.array_dtype, buffer=shm.buf
+        )
+        outputs.append(output)
+    return tuple(outputs)
+
+
+def queue_infer_task(
+    redis: Redis,
+    shm_metadata: SharedMemoryMetadata,
+    request: InferenceRequest,
+    preprocess_return_metadata: Dict,
+):
+    return_vals = {
+        "shm_metadata": asdict(shm_metadata),
+        "request": request.dict(),
+        "preprocess_metadata": preprocess_return_metadata,
+    }
+    return_vals = json.dumps(return_vals)
+    pipe = redis.pipeline()
+    pipe.zadd(f"infer:{request.model_id}", {return_vals: request.start})
+    pipe.hincrby(f"requests", request.model_id, 1)
+    pipe.execute()
+
+
+def write_response(redis: Redis, response: InferenceResponse, request_id: str):
+    response = response.dict(exclude_none=True, by_alias=True)
+    redis.publish("results", json.dumps({"status": SUCCESS_STATE, "task_id": request_id, "payload": response}))

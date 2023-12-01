@@ -1,29 +1,25 @@
 import asyncio
 import json
-from dataclasses import dataclass
 from time import perf_counter, time
-from typing import Any, Coroutine, Optional
+from typing import Any, Dict, List, Optional
 
-from redis import Redis
+from redis.asyncio import Redis
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
     request_from_type,
 )
 from inference.core.entities.responses.inference import response_from_type
-from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
+from inference.core.env import NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
+from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import (
     FAILURE_STATE,
-    INITIAL_STATE,
     SUCCESS_STATE,
-    TASK_RESULT_KEY,
-    TASK_STATUS_KEY,
 )
-
-NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
+from asyncio import BoundedSemaphore
 
 
 class ResultsChecker:
@@ -32,89 +28,84 @@ class ResultsChecker:
     keeping track of running requests, and awaiting their results.
     """
 
-    def __init__(self):
-        self.tasks = []
+    def __init__(self, redis: Redis):
+        self.tasks: Dict[str, asyncio.Event] = {}
         self.dones = dict()
         self.errors = dict()
         self.running = True
+        self.redis = redis
+        self.semaphore: BoundedSemaphore = BoundedSemaphore(NUM_PARALLEL_TASKS)
 
-    def add_redis(self, r: Redis):
-        """
-        After instantiation, give results checker a redis object
-        """
-        self.r = r
-
-    async def add_task(self, t, request):
+    async def add_task(self, task_id: str, request: InferenceRequest):
         """
         Wait until there's available cylce to queue a task.
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
-        interval = 0.1
-        while len(self.tasks) > NUM_PARALLEL_TASKS:
-            await asyncio.sleep(interval)
-        self.tasks.append(t)
+        await self.semaphore.acquire()
+        self.tasks[task_id] = asyncio.Event()
         preprocess.s(request.dict()).delay()
-        self.r.set(TASK_STATUS_KEY.format(t), INITIAL_STATE)
 
-    def check_task(self, t: str) -> Any:
+    def get_result(self, task_id: str) -> Any:
         """
         Check the done tasks and errored tasks for this task id.
         """
-        if t in self.dones:
-            return self.dones.pop(t)
-        if t in self.errors:
-            message = self.errors.pop(t)
+        if task_id in self.dones:
+            return self.dones.pop(task_id)
+        elif task_id in self.errors:
+            message = self.errors.pop(task_id)
             raise Exception(message)
-        return NOT_FINISHED_RESPONSE
+        else:
+            raise RuntimeError(
+                "Task result not found in either success or error dict. Unreachable"
+            )
 
     async def loop(self):
         """
         Main loop. Check all in progress tasks for their status, and if their status is final,
         (either failure or success) then add their results to the appropriate results dictionary.
         """
-        interval = 0.1
-        while self.running:
-            tasks = [t for t in self.tasks]
-            task_names = [TASK_STATUS_KEY.format(id_) for id_ in tasks]
-            donenesses = [self.r.get(t) for t in task_names]
-            donenesses = [int(d) for d in donenesses]
-            for id_, doneness in zip(tasks, donenesses):
-                if doneness in [SUCCESS_STATE, FAILURE_STATE]:
-                    pipe = self.r.pipeline()
-                    pipe.get(TASK_RESULT_KEY.format(id_))
-                    pipe.delete(TASK_RESULT_KEY.format(id_))
-                    pipe.delete(TASK_STATUS_KEY.format(id_))
-                    result, _, _ = pipe.execute()
-                    self.tasks.remove(id_)
-                    if doneness == SUCCESS_STATE:
-                        self.dones[id_] = result
-                    if doneness == FAILURE_STATE:
-                        self.errors[id_] = result
-            await asyncio.sleep(interval)
-
-    async def wait_for_response(self, key):
-        interval = 0.1
-        while True:
-            result = self.check_task(key)
-            if result is not NOT_FINISHED_RESPONSE:
-                return result
-            await asyncio.sleep(interval)
+        async with self.redis.pubsub() as pubsub:
+            await pubsub.subscribe("results")
+            while self.running:
+                message = await pubsub.get_message(ignore_subscribe_messages=True)
+                if message is None:
+                    await asyncio.sleep(0)
+                    continue
+                message = json.loads(message["data"])
+                task_id = message.pop("task_id")
+                status = message.pop("status")
+                if status == FAILURE_STATE:
+                    self.errors[task_id] = message["payload"]
+                elif status == SUCCESS_STATE:
+                    self.dones[task_id] = message["payload"]
+                else:
+                    raise RuntimeError(
+                        "Task result not found in possible states. Unreachable"
+                    )
+                self.tasks[task_id].set()
+                self.semaphore.release()
+                await asyncio.sleep(0)
 
 
-@dataclass
+    async def wait_for_response(self, key: str):
+        event = self.tasks[key]
+        await event.wait()
+        del self.tasks[key]
+        return self.get_result(key)
+
+
 class DispatchModelManager(ModelManager):
-    def __post_init__(self):
-        if REDIS_HOST is None:
-            raise ValueError(
-                "Set REDIS_HOST and REDIS_PORT to use DispatchModelManager"
-            )
+    def __init__(
+        self,
+        model_registry: ModelRegistry,
+        checker: ResultsChecker,
+        models: Optional[dict] = None,
+    ):
+        super().__init__(model_registry, models)
+        self.checker = checker
 
-        self.redis: Redis = Redis(REDIS_HOST, REDIS_PORT, decode_responses=True)
-
-    async def model_infer(self, model_id: str, request: InferenceRequest):
-        assert model_id == request.model_id
-        assert request.api_key is not None
+    async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
@@ -138,28 +129,20 @@ class DispatchModelManager(ModelManager):
             results_awaitables.append(self.checker.wait_for_response(r.id))
 
         await asyncio.gather(*start_task_awaitables)
-        response_strings = await asyncio.gather(*results_awaitables)
+        response_jsons = await asyncio.gather(*results_awaitables)
         responses = []
-        for response_json_string in response_strings:
-            response = response_from_type(task_type, json.loads(response_json_string))
+        for response_json in response_jsons:
+            response = response_from_type(task_type, response_json)
             response.time = perf_counter() - t
             responses.append(response)
+
+        if request.visualize_predictions:
+            for response in responses:
+                response.visualization = self.draw_predictions(request, response)
 
         if list_mode:
             return responses
         return responses[0]
-
-    def add_checker(self, checker):
-        self._checker = checker
-
-    @property
-    def checker(self) -> ResultsChecker:
-        try:
-            return self._checker
-        except AttributeError:
-            raise AttributeError(
-                "Call self.add_checker with a results checker before using"
-            )
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: str = None

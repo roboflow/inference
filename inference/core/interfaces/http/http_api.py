@@ -4,7 +4,7 @@ from functools import partial, wraps
 from typing import Any, List, Optional, Union
 
 import uvicorn
-from fastapi import Body, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -47,6 +47,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    StubResponse,
 )
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
@@ -256,7 +257,7 @@ class HttpInterface(BaseInterface):
         self.model_manager = model_manager
 
         async def process_inference_request(
-            inference_request: InferenceRequest,
+            inference_request: InferenceRequest, **kwargs
         ) -> InferenceResponse:
             """Processes an inference request by calling the appropriate model.
 
@@ -270,7 +271,7 @@ class HttpInterface(BaseInterface):
                 inference_request.model_id, inference_request.api_key
             )
             return await self.model_manager.infer_from_request(
-                inference_request.model_id, inference_request
+                inference_request.model_id, inference_request, **kwargs
             )
 
         def load_core_model(
@@ -450,6 +451,7 @@ class HttpInterface(BaseInterface):
                 response_model=Union[
                     ObjectDetectionInferenceResponse,
                     List[ObjectDetectionInferenceResponse],
+                    StubResponse,
                 ],
                 summary="Object detection infer",
                 description="Run inference with the specified object detection model",
@@ -458,44 +460,59 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified object detection model.
 
                 Args:
                     inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
 
-                return await process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/instance_segmentation",
-                response_model=InstanceSegmentationInferenceResponse,
+                response_model=Union[
+                    InstanceSegmentationInferenceResponse, StubResponse
+                ],
                 summary="Instance segmentation infer",
                 description="Run inference with the specified instance segmentation model",
             )
             @with_route_exceptions
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified instance segmentation model.
 
                 Args:
                     inference_request (InstanceSegmentationInferenceRequest): The request containing the necessary details for instance segmentation.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
 
-                return await process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/classification",
                 response_model=Union[
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                 ],
                 summary="Classification infer",
                 description="Run inference with the specified classification model",
@@ -503,21 +520,27 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified classification model.
 
                 Args:
                     inference_request (ClassificationInferenceRequest): The request containing the necessary details for classification.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
 
-                return await process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/keypoints_detection",
-                response_model=KeypointsDetectionInferenceResponse,
+                response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
             )
@@ -827,12 +850,14 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                     Any,
                 ],
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
             async def legacy_infer_from_request(
+                background_tasks: BackgroundTasks,
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference"
                 ),
@@ -915,6 +940,7 @@ class HttpInterface(BaseInterface):
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
 
                 Args:
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
                     dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference.
                     version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference.
                     api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
@@ -1020,7 +1046,10 @@ class HttpInterface(BaseInterface):
                 )
 
                 inference_response = await self.model_manager.infer_from_request(
-                    inference_request.model_id, inference_request
+                    inference_request.model_id,
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
                 )
                 if format == "image":
                     return Response(
