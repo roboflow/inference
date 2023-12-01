@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -34,7 +33,7 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 BATCH_SIZE = MAX_BATCH_SIZE
 if BATCH_SIZE == float("inf"):
-    BATCH_SIZE = 128
+    BATCH_SIZE = 32
 AGE_TRADEOFF_SECONDS_FACTOR = 30
 
 

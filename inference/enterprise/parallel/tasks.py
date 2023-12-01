@@ -22,8 +22,6 @@ from inference.core.managers.stub_loader import StubLoaderManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
-    TASK_RESULT_KEY,
-    TASK_STATUS_KEY,
     SharedMemoryMetadata,
     failure_handler,
     shm_manager,

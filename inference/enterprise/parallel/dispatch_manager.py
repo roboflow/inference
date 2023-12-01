@@ -29,9 +29,6 @@ class ResultsChecker:
     """
 
     def __init__(self, redis: Redis):
-        print((("*"*100)+"\n")*2)
-        print("INIT")
-        print((("*"*100)+"\n")*2)
         self.tasks: Dict[str, asyncio.Event] = {}
         self.dones = dict()
         self.errors = dict()
