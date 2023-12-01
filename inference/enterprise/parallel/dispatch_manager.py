@@ -10,7 +10,7 @@ from inference.core.entities.requests.inference import (
     request_from_type,
 )
 from inference.core.entities.responses.inference import response_from_type
-from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
+from inference.core.env import NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
@@ -22,9 +22,9 @@ from inference.enterprise.parallel.utils import (
     TASK_RESULT_KEY,
     TASK_STATUS_KEY,
 )
+from asyncio import BoundedSemaphore
 
 NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
-
 
 class ResultsChecker:
     """
@@ -38,6 +38,8 @@ class ResultsChecker:
         self.errors = dict()
         self.running = True
         self.redis = redis
+        self.semaphore: BoundedSemaphore = BoundedSemaphore(NUM_PARALLEL_TASKS)
+        print(NUM_PARALLEL_TASKS)
 
     async def add_task(self, task_id: str, request: InferenceRequest):
         """
@@ -45,10 +47,8 @@ class ResultsChecker:
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
-        interval = 0.1
-        while len(self.tasks) > NUM_PARALLEL_TASKS:
-            await asyncio.sleep(interval)
-        self.tasks[task_id] = asyncio.Event()
+        await self.semaphore.acquire()
+        self.tasks[task_id] =  asyncio.Event()
         preprocess.s(request.dict()).delay()
         self.redis.set(TASK_STATUS_KEY.format(task_id), INITIAL_STATE)
 
@@ -77,12 +77,12 @@ class ResultsChecker:
             await asyncio.sleep(interval)
 
     def check_tasks(self, task_ids: List[str]):
-        task_names = [TASK_STATUS_KEY.format(id_) for id_ in task_ids]
+        task_names = [TASK_STATUS_KEY.format(task_id) for task_id in task_ids]
         donenesses = self.redis.mget(task_names)
         donenesses = [int(d) for d in donenesses]
-        for id_, doneness in zip(task_ids, donenesses):
+        for task_id, doneness in zip(task_ids, donenesses):
             if doneness in [SUCCESS_STATE, FAILURE_STATE]:
-                self.handle_result(id_, doneness)
+                self.handle_result(task_id, doneness)
 
     def handle_result(self, task_id: str, doneness: int):
         pipe = self.redis.pipeline()
@@ -96,10 +96,12 @@ class ResultsChecker:
             self.errors[task_id] = result
         else:
             raise RuntimeError(f"Unspecified state {doneness}. Unreachable")
+        self.semaphore.release()
         self.tasks.pop(task_id).set()
 
     async def wait_for_response(self, key: str):
-        await self.tasks[key].wait()
+        event = self.tasks[key]
+        await event.wait()
         return self.get_result(key)
 
 
