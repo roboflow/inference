@@ -128,8 +128,5 @@ def queue_infer_task(
 
 
 def write_response(redis: Redis, response: InferenceResponse, request_id: str):
-    response = response.json(exclude_none=True, by_alias=True)
-    pipe = redis.pipeline()
-    pipe.set(TASK_RESULT_KEY.format(request_id), response)
-    pipe.set(TASK_STATUS_KEY.format(request_id), SUCCESS_STATE)
-    pipe.execute()
+    response = response.dict(exclude_none=True, by_alias=True)
+    redis.publish("results", json.dumps({"status": SUCCESS_STATE, "task_id": request_id, "payload": response}))

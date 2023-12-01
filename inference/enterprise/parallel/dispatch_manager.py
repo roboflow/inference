@@ -3,7 +3,7 @@ import json
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
-from redis import Redis
+from redis.asyncio import Redis
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -17,14 +17,10 @@ from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import (
     FAILURE_STATE,
-    INITIAL_STATE,
     SUCCESS_STATE,
-    TASK_RESULT_KEY,
-    TASK_STATUS_KEY,
 )
 from asyncio import BoundedSemaphore
 
-NOT_FINISHED_RESPONSE = "===NOTFINISHED==="
 
 class ResultsChecker:
     """
@@ -33,13 +29,15 @@ class ResultsChecker:
     """
 
     def __init__(self, redis: Redis):
+        print((("*"*100)+"\n")*2)
+        print("INIT")
+        print((("*"*100)+"\n")*2)
         self.tasks: Dict[str, asyncio.Event] = {}
         self.dones = dict()
         self.errors = dict()
         self.running = True
         self.redis = redis
         self.semaphore: BoundedSemaphore = BoundedSemaphore(NUM_PARALLEL_TASKS)
-        print(NUM_PARALLEL_TASKS)
 
     async def add_task(self, task_id: str, request: InferenceRequest):
         """
@@ -48,9 +46,8 @@ class ResultsChecker:
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
         await self.semaphore.acquire()
-        self.tasks[task_id] =  asyncio.Event()
+        self.tasks[task_id] = asyncio.Event()
         preprocess.s(request.dict()).delay()
-        self.redis.set(TASK_STATUS_KEY.format(task_id), INITIAL_STATE)
 
     def get_result(self, task_id: str) -> Any:
         """
@@ -71,37 +68,33 @@ class ResultsChecker:
         Main loop. Check all in progress tasks for their status, and if their status is final,
         (either failure or success) then add their results to the appropriate results dictionary.
         """
-        interval = 0.1
-        while self.running:
-            self.check_tasks([t for t in self.tasks])
-            await asyncio.sleep(interval)
+        async with self.redis.pubsub() as pubsub:
+            await pubsub.subscribe("results")
+            while self.running:
+                message = await pubsub.get_message(ignore_subscribe_messages=True)
+                if message is None:
+                    await asyncio.sleep(0)
+                    continue
+                message = json.loads(message["data"])
+                task_id = message.pop("task_id")
+                status = message.pop("status")
+                if status == FAILURE_STATE:
+                    self.errors[task_id] = message["payload"]
+                elif status == SUCCESS_STATE:
+                    self.dones[task_id] = message["payload"]
+                else:
+                    raise RuntimeError(
+                        "Task result not found in possible states. Unreachable"
+                    )
+                self.tasks[task_id].set()
+                self.semaphore.release()
+                await asyncio.sleep(0)
 
-    def check_tasks(self, task_ids: List[str]):
-        task_names = [TASK_STATUS_KEY.format(task_id) for task_id in task_ids]
-        donenesses = self.redis.mget(task_names)
-        donenesses = [int(d) for d in donenesses]
-        for task_id, doneness in zip(task_ids, donenesses):
-            if doneness in [SUCCESS_STATE, FAILURE_STATE]:
-                self.handle_result(task_id, doneness)
-
-    def handle_result(self, task_id: str, doneness: int):
-        pipe = self.redis.pipeline()
-        pipe.get(TASK_RESULT_KEY.format(task_id))
-        pipe.delete(TASK_RESULT_KEY.format(task_id))
-        pipe.delete(TASK_STATUS_KEY.format(task_id))
-        result, _, _ = pipe.execute()
-        if doneness == SUCCESS_STATE:
-            self.dones[task_id] = result
-        elif doneness == FAILURE_STATE:
-            self.errors[task_id] = result
-        else:
-            raise RuntimeError(f"Unspecified state {doneness}. Unreachable")
-        self.semaphore.release()
-        self.tasks.pop(task_id).set()
 
     async def wait_for_response(self, key: str):
         event = self.tasks[key]
         await event.wait()
+        del self.tasks[key]
         return self.get_result(key)
 
 
@@ -139,10 +132,10 @@ class DispatchModelManager(ModelManager):
             results_awaitables.append(self.checker.wait_for_response(r.id))
 
         await asyncio.gather(*start_task_awaitables)
-        response_strings = await asyncio.gather(*results_awaitables)
+        response_jsons = await asyncio.gather(*results_awaitables)
         responses = []
-        for response_json_string in response_strings:
-            response = response_from_type(task_type, json.loads(response_json_string))
+        for response_json in response_jsons:
+            response = response_from_type(task_type, response_json)
             response.time = perf_counter() - t
             responses.append(response)
 
