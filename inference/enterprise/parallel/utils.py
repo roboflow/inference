@@ -1,8 +1,8 @@
+import json
 from contextlib import contextmanager
 from dataclasses import dataclass
 from multiprocessing import shared_memory
 from typing import List, Union
-import json
 
 from redis import Redis
 
@@ -21,7 +21,12 @@ def failure_handler(redis: Redis, *request_ids: str):
     except Exception as error:
         message = type(error).__name__ + ": " + str(error)
         for request_id in request_ids:
-            redis.publish("results", json.dumps({"task_id": request_id, "status": FAILURE_STATE, "payload": message}))
+            redis.publish(
+                "results",
+                json.dumps(
+                    {"task_id": request_id, "status": FAILURE_STATE, "payload": message}
+                ),
+            )
         raise
 
 

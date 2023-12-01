@@ -1,5 +1,6 @@
 import asyncio
 import json
+from asyncio import BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
@@ -15,11 +16,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
-from inference.enterprise.parallel.utils import (
-    FAILURE_STATE,
-    SUCCESS_STATE,
-)
-from asyncio import BoundedSemaphore
+from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
 
 
 class ResultsChecker:
@@ -86,7 +83,6 @@ class ResultsChecker:
                 self.tasks[task_id].set()
                 self.semaphore.release()
                 await asyncio.sleep(0)
-
 
     async def wait_for_response(self, key: str):
         event = self.tasks[key]
