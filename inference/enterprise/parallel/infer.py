@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict
 from multiprocessing import shared_memory
 from queue import Queue
+from asyncio import Queue as AioQueue
 from threading import Thread
 from typing import Dict, List, Tuple
 
@@ -49,6 +50,9 @@ class InferServer:
         self.response_queue = Queue()
         self.write_thread = Thread(target=self.write_responses)
         self.write_thread.start()
+        self.batch_queue = Queue(maxsize=1)
+        self.infer_thread = Thread(target=self.infer)
+        self.infer_thread.start()
 
     def write_responses(self):
         while True:
@@ -65,14 +69,22 @@ class InferServer:
             try:
                 model_names = get_requested_model_names(self.redis)
                 if not model_names:
-                    time.sleep(0.002)
                     continue
-                self.infer(model_names)
+                self.get_batch(model_names)
             except Exception as error:
                 logger.warning("Encountered error in infer loop:\n" + str(error))
                 continue
 
-    def infer(self, model_names):
+    def infer(self):
+        while True:
+            model_id, images, batch, preproc_return_metadatas = self.batch_queue.get()
+            outputs = self.model_manager.predict(model_id, images)
+            for output, b, metadata in zip(
+                zip(*outputs), batch, preproc_return_metadatas
+            ):
+                self.response_queue.put_nowait((output, b["request"], metadata))
+
+    def get_batch(self, model_names):
         start = time.perf_counter()
         batch, model_id = get_batch(self.redis, model_names)
         logger.info(f"Inferring: model<{model_id}> batch_size<{len(batch)}>")
@@ -96,17 +108,8 @@ class InferServer:
                 logger.info(
                     f"Took {(loaded - metadata_processed):3f} seconds to load batch"
                 )
-                outputs = self.model_manager.predict(model_id, images)
-                inferred = time.perf_counter()
-                logger.info(f"Took {(inferred - loaded):3f} seconds to infer")
-                for output, b, metadata in zip(
-                    zip(*outputs), batch, preproc_return_metadatas
-                ):
-                    self.response_queue.put_nowait((output, b["request"], metadata))
-                written = time.perf_counter()
-                logger.info(
-                    f"Took {(written - inferred):3f} seconds to write responses"
-                )
+                self.batch_queue.put((model_id, images, batch, preproc_return_metadatas))
+                
 
 
 def get_requested_model_names(redis: Redis) -> List[str]:
@@ -168,7 +171,7 @@ def load_batch(
         shm_metadata: SharedMemoryMetadata = b["shm_metadata"]
         image = np.ndarray(
             shm_metadata.array_shape, dtype=shm_metadata.array_dtype, buffer=shm.buf
-        )
+        ).copy()
         images.append(image)
         preproc_return_metadatas.append(b["preprocess_metadata"])
     return images, preproc_return_metadatas

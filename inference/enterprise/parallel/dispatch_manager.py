@@ -11,12 +11,14 @@ from inference.core.entities.requests.inference import (
     request_from_type,
 )
 from inference.core.entities.responses.inference import response_from_type
-from inference.core.env import NUM_PARALLEL_TASKS
+from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
+from time import perf_counter
+from functools import lru_cache
 
 
 class ResultsChecker:
@@ -64,13 +66,20 @@ class ResultsChecker:
         """
         async with self.redis.pubsub() as pubsub:
             await pubsub.subscribe("results")
-            while self.running:
-                message = await pubsub.get_message(ignore_subscribe_messages=True)
-                if message is None:
-                    await asyncio.sleep(0)
+            # while self.running:
+            #     t = perf_counter()
+            #     message = await pubsub.get_message(ignore_subscribe_messages=True)
+            #     if message is None:
+            #         await asyncio.sleep(0.001)
+            #         continue
+            async for message in pubsub.listen():
+                if message["type"] != "message":
                     continue
                 message = json.loads(message["data"])
                 task_id = message.pop("task_id")
+                if task_id not in self.tasks:
+                    continue
+                self.semaphore.release()
                 status = message.pop("status")
                 if status == FAILURE_STATE:
                     self.errors[task_id] = message["payload"]
@@ -81,7 +90,6 @@ class ResultsChecker:
                         "Task result not found in possible states. Unreachable"
                     )
                 self.tasks[task_id].set()
-                self.semaphore.release()
                 await asyncio.sleep(0)
 
     async def wait_for_response(self, key: str):
@@ -105,6 +113,8 @@ class DispatchModelManager(ModelManager):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
+        task_type_time = perf_counter()
+        
         list_mode = False
         if isinstance(request.image, list):
             list_mode = True
@@ -150,3 +160,4 @@ class DispatchModelManager(ModelManager):
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         return get_model_type(model_id, api_key)[0]
+

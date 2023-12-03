@@ -14,13 +14,7 @@ model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 if REDIS_HOST is None:
     raise RuntimeError("Redis must be configured to use async inference")
 pool = ConnectionPool(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-checker = ResultsChecker(
-    AsyncRedis(
-        host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, max_connections=1000
-    )
-)
-model_manager = DispatchModelManager(model_registry, checker)
-model_manager.init_pingback()
+model_manager = None
 interface = ParallelHttpInterface(model_manager)
 
 app = interface.app

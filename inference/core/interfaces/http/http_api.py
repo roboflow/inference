@@ -2,6 +2,7 @@ import base64
 import traceback
 from functools import partial, wraps
 from typing import Any, List, Optional, Union
+import asyncio
 
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
@@ -182,6 +183,7 @@ class HttpInterface(BaseInterface):
         self,
         model_manager: ModelManager,
         root_path: Optional[str] = None,
+        model_registry = None,
     ):
         """
         Initializes the HttpInterface with given model manager and model registry.
@@ -193,6 +195,7 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+        self.model_registry = model_registry
         description = "Roboflow inference server"
         app = FastAPI(
             title="Roboflow Inference Server",
@@ -250,7 +253,7 @@ class HttpInterface(BaseInterface):
                 """
                 response = await call_next(request)
                 if response.status_code >= 400:
-                    model_manager.num_errors += 1
+                    self.model_manager.num_errors += 1
                 return response
 
         self.app = app
@@ -471,7 +474,6 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
-
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,

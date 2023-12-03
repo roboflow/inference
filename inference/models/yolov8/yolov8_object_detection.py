@@ -5,6 +5,7 @@ import numpy as np
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
+from time import perf_counter
 
 
 class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -38,10 +39,15 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
+        t = perf_counter()
         predictions = self.onnx_session.run(None, {self.input_name: img_in})[0]
+        print(f"Took {perf_counter() - t} seconds to onnx infer")
+
+        t = perf_counter()
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         class_confs = predictions[:, :, 4:]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
         predictions = np.concatenate([boxes, confs, class_confs], axis=2)
+        print(f"Took {perf_counter() - t} seconds to onnx process infer arrays")
         return (predictions,)
