@@ -81,6 +81,7 @@ theme:
     - navigation.instant.progress
     - navigation.indexes
     - navigation.sections
+    - content.code.copy
 
 plugins:
   - mkdocstrings

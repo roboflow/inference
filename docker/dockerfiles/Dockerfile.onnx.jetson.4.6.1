@@ -23,8 +23,7 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     python3-setuptools \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
+COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
@@ -34,7 +33,6 @@ RUN python3.8 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
     -r _requirements.txt \
-    -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \

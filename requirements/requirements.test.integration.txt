@@ -1,0 +1,5 @@
+python-dotenv<=2.0.0
+requests
+pytest
+pillow 
+requests_toolbelt
