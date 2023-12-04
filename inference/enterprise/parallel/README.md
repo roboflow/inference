@@ -19,7 +19,7 @@ We measure and report performance across a variety of different task types by se
 
 ### Methodology
 
-The following metrics are taken on a machine with eight cores and one gpu. The FPS metrics reflect best out of three trials. The column labeled 0.9.5.parallel reflects the latests concurrent FPS metrics.
+The following metrics are taken on a machine with eight cores and one gpu. The FPS metrics reflect best out of three trials. The column labeled 0.9.5.parallel reflects the latest concurrent FPS metrics.
 
 ### Results
 | Workspace | Model | Model Type | split | 0.9.5.rc FPS| 0.9.5.parallel FPS |
