@@ -4,7 +4,7 @@ The Roboflow Inference Server supports concurrent processing. This version of th
 
 > ⚠️ Currently, only Object Detection, Instance Segmentation, and Classification models are supported by this module. Core models are not enabled.
 
-> ⚠️ We require a Roboflow Enterprise License to use this in production. See LICENSE.txt for details.
+> ⚠️ We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
 
 ## How To Use Concurrent Processing
 You can build the server using `./inference/enterprise/parallel/build.sh` and run it using `./inference/enterprise/parallel/run.sh`
