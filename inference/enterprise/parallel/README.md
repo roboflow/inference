@@ -23,14 +23,14 @@ We measure and report performance across a variety of different task types by se
 
 ### Methodology
 
-The following metrics are taken on a machine with eight cores and one gpu. The FPS metrics reflect best out of three trials. The column labeled 0.9.5.parallel reflects the latest concurrent FPS metrics.
+The following metrics are taken on a machine with eight cores and one gpu. The FPS metrics reflect best out of three trials. The column labeled 0.9.5.parallel reflects the latest concurrent FPS metrics. Instance segmentation metrics are calculated using `"mask_decode_mode": "fast"` in the request body. Requests are posted concurrently with a parallelism of 1000.
 
 ### Results
 | Workspace | Model | Model Type | split | 0.9.5.rc FPS| 0.9.5.parallel FPS |
 | ----------|------ | ----------- |------|-------------| -------------------|
 | senior-design-project-j9gpp | nbafootage/3| object-detection | train | 30.2 fps | 44.03 fps |
 | niklas-bommersbach-jyjff   | dart-scorer/8| object-detection | train | 26.6 fps | 47.0 fps |
-| geonu  | water-08xpr/1 | instance-segmentation | valid | 2.3 fps | 2.5 fps |
-| university-of-bradford | detecting-drusen_1/2 | instance-segmentation | train | 2.3 fps | 2.4 fps |
+| geonu  | water-08xpr/1 | instance-segmentation | valid | 4.7 fps | 6.1 fps |
+| university-of-bradford | detecting-drusen_1/2 | instance-segmentation | train | 6.2 fps | 7.2 fps |
 | fy-project-y9ecd | cataract-detection-viwsu/2 | classification | train | 48.5 fps | 65.4 fps |
-| hesunyu | project-bltpu/1 | classification | train | 44.6 fps | 57.7 fps |
+| hesunyu | playing-cards-ir0wr/1 | classification | train | 44.6 fps | 57.7 fps |
