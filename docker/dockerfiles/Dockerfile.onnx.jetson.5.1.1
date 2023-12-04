@@ -20,12 +20,7 @@ RUN apt-get update -y && apt-get install -y \
     libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Manually listed requirements for SAM below due to need for lower rasterio requirment on Jetson images
-COPY rf-segment-anything==1.0 \ 
-    torch<=2.0.1 \
-    torchvision<=0.15.2 \
-    rasterio<=1.2.10 \
-    requirements/requirements.clip.txt \
+COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
@@ -35,7 +30,6 @@ RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
-    -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
