@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -270,9 +270,10 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 inference_request.model_id, inference_request.api_key
             )
-            return await self.model_manager.infer_from_request(
+            resp = await self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request, **kwargs
             )
+            return ORJSONResponse(content=resp.dict())
 
         def load_core_model(
             inference_request: InferenceRequest,

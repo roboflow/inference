@@ -41,7 +41,7 @@ RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
-RUN pip3 install gunicorn gevent eventlet ujson
+RUN pip3 install gunicorn gevent eventlet ujson orjson
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -57,6 +57,6 @@ ENV CORE_MODELS_ENABLED=false
 
 ENTRYPOINT redis-server --io-threads 8 --save "" --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier=4 --concurrency=$NUM_CELERY_WORKERS -Q pre  --loglevel=WARNING & \
-    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier=4 --concurrency=$NUM_CELERY_WORKERS -Q post  --loglevel=WARNING & \
+    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier=4 --concurrency=$NUM_CELERY_WORKERS -Q post  --loglevel=INFO & \
     python3 inference/enterprise/parallel/infer.py & \
     gunicorn parallel_http:app --workers=$NUM_WORKERS --bind=$HOST:$PORT -k uvicorn.workers.UvicornWorker && fg
