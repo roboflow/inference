@@ -4,6 +4,8 @@ Introducing the highly concurrent implementation of Roboflow Inference Server! T
 
 > ⚠️ Currently, only Object Detection, Instance Segmentation, and Classification models are supported by this module. Core models are not enabled
 
+> ⚠️ We require a Roboflow Enterprise License to use this in production. See LICENSE.txt for details
+
 ## How Do I use it?
 You can build the server using `./inference/enterprise/parallel/build.sh` and run it using `./inference/enterprise/parallel/run.sh`
 
@@ -11,7 +13,6 @@ We provide a container at dockerhub that you can pull using `docker pull roboflo
 
 This is a drop in replacement for the old server, so you can send requests using the [same API calls](https://inference.roboflow.com/quickstart/http_inference/#step-2-run-inference) you were using previously
 
-> ⚠️ We require a Roboflow Enterprise License to use this in production. See LICENSE.txt for details
 
 ## Performance
 We measure and report performance across a variety of different task types, by selecting random models found on Roboflow Universe.
