@@ -2,7 +2,6 @@ import base64
 import traceback
 from functools import partial, wraps
 from typing import Any, List, Optional, Union
-import asyncio
 
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
