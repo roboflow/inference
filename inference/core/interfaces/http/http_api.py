@@ -183,7 +183,6 @@ class HttpInterface(BaseInterface):
         self,
         model_manager: ModelManager,
         root_path: Optional[str] = None,
-        model_registry = None,
     ):
         """
         Initializes the HttpInterface with given model manager and model registry.
@@ -195,7 +194,6 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
-        self.model_registry = model_registry
         description = "Roboflow inference server"
         app = FastAPI(
             title="Roboflow Inference Server",

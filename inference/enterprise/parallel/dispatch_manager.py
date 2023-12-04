@@ -11,14 +11,12 @@ from inference.core.entities.requests.inference import (
     request_from_type,
 )
 from inference.core.entities.responses.inference import response_from_type
-from inference.core.env import NUM_PARALLEL_TASKS, REDIS_HOST, REDIS_PORT
+from inference.core.env import NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
-from time import perf_counter
-from functools import lru_cache
 
 
 class ResultsChecker:
@@ -66,12 +64,6 @@ class ResultsChecker:
         """
         async with self.redis.pubsub() as pubsub:
             await pubsub.subscribe("results")
-            # while self.running:
-            #     t = perf_counter()
-            #     message = await pubsub.get_message(ignore_subscribe_messages=True)
-            #     if message is None:
-            #         await asyncio.sleep(0.001)
-            #         continue
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
@@ -113,7 +105,6 @@ class DispatchModelManager(ModelManager):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
-        task_type_time = perf_counter()
         
         list_mode = False
         if isinstance(request.image, list):
