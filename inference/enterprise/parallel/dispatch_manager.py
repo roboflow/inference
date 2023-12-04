@@ -105,7 +105,7 @@ class DispatchModelManager(ModelManager):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
-        
+
         list_mode = False
         if isinstance(request.image, list):
             list_mode = True
@@ -151,4 +151,3 @@ class DispatchModelManager(ModelManager):
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         return get_model_type(model_id, api_key)[0]
-

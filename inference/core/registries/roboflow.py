@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Tuple, Union
 
+from inference.core.cache import cache
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.exceptions import ModelNotRecognisedError
@@ -16,7 +17,6 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
-from inference.core.cache import cache
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -146,7 +146,10 @@ def save_model_metadata_in_cache(
         model_type_cache_path = construct_model_type_cache_path(
             dataset_id=dataset_id, version_id=version_id
         )
-        metadata = {PROJECT_TASK_TYPE_KEY: project_task_type, MODEL_TYPE_KEY: model_type}
+        metadata = {
+            PROJECT_TASK_TYPE_KEY: project_task_type,
+            MODEL_TYPE_KEY: model_type,
+        }
         dump_json(
             path=model_type_cache_path, content=metadata, allow_override=True, indent=4
         )

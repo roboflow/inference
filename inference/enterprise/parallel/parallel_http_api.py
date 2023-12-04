@@ -1,17 +1,16 @@
 import asyncio
+from threading import Thread
 
+from redis.asyncio import Redis as AsyncRedis
+
+from inference.core.env import REDIS_HOST, REDIS_PORT
 from inference.core.interfaces.http.http_api import HttpInterface
-from inference.enterprise.parallel.dispatch_manager import DispatchModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.dispatch_manager import (
     DispatchModelManager,
     ResultsChecker,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-from redis.asyncio import Redis as AsyncRedis
-from inference.core.env import REDIS_HOST, REDIS_PORT
-from threading import Thread
-
 
 
 class ParallelHttpInterface(HttpInterface):

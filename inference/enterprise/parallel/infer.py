@@ -1,10 +1,10 @@
 import json
 import logging
 import time
+from asyncio import Queue as AioQueue
 from dataclasses import asdict
 from multiprocessing import shared_memory
 from queue import Queue
-from asyncio import Queue as AioQueue
 from threading import Thread
 from typing import Dict, List, Tuple
 
@@ -108,8 +108,9 @@ class InferServer:
                 logger.info(
                     f"Took {(loaded - metadata_processed):3f} seconds to load batch"
                 )
-                self.batch_queue.put((model_id, images, batch, preproc_return_metadatas))
-                
+                self.batch_queue.put(
+                    (model_id, images, batch, preproc_return_metadatas)
+                )
 
 
 def get_requested_model_names(redis: Redis) -> List[str]:
