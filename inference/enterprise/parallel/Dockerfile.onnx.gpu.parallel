@@ -41,7 +41,7 @@ RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
-RUN pip3 install gunicorn gevent eventlet
+RUN pip3 install gunicorn gevent eventlet ujson
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
