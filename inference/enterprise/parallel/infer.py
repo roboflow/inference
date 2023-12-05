@@ -1,4 +1,3 @@
-import orjson
 import logging
 import time
 from asyncio import Queue as AioQueue
@@ -9,6 +8,7 @@ from threading import Thread
 from typing import Dict, List, Tuple
 
 import numpy as np
+import orjson
 from redis import ConnectionPool, Redis
 
 from inference.core.entities.requests.inference import (

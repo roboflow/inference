@@ -1,9 +1,9 @@
 import asyncio
-import orjson
 from asyncio import BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
+import orjson
 from redis.asyncio import Redis
 
 from inference.core.entities.requests.inference import (
