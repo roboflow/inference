@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, ORJSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
