@@ -130,12 +130,6 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
 
-- Run on NVIDIA GPU with TensorRT Runtime:
-
-```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
-```
-
 - Run on NVIDIA Jetson with JetPack `4.x`:
 
 ```bash

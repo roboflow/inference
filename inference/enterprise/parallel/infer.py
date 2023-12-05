@@ -69,6 +69,7 @@ class InferServer:
             try:
                 model_names = get_requested_model_names(self.redis)
                 if not model_names:
+                    time.sleep(0.001)
                     continue
                 self.get_batch(model_names)
             except Exception as error:
