@@ -1,10 +1,12 @@
 # Active Learning
 
-This feature is designed to facilitate the systematic collection of data from actual production distributions with 
-minimal user-side overhead, leveraging the hosting capabilities of models and datasets on the Roboflow platform.
+Inference lets you collect data automatically from production use cases for use in training new versions of your model. 
+This is called active learning.
 
-The core concept is straightforward:
+By collecting data actively that you can later label and use in training, you can gather data representative of the 
+environment in which your model is deployed. This information may help you boost model performance.
 
+The core concept:
 * The user initiates the creation of an Active Learning configuration within the Roboflow app.
 * This configuration is then distributed across all active inference instances, which may include those running against 
 video streams and the HTTP API, both on-premises and within the Roboflow platform.
@@ -12,7 +14,7 @@ video streams and the HTTP API, both on-premises and within the Roboflow platfor
 dynamically collected and submitted in batches into user project. These batches are then ready for labeling within the 
 Roboflow platform.
 
-To decide which datapoints should be collected - Active Learning components use sampling strategies that can be 
+To decide which datapoints should be collected, Active Learning components use sampling strategies that can be 
 defined by users.
 
 ## Active Learning configuration
@@ -64,7 +66,13 @@ to prevent too much data to be collected (optional)
 Every user-defined strategy must possess a unique name within a given configuration. In addition to the name, 
 each strategy is distinguished by its specified type. Various types of strategies are available for utilization.
 
-### Random sampling strategy
+List of supported strategies:
+* [random sampling](#random-sampling)
+* [close-to-threshold sampling](#close-to-threshold-sampling)
+* [classes based sampling](#classes-based-sampling)
+* [detections number based sampling](#detections-number-based-sampling)
+
+###  <a name="random-sampling"></a> Random sampling strategy
 This strategy should be used to randomly select data to be saved for future labeling. 
 
 #### Applicable model types
@@ -97,7 +105,7 @@ single configuration (required)
 }
 ```
 
-### Close to threshold sampling
+### <a name="close-to-threshold-sampling"></a> Close to threshold sampling
 Sampling method intended for selecting data points that lead to specific prediction confidences for particular classes. 
 This method is applicable to both detection and classification models, although the behavior may vary slightly 
 between the two.
@@ -146,7 +154,7 @@ based on non-leading classes in predictions.
 }
 ```
 
-### Classes based sampling (for classification)
+### <a name="classes-based-sampling"> Classes based sampling (for classification)
 Sampling method employed to selectively choose specific classes from classifier predictions.
 
 #### Applicable model types
@@ -177,7 +185,7 @@ value in range [0.0, 1.0] (required)
 }
 ```
 
-### Detection number based sampling (for detection)
+### <a name="detections-number-based-sampling"> Detection number based sampling (for detection)
 Sampling method employed for selectively choosing specific detections based on count and detection classes.
 
 #### Applicable model types
@@ -239,8 +247,7 @@ into single process). Se effectively:
 enforcements
 * otherwise - memory cache of single instance is used (multiple processes will have their own limits)
 
-Self-hosted `inference` may be connected to your own Redis cache. Please remember about this while defining strategies
-limits.
+Self-hosted `inference` may be connected to your own Redis cache.
 
 ## Stubs
 One may use `{dataset_name}/0` as `model_id` while making prediction - to use null model for specific project. 
@@ -253,8 +260,8 @@ It is going to provide predictions in the following format:
     "task_type": "instance-segmentation"
 }
 ```
-This option, combined with Active Learning (namely `random` sampling strategy) provides a way to start data collection
-even prior any model is trained. There are several benefits of such strategy - but the most important is building 
+This option, combined with Active Learning (namely `random` sampling strategy), provides a way to start data collection
+even prior any model is trained. There are several benefits of such strategy. The most important is building 
 the dataset representing the true production distribution, before any model is trained.
 
 Example client usage:
