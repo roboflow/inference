@@ -227,6 +227,21 @@ is selected
 Once datapoint is selected and there is no limit violation - it will be saved into Roboflow platform with tags 
 relevant for specific strategy (and global tags defined at the level of Active Learning configuration).
 
+## Strategy limits
+Each strategy can be configured with `limits` - list of values limiting how many images can be collected 
+each minute, hour or day. Each entry on that list can hold two values:
+* `type` - one of `["minutely", "hourly", "daily"]` - representing the type of limit
+* `value` - with limit threshold
+
+Limits are enforced with different granularity, as they are implemented based or either Redis or memory cache (bounded
+into single process). Se effectively:
+* if Redis cache is used - all instances of `inference` connected to the same Redis service will share limits 
+enforcements
+* otherwise - memory cache of single instance is used (multiple processes will have their own limits)
+
+Self-hosted `inference` may be connected to your own Redis cache. Please remember about this while defining strategies
+limits.
+
 ## Stubs
 One may use `{dataset_name}/0` as `model_id` while making prediction - to use null model for specific project. 
 It is going to provide predictions in the following format:
