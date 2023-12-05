@@ -267,3 +267,55 @@ LOCALHOST_CLIENT = InferenceHTTPClient(
 )
 LOCALHOST_CLIENT.infer(image, model_id="asl-poly-instance-seg/0")
 ```
+
+## How to configure Active Learning using Roboflow API directly?
+
+```python
+import requests
+
+def get_active_learning_configuration(
+    workspace: str,
+    project: str,
+    api_key: str
+) -> None:
+    response = requests.get(
+        f"https://api.roboflow.com/{workspace}/{project}/active_learning?api_key={api_key}",
+    )
+    return response.json()
+
+def set_active_learning_configuration(
+    workspace: str,
+    project: str,
+    api_key: str,
+    config: dict,
+) -> None:
+    response = requests.post(
+        f"https://api.roboflow.com/{workspace}/{project}/active_learning?api_key={api_key}",
+        json={
+            "config": config,
+        }
+    )
+    return response.json()
+
+# Example usage
+set_active_learning_configuration(
+    workspace="yyy",
+    project="zzz",
+    api_key="XXX",
+    config={
+        "enabled": True,
+        "persist_predictions": True,
+        "batching_strategy": {
+            "batches_name_prefix": "my_batches",
+            "recreation_interval": "daily",
+        },
+        "sampling_strategies": [
+            {
+                "name": "default_strategy",
+                "type": "random",
+                "traffic_percentage": 0.01, 
+            }
+        ]
+    }
+)
+```
