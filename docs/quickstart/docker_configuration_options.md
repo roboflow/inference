@@ -3,7 +3,7 @@ Inference servers have a number of configurable parameters which can be set usin
 
 ```bash
 #Example Docker run command with environment variable
-docker run -it --rm -e ENV_VAR_NAME=env_var_value -p 9001:9001 --gpus all roboflow/roboflow-inference-server-trt:latest
+docker run -it --rm -e ENV_VAR_NAME=env_var_value -p 9001:9001 --gpus all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 **CLASS_AGNOSTIC_NMS**: Boolean (default = False)
