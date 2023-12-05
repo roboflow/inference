@@ -19,7 +19,7 @@ defined by users.
 Active learning configuration contains **sampling strategies** and other fields influencing the feature behaviour.
 
 #### Configuration options
-* `enabled` - boolean flag to enable / disable the configuration (required)
+* `enabled` - boolean flag to enable / disable the configuration (required) - `{"enabled": false}` is minimal valid config
 * `max_image_size` - two element list with positive integers (height, width) enforcing down-sizing (with aspect-ratio
 preservation) of images before submission into Roboflow platform (optional)
 * `jpeg_compression_level` - integer value in range [1, 100]  representing compression level of submitted images 
@@ -196,7 +196,8 @@ value in range [0.0, 1.0] (required)
 (optional - if not given - lower limit is not applied)
 * `less_than` - maximum number of detected objects - if given it is meant to be integer >= 0 
 (optional - if not given - upper limit is not applied)
-* **NOTE:** one of `more_than`, `less_than` must be given
+* **NOTE:** if both `more_than` and `less_than` is not given - any number of matching detections will match the 
+sampling condition
 * `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Configuration example
