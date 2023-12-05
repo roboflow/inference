@@ -1,5 +1,5 @@
 import asyncio
-import json
+import orjson
 from asyncio import BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
@@ -67,7 +67,7 @@ class ResultsChecker:
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
-                message = json.loads(message["data"])
+                message = orjson.loads(message["data"])
                 task_id = message.pop("task_id")
                 if task_id not in self.tasks:
                     continue

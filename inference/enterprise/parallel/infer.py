@@ -1,4 +1,4 @@
-import json
+import orjson
 import logging
 import time
 from asyncio import Queue as AioQueue
@@ -145,7 +145,7 @@ def get_batch(redis: Redis, model_names: List[str]) -> Tuple[List[Dict], str]:
     selected_model = model_names[model_index]
     redis.zrem(f"infer:{selected_model}", *[b[0] for b in batch])
     redis.hincrby(f"requests", selected_model, -len(batch))
-    batch = [json.loads(b[0]) for b in batch]
+    batch = [orjson.loads(b[0]) for b in batch]
     return batch, selected_model
 
 
