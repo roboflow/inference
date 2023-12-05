@@ -1,7 +1,7 @@
 site_name: Roboflow Inference
 site_url: https://inference.roboflow.com/
 site_author: Roboflow
-site_description: With no prior knowledge of machine learning or device-specific deployment, you can deploy a computer vision model to a range of devices and environments using the Roboflow Inference Server.
+site_description: Scalable, on-device computer vision deployment.
 repo_name: roboflow/inference
 repo_url: https://github.com/roboflow/inference
 edit_uri: https://github.com/roboflow/inference/tree/main/docs
@@ -64,8 +64,8 @@ nav:
 
 theme:
   name: 'material'
-  logo: https://media.roboflow.com/inference-icon.png
-  favicon: https://media.roboflow.com/inference-icon.png
+  logo: inference-icon.png
+  favicon: inference-icon.png
   font:
     text: Roboto
     code: Roboto Mono
@@ -87,6 +87,9 @@ plugins:
   - mkdocstrings
   - search
   - swagger-ui-tag
+  - social:
+      cards_layout_dir: docs/layouts
+      cards_layout: custom
 
 markdown_extensions:
   - admonition
