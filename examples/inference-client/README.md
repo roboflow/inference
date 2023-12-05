@@ -65,12 +65,6 @@ docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e API_KEY=<> rob
   docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
   ```
   
-- Run on Nvidia GPU with TensorRT Runtime:
-
-  ```bash
-  docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
-  ```
-  
 - Run on Nvidia Jetson with JetPack `4.x`:
 
   ```bash

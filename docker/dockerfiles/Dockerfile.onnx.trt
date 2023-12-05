@@ -34,7 +34,7 @@ RUN conda install -c anaconda libstdcxx-ng
 
 WORKDIR /app/
 COPY inference inference
-COPY docker/config/trt_http.py trt_http.py
+COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
 ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
@@ -46,4 +46,4 @@ ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
 
-ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
