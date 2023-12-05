@@ -1,9 +1,9 @@
 import asyncio
-import json
 from asyncio import BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
+import orjson
 from redis.asyncio import Redis
 
 from inference.core.entities.requests.inference import (
@@ -67,7 +67,7 @@ class ResultsChecker:
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
-                message = json.loads(message["data"])
+                message = orjson.loads(message["data"])
                 task_id = message.pop("task_id")
                 if task_id not in self.tasks:
                     continue
