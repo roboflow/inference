@@ -1,1 +1,3 @@
 celery
+orjson
+gunicorn

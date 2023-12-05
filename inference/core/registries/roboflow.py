@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Tuple, Union
 
+from inference.core.cache import cache
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.exceptions import ModelNotRecognisedError
@@ -105,18 +106,19 @@ def get_model_metadata_from_cache(
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
-    if not os.path.isfile(model_type_cache_path):
-        return None
-    try:
-        model_metadata = read_json(path=model_type_cache_path)
-        if model_metadata_content_is_invalid(content=model_metadata):
+    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
+        if not os.path.isfile(model_type_cache_path):
             return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-    except ValueError as e:
-        logger.warning(
-            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
-        )
-        return None
+        try:
+            model_metadata = read_json(path=model_type_cache_path)
+            if model_metadata_content_is_invalid(content=model_metadata):
+                return None
+            return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
+        except ValueError as e:
+            logger.warning(
+                f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
+            )
+            return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
@@ -140,13 +142,17 @@ def save_model_metadata_in_cache(
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
-    model_type_cache_path = construct_model_type_cache_path(
-        dataset_id=dataset_id, version_id=version_id
-    )
-    metadata = {PROJECT_TASK_TYPE_KEY: project_task_type, MODEL_TYPE_KEY: model_type}
-    dump_json(
-        path=model_type_cache_path, content=metadata, allow_override=True, indent=4
-    )
+    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
+        model_type_cache_path = construct_model_type_cache_path(
+            dataset_id=dataset_id, version_id=version_id
+        )
+        metadata = {
+            PROJECT_TASK_TYPE_KEY: project_task_type,
+            MODEL_TYPE_KEY: model_type,
+        }
+        dump_json(
+            path=model_type_cache_path, content=metadata, allow_override=True, indent=4
+        )
 
 
 def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:

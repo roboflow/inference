@@ -1,9 +1,9 @@
 import asyncio
-import json
 from asyncio import BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
+import orjson
 from redis.asyncio import Redis
 
 from inference.core.entities.requests.inference import (
@@ -64,13 +64,14 @@ class ResultsChecker:
         """
         async with self.redis.pubsub() as pubsub:
             await pubsub.subscribe("results")
-            while self.running:
-                message = await pubsub.get_message(ignore_subscribe_messages=True)
-                if message is None:
-                    await asyncio.sleep(0)
+            async for message in pubsub.listen():
+                if message["type"] != "message":
                     continue
-                message = json.loads(message["data"])
+                message = orjson.loads(message["data"])
                 task_id = message.pop("task_id")
+                if task_id not in self.tasks:
+                    continue
+                self.semaphore.release()
                 status = message.pop("status")
                 if status == FAILURE_STATE:
                     self.errors[task_id] = message["payload"]
@@ -81,7 +82,6 @@ class ResultsChecker:
                         "Task result not found in possible states. Unreachable"
                     )
                 self.tasks[task_id].set()
-                self.semaphore.release()
                 await asyncio.sleep(0)
 
     async def wait_for_response(self, key: str):
@@ -105,6 +105,7 @@ class DispatchModelManager(ModelManager):
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
+
         list_mode = False
         if isinstance(request.image, list):
             list_mode = True

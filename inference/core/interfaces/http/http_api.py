@@ -250,7 +250,7 @@ class HttpInterface(BaseInterface):
                 """
                 response = await call_next(request)
                 if response.status_code >= 400:
-                    model_manager.num_errors += 1
+                    self.model_manager.num_errors += 1
                 return response
 
         self.app = app
@@ -471,7 +471,6 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
-
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,

@@ -156,6 +156,8 @@ class MemoryCache(BaseCache):
         if lock is None:
             lock = Lock()
             self.set(key, lock, expire=expire)
+        if expire is None:
+            expire = -1
         acquired = lock.acquire(timeout=expire)
         if not acquired:
             raise TimeoutError()
