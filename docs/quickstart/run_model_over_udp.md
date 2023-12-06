@@ -6,8 +6,7 @@ This feature only works on devices with a CUDA-enabled GPU.
 
 Inference has been used at sports broadcasting events around the world for real-time object detection.
 
-!!! tip "Tip"
-    Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run.
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run."
 
 ## Run a Vision Model on a UDP Stream
 
@@ -21,7 +20,7 @@ To run inference on frames from a UDP stream, you will need to:
 To use Inference with a UDP stream, you will need a Roboflow API key. If you don't already have a Roboflow account, sign up for a free Roboflow account. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 ### Configure a Listening Server

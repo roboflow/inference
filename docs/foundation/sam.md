@@ -12,7 +12,7 @@ To use Segment Anything, you need to:
 To use Segment Anything with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 ### Embed an Image
@@ -32,17 +32,17 @@ infer_payload = {
     "image_id": "example_image_id",
 }
 
-base_url = "https://infer.roboflow.com"
+base_url = "http://localhost:9001"
 
 # Define your Roboflow API Key
-api_key = ""
+api_key = "YOUR ROBOFLOW API KEY"
 
 res = requests.post(
     f"{base_url}/sam/embed_image?api_key={api_key}",
-    json=infer_clip_payload,
+    json=infer_payload,
 )
 
-embeddings = request.json()['embeddings']
+embeddings = res.json()['embeddings']
 ```
 
 This code makes a request to Inference to embed an image using SAM.
@@ -53,8 +53,7 @@ The `example_image_id` is used to cache the embeddings for later use so you don'
 
 To segment an object, you need to know at least one point in the image that represents the object that you want to use.
 
-!!! tip
-    For testing with a single image, you can upload an image to the [Polygon Zone web interface](https://roboflow.github.io/polygonzone/) and hover over a point in the image to see the coordinates of that point.
+!!! tip "For testing with a single image, you can upload an image to the [Polygon Zone web interface](https://roboflow.github.io/polygonzone/) and hover over a point in the image to see the coordinates of that point."
 
 You may also opt to use an object detection model to identify an object, then use the center point of the bounding box as a prompt for segmentation.
 

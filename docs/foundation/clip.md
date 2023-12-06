@@ -25,7 +25,6 @@ We can compare the similarity of "cell phone" to each video frame and use that t
 
 Below is a demo of CLIP classifying video frames in real time. The code for the example is below the video.
 
-
 <video width="100%" autoplay loop muted>
   <source src="https://media.roboflow.com/clip-coffee.mp4" type="video/mp4">
 </video>
@@ -51,7 +50,7 @@ def render(result, image):
     range = (0.15, 0.40)
     similarity = (similarity-range[0])/(range[1]-range[0])
     similarity = max(min(similarity, 1), 0)*100
-    
+
     # print the similarity
     text = f"{similarity:.1f}%"
     cv2.putText(image, text, (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 12, (255, 255, 255), 30)
@@ -72,7 +71,7 @@ inference.Stream(
 
     output_channel_order="BGR",
     use_main_thread=True,
-    
+
     on_prediction=render
 )
 ```
@@ -98,6 +97,7 @@ In the code below, we calculate an image embedding.
 Create a new Python file and add this code:
 
 ```python
+import os
 import requests
 #Define Request Payload
 infer_clip_payload = {
