@@ -31,7 +31,8 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     raise_from_lambda,
     register_image_at_roboflow,
-    wrap_roboflow_api_errors, get_roboflow_active_learning_configuration,
+    wrap_roboflow_api_errors,
+    get_roboflow_active_learning_configuration,
 )
 from inference.core.utils.url_utils import wrap_url
 
@@ -1613,7 +1614,9 @@ def test_get_roboflow_active_learning_configuration_when_wrong_api_key_used(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key", "API key must be given in query"
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
 
 
 def test_get_roboflow_active_learning_configuration_when_not_found_returned(
@@ -1634,7 +1637,9 @@ def test_get_roboflow_active_learning_configuration_when_not_found_returned(
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key", "API key must be given in query"
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
 
 
 def test_get_roboflow_active_learning_configuration_when_internal_error_returned(
@@ -1655,7 +1660,9 @@ def test_get_roboflow_active_learning_configuration_when_internal_error_returned
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key", "API key must be given in query"
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
 
 
 def test_get_roboflow_active_learning_configuration_when_malformed_response_returned(
@@ -1676,4 +1683,6 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
         )
 
     # then
-    assert requests_mock.last_request.query == "api_key=my_api_key", "API key must be given in query"
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
