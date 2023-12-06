@@ -82,32 +82,22 @@ Choose an option below:
 
         ```python
         import requests
-        from PIL import Image
+        import cv2
+        import pickle
 
-        project_id = ""
-        model_version = ""
-        image_url = ""
-        confidence = 0.75
-        api_key = ""
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        api_key = "YOUR API KEY"
         task = "object_detection"
         file_name = ""
 
-        image = Image.open(file_name)
-
-        infer_payload = {
-            "model_id": f"{project_id}/{model_version}",
-            "image": {
-                "type": "numpy",
-                "value": image,
-            },
-            "confidence": confidence,
-            "iou_threshold": iou_thresh,
-            "api_key": api_key,
-        }
+        image = cv2.imread(file_name)
+        numpy_data = pickle.dumps(image)
 
         res = requests.post(
-            f"http://localhost:9001/infer/{task}",
-            json=infer_payload,
+            f"http://localhost:9001/{project_id}/{model_version}?api_key={api_key}&image_type=numpy",
+            data=numpy_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
 
         predictions = res.json()
