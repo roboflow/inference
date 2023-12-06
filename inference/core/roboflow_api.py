@@ -199,73 +199,11 @@ def get_roboflow_active_learning_configuration(
     workspace_id: WorkspaceID,
     dataset_id: DatasetID,
 ) -> dict:
-    # api_url = _add_params_to_url(
-    #     url=f"{API_BASE_URL}/dataset/{workspace_id}/{dataset_id}",
-    #     params={"api_key": api_key, "nocache": "true"}
-    # )
-    # return _get_from_roboflow_api(url=api_url)
-    return {
-        "enabled": True,
-        "max_image_size": (1200, 1200),  # Optional (h, w)
-        "jpeg_compression_level": 75,  # Optional int 0-100, defaults to 95
-        "persist_predictions": True,
-        "sampling_strategies": [
-            {
-                "name": "default_strategy",
-                "type": "random",
-                "traffic_percentage": 0.1,  # float 0-1
-                "tags": ["random-traffic"],  # Optional
-                "limits": [  # Optional
-                    {"type": "minutely", "value": 10},
-                    {"type": "hourly", "value": 100},
-                    {"type": "daily", "value": 1000},
-                ],
-            },
-            {
-                "name": "hard_examples",
-                "type": "close_to_threshold",
-                "threshold": 0.3,
-                "epsilon": 0.3,
-                "probability": 0.3,
-                "tags": ["hard-case"],
-                "limits": [
-                    {"type": "minutely", "value": 10},
-                    {"type": "hourly", "value": 100},
-                    {"type": "daily", "value": 1000},
-                ],
-            },
-            {
-                "name": "multiple_detections",
-                "type": "detections_number_based",
-                "probability": 0.2,
-                "more_than": 3,
-                "tags": ["crowded"],
-                "limits": [
-                    {"type": "minutely", "value": 10},
-                    {"type": "hourly", "value": 100},
-                    {"type": "daily", "value": 1000},
-                ],
-            },
-            {
-                "name": "underrepresented_classes",
-                "type": "classes_based",
-                "selected_class_names": ["cat"],
-                "probability": 1.0,
-                "tags": ["hard-classes"],
-                "limits": [
-                    {"type": "minutely", "value": 10},
-                    {"type": "hourly", "value": 100},
-                    {"type": "daily", "value": 1000},
-                ],
-            },
-        ],
-        "batching_strategy": {
-            "batches_name_prefix": "al_batch",
-            "recreation_interval": "daily",  # "never" | "daily" | "weekly" | "monthly" | None
-            "max_batch_images": None,  # Optional[int]
-        },
-        "tags": ["a", "b"],  # Optional
-    }
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/{dataset_id}/active_learning",
+        params=[("api_key", api_key)],
+    )
+    return _get_from_url(url=api_url)
 
 
 @wrap_roboflow_api_errors()
