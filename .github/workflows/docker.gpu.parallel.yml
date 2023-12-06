@@ -1,8 +1,9 @@
-name: Build and Push TRT Container
+name: Build and Push GPU Container
 
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 env:
   VERSION: '0.0.0' # Default version, will be overwritten
@@ -34,22 +35,12 @@ jobs:
         name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       -
-        name: Build and Push Base Image
-        uses: docker/build-push-action@v4
-        with:
-          push: true
-          tags: roboflow/roboflow-inference-server-trt-base:latest,roboflow/roboflow-inference-server-trt-base:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt-base:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt-base:cache,mode=max
-          platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.trt.base
-      -
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-trt:latest,roboflow/roboflow-inference-server-trt:${{ env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-trt:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-trt:cache,mode=max
+          tags: roboflow/roboflow-inference-server-gpu-parallel:latest,roboflow/roboflow-inference-server-gpu-parallel:${{env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache,mode=max
           platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.trt
+          file: ./docker/dockerfiles/Dockerfile.onnx.gpu.parallel

@@ -1,4 +1,5 @@
-FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+# FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -9,6 +10,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     uvicorn \
     python3-pip \
     git \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
@@ -35,7 +37,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
 
 WORKDIR /app/
 COPY inference inference
-COPY docker/config/trt_http.py trt_http.py
+COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -43,4 +45,4 @@ ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
 
-ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

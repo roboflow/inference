@@ -1,4 +1,4 @@
-name: Build and Push Jetson 4.5.0 Container
+name: Build and Push CPU Container
 
 on:
   release:
@@ -12,10 +12,6 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Remove unnecessary files
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -39,8 +35,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: roboflow/roboflow-inference-server-jetson-4.5.0:latest,roboflow/roboflow-inference-server-jetson-4.5.0:${{env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.5.0:cache,mode=max
-          platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.5.0
+          tags: roboflow/roboflow-inference-server-cpu-parallel:latest,roboflow/roboflow-inference-server-cpu-parallel:${{env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu-parallel:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu-parallel:cache,mode=max
+          platforms: linux/amd64,linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel

@@ -250,7 +250,7 @@ class HttpInterface(BaseInterface):
                 """
                 response = await call_next(request)
                 if response.status_code >= 400:
-                    model_manager.num_errors += 1
+                    self.model_manager.num_errors += 1
                 return response
 
         self.app = app
@@ -471,7 +471,6 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
-
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -571,11 +570,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the OpenAI CLIP model.
@@ -608,11 +607,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds text data using the OpenAI CLIP model.
@@ -645,11 +644,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Computes similarity scores using the OpenAI CLIP model.
@@ -684,11 +683,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the DocTR model.
@@ -725,11 +724,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the Meta AI Segmant Anything Model (SAM).
@@ -767,11 +766,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
@@ -811,11 +810,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Detect gaze using the gaze detection model.
@@ -858,6 +857,7 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
+                request: Request,
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference"
                 ),
@@ -908,7 +908,6 @@ class HttpInterface(BaseInterface):
                     0.3,
                     description="The IoU threhsold that must be met for a box pair to be considered duplicate during NMS",
                 ),
-                request: Request = Body(),
                 stroke: int = Query(
                     1, description="The stroke width used when visualizing predictions"
                 ),

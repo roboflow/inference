@@ -269,11 +269,11 @@ INFER_BUCKET = os.getenv(
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", False))
-ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
+ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager
-NUM_PARALLEL_TASKS = os.getenv("NUM_PARALLEL_TASKS", 1000)
-STUB_CACHE_SIZE = os.getenv("STUB_CACHE_SIZE", 256)
+NUM_PARALLEL_TASKS = int(os.getenv("NUM_PARALLEL_TASKS", 512))
+STUB_CACHE_SIZE = int(os.getenv("STUB_CACHE_SIZE", 256))
 # New stream interface variables
 PREDICTIONS_QUEUE_SIZE = int(
     os.getenv("INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE", 512)

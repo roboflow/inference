@@ -23,6 +23,12 @@ model = get_roboflow_model(model_id="soccer-players-5fuqs/1", api_key="ROBOFLOW 
 image_url = (
     "https://storage.googleapis.com/com-roboflow-marketing/inference/soccer2.jpg"
 )
+
+model = get_roboflow_model(
+    model_id="soccer-players-5fuqs/1",
+    api_key="YOUR ROBOFLOW API KEY"
+)
+
 image = Image.open(
     requests.get(image_url, stream=True).raw
 )  # load it as a PIL image so we can use it later for plotting

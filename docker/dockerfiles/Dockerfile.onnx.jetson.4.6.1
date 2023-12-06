@@ -23,8 +23,7 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     python3-setuptools \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
+COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
@@ -34,7 +33,6 @@ RUN python3.8 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
     -r _requirements.txt \
-    -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
@@ -49,7 +47,7 @@ RUN python3.8 -m pip install onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl 
 
 WORKDIR /app/
 COPY inference inference
-COPY docker/config/trt_http.py trt_http.py
+COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -62,4 +60,4 @@ ENV HOST=0.0.0.0
 ENV PORT=9001
 ENV OPENBLAS_CORETYPE=ARMV8 
 
-ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

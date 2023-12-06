@@ -63,13 +63,6 @@ hardware configurations.
         docker pull roboflow/roboflow-inference-server-gpu
         ```
 
-    === "GPU + TensorRT"
-        Official Roboflow Inference Server Docker Image for Nvidia GPU with TensorRT Runtime Targets.
-    
-        ```
-        docker pull roboflow/roboflow-inference-server-trt
-        ```
-
     === "Jetson 4.5.x"
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.5.x Targets.
 
@@ -114,12 +107,6 @@ Server in a container.
         ```
         docker run --network=host --gpus=all \
         roboflow/roboflow-inference-server-gpu:latest
-        ```
-
-    === "GPU + TensorRT"
-        ```
-        docker run --network=host --gpus=all \
-        roboflow/roboflow-inference-server-trt:latest
         ```
 
     === "Jetson 4.5.x"
@@ -177,13 +164,6 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
         docker build \
         -f dockerfiles/Dockerfile.onnx.gpu \
         -t roboflow/roboflow-inference-server-gpu .
-        ```
-
-    === "GPU + TensorRT"
-        ```
-        docker build \
-        -f dockerfiles/Dockerfile.onnx.trt \
-        roboflow/roboflow-inference-server-trt .
         ```
 
     === "Jetson 4.5.x"
