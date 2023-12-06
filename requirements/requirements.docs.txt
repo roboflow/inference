@@ -3,3 +3,5 @@ mkdocs==1.5.2
 mkdocs-material==9.2.1
 mkdocstrings-python
 mkdocs-swagger-ui-tag==0.6.3
+pillow
+cairosvg
