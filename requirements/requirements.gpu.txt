@@ -1,1 +1,7 @@
 onnxruntime-gpu<=1.15.1
+transformers
+sentencepiece
+einops
+xformers
+accelerate
+bitsandbytes
