@@ -28,7 +28,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
 ):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
-    task_type = "keypoints-detection"
+    task_type = "keypoint-detection"
 
     def __init__(self, model_id: str, *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
@@ -188,3 +188,6 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             )
             results.append(keypoint)
         return results
+
+    def validate_model_classes(self) -> None:
+        pass
