@@ -7,10 +7,10 @@ For every example in the following documentation you will need to provide your R
 
 ## Use Your Roboflow API Key
 
-Using your Roboflow API key will depend on how you are using `inference`.
+How you use your Roboflow API key will depend on how you are using `inference`.
 ### Python SDK
  Within the python SDK, your Roboflow API key can be set via keyword arguments
- 
+
 ```python
 from inference.models.utils import get_roboflow_model
 
