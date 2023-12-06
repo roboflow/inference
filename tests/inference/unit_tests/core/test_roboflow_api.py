@@ -32,6 +32,7 @@ from inference.core.roboflow_api import (
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
+    get_roboflow_active_learning_configuration,
 )
 from inference.core.utils.url_utils import wrap_url
 
@@ -1431,7 +1432,7 @@ def test_get_roboflow_labeling_jobs_when_connection_error_occurs(
         )
 
 
-def test_gget_roboflow_labeling_jobs_when_wrong_api_key_used(
+def test_get_roboflow_labeling_jobs_when_wrong_api_key_used(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1577,3 +1578,111 @@ def test_get_roboflow_labeling_jobs_when_valid_response_returned(
     # then
     assert result == expected_result
     assert requests_mock.last_request.query == "api_key=my_api_key"
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_roboflow_active_learning_configuration_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        _ = get_roboflow_active_learning_configuration(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+        )
+
+
+def test_get_roboflow_active_learning_configuration_when_wrong_api_key_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/active_learning"),
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = get_roboflow_active_learning_configuration(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_roboflow_active_learning_configuration_when_not_found_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/active_learning"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = get_roboflow_active_learning_configuration(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_roboflow_active_learning_configuration_when_internal_error_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/active_learning"),
+        status_code=500,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_roboflow_active_learning_configuration(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_roboflow_active_learning_configuration_when_malformed_response_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/coins_detection/active_learning"),
+        content=b"Not a JSON :)",
+    )
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_roboflow_active_learning_configuration(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            dataset_id="coins_detection",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
