@@ -92,6 +92,12 @@ class ModelManager:
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
                 )
+                if (
+                    hasattr(request, "image")
+                    and hasattr(request.image, "type")
+                    and request.image.type == "numpy"
+                ):
+                    request.image.value = str(request.image.value)
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
