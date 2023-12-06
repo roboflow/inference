@@ -93,7 +93,7 @@ Server in a container.
 
     === "x86 CPU"
         ```
-        docker run --net=host \
+        docker run -it --net=host \
         roboflow/roboflow-inference-server-cpu:latest
         ```
 
@@ -105,7 +105,7 @@ Server in a container.
 
     === "GPU"
         ```
-        docker run --network=host --gpus=all \
+        docker run -it --network=host --gpus=all \
         roboflow/roboflow-inference-server-gpu:latest
         ```
 
