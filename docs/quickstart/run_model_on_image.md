@@ -10,20 +10,15 @@ If you need to deploy to the edge, you can use a device like the Jetson Nano. If
 !!! info
     If you haven't already, follow our Run Your First Model guide to install and set up Inference.
 
-First, start an Inference server:
-
-```
-inference server start
-```
-
-Next, create a new Python file and add the following code:
+Create a new Python file and add the following code:
 
 ```python
 from inference.models.utils import get_roboflow_model
 from PIL import Image
 
 model = get_roboflow_model(
-    model_id="soccer-players-5fuqs/1"
+    model_id="soccer-players-5fuqs/1",
+    api_key="YOUR ROBOFLOW API KEY"
 )
 
 result = model.infer("path/to/image.jpg")

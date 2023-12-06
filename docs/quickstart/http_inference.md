@@ -189,7 +189,7 @@ The code snippets above will run inference on a computer vision model. On the fi
 
 The Inference Server comes with a `/docs` route at `localhost:9001/docs` or `localhost:9001/redoc` that provides OpenAPI-powered documentation. You can use this to reference the routes available, and the configuration options for each route.
 
-## Auto Batching Requests
+## Batching Requests
 
 Object detection models trained with Roboflow support batching, which allow you to upload multiple images of any type at once:
 
