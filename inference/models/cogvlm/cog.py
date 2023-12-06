@@ -87,6 +87,7 @@ class CogVLM(Model):
             text = self.tokenizer.decode(outputs[0])
             if text.endswith("</s>"):
                 text = text[:-4]
+            return text
 
     def infer_from_request(self, request: CogVLMInferenceRequest) -> CogVLMResponse:
         t1 = perf_counter()
