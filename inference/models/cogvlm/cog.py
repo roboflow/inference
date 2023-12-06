@@ -50,7 +50,7 @@ class CogVLM(Model):
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         if image is None:
-            return None
+            return None, PreprocessReturnMetadata({})
         pil_image = Image.fromarray(load_image_rgb(image))
         return pil_image, PreprocessReturnMetadata({})
 
