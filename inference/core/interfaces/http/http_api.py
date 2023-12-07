@@ -64,7 +64,6 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
-    ENTERPRISE,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
@@ -274,8 +273,6 @@ class HttpInterface(BaseInterface):
             resp = await self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request, **kwargs
             )
-            if not ENTERPRISE:
-                return resp
             return ORJSONResponse(content=resp.dict())
 
         def load_core_model(
@@ -1060,8 +1057,6 @@ class HttpInterface(BaseInterface):
                         media_type="image/jpeg",
                     )
                 else:
-                    if not ENTERPRISE:
-                        return inference_response
                     return ORJSONResponse(content=inference_response.dict())
 
         if not LAMBDA:
