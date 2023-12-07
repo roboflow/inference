@@ -49,7 +49,7 @@ class CogVLM(Model):
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[Image.Image, PreprocessReturnMetadata]:
-        pil_image = Image.fromarray(load_image_rgb(image)
+        pil_image = Image.fromarray(load_image_rgb(image))
 
         return pil_image, PreprocessReturnMetadata({})
 
