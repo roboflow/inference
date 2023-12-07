@@ -160,6 +160,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models import CogVLM
+
+    ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     if not api_key:

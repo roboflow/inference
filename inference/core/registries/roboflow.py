@@ -23,6 +23,7 @@ GENERIC_MODELS = {
     "sam": ("embed", "sam"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    "cogvlm": ("llm", "cogvlm"),
 }
 
 STUB_VERSION_ID = "0"

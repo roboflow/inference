@@ -38,6 +38,9 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 # AWS secret access key, default is None
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
+COG_LOAD_4BIT = str2bool(os.getenv("COG_LOAD_4BIT", True))
+COG_LOAD_8BIT = str2bool(os.getenv("COG_LOAD_8BIT", False))
+COG_VERSION_ID = os.getenv("COG_VERSION_ID", "cogvlm-chat-hf")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 
@@ -82,6 +85,8 @@ CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
+
+CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
@@ -226,6 +231,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
+
 
 # Device ID, default is "sample-device-id"
 INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
