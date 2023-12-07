@@ -658,10 +658,16 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             providers = self.onnxruntime_execution_providers
             if not self.load_weights:
                 providers = ["CPUExecutionProvider"]
-            self.onnx_session = onnxruntime.InferenceSession(
-                self.cache_file(self.weights_file),
-                providers=providers,
-            )
+            try:
+                self.onnx_session = onnxruntime.InferenceSession(
+                    self.cache_file(self.weights_file),
+                    providers=providers,
+                )
+            except Exception as e:
+                self.clear_cache()
+                raise ModelArtefactError(
+                    f"Unable to load ONNX session. Cause: {e}"
+                ) from e
             logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             if REQUIRED_ONNX_PROVIDERS:
