@@ -48,20 +48,20 @@ class CogVLM(Model):
 
     def preprocess(
         self, image: Any, **kwargs
-    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
-        pil_image = Image.fromarray(load_image_rgb(image))
+    ) -> Tuple[Image.Image, PreprocessReturnMetadata]:
+        pil_image = Image.fromarray(load_image_rgb(image)
 
         return pil_image, PreprocessReturnMetadata({})
 
     def postprocess(
         self,
-        predictions: Tuple[np.ndarray],
+        predictions: Tuple[str],
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:
         return predictions[0]
 
-    def predict(self, image_in: np.ndarray, prompt="", history=None, **kwargs):
+    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         images = [image_in]
         if history is None:
             history = []
