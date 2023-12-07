@@ -24,9 +24,9 @@ Start the server using `inference server start`. After you have installed the In
 
 ## Step #2: Run Inference
 
-You can send a URL with an image, a NumPy array, or a base64-encoded image to an Inference server. The server will return a JSON response with the predictions.
+You can send a URL with an image, a NumPy array, or a base64-encoded image to an Inference server. The server will return a JSON response with the predictions. There are two generations of routes in a Roboflow inference server, V1 and V2. To see exactly what routes are available for a running inference server instance, visit the `/docs` route in a browser to see dynamically generated swagger documentation. Note, Roboflow hosted inference endpoints (`detect.roboflow.com`) only support V1 routes.
 
-Choose an option below:
+### V2 Routes
 
 !!! Run Inference
 
@@ -71,48 +71,6 @@ Choose an option below:
         3. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
         4. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
         5. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
-
-        Then, run the Python script:
-
-        ```
-        python app.py
-        ```
-
-    === "NumPy Array"
-
-        Create a new Python file and add the following code:
-
-        ```python
-        import requests
-        import cv2
-        import pickle
-
-        project_id = "soccer-players-5fuqs"
-        model_version = 1
-        task = "object_detection"
-        api_key = "YOUR API KEY"
-        file_name = "path/to/local/image.jpg"
-
-        image = cv2.imread(file_name)
-        numpy_data = pickle.dumps(image)
-
-        res = requests.post(
-            f"http://localhost:9001/{project_id}/{model_version}?api_key={api_key}&image_type=numpy",
-            data=numpy_data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-
-        predictions = res.json()
-        print(predictions)
-        ```
-
-        Above, specify:
-
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
-        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
-        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
-        5. `filename`: The path to the image you want to run inference on.
 
         Then, run the Python script:
 
@@ -180,6 +138,220 @@ Choose an option below:
         ```
         python app.py
         ```
+    
+    === "Batch Inference"
+
+        Roboflow object detection models support batching. Utilize batch inference by passing a list of image objects in a request payload:
+
+        ```python
+        import requests
+        import base64
+        from PIL import Image
+        from io import BytesIO
+
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        task = "object_detection"
+        confidence = 0.5
+        iou_thresh = 0.5
+        api_key = "YOUR ROBOFLOW API KEY"
+        file_name = "path/to/local/image.jpg"
+
+        image = Image.open(file_name)
+
+        buffered = BytesIO()
+
+        image.save(buffered, quality=100, format="JPEG")
+
+        img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
+
+        infer_payload = {
+        "model_id": f"{project_id}/{model_version}",
+        "image": [
+            {
+                "type": "base64",
+                "value": img_str,
+            },
+            {
+                "type": "base64",
+                "value": img_str,
+            },
+            {
+                "type": "base64",
+                "value": img_str,
+            }
+        ],
+        "confidence": confidence,
+        "iou_threshold": iou_thresh,
+        "api_key": api_key,
+        }
+
+        res = requests.post(
+        f"http://localhost:9001/infer/{task}",
+        json=infer_payload,
+        )
+
+        predictions = res.json()
+        print(predictions)
+        ```
+
+        Above, specify:
+
+        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
+        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        5. `filename`: The path to the image you want to run inference on.
+
+        Then, run the Python script:
+
+        ```
+        python app.py
+        ```
+    
+    === "Numpy Array"
+
+        Numpy array inputs are currently not supported by V2 routes.
+
+### V1 Routes
+
+!!! Run Inference
+    === "URL"
+
+        The Roboflow hosted API uses the V1 route and requests take a slightly different form:
+
+        ```python
+        import requests
+        import base64
+        from PIL import Image
+        from io import BytesIO
+
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        confidence = 0.5
+        iou_thresh = 0.5
+        api_key = "YOUR ROBOFLOW API KEY"
+        image_url = "https://storage.googleapis.com/com-roboflow-marketing/inference/soccer.jpg
+
+
+        res = requests.post(
+            f"https://detect.roboflow.com/{project_id}/{model_version}?api_key={api_key}&confidence={confidence}&overlap={iou_thresh}&image={image_url}",
+        )
+
+        predictions = res.json()
+        print(predictions)
+        ```
+
+        Above, specify:
+
+        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
+        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        5. `filename`: The path to the image you want to run inference on.
+
+        Then, run the Python script:
+
+        ```
+        python app.py
+        ```
+
+    === "Base64 Image"
+
+        The Roboflow hosted API uses the V1 route and requests take a slightly different form:
+
+        ```python
+        import requests
+        import base64
+        from PIL import Image
+        from io import BytesIO
+
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        confidence = 0.5
+        iou_thresh = 0.5
+        api_key = "YOUR ROBOFLOW API KEY"
+        file_name = "path/to/local/image.jpg"
+
+        image = Image.open(file_name)
+
+        buffered = BytesIO()
+
+        image.save(buffered, quality=100, format="JPEG")
+
+        img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
+
+        res = requests.post(
+            f"https://detect.roboflow.com/{project_id}/{model_version}?api_key={api_key}&confidence={confidence}&overlap={iou_thresh}",
+            data=img_str,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        predictions = res.json()
+        print(predictions)
+        ```
+
+        Above, specify:
+
+        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
+        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        5. `filename`: The path to the image you want to run inference on.
+
+        Then, run the Python script:
+
+        ```
+        python app.py
+        ```
+
+    === "NumPy Array"
+
+        Numpy arrays can be pickled and passed to the inference server for quicker processing. Note, Roboflow hosted APIs to not accept numpy inputs for security reasons:
+
+        ```python
+        import requests
+        import cv2
+        import pickle
+
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        task = "object_detection"
+        api_key = "YOUR API KEY"
+        file_name = "path/to/local/image.jpg"
+
+        image = cv2.imread(file_name)
+        numpy_data = pickle.dumps(image)
+
+        res = requests.post(
+            f"http://localhost:9001/{project_id}/{model_version}?api_key={api_key}&image_type=numpy",
+            data=numpy_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        predictions = res.json()
+        print(predictions)
+        ```
+
+        Above, specify:
+
+        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
+        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        5. `filename`: The path to the image you want to run inference on.
+
+        Then, run the Python script:
+
+        ```
+        python app.py
+        ```
+    
+    === "Batch Inference"
+       
+       Batch inference is not currently supported by V1 routes.
 
 The code snippets above will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.
 
