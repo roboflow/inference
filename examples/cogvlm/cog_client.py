@@ -20,8 +20,10 @@ def encode_bas64(image_path):
 
 async def do_cog_request(session):
     api_key = API_KEY
-    prompt = "The player on the left's name is Moky."
-    " What round of the tournament is he in? Answer in one word."
+    prompt = (
+        "The player on the left's name is Moky."
+        " What round of the tournament is he in? Answer in one word."
+    )
 
     print(f"Starting")
     infer_payload = {
