@@ -47,12 +47,14 @@ class CogVLM(Model):
             ).eval()
 
     def preprocess(
-        self, image: Any, **kwargs
-    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
-        if image is None:
-            return None, PreprocessReturnMetadata({})
-        pil_image = Image.fromarray(load_image_rgb(image))
-        return pil_image, PreprocessReturnMetadata({})
+        self, images: Any, **kwargs
+    ) -> Tuple[List[np.ndarray], PreprocessReturnMetadata]:
+        out_images = []
+        for image in images:
+            pil_image = Image.fromarray(load_image_rgb(image))
+            out_images.append(pil_image)
+
+        return out_images, PreprocessReturnMetadata({})
 
     def postprocess(
         self,
@@ -62,13 +64,12 @@ class CogVLM(Model):
     ) -> Any:
         return predictions[0]
 
-    def predict(self, image_in: np.ndarray, prompt="", **kwargs):
-        images = [image_in]
-        if image_in is None:
-            images = []
-
+    def predict(self, image_in: List[np.ndarray], prompt="", history=None, **kwargs):
+        images = image_in
+        if history is None:
+            history = []
         built_inputs = self.model.build_conversation_input_ids(
-            self.tokenizer, query=prompt, history=[], images=images
+            self.tokenizer, query=prompt, history=history, images=images
         )  # chat mode
         inputs = {
             "input_ids": built_inputs["input_ids"].unsqueeze(0).to(DEVICE),
@@ -91,6 +92,8 @@ class CogVLM(Model):
 
     def infer_from_request(self, request: CogVLMInferenceRequest) -> CogVLMResponse:
         t1 = perf_counter()
+        if not isinstance(request.image, list):
+            request.image = [request.image]
         text = self.infer(**request.dict())
         response = CogVLMResponse(response=text)
         response.time = perf_counter() - t1

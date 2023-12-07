@@ -863,12 +863,12 @@ class HttpInterface(BaseInterface):
                     Chat with CogVLM or ask it about an image.
 
                     Args:
-                        inference_request (M.CogVLMInferenceRequest): The request containing the prompt and optional image to be described.
+                        inference_request (M.CogVLMInferenceRequest): The request containing the prompt and image to be described.
                         api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
+                        M.CogVLMResponse: The model's text response
                     """
                     cog_model_id = load_cogvlm_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(

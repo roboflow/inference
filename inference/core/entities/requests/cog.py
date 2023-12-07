@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 
 from pydantic import Field, validator
 
@@ -23,12 +23,16 @@ class CogVLMInferenceRequest(BaseRequest):
         description="The version ID of CogVLM to be used for this request. See the huggingface model repo at THUDM.",
     )
     model_id: Optional[str] = Field()
-    image: Optional[InferenceRequestImage] = Field(
-        description="Image for CogVLM to look at. Specify what you want it to do with this image. Don't provide an image to just use CogVLM as an LLM."
+    image: Union[InferenceRequestImage, List[InferenceRequestImage]] = Field(
+        description="Image or list of images for CogVLM to look at. Use prompt to specify what you want it to do with the images."
     )
     prompt: str = Field(
         description="Text to be passed to CogVLM. Use to prompt it to describe an image or provide only text to chat with the model.",
         example="Describe this image.",
+    )
+    history: Optional[List[Tuple[str, str]]] = Field(
+        description="Optional chat history, formatted as a list of 2-tuples where the first entry is the user prompt"
+        " and the second entry is the generated model response"
     )
 
     @validator("model_id", always=True)
