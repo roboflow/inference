@@ -20,7 +20,9 @@ from inference.core.utils.postprocess import (
     process_mask_fast,
     process_mask_tradeoff,
 )
-from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5

@@ -148,41 +148,41 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
     === "x86 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.cpu \
+        -f docker/dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
     
     === "arm64 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.cpu \
+        -f docker/dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
     
     === "GPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.gpu \
+        -f docker/dockerfiles/Dockerfile.onnx.gpu \
         -t roboflow/roboflow-inference-server-gpu .
         ```
 
     === "Jetson 4.5.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson \
         -t roboflow/roboflow-inference-server-jetson-4.5.0 .
         ```
 
     === "Jetson 4.6.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson \
         -t roboflow/roboflow-inference-server-jetson-4.6.1 .
         ```
 
     === "Jetson 5.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson.5.1.1 \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1 \
         -t roboflow/roboflow-inference-server-jetson-5.1.1 .
         ```
