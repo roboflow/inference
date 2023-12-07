@@ -15,6 +15,7 @@ from inference.core.models.object_detection_base import (
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes, post_process_keypoints
+from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -189,5 +190,26 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             results.append(keypoint)
         return results
 
+    def superset_keypoints_count(self) -> int:
+        """Returns the number of keypoints in the superset."""
+        if self.keypoints_metadata is None:
+            raise ModelArtefactError("Keypoints metadata not available.")
+        max_keypoints = 0
+        for keypoints in self.keypoints_metadata.values():
+            if len(keypoints) > max_keypoints:
+                max_keypoints = len(keypoints)
+        return max_keypoints
+
     def validate_model_classes(self) -> None:
-        pass
+        num_keypoints = self.superset_keypoints_count()
+        keypoints_shape = num_keypoints * 3
+        output_shape = self.get_model_output_shape()
+        num_classes = get_num_classes_from_model_prediction_shape(
+            len_prediction=output_shape[2], keypoints_shape=keypoints_shape
+        )
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )
