@@ -7,7 +7,7 @@ You can detect the direction in which someone is looking using the L2CS-Net mode
 To use L2CS-Net with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 L2CS-Net accepts an image and returns pitch and yaw values that you can use to:
@@ -78,7 +78,7 @@ We have created a [full gaze detection example](https://github.com/roboflow/infe
 1. Use L2CS-Net with a webcam;
 2. Calculate the direction in which and point in space at which someone is looking;
 3. Calculate what quadrant of the screen someone is looking at, and;
-3. Annotate the image with the direction someone is looking.
+4. Annotate the image with the direction someone is looking.
 
 This example will let you run L2CS-Net and see the results of the model in real time. Here is an recording of the example working:
 

@@ -22,7 +22,6 @@ from inference.core.env import (
     IOU_THRESHOLD,
     IP_BROADCAST_ADDR,
     IP_BROADCAST_PORT,
-    JSON_RESPONSE,
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
@@ -48,7 +47,6 @@ class UdpStream(BaseInterface):
         ip_broadcast_addr (str): The IP address to broadcast to.
         ip_broadcast_port (int): The port to broadcast on.
         iou_threshold (float): The intersection-over-union threshold for detection.
-        json_response (bool): Flag to toggle JSON response format.
         max_candidates (float): The maximum number of candidates for detection.
         max_detections (float): The maximum number of detections.
         model_id (str): The ID of the model to be used.
@@ -71,7 +69,6 @@ class UdpStream(BaseInterface):
         ip_broadcast_addr: str = IP_BROADCAST_ADDR,
         ip_broadcast_port: int = IP_BROADCAST_PORT,
         iou_threshold: float = IOU_THRESHOLD,
-        json_response: bool = JSON_RESPONSE,
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
@@ -111,7 +108,6 @@ class UdpStream(BaseInterface):
         self.max_detections = max_detections
         self.ip_broadcast_addr = ip_broadcast_addr
         self.ip_broadcast_port = ip_broadcast_port
-        self.json_response = json_response
 
         self.inference_request_type = (
             inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
@@ -212,30 +208,21 @@ class UdpStream(BaseInterface):
                     iou_threshold=self.iou_threshold,
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
+                )[0]
+                self.active_learning_middleware.register(
+                    inference_input=inference_input,
+                    prediction=predictions.dict(by_alias=True, exclude_none=True),
+                    prediction_type=self.task_type,
                 )
-                if self.json_response:
-                    predictions = self.model.make_response(
-                        predictions,
-                        self.img_dims,
-                    )[0]
-                    self.active_learning_middleware.register(
-                        inference_input=inference_input,
-                        prediction=predictions.dict(by_alias=True, exclude_none=True),
-                        prediction_type=self.task_type,
+                if self.use_bytetrack:
+                    detections = sv.Detections.from_roboflow(
+                        predictions.dict(by_alias=True), self.model.class_names
                     )
-                    if self.use_bytetrack:
-                        detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True), self.model.class_names
-                        )
-                        detections = self.byte_tracker.update_with_detections(
-                            detections
-                        )
-                        for pred, detect in zip(predictions.predictions, detections):
-                            pred.tracker_id = int(detect[4])
-                    predictions.frame_id = frame_id
-                    predictions = predictions.json(exclude_none=True, by_alias=True)
-                else:
-                    predictions = json.dumps(predictions)
+                    detections = self.byte_tracker.update_with_detections(detections)
+                    for pred, detect in zip(predictions.predictions, detections):
+                        pred.tracker_id = int(detect[4])
+                predictions.frame_id = frame_id
+                predictions = predictions.json(exclude_none=True, by_alias=True)
 
                 self.inference_response = predictions
                 self.frame_count += 1

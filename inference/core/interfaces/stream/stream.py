@@ -66,7 +66,6 @@ class Stream(BaseInterface):
         confidence: float = CONFIDENCE,
         enforce_fps: bool = ENFORCE_FPS,
         iou_threshold: float = IOU_THRESHOLD,
-        json_response: bool = JSON_RESPONSE,
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
         model: Union[str, Callable] = MODEL_ID,
@@ -122,7 +121,6 @@ class Stream(BaseInterface):
         self.iou_threshold = iou_threshold
         self.max_candidates = max_candidates
         self.max_detections = max_detections
-        self.json_response = json_response
         self.use_main_thread = use_main_thread
         self.output_channel_order = output_channel_order
 
@@ -166,7 +164,6 @@ class Stream(BaseInterface):
         logger.info(f"Stream ID: {self.stream_id}")
         logger.info(f"Model ID: {self.model_id}")
         logger.info(f"Enforce FPS: {enforce_fps}")
-        logger.info(f"JSON Response: {self.json_response}")
         logger.info(f"Confidence: {self.confidence}")
         logger.info(f"Class Agnostic NMS: {self.class_agnostic_nms}")
         logger.info(f"IOU Threshold: {self.iou_threshold}")
@@ -238,7 +235,6 @@ class Stream(BaseInterface):
         """
         last_print = time.perf_counter()
         print_ind = 0
-        print_chars = ["|", "/", "-", "\\"]
         while True:
             if self.webcam_stream.stopped is True or self.stop:
                 while len(self.on_stop_callbacks) > 0:
@@ -267,43 +263,29 @@ class Stream(BaseInterface):
                     iou_threshold=self.iou_threshold,
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
+                )[0]
+
+                self.active_learning_middleware.register(
+                    inference_input=inference_input,
+                    prediction=predictions.dict(by_alias=True, exclude_none=True),
+                    prediction_type=self.task_type,
                 )
-
-                if self.json_response:
-                    predictions = self.model.make_response(
-                        predictions,
-                        self.img_dims,
-                    )[0]
-                    self.active_learning_middleware.register(
-                        inference_input=inference_input,
-                        prediction=predictions.dict(by_alias=True, exclude_none=True),
-                        prediction_type=self.task_type,
+                if self.use_bytetrack:
+                    detections = sv.Detections.from_roboflow(
+                        predictions.dict(by_alias=True, exclude_none=True)
                     )
-                    if self.use_bytetrack:
-                        detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True, exclude_none=True)
-                        )
-                        detections = self.byte_tracker.update_with_detections(
-                            detections
-                        )
+                    detections = self.byte_tracker.update_with_detections(detections)
 
-                        if detections.tracker_id is None:
-                            detections.tracker_id = np.array([], dtype=int)
+                    if detections.tracker_id is None:
+                        detections.tracker_id = np.array([], dtype=int)
 
-                        for pred, detect in zip(predictions.predictions, detections):
-                            pred.tracker_id = int(detect[4])
-                    predictions.frame_id = frame_id
-                    # predictions = predictions.json(exclude_none=True, by_alias=True)
-                    predictions = predictions.dict(by_alias=True, exclude_none=True)
-                else:
-                    pass
-                    # predictions = json.dumps(predictions)
+                    for pred, detect in zip(predictions.predictions, detections):
+                        pred.tracker_id = int(detect[4])
+                predictions.frame_id = frame_id
+                predictions = predictions.dict(by_alias=True, exclude_none=True)
 
                 self.inference_response = predictions
                 self.frame_count += 1
-
-                # if self.use_bytetrack:
-                #     predictions = detections
 
                 for cb in self.on_prediction_callbacks:
                     if self.output_channel_order == "BGR":
@@ -316,7 +298,6 @@ class Stream(BaseInterface):
                 logger.debug(f"FPS: {self.webcam_stream.max_fps:.2f}")
 
                 if time.perf_counter() - last_print > 1:
-                    # print(f"Streaming {print_chars[print_ind]}", end="\r")
                     print_ind = (print_ind + 1) % 4
                     last_print = time.perf_counter()
 

@@ -7,7 +7,7 @@ You can use DocTR with Inference to identify and recognize characters in images.
 To use DocTR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 Create a new Python file and add the following code:
@@ -16,24 +16,30 @@ Create a new Python file and add the following code:
 import requests
 import base64
 from PIL import Image
-import supervision as sv
 import os
+from io import BytesIO
 
 API_KEY = os.environ["API_KEY"]
-IMAGE = "container1.jpeg"
+IMAGE = "soccer.jpg"
 
 image = Image.open(IMAGE)
+buffered = BytesIO()
+
+image.save(buffered, quality=100, format="JPEG")
+
+img_str = base64.b64encode(buffered.getvalue())
+img_str = img_str.decode("ascii")
 
 data = {
-    "image": {
-        "type": "base64",
-        "value": base64.b64encode(image.tobytes()).decode("utf-8"),
-    }
+    "image": {
+        "type": "base64",
+        "value": img_str,
+    }
 }
 
 ocr_results = requests.post("http://localhost:9001/doctr/ocr?api_key=" + API_KEY, json=data).json()
 
-print(ocr_results, class_name)
+print(ocr_results)
 ```
 
 Above, replace `container1.jpeg` with the path to the image in which you want to detect objects.

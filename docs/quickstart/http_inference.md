@@ -31,17 +31,18 @@ Choose an option below:
 !!! Run Inference
 
     === "URL"
-    
+
         Create a new Python file and add the following code:
 
         ```python
         import requests
 
-        project_id = ""
-        model_version = ""
-        image_url = ""
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        image_url = "https://storage.googleapis.com/com-roboflow-marketing/inference/soccer.jpg"
         confidence = 0.75
-        api_key = ""
+        iou_thresh = 0.5
+        api_key = "YOUR API KEY"
         task = "object_detection"
 
         infer_payload = {
@@ -60,6 +61,7 @@ Choose an option below:
         )
 
         predictions = res.json()
+        print(predictions)
         ```
 
         Above, specify:
@@ -77,7 +79,7 @@ Choose an option below:
         ```
 
     === "NumPy Array"
-    
+
         Create a new Python file and add the following code:
 
         ```python
@@ -87,9 +89,9 @@ Choose an option below:
 
         project_id = "soccer-players-5fuqs"
         model_version = 1
-        api_key = "YOUR API KEY"
         task = "object_detection"
-        file_name = ""
+        api_key = "YOUR API KEY"
+        file_name = "path/to/local/image.jpg"
 
         image = cv2.imread(file_name)
         numpy_data = pickle.dumps(image)
@@ -101,6 +103,7 @@ Choose an option below:
         )
 
         predictions = res.json()
+        print(predictions)
         ```
 
         Above, specify:
@@ -118,21 +121,22 @@ Choose an option below:
         ```
 
     === "Base64 Image"
-    
+
         Create a new Python file and add the following code:
 
         ```python
         import requests
         import base64
         from PIL import Image
+        from io import BytesIO
 
-        project_id = ""
-        model_version = ""
-        image_url = ""
-        confidence = 0.75
-        api_key = ""
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
         task = "object_detection"
-        file_name = ""
+        confidence = 0.5
+        iou_thresh = 0.5
+        api_key = "YOUR ROBOFLOW API KEY"
+        file_name = "path/to/local/image.jpg"
 
         image = Image.open(file_name)
 
@@ -141,24 +145,26 @@ Choose an option below:
         image.save(buffered, quality=100, format="JPEG")
 
         img_str = base64.b64encode(buffered.getvalue())
+        img_str = img_str.decode("ascii")
 
         infer_payload = {
-            "model_id": f"{project_id}/{model_version}",
-            "image": {
-                "type": "base64",
-                "value": img_str,
-            },
-            "confidence": confidence,
-            "iou_threshold": iou_thresh,
-            "api_key": api_key,
+        "model_id": f"{project_id}/{model_version}",
+        "image": {
+            "type": "base64",
+            "value": img_str,
+        },
+        "confidence": confidence,
+        "iou_threshold": iou_thresh,
+        "api_key": api_key,
         }
 
         res = requests.post(
-            f"http://localhost:9001/infer/{task}",
-            json=infer_payload,
+        f"http://localhost:9001/infer/{task}",
+        json=infer_payload,
         )
 
         predictions = res.json()
+        print(predictions)
         ```
 
         Above, specify:

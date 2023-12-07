@@ -7,14 +7,14 @@ All models run on your own hardware.
 In the first example, we showed how to run a rock paper scissors model. This model was hosted on Universe. Let's find another model to try.
 
 !!! info
-    If you haven't already, follow our Run Your First Model guide to install and set up Inference.
+If you haven't already, follow our Run Your First Model guide to install and set up Inference.
 
 Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use the search bar to find a model.
 
 ![Roboflow Universe search bar](https://media.roboflow.com/universe-search.png)
 
 !!! info
-    Add "model" to your search query to only find models.
+Add "model" to your search query to only find models.
 
 Browse the search page to find a model.
 
@@ -35,9 +35,9 @@ def on_prediction(predictions, image):
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
     cv2.imshow(
-        "Prediction", 
+        "Prediction",
         annotator.annotate(
-            scene=image, 
+            scene=image,
             detections=detections,
             labels=labels
         )
@@ -49,11 +49,15 @@ inference.Stream(
     model="coffee-cup-v2/3", # from Universe
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    on_prediction=on_prediction, 
+    on_prediction=on_prediction,
 )
 ```
 
-Replace `coffee-cup-v2/3` with the model ID you found on Universe.
+Replace `coffee-cup-v2/3` with the model ID you found on Universe and be sure to export your API key:
+
+```
+export ROBOFLOW_API_KEY=<your api key>
+```
 
 Then, run the Python script:
 
@@ -71,7 +75,7 @@ _Note: This model was tested on a Mac, but will achieve better performance on a 
 
 ## Run a Private, Fine-Tuned Model
 
-You can run models you have trained privately on Roboflow with Inference. To do so, first go to your [Roboflow dashboard](https://app.roboflow.com).  Then, choose the model you want to run.
+You can run models you have trained privately on Roboflow with Inference. To do so, first go to your [Roboflow dashboard](https://app.roboflow.com). Then, choose the model you want to run.
 
 ![Roboflow dashboard](https://media.roboflow.com/docs-models.png)
 
@@ -98,9 +102,9 @@ def on_prediction(predictions, image):
     detections = detections[detections.confidence > 0.9]
     print(detections)
     cv2.imshow(
-        "Prediction", 
+        "Prediction",
         annotator.annotate(
-            scene=image, 
+            scene=image,
             detections=detections,
             labels=labels
         )
@@ -112,11 +116,15 @@ inference.Stream(
     model="taylor-swift-records/3", # from Universe
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    on_prediction=on_prediction, 
+    on_prediction=on_prediction,
 )
 ```
 
-Replace `taylor-swift-records/3` with the model ID from your private model.
+Replace `taylor-swift-records/3` with the model ID from your private model and ensure your API key is in your environment:
+
+```
+export ROBOFLOW_API_KEY=<your api key>
+```
 
 Then, run the Python script:
 
@@ -125,7 +133,6 @@ python app.py
 ```
 
 Your webcam will open and you can see the model running.
-
 
 <video width="100%" autoplay loop muted>
   <source src="https://media.roboflow.com/ts-demo.mp4" type="video/mp4">
