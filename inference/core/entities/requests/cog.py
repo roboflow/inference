@@ -23,8 +23,8 @@ class CogVLMInferenceRequest(BaseRequest):
         description="The version ID of CogVLM to be used for this request. See the huggingface model repo at THUDM.",
     )
     model_id: Optional[str] = Field()
-    image: Union[InferenceRequestImage, List[InferenceRequestImage]] = Field(
-        description="Image or list of images for CogVLM to look at. Use prompt to specify what you want it to do with the images."
+    image: InferenceRequestImage = Field(
+        description="Image for CogVLM to look at. Use prompt to specify what you want it to do with the image."
     )
     prompt: str = Field(
         description="Text to be passed to CogVLM. Use to prompt it to describe an image or provide only text to chat with the model.",

@@ -860,7 +860,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Chat with CogVLM or ask it about an image.
+                    Chat with CogVLM or ask it about an image. Multi-image requests not currently supported.
 
                     Args:
                         inference_request (M.CogVLMInferenceRequest): The request containing the prompt and image to be described.
