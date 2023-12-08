@@ -2,6 +2,10 @@ class ProcessesManagerClientError(Exception):
     pass
 
 
+class ConnectivityError(ProcessesManagerClientError):
+    pass
+
+
 class ProcessesManagerInternalError(ProcessesManagerClientError):
     pass
 

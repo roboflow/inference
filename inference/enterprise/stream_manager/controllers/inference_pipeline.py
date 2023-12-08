@@ -174,7 +174,8 @@ class InferencePipelineManager(Process):
         try:
             pid = os.getpid()
             logger.info(f"Terminating pipeline in process:{pid}...")
-            self._execute_termination()
+            if self._inference_pipeline is not None:
+                self._execute_termination()
             self._command_queue.put(None)
             logger.info(f"Termination successful in process:{pid}...")
         except Exception as error:

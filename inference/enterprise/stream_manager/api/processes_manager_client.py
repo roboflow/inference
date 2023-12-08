@@ -1,7 +1,6 @@
 import asyncio
 import json
 from asyncio import StreamReader, StreamWriter
-from typing import Optional
 
 from inference.core import logger
 from inference.enterprise.stream_manager.api.entities import (
@@ -12,6 +11,7 @@ from inference.enterprise.stream_manager.api.entities import (
     PipelineInitialisationRequest,
 )
 from inference.enterprise.stream_manager.api.errors import (
+    ConnectivityError,
     ProcessesManagerAuthorisationError,
     ProcessesManagerClientError,
     ProcessesManagerInternalError,
@@ -138,6 +138,7 @@ class ProcessesManagerClient:
             header_size=self._header_size,
             buffer_size=self._buffer_size,
         )
+        print(response)
         if (
             response.get(RESPONSE_KEY, {}).get(
                 STATUS_KEY, OperationStatus.FAILURE.value
@@ -151,14 +152,19 @@ class ProcessesManagerClient:
 async def send_command(
     host: str, port: int, command: dict, header_size: int, buffer_size: int
 ) -> dict:
-    reader, writer = await asyncio.open_connection(host, port)
-    await send_message(writer=writer, message=command)
-    data = await receive_message(
-        reader, header_size=header_size, buffer_size=buffer_size
-    )
-    writer.close()
-    await writer.wait_closed()
-    return json.loads(data)
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+        await send_message(writer=writer, message=command)
+        data = await receive_message(
+            reader, header_size=header_size, buffer_size=buffer_size
+        )
+        writer.close()
+        await writer.wait_closed()
+        return json.loads(data)
+    except (ConnectionError, TimeoutError) as errors:
+        raise ConnectivityError(
+            f"Could not communicate with Process Manager"
+        ) from errors
 
 
 async def send_message(writer: StreamWriter, message: dict) -> None:
@@ -199,19 +205,20 @@ async def receive_message(
 
 
 def dispatch_error(error_response: dict) -> None:
-    error_type = error_response.get(ERROR_TYPE_KEY)
-    error_class = error_response.get("error_class")
-    error_message = error_response.get("error_message")
+    response_payload = error_response.get(RESPONSE_KEY, {})
+    error_type = response_payload.get(ERROR_TYPE_KEY)
+    error_class = response_payload.get("error_class")
+    error_message = response_payload.get("error_message")
     logger.error(
         f"Error in ProcessesManagerClient. error_type={error_type} error_class={error_class} "
         f"error_message={error_message}"
     )
     if error_type in ERRORS_MAPPING:
         raise ERRORS_MAPPING[error_type](
-            f"Error in ProcessesManagerClient. Details: {error_message}"
+            f"Error in ProcessesManagerClient. Error type: {error_type}. Details: {error_message}"
         )
     raise ProcessesManagerClientError(
-        f"Error in ProcessesManagerClient. Details: {error_message}"
+        f"Error in ProcessesManagerClient. Error type: {error_type}. Details: {error_message}"
     )
 
 

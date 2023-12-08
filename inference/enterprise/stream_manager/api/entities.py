@@ -63,7 +63,10 @@ class PipelineInitialisationRequest(BaseModel):
         description=f"`source_buffer_consumption_strategy` parameter of Inference Pipeline (see docs). One of {[e.value for e in BufferConsumptionStrategy]}",
         default=None,
     )
-    model_configuration: ObjectDetectionModelConfiguration
+    model_configuration: ObjectDetectionModelConfiguration = Field(
+        description="Configuration of the model",
+        default_factory=ObjectDetectionModelConfiguration,
+    )
 
 
 class CommandContext(BaseModel):
