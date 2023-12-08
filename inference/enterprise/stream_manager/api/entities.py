@@ -19,7 +19,7 @@ class UDPSinkConfiguration(BaseModel):
 class ObjectDetectionModelConfiguration(BaseModel):
     type: str = Field(
         description="Type identifier field. Must be `object_detection`",
-        default="object_detection",
+        default="object-detection",
     )
     class_agnostic_nms: Optional[bool] = Field(
         description="Flag to decide if class agnostic NMS to be applied. If not given, default or InferencePipeline host env will be used.",
