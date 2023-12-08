@@ -1,5 +1,4 @@
 import argparse
-import json
 import signal
 import sys
 from multiprocessing import Process, Queue
@@ -14,10 +13,7 @@ from inference.enterprise.stream_manager.controllers.communication import (
     send_data_trough_socket,
 )
 from inference.enterprise.stream_manager.controllers.entities import (
-    ENCODING,
     PIPELINE_ID_KEY,
-    REQUEST_ID_KEY,
-    RESPONSE_KEY,
     STATUS_KEY,
     TYPE_KEY,
     CommandType,
@@ -28,9 +24,10 @@ from inference.enterprise.stream_manager.controllers.inference_pipeline import (
     InferencePipelineManager,
 )
 from inference.enterprise.stream_manager.controllers.serialisation import (
-    serialise_to_json,
+    describe_error,
+    prepare_error_response,
+    prepare_response,
 )
-from inference.enterprise.stream_manager.controllers.utils import describe_error
 
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
@@ -68,6 +65,8 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                     target=self.request,
                     header_size=HEADER_SIZE,
                     data=serialised_response,
+                    request_id=request_id,
+                    pipeline_id=pipeline_id,
                 )
         except KeyError as error:
             logger.error(
@@ -80,7 +79,11 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 pipeline_id=pipeline_id,
             )
             send_data_trough_socket(
-                target=self.request, header_size=HEADER_SIZE, data=payload
+                target=self.request,
+                header_size=HEADER_SIZE,
+                data=payload,
+                request_id=request_id,
+                pipeline_id=pipeline_id,
             )
         except Exception as error:
             logger.error(
@@ -93,18 +96,28 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 pipeline_id=pipeline_id,
             )
             send_data_trough_socket(
-                target=self.request, header_size=HEADER_SIZE, data=payload
+                target=self.request,
+                header_size=HEADER_SIZE,
+                data=payload,
+                request_id=request_id,
+                pipeline_id=pipeline_id,
             )
 
     def _list_pipelines(self, request_id: str) -> None:
         global PROCESSES_TABLE
         serialised_response = prepare_response(
             request_id=request_id,
-            response={"pipelines": list(PROCESSES_TABLE.keys())},
+            response={
+                "pipelines": list(PROCESSES_TABLE.keys()),
+                STATUS_KEY: OperationStatus.SUCCESS,
+            },
             pipeline_id=None,
         )
         send_data_trough_socket(
-            target=self.request, header_size=HEADER_SIZE, data=serialised_response
+            target=self.request,
+            header_size=HEADER_SIZE,
+            data=serialised_response,
+            request_id=request_id,
         )
 
     def _initialise_pipeline(self, request_id: str, command: dict) -> None:
@@ -130,7 +143,11 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
         send_data_trough_socket(
-            target=self.request, header_size=HEADER_SIZE, data=serialised_response
+            target=self.request,
+            header_size=HEADER_SIZE,
+            data=serialised_response,
+            request_id=request_id,
+            pipeline_id=pipeline_id,
         )
 
     def _terminate_pipeline(
@@ -151,7 +168,11 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
         send_data_trough_socket(
-            target=self.request, header_size=HEADER_SIZE, data=serialised_response
+            target=self.request,
+            header_size=HEADER_SIZE,
+            data=serialised_response,
+            request_id=request_id,
+            pipeline_id=pipeline_id,
         )
 
 
@@ -165,29 +186,6 @@ def get_response_ignoring_thrash(
         logger.warning(
             f"Dropping response for request_id={response[0]} with payload={response[1]}"
         )
-
-
-def prepare_error_response(
-    request_id: str, error: Exception, error_type: ErrorType, pipeline_id: Optional[str]
-) -> bytes:
-    error_description = describe_error(exception=error, error_type=error_type)
-    return prepare_response(
-        request_id=request_id, response=error_description, pipeline_id=pipeline_id
-    )
-
-
-def prepare_response(
-    request_id: str, response: dict, pipeline_id: Optional[str]
-) -> bytes:
-    payload = json.dumps(
-        {
-            REQUEST_ID_KEY: request_id,
-            RESPONSE_KEY: response,
-            PIPELINE_ID_KEY: pipeline_id,
-        },
-        default=serialise_to_json,
-    )
-    return payload.encode(ENCODING)
 
 
 def handle_command(request_id: str, pipeline_id: str, command: dict) -> dict:

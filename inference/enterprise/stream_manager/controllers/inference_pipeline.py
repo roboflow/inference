@@ -34,7 +34,7 @@ from inference.enterprise.stream_manager.controllers.entities import (
     ErrorType,
     OperationStatus,
 )
-from inference.enterprise.stream_manager.controllers.utils import describe_error
+from inference.enterprise.stream_manager.controllers.serialisation import describe_error
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -92,7 +92,7 @@ class InferencePipelineManager(Process):
     def _initialise_pipeline(self, request_id: str, payload: dict) -> None:
         try:
             watchdog = BasePipelineWatchDog()
-            sink = assembly_pipeline_sink(sink_config=payload["sink_config"])
+            sink = assembly_pipeline_sink(sink_config=payload["sink_configuration"])
             source_buffer_filling_strategy, source_buffer_consumption_strategy = (
                 None,
                 None,
@@ -105,6 +105,9 @@ class InferencePipelineManager(Process):
                 source_buffer_consumption_strategy = BufferConsumptionStrategy(
                     payload["source_buffer_consumption_strategy"].upper()
                 )
+            model_configuration = payload["model_configuration"]
+            if model_configuration["type"] != "object_detection":
+                raise NotImplementedError("Only object-detection models are supported")
             self._inference_pipeline = InferencePipeline.init(
                 model_id=payload["model_id"],
                 video_reference=payload["video_reference"],
@@ -114,11 +117,11 @@ class InferencePipelineManager(Process):
                 watchdog=watchdog,
                 source_buffer_filling_strategy=source_buffer_filling_strategy,
                 source_buffer_consumption_strategy=source_buffer_consumption_strategy,
-                class_agnostic_nms=payload.get("class_agnostic_nms"),
-                confidence=payload.get("confidence"),
-                iou_threshold=payload.get("iou_threshold"),
-                max_candidates=payload.get("max_candidates"),
-                max_detections=payload.get("max_detections"),
+                class_agnostic_nms=model_configuration.get("class_agnostic_nms"),
+                confidence=model_configuration.get("confidence"),
+                iou_threshold=model_configuration.get("iou_threshold"),
+                max_candidates=model_configuration.get("max_candidates"),
+                max_detections=model_configuration.get("max_detections"),
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)
@@ -252,7 +255,7 @@ class InferencePipelineManager(Process):
 def assembly_pipeline_sink(
     sink_config: dict,
 ) -> Callable[[ObjectDetectionPrediction, VideoFrame], None]:
-    if sink_config["type"] != "udp_socket":
+    if sink_config["type"] != "udp_sink":
         raise NotImplementedError("Only `udp_socket` sink type is supported")
-    sink = UDPSink.init(ip_address=sink_config["ip_address"], port=sink_config["port"])
+    sink = UDPSink.init(ip_address=sink_config["host"], port=sink_config["port"])
     return sink.send_predictions
