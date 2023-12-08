@@ -6,7 +6,7 @@ from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
-from inference.core.env import COG_VERSION_ID
+from inference.core.env import COGVLM_VERSION_ID
 
 
 class CogVLMInferenceRequest(BaseRequest):
@@ -18,7 +18,7 @@ class CogVLMInferenceRequest(BaseRequest):
     """
 
     cogvlm_version_id: Optional[str] = Field(
-        default=COG_VERSION_ID,
+        default=COGVLM_VERSION_ID,
         example="cogvlm-chat-hf",
         description="The version ID of CogVLM to be used for this request. See the huggingface model repo at THUDM.",
     )

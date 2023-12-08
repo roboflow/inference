@@ -38,9 +38,9 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 # AWS secret access key, default is None
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
-COG_LOAD_4BIT = str2bool(os.getenv("COG_LOAD_4BIT", True))
-COG_LOAD_8BIT = str2bool(os.getenv("COG_LOAD_8BIT", False))
-COG_VERSION_ID = os.getenv("COG_VERSION_ID", "cogvlm-chat-hf")
+COGVLM_LOAD_4BIT = str2bool(os.getenv("COGVLM_LOAD_4BIT", True))
+COGVLM_LOAD_8BIT = str2bool(os.getenv("COGVLM_LOAD_8BIT", False))
+COGVLM_VERSION_ID = os.getenv("COGVLM_VERSION_ID", "cogvlm-chat-hf")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 
