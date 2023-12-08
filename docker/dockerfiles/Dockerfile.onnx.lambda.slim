@@ -1,0 +1,52 @@
+FROM public.ecr.aws/lambda/python:3.10
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN yum update -y && yum install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6  \
+    python3-pip \
+    git \
+    zlib-devel \
+    libjpeg-devel \
+    gcc \
+    mesa-libGL \
+    pango \
+    && yum clean all
+
+COPY requirements/requirements.cpu.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.hosted.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
+RUN pip3 install \
+    certifi==2022.12.07 \
+    setuptools==65.5.1 \
+    -r _requirements.txt \
+    -r requirements.cpu.txt \
+    -r requirements.http.txt \
+    -r requirements.hosted.txt \
+    mangum \
+    --upgrade \
+    --target "${LAMBDA_TASK_ROOT}" \
+    && rm -rf ~/.cache/pip
+
+COPY inference ${LAMBDA_TASK_ROOT}/inference
+COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
+
+ENV CORE_MODEL_CLIP_ENABLED=false
+ENV CORE_MODEL_SAM_ENABLED=false
+ENV CORE_MODEL_GAZE_ENABLED=false
+ENV CORE_MODEL_DOCTR_ENABLED=false
+ENV LAMBDA=True
+ENV ALLOW_NUMPY_INPUT=False
+ENV INFERENCE_SERVER_ID=HostedInferenceLambda
+ENV DISABLE_VERSION_CHECK=true
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+CMD [ "lambda.handler" ]

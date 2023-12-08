@@ -1,0 +1,45 @@
+FROM python:3.9
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update -y && apt install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.cpu.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.waf.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.cpu.txt \
+    -r requirements.http.txt \
+    -r requirements.waf.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+COPY inference inference
+COPY docker/config/cpu_http.py cpu_http.py
+
+ENV CORE_MODEL_CLIP_ENABLED=false
+ENV CORE_MODEL_SAM_ENABLED=false
+ENV CORE_MODEL_GAZE_ENABLED=false
+ENV CORE_MODEL_DOCTR_ENABLED=false
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+
+ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

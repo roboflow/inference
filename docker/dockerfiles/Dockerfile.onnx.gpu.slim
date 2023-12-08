@@ -12,27 +12,17 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
-    requirements/requirements.http.txt \
+COPY requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.waf.txt \
-    requirements/requirements.gaze.txt \
-    requirements/requirements.doctr.txt \
-    requirements/requirements.cog.txt \
     requirements/_requirements.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
-    -r requirements.sam.txt \
-    -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.waf.txt \
-    -r requirements.gaze.txt \
-    -r requirements.doctr.txt \
-    -r requirements.cog.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -40,6 +30,10 @@ WORKDIR /app/
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
 
+ENV CORE_MODEL_CLIP_ENABLED=false
+ENV CORE_MODEL_SAM_ENABLED=false
+ENV CORE_MODEL_GAZE_ENABLED=false
+ENV CORE_MODEL_DOCTR_ENABLED=false
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
