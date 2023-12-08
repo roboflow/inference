@@ -106,7 +106,7 @@ class InferencePipelineManager(Process):
                     payload["source_buffer_consumption_strategy"].upper()
                 )
             model_configuration = payload["model_configuration"]
-            if model_configuration["type"] != "object_detection":
+            if model_configuration["type"] != "object-detection":
                 raise NotImplementedError("Only object-detection models are supported")
             self._inference_pipeline = InferencePipeline.init(
                 model_id=payload["model_id"],
