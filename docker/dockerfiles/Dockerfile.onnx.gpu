@@ -19,7 +19,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
-    requirements/requirements.cog.txt \
+    requirements/requirements.cogvlm.txt \
     requirements/_requirements.txt \
     ./
 
@@ -32,7 +32,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
-    -r requirements.cog.txt \
+    -r requirements.cogvlm.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 

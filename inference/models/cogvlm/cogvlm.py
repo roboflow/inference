@@ -8,13 +8,13 @@ import torch
 from PIL import Image
 from transformers import AutoModelForCausalLM, LlamaTokenizer
 
-from inference.core.entities.requests.cog import CogVLMInferenceRequest
-from inference.core.entities.responses.cog import CogVLMResponse
+from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
+from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.core.env import (
     API_KEY,
-    COG_LOAD_4BIT,
-    COG_LOAD_8BIT,
-    COG_VERSION_ID,
+    COGVLM_LOAD_4BIT,
+    COGVLM_LOAD_8BIT,
+    COGVLM_VERSION_ID,
     MODEL_CACHE_DIR,
 )
 from inference.core.models.base import Model, PreprocessReturnMetadata
@@ -24,14 +24,14 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class CogVLM(Model):
-    def __init__(self, model_id=f"cogvlm/{COG_VERSION_ID}", **kwargs):
+    def __init__(self, model_id=f"cogvlm/{COGVLM_VERSION_ID}", **kwargs):
         self.model_id = model_id
         self.endpoint = model_id
         self.api_key = API_KEY
         self.dataset_id, self.version_id = model_id.split("/")
-        if COG_LOAD_4BIT and COG_LOAD_8BIT:
+        if COGVLM_LOAD_4BIT and COGVLM_LOAD_8BIT:
             raise ValueError(
-                "Only one of environment variable `COG_LOAD_4BIT` or `COG_LOAD_8BIT` can be true"
+                "Only one of environment variable `COGVLM_LOAD_4BIT` or `COGVLM_LOAD_8BIT` can be true"
             )
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint)
         with torch.inference_mode():
@@ -41,8 +41,8 @@ class CogVLM(Model):
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
-                load_in_4bit=COG_LOAD_4BIT,
-                load_in_8bit=COG_LOAD_8BIT,
+                load_in_4bit=COGVLM_LOAD_4BIT,
+                load_in_8bit=COGVLM_LOAD_8BIT,
                 cache_dir=self.cache_dir,
             ).eval()
 

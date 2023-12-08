@@ -16,7 +16,7 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
-from inference.core.entities.requests.cog import CogVLMInferenceRequest
+from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.inference import (
@@ -39,7 +39,7 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.cog import CogVLMResponse
+from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
