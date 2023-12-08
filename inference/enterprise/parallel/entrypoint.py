@@ -1,11 +1,12 @@
 import os
+
 from inference.core.env import (
-    REDIS_PORT,
-    NUM_WORKERS,
-    HOST,
-    PORT,
-    NUM_CELERY_WORKERS,
     CELERY_LOG_LEVEL,
+    HOST,
+    NUM_CELERY_WORKERS,
+    NUM_WORKERS,
+    PORT,
+    REDIS_PORT,
 )
 
 os.system(
