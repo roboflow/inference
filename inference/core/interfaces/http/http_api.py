@@ -1067,7 +1067,7 @@ class HttpInterface(BaseInterface):
                     }
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
-                elif task_type == "keypoints-detection":
+                elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(

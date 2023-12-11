@@ -117,7 +117,7 @@ class InstanceSegmentationModelStub(ModelStub):
 
 
 class KeypointsDetectionModelStub(ModelStub):
-    task_type = "keypoints-detection"
+    task_type = "keypoint-detection"
 
     def make_response(
         self, request: InferenceRequest, prediction: dict, **kwargs

@@ -35,6 +35,7 @@ MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
     "instance-segmentation": "yolact",
     "classification": "vit",
+    "keypoint-detection": "yolov8n",
 }
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"

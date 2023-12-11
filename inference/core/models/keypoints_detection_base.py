@@ -13,6 +13,9 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes, post_process_keypoints
 
@@ -28,7 +31,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
 ):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
-    task_type = "keypoints-detection"
+    task_type = "keypoint-detection"
 
     def __init__(self, model_id: str, *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
@@ -186,3 +189,17 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             )
             results.append(keypoint)
         return results
+
+    def keypoints_count(self) -> int:
+        raise NotImplementedError
+
+    def validate_model_classes(self) -> None:
+        num_keypoints = self.keypoints_count()
+        output_shape = self.get_model_output_shape()
+        num_classes = get_num_classes_from_model_prediction_shape(
+            len_prediction=output_shape[2], keypoints=num_keypoints
+        )
+        if num_classes != self.num_classes:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )

@@ -11,6 +11,9 @@ from inference.core.entities.responses.inference import (
 from inference.core.exceptions import InvalidMaskDecodeArgument
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
     masks2poly,
@@ -20,7 +23,6 @@ from inference.core.utils.postprocess import (
     process_mask_fast,
     process_mask_tradeoff,
 )
-from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5

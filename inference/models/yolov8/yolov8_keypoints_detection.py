@@ -2,12 +2,11 @@ from typing import Tuple
 
 import numpy as np
 
+from inference.core.exceptions import ModelArtefactError
 from inference.core.models.keypoints_detection_base import (
     KeypointsDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.models.object_detection_base import (
-    ObjectDetectionBaseOnnxRoboflowInferenceModel,
-)
+from inference.core.models.utils.keypoints import superset_keypoints_count
 
 
 class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel):
@@ -52,3 +51,9 @@ class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel)
             [boxes, confs, class_confs, keypoints_detections], axis=2
         )
         return (bboxes_predictions,)
+
+    def keypoints_count(self) -> int:
+        """Returns the number of keypoints in the model."""
+        if self.keypoints_metadata is None:
+            raise ModelArtefactError("Keypoints metadata not available.")
+        return superset_keypoints_count(self.keypoints_metadata)
