@@ -143,14 +143,6 @@ class InferencePipelineManager(Process):
             self._handle_error(
                 request_id=request_id, error=error, error_type=ErrorType.NOT_FOUND
             )
-        except (
-            MissingDefaultModelError,
-            RoboflowAPIRequestError,
-            MalformedRoboflowAPIResponseError,
-        ) as error:
-            self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INTERNAL_ERROR
-            )
 
     def _terminate_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:

@@ -1,6 +1,7 @@
 import os
 import signal
 import sys
+from functools import partial
 from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler
 from types import FrameType
@@ -20,7 +21,7 @@ from inference.enterprise.stream_management.manager.entities import (
     ErrorType,
     OperationStatus,
 )
-from inference.enterprise.stream_management.manager.inference_pipeline import (
+from inference.enterprise.stream_management.manager.inference_pipeline_manager import (
     InferencePipelineManager,
 )
 from inference.enterprise.stream_management.manager.tcp_server import RoboflowTCPServer
@@ -40,6 +41,7 @@ SOCKET_TIMEOUT = float(os.getenv("STREAM_MANAGER_SOCKET_TIMEOUT", "5.0"))
 
 class InferencePipelinesManagerHandler(BaseRequestHandler):
     def handle(self) -> None:
+        global PROCESSES_TABLE
         pipeline_id: Optional[str] = None
         request_id = str(uuid4())
         try:
@@ -60,7 +62,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 )
             else:
                 response = handle_command(
-                    request_id=request_id, pipeline_id=pipeline_id, command=data
+                    processes_table=PROCESSES_TABLE,
+                    request_id=request_id,
+                    pipeline_id=pipeline_id,
+                    command=data,
                 )
                 serialised_response = prepare_response(
                     request_id=request_id, response=response, pipeline_id=pipeline_id
@@ -157,14 +162,20 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _terminate_pipeline(
         self, request_id: str, pipeline_id: str, command: dict
     ) -> None:
+        global PROCESSES_TABLE
         response = handle_command(
-            request_id=request_id, pipeline_id=pipeline_id, command=command
+            processes_table=PROCESSES_TABLE,
+            request_id=request_id,
+            pipeline_id=pipeline_id,
+            command=command,
         )
         if response[STATUS_KEY] is OperationStatus.SUCCESS:
             logger.info(
                 f"Joining inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
             )
-            join_inference_pipeline(pipeline_id=pipeline_id)
+            join_inference_pipeline(
+                processes_table=PROCESSES_TABLE, pipeline_id=pipeline_id
+            )
             logger.info(
                 f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
             )
@@ -180,6 +191,21 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         )
 
 
+def handle_command(
+    processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+    request_id: str,
+    pipeline_id: str,
+    command: dict,
+) -> dict:
+    if pipeline_id not in processes_table:
+        return describe_error(exception=None, error_type=ErrorType.NOT_FOUND)
+    _, command_queue, responses_queue = processes_table[pipeline_id]
+    command_queue.put((request_id, command))
+    return get_response_ignoring_thrash(
+        responses_queue=responses_queue, matching_request_id=request_id
+    )
+
+
 def get_response_ignoring_thrash(
     responses_queue: Queue, matching_request_id: str
 ) -> dict:
@@ -192,43 +218,40 @@ def get_response_ignoring_thrash(
         )
 
 
-def handle_command(request_id: str, pipeline_id: str, command: dict) -> dict:
-    global PROCESSES_TABLE
-    if pipeline_id not in PROCESSES_TABLE:
-        return describe_error(exception=None, error_type=ErrorType.NOT_FOUND)
-    _, command_queue, responses_queue = PROCESSES_TABLE[pipeline_id]
-    command_queue.put((request_id, command))
-    return get_response_ignoring_thrash(
-        responses_queue=responses_queue, matching_request_id=request_id
-    )
-
-
-def execute_termination(signal_number: int, frame: FrameType) -> None:
-    global PROCESSES_TABLE
-    pipeline_ids = list(PROCESSES_TABLE.keys())
+def execute_termination(
+    signal_number: int,
+    frame: FrameType,
+    processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+) -> None:
+    pipeline_ids = list(processes_table.keys())
     for pipeline_id in pipeline_ids:
         logger.info(f"Terminating pipeline: {pipeline_id}")
-        PROCESSES_TABLE[pipeline_id][0].terminate()
+        processes_table[pipeline_id][0].terminate()
         logger.info(f"Pipeline: {pipeline_id} terminated.")
         logger.info(f"Joining pipeline: {pipeline_id}")
-        PROCESSES_TABLE[pipeline_id][0].join()
+        processes_table[pipeline_id][0].join()
         logger.info(f"Pipeline: {pipeline_id} joined.")
     logger.info(f"Termination handler completed.")
     sys.exit(0)
 
 
-def join_inference_pipeline(pipeline_id: str) -> None:
-    global PROCESSES_TABLE
-    inference_pipeline_manager, command_queue, responses_queue = PROCESSES_TABLE[
+def join_inference_pipeline(
+    processes_table: Dict[str, Tuple[Process, Queue, Queue]], pipeline_id: str
+) -> None:
+    inference_pipeline_manager, command_queue, responses_queue = processes_table[
         pipeline_id
     ]
     inference_pipeline_manager.join()
-    del PROCESSES_TABLE[pipeline_id]
+    del processes_table[pipeline_id]
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, execute_termination)
-    signal.signal(signal.SIGTERM, execute_termination)
+    signal.signal(
+        signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
+    )
+    signal.signal(
+        signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
+    )
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
         handler_class=InferencePipelinesManagerHandler,

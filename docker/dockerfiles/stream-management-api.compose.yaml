@@ -5,9 +5,10 @@ services:
       dockerfile: docker/dockerfiles/Dockerfile.stream_management_api
     ports:
       - "8080:8080"
+    privileged: true
     environment:
-      - PROCESSES_MANAGER_CLIENT_PORT=7070
-      - PROCESSES_MANAGER_CLIENT_HOST=stream_manager
+      - STREAM_MANAGER_HOST=stream_manager
+      - STREAM_MANAGER_PORT=7070
     depends_on:
       - stream_manager
   stream_manager:
