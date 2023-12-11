@@ -34,8 +34,8 @@ API_PORT = int(os.getenv("STREAM_MANAGEMENT_API_PORT", "8080"))
 
 
 PROCESSING_MANAGER_CLIENT = ProcessesManagerClient(
-    host=os.getenv("PROCESSES_MANAGER_CLIENT_HOST", "127.0.0.1"),
-    port=int(os.getenv("PROCESSES_MANAGER_CLIENT_PORT", "7070")),
+    host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
+    port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
 )
 
 app = FastAPI()

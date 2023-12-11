@@ -152,7 +152,6 @@ async def send_command(
     host: str, port: int, command: dict, header_size: int, buffer_size: int
 ) -> dict:
     try:
-        print(f"Connecting to: {host}, {port}")
         reader, writer = await asyncio.open_connection(host, port)
         await send_message(writer=writer, message=command)
         data = await receive_message(
