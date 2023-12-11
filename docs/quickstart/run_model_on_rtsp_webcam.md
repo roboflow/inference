@@ -8,15 +8,14 @@ You can run Inference on video frames from `.mp4` and `.mov` files.
 
 You can run both fine-tuned models and foundation models on the above three input types. See the "Foundation Models" section in the sidebar to learn how to import and run foundation models.
 
-!!! tip "Tip"
-    Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run.
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run."
 
 ## Run a Vision Model on Video Frames
 
 To use fine-tuned with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 Once you have selected a model to run, create a new Python file and add the following code:
@@ -32,9 +31,9 @@ def on_prediction(predictions, image):
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
     cv2.imshow(
-        "Prediction", 
+        "Prediction",
         annotator.annotate(
-            scene=image, 
+            scene=image,
             detections=detections,
             labels=labels
         )
@@ -46,7 +45,7 @@ inference.Stream(
     model="rock-paper-scissors-sxsw/11", # from Universe
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    on_prediction=on_prediction, 
+    on_prediction=on_prediction,
 )
 ```
 
@@ -71,35 +70,40 @@ Your webcam will open and you can see the model running:
 ## New stream interface!
 
 ### Motivation
+
 We've identified certain problems with our previous implementation of `inference.Stream`:
-* it could not achieve high throughput of processing
-* in case of source disconnection - it was not attempting to re-connect automatically
+
+- it could not achieve high throughput of processing
+- in case of source disconnection - it was not attempting to re-connect automatically
 
 That's why we've re-designed API and provided new abstraction - called `InferencePipeline`. At the moment, we
 are testing and improving implementation - hoping that over time it will be a replacement for `inference.Stream`.
 
 ### Why to migrate?
+
 We understand that each breaking change may be hard to adopt on your end, but the changes we introduced were meant
 to improve the quality. Here are the results:
 
-#### Performance 
+#### Performance
 
 ##### MacBook M2
+
 | Test     | OLD (FPS) | NEW (FPS) |
-|----------|:---------:|:---------:|
+| -------- | :-------: | :-------: |
 | yolov8-n |    ~6     |    ~26    |
 | yolov8-s |   ~4.5    |    ~12    |
 | yolov8-m |   ~3.5    |    ~5     |
 
-Tested against the same 1080p 60fps RTSP stream emitted by localhost. 
+Tested against the same 1080p 60fps RTSP stream emitted by localhost.
 For `yolov8-n` we also measured that new implementation operates on stream frames that are on average ~25ms old (
 measured from frame grabbing) compared to ~60ms for old implementation.
 
 ##### Jetson Orin Nano
+
 At Jetson, new implementation is also more performant:
 
 | Test     | NEW (FPS) |
-|----------|:---------:|
+| -------- | :-------: |
 | yolov8-n |    ~25    |
 | yolov8-s |    ~18    |
 | yolov8-m |    ~8     |
@@ -109,20 +113,24 @@ be decoded in native pace due to resource constrains. New implementation proved 
 for few hours straight.
 
 ##### Tesla T4
+
 GPU workstation with Tesla T4 was able to run 4 concurrent HD streams at 15FPS utilising ~80% GPU - reaching
 over 60FPS throughput per GPU (against `yolov8-n`).
 
 #### Stability
-New implementation allows `InferencePipeline` to re-connect to a video source, eliminating the need to create 
+
+New implementation allows `InferencePipeline` to re-connect to a video source, eliminating the need to create
 additional logic to run inference against streams for long hours in fault-tolerant mode.
 
 #### Granularity of control
+
 New implementation let you decide how to handle video sources - and provided automatic selection of mode.
-Your videos will be processed frame-by-frame with each frame being passed to model, and streams will be 
+Your videos will be processed frame-by-frame with each frame being passed to model, and streams will be
 processed in a way to provide continuous, up-to-date predictions on the most fresh frames - and the system
 will automatically adjust to performance of the hardware to ensure best experience.
 
 #### Observability
+
 New implementation allows to create reports about InferencePipeline state in runtime - providing an easy way to
 build monitoring on top of it.
 
@@ -139,6 +147,7 @@ def on_prediction(predictions: dict, image: np.ndarray) -> None:
 ```
 
 Now, the structure of handlers has changed into:
+
 ```python
 import numpy as np
 
@@ -148,12 +157,13 @@ def on_prediction(predictions: dict, video_frame: VideoFrame) -> None:
     pass
 ```
 
-With predictions being still dict (passed as second parameter) in the same, standard Roboflow format, 
+With predictions being still dict (passed as second parameter) in the same, standard Roboflow format,
 but `video_frame` is a dataclass with the following property:
-* `image`: which is video frame (`np.ndarray`)
-* `frame_id`: int value representing the place of the frame in stream order
-* `frame_timestamp`: time of frame grabbing - the exact moment when frame appeared in the file/stream 
-on the receiver side (`datetime.datetime`)
+
+- `image`: which is video frame (`np.ndarray`)
+- `frame_id`: int value representing the place of the frame in stream order
+- `frame_timestamp`: time of frame grabbing - the exact moment when frame appeared in the file/stream
+  on the receiver side (`datetime.datetime`)
 
 Additionally, it eliminates the need of grabbing `.frame_id` from `inference.Stream()`.
 
@@ -162,6 +172,7 @@ So the re-implementation work should be relatively easy. There is new package:
 used!
 
 Initialisation of stream also has been changed:
+
 ```python
 import inference
 
@@ -170,11 +181,12 @@ inference.Stream(
     model="rock-paper-scissors-sxsw/11", # from Universe
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    on_prediction=on_prediction, 
+    on_prediction=on_prediction,
 )
 ```
 
 will change into:
+
 ```python
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
@@ -187,11 +199,13 @@ pipeline = InferencePipeline.init(
 pipeline.start()
 pipeline.join()
 ```
+
 `InferencePipeline` exposes interface to manage its state (possibly from different thread) - including
 functions like `.start()`, `.pause()`, `.terminate()`.
 
 ### I want to know more!
-Obviously, as with all changes there is a lot to be learned! We've prepared detailed docs of new API elements, 
+
+Obviously, as with all changes there is a lot to be learned! We've prepared detailed docs of new API elements,
 which can be found in functions and classes docstrings. We encourage to acknowledge, especially the
 part related to new `VideoSoure` abstraction that is meant to replace `interface.Camera` - mainly to understand
 the notion of new configuration possibilities related to buffered decoding and different behaviour of system

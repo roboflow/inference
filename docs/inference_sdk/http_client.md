@@ -31,7 +31,7 @@ print(predictions)
 ## Why client has two modes - `v0` and `v1`?
 We are constantly improving our `infrence` package - initial version (`v0`) is compatible with
 models deployed at Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
-`keypoints-detection`)
+`keypoint-detection`)
 are supported. Version `v1` is available in locally hosted Docker images with HTTP API. 
 
 Locally hosted `inference` server exposes endpoints for model manipulations, but those endpoints are not available

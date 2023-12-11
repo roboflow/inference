@@ -25,7 +25,7 @@ from inference.core.models.stubs import (
         (ClassificationModelStub, "classification"),
         (ObjectDetectionModelStub, "object-detection"),
         (InstanceSegmentationModelStub, "instance-segmentation"),
-        (KeypointsDetectionModelStub, "keypoints-detection"),
+        (KeypointsDetectionModelStub, "keypoint-detection"),
     ],
 )
 def test_model_stub(stub_class: Type[ModelStub], expected_task_type: str) -> None:

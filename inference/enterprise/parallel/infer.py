@@ -27,7 +27,7 @@ from inference.enterprise.parallel.utils import (
     shm_manager,
 )
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger()
 
 from inference.models.utils import ROBOFLOW_MODEL_TYPES

@@ -38,6 +38,9 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 # AWS secret access key, default is None
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
+COGVLM_LOAD_4BIT = str2bool(os.getenv("COGVLM_LOAD_4BIT", True))
+COGVLM_LOAD_8BIT = str2bool(os.getenv("COGVLM_LOAD_8BIT", False))
+COGVLM_VERSION_ID = os.getenv("COGVLM_VERSION_ID", "cogvlm-chat-hf")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 
@@ -82,6 +85,8 @@ CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
+
+CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
@@ -227,6 +232,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 
+
 # Device ID, default is "sample-device-id"
 INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
 
@@ -269,7 +275,7 @@ INFER_BUCKET = os.getenv(
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", False))
-ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
+ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager
 NUM_PARALLEL_TASKS = int(os.getenv("NUM_PARALLEL_TASKS", 512))
@@ -292,3 +298,6 @@ DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES = int(
 DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
     os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
+
+NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
+CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")

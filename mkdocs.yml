@@ -32,6 +32,7 @@ nav:
     - Get Started:
       - What is Inference?: quickstart/what_is_inference.md
       - What Devices Can I Use?: quickstart/devices.md
+      - Roboflow API Key: quickstart/roboflow_api_key.md
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
     - Run a Model:

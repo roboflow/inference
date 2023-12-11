@@ -8,10 +8,10 @@ Next, we need to install Inference:
 pip install inference
 ```
 
-We then need to start an Inference server. This server will manage inferences and is designed to scale. It can run on your local machine, a remote server, or even a Raspberry Pi.
+To help us visualize our results in the example below, we will install Supervision:
 
 ```
-inference server start
+pip install supervision
 ```
 
 Create a new Python file called `app.py` and add the following code:
@@ -27,9 +27,9 @@ def on_prediction(predictions, image):
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
     cv2.imshow(
-        "Prediction", 
+        "Prediction",
         annotator.annotate(
-            scene=image, 
+            scene=image,
             detections=detections,
             labels=labels
         )
@@ -41,14 +41,14 @@ inference.Stream(
     model="rock-paper-scissors-sxsw/11", # from Universe
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    on_prediction=on_prediction, 
+    on_prediction=on_prediction,
 )
 ```
 
 Next, sign up for a [free Roboflow account](https://app.roboflow.com). Retrieve your API key from the Roboflow dashboard, then run the following command:
 
 ```
-export API_KEY=<your api key>
+export ROBOFLOW_API_KEY=<your api key>
 ```
 
 Then, run the Python script:

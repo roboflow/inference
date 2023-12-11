@@ -1,4 +1,5 @@
 from inference.core.env import API_KEY
+from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.stubs import (
     ClassificationModelStub,
     InstanceSegmentationModelStub,
@@ -118,17 +119,17 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov8-seg",
     ): YOLOv8InstanceSegmentation,
-    ("keypoints-detection", "stub"): KeypointsDetectionModelStub,
-    ("keypoints-detection", "yolov8n"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8s"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8m"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8l"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8x"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8n-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8s-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "stub"): KeypointsDetectionModelStub,
+    ("keypoint-detection", "yolov8n"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8s"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8m"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8l"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8x"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8n-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8s-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
 }
 
 try:
@@ -159,7 +160,18 @@ try:
 except:
     pass
 
+try:
+    from inference.models import CogVLM
+
+    ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
+    if not api_key:
+        raise MissingApiKeyError(
+            "No API Key Found, must provide an API Key via key word argument 'api_key' or as an environment variable on server startup"
+        )
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

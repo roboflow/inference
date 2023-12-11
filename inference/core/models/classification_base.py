@@ -14,8 +14,10 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
@@ -167,12 +169,11 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         return_image_dims=False,
         **kwargs,
-    ) -> Any:
+    ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         predictions = predictions[0]
-        if return_image_dims:
-            return predictions, preprocess_return_metadata["img_dims"]
-        else:
-            return predictions
+        return self.make_response(
+            predictions, preprocess_return_metadata["img_dims"], **kwargs
+        )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         predictions = self.onnx_session.run(None, {self.input_name: img_in})
@@ -251,11 +252,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - If visualization is requested, the predictions are drawn on the image.
         """
         t1 = perf_counter()
-        predictions_data = self.infer(**request.dict(), return_image_dims=True)
-        responses = self.make_response(
-            *predictions_data,
-            confidence=request.confidence,
-        )
+        responses = self.infer(**request.dict(), return_image_dims=True)
         for response in responses:
             response.time = perf_counter() - t1
 

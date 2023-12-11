@@ -121,13 +121,13 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 - Run on x86 CPU:
 
 ```bash
-docker run --net=host roboflow/roboflow-inference-server-cpu:latest
+docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
 
 - Run on NVIDIA GPU:
 
 ```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
+docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 <details close>

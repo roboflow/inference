@@ -83,15 +83,14 @@ def postprocess(
             request_dict = dict(**request.dict())
             model_id = request_dict.pop("model_id")
 
-            results = model_manager.postprocess(
+            response = model_manager.postprocess(
                 model_id,
                 outputs,
                 preproc_return_metadata,
                 **request_dict,
                 return_image_dims=True,
-            )
+            )[0]
 
-            response = model_manager.make_response(request.model_id, *results)[0]
             write_response(redis_client, response, request.id)
 
 

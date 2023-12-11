@@ -18,6 +18,11 @@ try:
 except:
     pass
 
+try:
+    from inference.models.cogvlm import CogVLM
+except:
+    pass
+
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection

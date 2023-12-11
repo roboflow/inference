@@ -253,9 +253,6 @@ class InferencePipeline:
                     iou_threshold=self._inference_config.iou_threshold,
                     max_candidates=self._inference_config.max_candidates,
                     max_detections=self._inference_config.max_detections,
-                )
-                predictions = self._model.make_response(
-                    predictions, preprocessing_metadata
                 )[0].dict(
                     by_alias=True,
                     exclude_none=True,
