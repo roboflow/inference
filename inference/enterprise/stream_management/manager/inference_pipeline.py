@@ -27,14 +27,14 @@ from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
 )
-from inference.enterprise.stream_manager.controllers.entities import (
+from inference.enterprise.stream_management.manager.entities import (
     STATUS_KEY,
     TYPE_KEY,
     CommandType,
     ErrorType,
     OperationStatus,
 )
-from inference.enterprise.stream_manager.controllers.serialisation import describe_error
+from inference.enterprise.stream_management.manager.serialisation import describe_error
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:

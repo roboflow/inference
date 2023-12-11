@@ -1,4 +1,3 @@
-import argparse
 import os
 import signal
 import sys
@@ -9,11 +8,11 @@ from typing import Dict, Optional, Tuple
 from uuid import uuid4
 
 from inference.core import logger
-from inference.enterprise.stream_manager.controllers.communication import (
+from inference.enterprise.stream_management.manager.communication import (
     receive_socket_data,
     send_data_trough_socket,
 )
-from inference.enterprise.stream_manager.controllers.entities import (
+from inference.enterprise.stream_management.manager.entities import (
     PIPELINE_ID_KEY,
     STATUS_KEY,
     TYPE_KEY,
@@ -21,11 +20,11 @@ from inference.enterprise.stream_manager.controllers.entities import (
     ErrorType,
     OperationStatus,
 )
-from inference.enterprise.stream_manager.controllers.inference_pipeline import (
+from inference.enterprise.stream_management.manager.inference_pipeline import (
     InferencePipelineManager,
 )
-from inference.enterprise.stream_manager.controllers.tcp_server import RoboflowTCPServer
-from inference.enterprise.stream_manager.controllers.serialisation import (
+from inference.enterprise.stream_management.manager.tcp_server import RoboflowTCPServer
+from inference.enterprise.stream_management.manager.serialisation import (
     describe_error,
     prepare_error_response,
     prepare_response,
@@ -34,7 +33,9 @@ from inference.enterprise.stream_manager.controllers.serialisation import (
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
-DEFAULT_SOCKET_TIMEOUT = 5.0
+HOST = os.getenv("STREAM_MANAGER_HOST", "127.0.0.1")
+PORT = int(os.getenv("STREAM_MANAGER_PORT", "7070"))
+SOCKET_TIMEOUT = float(os.getenv("STREAM_MANAGER_SOCKET_TIMEOUT", "5.0"))
 
 
 class InferencePipelinesManagerHandler(BaseRequestHandler):
@@ -228,27 +229,12 @@ def join_inference_pipeline(pipeline_id: str) -> None:
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, execute_termination)
     signal.signal(signal.SIGTERM, execute_termination)
-    parser = argparse.ArgumentParser("Inference Pipeline Processes Manager")
-    parser.add_argument(
-        "--host", type=str, required=True, help="IP address to bind the server"
-    )
-    parser.add_argument(
-        "--port", type=int, required=True, help="Port to bind the server"
-    )
-    parser.add_argument(
-        "--read-timeout",
-        type=float,
-        required=False,
-        default=DEFAULT_SOCKET_TIMEOUT,
-        help="Timeout for socket operations",
-    )
-    args = parser.parse_args()
     with RoboflowTCPServer(
-        server_address=(args.host, args.port),
+        server_address=(HOST, PORT),
         handler_class=InferencePipelinesManagerHandler,
-        socket_operations_timeout=DEFAULT_SOCKET_TIMEOUT,
+        socket_operations_timeout=SOCKET_TIMEOUT,
     ) as server:
         logger.info(
-            f"Inference Pipeline Processes Manager is ready to accept connections at {(args.host, args.port)}"
+            f"Inference Pipeline Processes Manager is ready to accept connections at {(HOST, PORT)}"
         )
         server.serve_forever()

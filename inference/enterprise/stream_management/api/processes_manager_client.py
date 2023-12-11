@@ -3,14 +3,14 @@ import json
 from asyncio import StreamReader, StreamWriter
 
 from inference.core import logger
-from inference.enterprise.stream_manager.api.entities import (
+from inference.enterprise.stream_management.api.entities import (
     CommandContext,
     CommandResponse,
     InferencePipelineStatusResponse,
     ListPipelinesResponse,
     PipelineInitialisationRequest,
 )
-from inference.enterprise.stream_manager.api.errors import (
+from inference.enterprise.stream_management.api.errors import (
     ConnectivityError,
     ProcessesManagerAuthorisationError,
     ProcessesManagerClientError,
@@ -19,7 +19,7 @@ from inference.enterprise.stream_manager.api.errors import (
     ProcessesManagerNotFound,
     ProcessesManagerOperationError,
 )
-from inference.enterprise.stream_manager.controllers.entities import (
+from inference.enterprise.stream_management.manager.entities import (
     ERROR_TYPE_KEY,
     PIPELINE_ID_KEY,
     REQUEST_ID_KEY,
@@ -30,7 +30,7 @@ from inference.enterprise.stream_manager.controllers.entities import (
     ErrorType,
     OperationStatus,
 )
-from inference.enterprise.stream_manager.controllers.errors import (
+from inference.enterprise.stream_management.manager.errors import (
     CommunicationProtocolError,
     MalformedHeaderError,
     MalformedPayloadError,
@@ -152,6 +152,7 @@ async def send_command(
     host: str, port: int, command: dict, header_size: int, buffer_size: int
 ) -> dict:
     try:
+        print(f"Connecting to: {host}, {port}")
         reader, writer = await asyncio.open_connection(host, port)
         await send_message(writer=writer, message=command)
         data = await receive_message(

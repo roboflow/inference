@@ -1,0 +1,38 @@
+FROM python:3.9
+
+WORKDIR /app
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update -y && apt install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.http.txt \
+    requirements/requirements.cpu.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.cpu.txt \
+    -r requirements.http.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+COPY inference inference
+
+ENV VERSION_CHECK_MODE=continuous
+ENV STREAM_MANAGEMENT_API_HOST=0.0.0.0
+ENV STREAM_MANAGEMENT_API_PORT=8080
+ENV PROCESSES_MANAGER_CLIENT_HOST=127.0.0.1
+ENV PROCESSES_MANAGER_CLIENT_PORT=7070
+
+ENTRYPOINT ["python", "-m", "inference.enterprise.stream_management.api.app"]

@@ -8,23 +8,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from inference.core import logger
-from inference.enterprise.stream_manager.api.entities import (
+from inference.enterprise.stream_management.api.entities import (
     CommandResponse,
     InferencePipelineStatusResponse,
     ListPipelinesResponse,
     PipelineInitialisationRequest,
 )
-from inference.enterprise.stream_manager.api.errors import (
+from inference.enterprise.stream_management.api.errors import (
     ConnectivityError,
     ProcessesManagerAuthorisationError,
     ProcessesManagerClientError,
     ProcessesManagerInvalidPayload,
     ProcessesManagerNotFound,
 )
-from inference.enterprise.stream_manager.api.processes_manager_client import (
+from inference.enterprise.stream_management.api.processes_manager_client import (
     ProcessesManagerClient,
 )
-from inference.enterprise.stream_manager.controllers.entities import (
+from inference.enterprise.stream_management.manager.entities import (
     STATUS_KEY,
     OperationStatus,
 )
