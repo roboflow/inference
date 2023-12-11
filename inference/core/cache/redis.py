@@ -4,6 +4,7 @@ import json
 import threading
 import time
 from contextlib import asynccontextmanager
+from copy import copy
 from typing import Any, Optional
 
 import redis
@@ -28,11 +29,12 @@ class RedisCache(BaseCache):
         """
         Initializes a new instance of the MemoryCache class.
         """
-        self.client = redis.Redis(host=host, port=port, db=db)
+        self.client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
 
         self.zexpires = dict()
 
         self._expire_thread = threading.Thread(target=self._expire)
+        self._expire_thread.start()
 
     def _expire(self):
         """
@@ -42,12 +44,15 @@ class RedisCache(BaseCache):
         """
         while True:
             now = time.time()
-            for k, v in self.zexpires.items():
+            for k, v in copy(list(self.zexpires.items())):
                 if v < now:
-                    self.zremrangebyscore(k[0], k[1], k[1])
+                    tolerance_factor = 1e-14  # floating point accuracy
+                    self.zremrangebyscore(
+                        k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
+                    )
                     del self.zexpires[k]
-            while time.time() - now < MEMORY_CACHE_EXPIRE_INTERVAL:
-                asyncio.sleep(0.01)
+
+            time.sleep(MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now))
 
     def get(self, key: str):
         """
@@ -85,7 +90,8 @@ class RedisCache(BaseCache):
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
         # serializable_value = self.ensure_serializable(value)
-        self.client.zadd(key, {json.dumps(value): score})
+        value = json.dumps(value)
+        self.client.zadd(key, {value: score})
         if expire:
             self.zexpires[(key, score)] = expire + time.time()
 
