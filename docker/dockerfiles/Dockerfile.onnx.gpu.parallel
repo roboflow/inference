@@ -42,5 +42,8 @@ WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
+ENV PYTHONPATH=/app/
+ENV PROJECT=roboflow-platform
+ENV CORE_MODELS_ENABLED=false
 
 ENTRYPOINT python3 entrypoint.py
