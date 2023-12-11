@@ -1,6 +1,6 @@
 import socket
-from socketserver import TCPServer, BaseRequestHandler
-from typing import Tuple, Type, Optional, Any
+from socketserver import BaseRequestHandler, TCPServer
+from typing import Any, Optional, Tuple, Type
 
 
 class RoboflowTCPServer(TCPServer):

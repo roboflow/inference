@@ -13,8 +13,8 @@ from inference.enterprise.stream_management.manager.communication import (
 )
 from inference.enterprise.stream_management.manager.errors import (
     MalformedHeaderError,
-    TransmissionChannelClosed,
     MalformedPayloadError,
+    TransmissionChannelClosed,
 )
 
 

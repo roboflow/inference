@@ -1,11 +1,12 @@
 import os
 import signal
+import socket
 import sys
 from functools import partial
 from multiprocessing import Process, Queue
-from socketserver import BaseRequestHandler
+from socketserver import BaseRequestHandler, BaseServer
 from types import FrameType
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from inference.core import logger
@@ -21,15 +22,16 @@ from inference.enterprise.stream_management.manager.entities import (
     ErrorType,
     OperationStatus,
 )
+from inference.enterprise.stream_management.manager.errors import MalformedPayloadError
 from inference.enterprise.stream_management.manager.inference_pipeline_manager import (
     InferencePipelineManager,
 )
-from inference.enterprise.stream_management.manager.tcp_server import RoboflowTCPServer
 from inference.enterprise.stream_management.manager.serialisation import (
     describe_error,
     prepare_error_response,
     prepare_response,
 )
+from inference.enterprise.stream_management.manager.tcp_server import RoboflowTCPServer
 
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
@@ -40,8 +42,17 @@ SOCKET_TIMEOUT = float(os.getenv("STREAM_MANAGER_SOCKET_TIMEOUT", "5.0"))
 
 
 class InferencePipelinesManagerHandler(BaseRequestHandler):
+    def __init__(
+        self,
+        request: socket.socket,
+        client_address: Any,
+        server: BaseServer,
+        processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+    ):
+        self._processes_table = processes_table  # in this case it's required to set the state of class before superclass init - as it invokes handle()
+        super().__init__(request, client_address, server)
+
     def handle(self) -> None:
-        global PROCESSES_TABLE
         pipeline_id: Optional[str] = None
         request_id = str(uuid4())
         try:
@@ -62,7 +73,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 )
             else:
                 response = handle_command(
-                    processes_table=PROCESSES_TABLE,
+                    processes_table=self._processes_table,
                     request_id=request_id,
                     pipeline_id=pipeline_id,
                     command=data,
@@ -77,7 +88,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                     request_id=request_id,
                     pipeline_id=pipeline_id,
                 )
-        except KeyError as error:
+        except (KeyError, ValueError, MalformedPayloadError) as error:
             logger.error(
                 f"Invalid payload in processes manager. error={error} request_id={request_id}..."
             )
@@ -113,11 +124,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             )
 
     def _list_pipelines(self, request_id: str) -> None:
-        global PROCESSES_TABLE
         serialised_response = prepare_response(
             request_id=request_id,
             response={
-                "pipelines": list(PROCESSES_TABLE.keys()),
+                "pipelines": list(self._processes_table.keys()),
                 STATUS_KEY: OperationStatus.SUCCESS,
             },
             pipeline_id=None,
@@ -130,16 +140,15 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         )
 
     def _initialise_pipeline(self, request_id: str, command: dict) -> None:
-        global PROCESSES_TABLE
         pipeline_id = str(uuid4())
         command_queue = Queue()
         responses_queue = Queue()
-        inference_pipeline_manager = InferencePipelineManager(
+        inference_pipeline_manager = InferencePipelineManager.init(
             command_queue=command_queue,
             responses_queue=responses_queue,
         )
         inference_pipeline_manager.start()
-        PROCESSES_TABLE[pipeline_id] = (
+        self._processes_table[pipeline_id] = (
             inference_pipeline_manager,
             command_queue,
             responses_queue,
@@ -162,9 +171,8 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _terminate_pipeline(
         self, request_id: str, pipeline_id: str, command: dict
     ) -> None:
-        global PROCESSES_TABLE
         response = handle_command(
-            processes_table=PROCESSES_TABLE,
+            processes_table=self._processes_table,
             request_id=request_id,
             pipeline_id=pipeline_id,
             command=command,
@@ -174,7 +182,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 f"Joining inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
             )
             join_inference_pipeline(
-                processes_table=PROCESSES_TABLE, pipeline_id=pipeline_id
+                processes_table=self._processes_table, pipeline_id=pipeline_id
             )
             logger.info(
                 f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
@@ -254,10 +262,12 @@ if __name__ == "__main__":
     )
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
-        handler_class=InferencePipelinesManagerHandler,
+        handler_class=partial(
+            InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
+        ),
         socket_operations_timeout=SOCKET_TIMEOUT,
-    ) as server:
+    ) as tcp_server:
         logger.info(
             f"Inference Pipeline Processes Manager is ready to accept connections at {(HOST, PORT)}"
         )
-        server.serve_forever()
+        tcp_server.serve_forever()

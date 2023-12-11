@@ -45,6 +45,12 @@ def ignore_signal(signal_number: int, frame: FrameType) -> None:
 
 
 class InferencePipelineManager(Process):
+    @classmethod
+    def init(
+        cls, command_queue: Queue, responses_queue: Queue
+    ) -> "InferencePipelineManager":
+        return cls(command_queue=command_queue, responses_queue=responses_queue)
+
     def __init__(self, command_queue: Queue, responses_queue: Queue):
         super().__init__()
         self._command_queue = command_queue

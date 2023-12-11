@@ -14,15 +14,15 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
 )
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
+from inference.enterprise.stream_management.manager import inference_pipeline_manager
 from inference.enterprise.stream_management.manager.entities import (
     CommandType,
-    OperationStatus,
     ErrorType,
+    OperationStatus,
 )
 from inference.enterprise.stream_management.manager.inference_pipeline_manager import (
     InferencePipelineManager,
 )
-from inference.enterprise.stream_management.manager import inference_pipeline_manager
 
 
 @pytest.mark.timeout(30)

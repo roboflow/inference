@@ -7,9 +7,9 @@ from inference.enterprise.stream_management.manager.entities import (
     OperationStatus,
 )
 from inference.enterprise.stream_management.manager.serialisation import (
-    serialise_to_json,
     describe_error,
     prepare_error_response,
+    serialise_to_json,
 )
 
 
