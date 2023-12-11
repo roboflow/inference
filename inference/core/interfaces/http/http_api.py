@@ -107,6 +107,14 @@ if METLO_KEY:
 from inference.core.version import __version__
 
 
+def orjson_response(response: Union[List[InferenceResponse], InferenceResponse]):
+    if isinstance(response, list):
+        content = [r.dict(by_alias=True) for r in response]
+    else:
+        content = response.dict(by_alias=True)
+    return ORJSONResponse(content=content)
+
+
 def with_route_exceptions(route):
     """
     A decorator that wraps a FastAPI route to handle specific exceptions. If an exception
@@ -276,7 +284,7 @@ class HttpInterface(BaseInterface):
             resp = await self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request, **kwargs
             )
-            return ORJSONResponse(content=resp.dict())
+            return orjson_response(resp)
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -1100,7 +1108,7 @@ class HttpInterface(BaseInterface):
                         media_type="image/jpeg",
                     )
                 else:
-                    return ORJSONResponse(content=inference_response.dict())
+                    return orjson_response(inference_response)
 
         if not LAMBDA:
             # Legacy clear cache endpoint for backwards compatability
