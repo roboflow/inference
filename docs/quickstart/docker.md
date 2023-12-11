@@ -131,7 +131,7 @@ Server in a container.
 
 You may add the flag `-e ROBOFLOW_API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your [Roboflow API key here](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
-You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/cache`.
+You may add the flag `-v $(pwd)/cache:/tmp/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/tmp/cache`.
 
 ### Advanced: Build a Docker Container from Scratch
 

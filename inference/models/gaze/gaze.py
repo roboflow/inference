@@ -22,6 +22,7 @@ from inference.core.entities.responses.gaze import (
 from inference.core.entities.responses.inference import FaceDetectionPrediction, Point
 from inference.core.env import (
     GAZE_MAX_BATCH_SIZE,
+    MODEL_CACHE_DIR,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
 )
@@ -338,13 +339,15 @@ class L2C2Wrapper(L2CS):
         return yaw_radian, pitch_radian
 
     def load_L2CS_model(
-        self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.pkl"
+        self,
+        file_path=f"{MODEL_CACHE_DIR}/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.pkl",
     ):
         super().load_state_dict(torch.load(file_path, map_location=self.device))
         super().to(self.device)
 
     def saveas_ONNX_model(
-        self, file_path="/tmp/cache/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.onnx"
+        self,
+        file_path=f"{MODEL_CACHE_DIR}/gaze/L2CS/L2CSNet_gaze360_resnet50_90bins.onnx",
     ):
         dummy_input = torch.randn(1, 3, 448, 448)
         dynamic_axes = {
