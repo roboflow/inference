@@ -4,6 +4,7 @@ import json
 import threading
 import time
 from contextlib import asynccontextmanager
+from copy import copy
 from typing import Any, Optional
 
 import redis
@@ -11,7 +12,6 @@ import redis
 from inference.core.cache.base import BaseCache
 from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
-from copy import copy
 
 
 class RedisCache(BaseCache):
@@ -46,8 +46,10 @@ class RedisCache(BaseCache):
             now = time.time()
             for k, v in copy(list(self.zexpires.items())):
                 if v < now:
-                    tolerance_factor = 1e-14 # floating point accuracy
-                    self.zremrangebyscore(k[0], k[1]-tolerance_factor, k[1]+tolerance_factor)
+                    tolerance_factor = 1e-14  # floating point accuracy
+                    self.zremrangebyscore(
+                        k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
+                    )
                     del self.zexpires[k]
 
             time.sleep(MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now))
