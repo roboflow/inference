@@ -138,7 +138,6 @@ class ProcessesManagerClient:
             header_size=self._header_size,
             buffer_size=self._buffer_size,
         )
-        print(response)
         if (
             response.get(RESPONSE_KEY, {}).get(
                 STATUS_KEY, OperationStatus.FAILURE.value

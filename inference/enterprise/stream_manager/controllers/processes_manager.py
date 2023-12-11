@@ -1,8 +1,9 @@
 import argparse
+import os
 import signal
 import sys
 from multiprocessing import Process, Queue
-from socketserver import BaseRequestHandler, TCPServer
+from socketserver import BaseRequestHandler
 from types import FrameType
 from typing import Dict, Optional, Tuple
 from uuid import uuid4
@@ -23,6 +24,7 @@ from inference.enterprise.stream_manager.controllers.entities import (
 from inference.enterprise.stream_manager.controllers.inference_pipeline import (
     InferencePipelineManager,
 )
+from inference.enterprise.stream_manager.controllers.tcp_server import RoboflowTCPServer
 from inference.enterprise.stream_manager.controllers.serialisation import (
     describe_error,
     prepare_error_response,
@@ -32,6 +34,7 @@ from inference.enterprise.stream_manager.controllers.serialisation import (
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
+DEFAULT_SOCKET_TIMEOUT = 5.0
 
 
 class InferencePipelinesManagerHandler(BaseRequestHandler):
@@ -232,8 +235,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port", type=int, required=True, help="Port to bind the server"
     )
+    parser.add_argument(
+        "--read-timeout",
+        type=float,
+        required=False,
+        default=DEFAULT_SOCKET_TIMEOUT,
+        help="Timeout for socket operations",
+    )
     args = parser.parse_args()
-    with TCPServer((args.host, args.port), InferencePipelinesManagerHandler) as server:
+    with RoboflowTCPServer(
+        server_address=(args.host, args.port),
+        handler_class=InferencePipelinesManagerHandler,
+        socket_operations_timeout=DEFAULT_SOCKET_TIMEOUT,
+    ) as server:
         logger.info(
             f"Inference Pipeline Processes Manager is ready to accept connections at {(args.host, args.port)}"
         )
