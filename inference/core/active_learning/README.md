@@ -21,23 +21,23 @@ defined by users.
 Active learning configuration contains **sampling strategies** and other fields influencing the feature behaviour.
 
 #### Configuration options
-* `enabled` - boolean flag to enable / disable the configuration (required) - `{"enabled": false}` is minimal valid config
-* `max_image_size` - two element list with positive integers (height, width) enforcing down-sizing (with aspect-ratio
+* `enabled`: boolean flag to enable / disable the configuration (required) - `{"enabled": false}` is minimal valid config
+* `max_image_size`: two element list with positive integers (height, width) enforcing down-sizing (with aspect-ratio
 preservation) of images before submission into Roboflow platform (optional)
-* `jpeg_compression_level` - integer value in range [1, 100]  representing compression level of submitted images 
+* `jpeg_compression_level`: integer value in range [1, 100]  representing compression level of submitted images 
 (optional, defaults to `95`)
-* `persist_predictions` - binary flag to decide if predictions should be collected along with images (required if `enabled`)
-* `sampling_strategies` - list of sampling strategies (non-empty list required if `enabled`)
-* `batching_strategy` - configuration of labeling batches creation - details below (required if `enabled`)
-* `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
+* `persist_predictions`: binary flag to decide if predictions should be collected along with images (required if `enabled`)
+* `sampling_strategies`: list of sampling strategies (non-empty list required if `enabled`)
+* `batching_strategy`: configuration of labeling batches creation - details below (required if `enabled`)
+* `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Batching strategy
 `batching_strategy` field holds a dictionary with the following configuration options:
-* `batches_name_prefix` - string representing the prefix of batches names created by Active Learning (required)
-* `recreation_interval` - one of value `["never", "daily", "weekly", "monthly"]` - representing the interval which
+* `batches_name_prefix`: string representing the prefix of batches names created by Active Learning (required)
+* `recreation_interval`: one of value `["never", "daily", "weekly", "monthly"]`: representing the interval which
 is to be used to create separate batches - thanks to that - user can control the flow of labeling batches in time
 (required)
-* `max_batch_images` - positive integer representing maximum size of batch (applied on top of any strategy limits)
+* `max_batch_images`: positive integer representing maximum size of batch (applied on top of any strategy limits)
 to prevent too much data to be collected (optional)
 
 #### Example configuration
@@ -83,12 +83,12 @@ This strategy should be used to randomly select data to be saved for future labe
 * `keypoints-detection`
 
 #### Configuration options
-* `name` - user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
+* `name`: user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
 single configuration (required)
-* `type` - with value `random` is used to identify random sampling strategy (required)
-* `traffic_percentage` - float value in range [0.0, 1.0] defining the percentage of traffic to be persisted (required)
-* `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
-* `limits` - definition of limits for data collection within a specific strategy
+* `type`: with value `random` is used to identify random sampling strategy (required)
+* `traffic_percentage`: float value in range [0.0, 1.0] defining the percentage of traffic to be persisted (required)
+* `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
+* `limits`: definition of limits for data collection within a specific strategy
 
 #### Configuration example
 ```json
@@ -117,24 +117,24 @@ between the two.
 * `keypoints-detection`
 
 #### Configuration options
-* `name` - user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
+* `name`: user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
 single configuration (required)
-* `type` - with value `close_to_threshold` is used to identify close to threshold sampling strategy (required)
-* `selected_class_names` - list of class names to consider during sampling; if not provided, all classes can be sampled. (Optional)
-* `threshold` and `epsilon` - Represent the center and radius for the confidence range that triggers sampling. Both are
+* `type`: with value `close_to_threshold` is used to identify close to threshold sampling strategy (required)
+* `selected_class_names`: list of class names to consider during sampling; if not provided, all classes can be sampled. (Optional)
+* `threshold` and `epsilon`: Represent the center and radius for the confidence range that triggers sampling. Both are
 to be float values in range [0.0, 1.0]. For example, if one aims to obtain datapoints where the classifier is highly 
 confident (0.8, 1.0), set threshold=0.9 and epsilon=0.1. Note that this is limited to outcomes from model 
 post-processing and threshold filtering - hence not all model predictions may be visible at the level of Active Learning 
 logic. (required)
-* `probability` - Fraction of datapoints matching sampling criteria that will be persisted. It is meant to be float 
+* `probability`: Fraction of datapoints matching sampling criteria that will be persisted. It is meant to be float 
 value in range [0.0, 1.0] (required)
-* `minimum_objects_close_to_threshold` - (used for detection predictions only) Specify how many detected objects from 
+* `minimum_objects_close_to_threshold`: (used for detection predictions only) Specify how many detected objects from 
 selected classes must be close to the threshold to accept the datapoint. If given - must be integer value >= 1. 
 (Optional - with default to `1`)
-* `only_top_classes` - (used for classification predictions only) Flag to decide whether only the `top` or 
+* `only_top_classes`: (used for classification predictions only) Flag to decide whether only the `top` or 
 `predicted_classes` (for multi-class/multi-label cases, respectively) should be considered. This helps avoid sampling 
 based on non-leading classes in predictions.
-* `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
+* `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Configuration example
 ```json
@@ -161,13 +161,13 @@ Sampling method employed to selectively choose specific classes from classifier 
 * `classification`
 
 #### Configuration options
-* `name` - user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
+* `name`: user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
 single configuration (required)
-* `type` - with value `classes_based` is used to identify close to threshold sampling strategy (required)
-* `selected_class_names` - list of class names to consider during sampling - (required)
-* `probability` - fraction of datapoints that matches sampling criteria that will be persisted. It is meant to be float 
+* `type`: with value `classes_based` is used to identify close to threshold sampling strategy (required)
+* `selected_class_names`: list of class names to consider during sampling - (required)
+* `probability`: fraction of datapoints that matches sampling criteria that will be persisted. It is meant to be float 
 value in range [0.0, 1.0] (required)
-* `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
+* `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Configuration example
 ```json
@@ -194,19 +194,19 @@ Sampling method employed for selectively choosing specific detections based on c
 * `keypoints-detection`
 
 #### Configuration options
-* `name` - user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
+* `name`: user-defined name of the strategy - must be non-empty and unique within all strategies defined in a 
 single configuration (required)
-* `type` - with value `detections_number_based` is used to identify close to threshold sampling strategy (required)
-* `selected_class_names` - list of class names to consider during sampling; if not provided, all classes can be sampled. (Optional)
-* `probability` - fraction of datapoints that matches sampling criteria that will be persisted. It is meant to be float 
+* `type`: with value `detections_number_based` is used to identify close to threshold sampling strategy (required)
+* `selected_class_names`: list of class names to consider during sampling; if not provided, all classes can be sampled. (Optional)
+* `probability`: fraction of datapoints that matches sampling criteria that will be persisted. It is meant to be float 
 value in range [0.0, 1.0] (required)
-* `more_than` - minimal number of detected objects - if given it is meant to be integer >= 0 
+* `more_than`: minimal number of detected objects - if given it is meant to be integer >= 0 
 (optional - if not given - lower limit is not applied)
-* `less_than` - maximum number of detected objects - if given it is meant to be integer >= 0 
+* `less_than`: maximum number of detected objects - if given it is meant to be integer >= 0 
 (optional - if not given - upper limit is not applied)
 * **NOTE:** if both `more_than` and `less_than` is not given - any number of matching detections will match the 
 sampling condition
-* `tags` - list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
+* `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Configuration example
 ```json
@@ -236,10 +236,10 @@ Once datapoint is selected and there is no limit violation - it will be saved in
 relevant for specific strategy (and global tags defined at the level of Active Learning configuration).
 
 ## Strategy limits
-Each strategy can be configured with `limits` - list of values limiting how many images can be collected 
+Each strategy can be configured with `limits`: list of values limiting how many images can be collected 
 each minute, hour or day. Each entry on that list can hold two values:
-* `type` - one of `["minutely", "hourly", "daily"]` - representing the type of limit
-* `value` - with limit threshold
+* `type`: one of `["minutely", "hourly", "daily"]`: representing the type of limit
+* `value`: with limit threshold
 
 Limits are enforced with different granularity, as they are implemented based or either Redis or memory cache (bounded
 into single process). Se effectively:

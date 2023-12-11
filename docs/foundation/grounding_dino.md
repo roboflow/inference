@@ -1,4 +1,6 @@
-!!! warning "This model is not yet available in Inference. Check back later for updates."
+!!! warning
+
+    This model is not yet available in Inference. Check back later for updates.
 
 [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) is a zero-shot object detection model.
 
@@ -6,7 +8,9 @@ You can use Grounding DINO to identify objects in images and videos using arbitr
 
 To use Grounding DINO effectively, we recommend experimenting with the model to understand which text prompts help achieve the desired results.
 
-!!! note "Grounding DINO is most effective at identifying common objects (i.e. cars, people, dogs, etc.). It is less effective at identifying uncommon objects (i.e. a specific type of car, a specific person, a specific dog, etc.)."
+!!! note
+
+    Grounding DINO is most effective at identifying common objects (i.e. cars, people, dogs, etc.). It is less effective at identifying uncommon objects (i.e. a specific type of car, a specific person, a specific dog, etc.).
 
 ### How to Use Grounding DINO
 

@@ -21,37 +21,21 @@ export ROBOFLOW_API_KEY=<your api key>
 Once you have selected a model to run, create a new Python file and add the following code:
 
 ```python
-import cv2
-import inference
-import supervision as sv
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_boxes
 
-annotator = sv.BoxAnnotator()
-
-def on_prediction(predictions, image):
-    labels = [p["class"] for p in predictions["predictions"]]
-    detections = sv.Detections.from_roboflow(predictions)
-    cv2.imshow(
-        "Prediction",
-        annotator.annotate(
-            scene=image,
-            detections=detections,
-            labels=labels
-        )
-    ),
-    cv2.waitKey(1)
-
-inference.Stream(
-    source="webcam", # or "rstp://0.0.0.0:8000/password" for RTSP stream, or "file.mp4" for video
-    model="rock-paper-scissors-sxsw/11", # from Universe
-    output_channel_order="BGR",
-    use_main_thread=True, # for opencv display
-    on_prediction=on_prediction,
+pipeline = InferencePipeline.init(
+    model_id="rock-paper-scissors-sxsw/11",
+    video_reference=0,
+    on_prediction=render_boxes,
 )
+pipeline.start()
+pipeline.join()
 ```
 
 This code will run a model on frames from a webcam stream. To use RTSP, set the `source` value to an RTSP stream URL. To use video, set the `source` value to a video file path.
 
-Predictions will be annotated using the [supervision Python package](https://github.com/roboflow/supervision).
+Predictions are annotated using the `render_boxes` helper function. You can specify any function to process each prediction in the `on_prediction` parameter.
 
 Replace `rock-paper-scissors-sxsw/11` with the model ID associated with the mode you want to run.
 
@@ -66,6 +50,40 @@ Your webcam will open and you can see the model running:
 <video width="100%" autoplay loop muted>
   <source src="https://media.roboflow.com/rock-paper-scissors.mp4" type="video/mp4">
 </video>
+
+!!! tip
+
+    When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
+
+## Define Custom Prediction Handlers
+
+The `on_prediction` parameter in the `InferencePipeline` constructor allows you to define custom prediction handlers. You can use this to define custom logic for how predictions are processed.
+
+This function provides two parameters:
+
+- `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
+- `video_frame`: A dataclass that contains:
+    - `image`: The video frame as a NumPy array,
+    - `frame_id`: The frame ID, and;
+    - `frame_timestamp`: The timestamp of the frame.
+
+For example, you can use the following code to print the predictions to the console:
+
+```python
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+
+def on_prediction(predictions, video_frame) -> None:
+    print(predictions)
+    pass
+
+pipeline = InferencePipeline.init(
+    model_id="rock-paper-scissors-sxsw/11",
+    video_reference=0,
+    on_prediction=on_prediction,
+)
+pipeline.start()
+pipeline.join()
+```
 
 ## New stream interface!
 
@@ -151,9 +169,7 @@ Now, the structure of handlers has changed into:
 ```python
 import numpy as np
 
-from inference.core.interfaces.camera.entities import VideoFrame
-
-def on_prediction(predictions: dict, video_frame: VideoFrame) -> None:
+def on_prediction(predictions video_frame) -> None:
     pass
 ```
 
@@ -167,46 +183,5 @@ but `video_frame` is a dataclass with the following property:
 
 Additionally, it eliminates the need of grabbing `.frame_id` from `inference.Stream()`.
 
-So the re-implementation work should be relatively easy. There is new package:
-`inference.core.interfaces.stream.sinks` - with handful of useful `on_prediction()` implementations ready to be
-used!
-
-Initialisation of stream also has been changed:
-
-```python
-import inference
-
-inference.Stream(
-    source="webcam", # or "rstp://0.0.0.0:8000/password" for RTSP stream, or "file.mp4" for video
-    model="rock-paper-scissors-sxsw/11", # from Universe
-    output_channel_order="BGR",
-    use_main_thread=True, # for opencv display
-    on_prediction=on_prediction,
-)
-```
-
-will change into:
-
-```python
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_boxes
-
-pipeline = InferencePipeline.init(
-    model_id="rock-paper-scissors-sxsw/11",
-    video_reference=0,
-    on_prediction=render_boxes,
-)
-pipeline.start()
-pipeline.join()
-```
-
 `InferencePipeline` exposes interface to manage its state (possibly from different thread) - including
 functions like `.start()`, `.pause()`, `.terminate()`.
-
-### I want to know more!
-
-Obviously, as with all changes there is a lot to be learned! We've prepared detailed docs of new API elements,
-which can be found in functions and classes docstrings. We encourage to acknowledge, especially the
-part related to new `VideoSoure` abstraction that is meant to replace `interface.Camera` - mainly to understand
-the notion of new configuration possibilities related to buffered decoding and different behaviour of system
-appropriate in different cases (that can be tuned via configuration).

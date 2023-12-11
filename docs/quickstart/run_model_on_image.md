@@ -43,6 +43,10 @@ Replace your API key, model ID, and model version as appropriate.
 - [Learn how to find your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key)
 - [Learn how to find your model ID](https://docs.roboflow.com/api-reference/workspace-and-project-ids)
 
+!!! tip
+
+    When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
+
 Then, run the code. You will see predictions printed to the console as a list of inference result objects. Since we passed in a single image, the list will have length 1.
 
 ```

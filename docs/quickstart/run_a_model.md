@@ -62,3 +62,8 @@ Your webcam will open and you can play rock paper scissors:
 <video width="100%" autoplay loop muted>
   <source src="https://media.roboflow.com/rock-paper-scissors.mp4" type="video/mp4">
 </video>
+
+
+!!! tip
+
+    When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.

@@ -2,19 +2,19 @@
 
 You can ask CogVLM questions about the contents of an image and retrieve a text response.
 
-To use DocTR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
+To use CogVLM with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
 
 Then, retrieve your API key from the Roboflow dashboard. [Learn how to retrieve your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
-Run the following command to set your API key in your coding environment:
+Run the following command to set your API key in your development environment:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>
 ```
 
-Let's retrieve the text in the following image:
+Let's ask a question about the following image:
 
-![A shipping container](https://lh7-us.googleusercontent.com/rBXP1ngqRAfez18KyFjSPHX5Keo_hgb3La72sV5npNTf_Te63_pSSdpUnq_OeD5teh9RFg17yftljNSCuyURdNRRstKMtq-eolVEHhQF0XwnVgyqq6vaj4WbrNa0VUXmBic89jlJbHDnTUT4sT1i-bw)
+[image]
 
 Create a new Python file and add the following code:
 
