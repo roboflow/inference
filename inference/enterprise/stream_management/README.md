@@ -88,6 +88,19 @@ docker build -t roboflow/roboflow-inference-stream-management-api:dev -f docker/
 docker build -t roboflow/roboflow-inference-stream-manager-{device}:dev -f docker/dockerfiles/Dockerfile.onnx.{device}.stream_manager .
 ```
 
+### Bare-metal deployment
+In some cases, it would be required to deploy the application at host level. This is possible, although
+client must resolve the environment in a way that is presented in Stream Manager and Stream Management API dockerfiles
+appropriate for specific platform. Once this is done the following command should be run:
+
+```bash
+repository_root$ python -m inference.enterprise.stream_management.manager.app  # runs manager
+```
+
+```bash
+repository_root$ python -m inference.enterprise.stream_management.api.app  # runs management API
+```
+
 ## How to integrate?
 After running `roboflow-inference-stream-management-api` container, HTTP API will be available under 
 `http://127.0.0.1:8080` (given that default configuration is used).
