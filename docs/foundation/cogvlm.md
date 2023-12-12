@@ -2,6 +2,16 @@
 
 You can ask CogVLM questions about the contents of an image and retrieve a text response.
 
+## Model Quantization
+
+You can run CogVLM through Roboflow Inference with three degrees of quantization. Quantization allows you to make a model smaller, but there is an accuracy trade-off. The three degrees of quantization are:
+
+- **No quantization**: Run the full model. For this, you will need 80 GB of RAM. You could run the model on an 80 GB NVIDIA A100.
+- **8-bit quantization**: Run the model with less accuracy than no quantization. You will need 32 GB of RAM.You could run this model on an A100 with sufficient virtual RAM.
+- **4-bit quantization**: Run the model with less accuracy than 8-bit quantization. You will need 16 GB of RAM. You could run this model on an NVIDIA T4.
+
+## Use CogVLM with Inference
+
 To use CogVLM with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
 
 Then, retrieve your API key from the Roboflow dashboard. [Learn how to retrieve your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
