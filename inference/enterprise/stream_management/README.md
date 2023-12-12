@@ -37,8 +37,13 @@ repository_root$ docker compose -f ./docker/dockerfiles/stream-management-api.co
 
 #### Jetson devices (`JetPack 5.1.1`)
 ```bash
-repository_root$ docker compose -f ./docker/dockerfiles/stream-management-api.compose-jetson.5.1.1.yaml up
+repository_root$ docker-compose -f ./docker/dockerfiles/stream-management-api.compose-jetson.5.1.1.yaml up
 ```
+
+**Disclaimer:** At Jetson devices, some operations (like container bootstrap or initialisation of model) takes more time
+than for other ones. In particular - docker compose definition in current form do not define active awaiting 
+TCP socket port to be opened by Stream Manager - which means that initial requests to HTTP API may be responded with 
+HTTP 503.
 
 ### In docker - running API and stream manager containers separately
 
