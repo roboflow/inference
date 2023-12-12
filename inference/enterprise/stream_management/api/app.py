@@ -36,7 +36,7 @@ OPERATIONS_TIMEOUT = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
 if OPERATIONS_TIMEOUT is not None:
     OPERATIONS_TIMEOUT = float(OPERATIONS_TIMEOUT)
 
-PROCESSING_MANAGER_CLIENT = StreamManagerClient.init(
+STREAM_MANAGER_CLIENT = StreamManagerClient.init(
     host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
     port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
     operations_timeout=OPERATIONS_TIMEOUT,
@@ -114,7 +114,7 @@ def with_route_exceptions(route: callable) -> Callable[[Any], Awaitable[JSONResp
 )
 @with_route_exceptions
 async def list_pipelines(_: Request) -> ListPipelinesResponse:
-    return await PROCESSING_MANAGER_CLIENT.list_pipelines()
+    return await STREAM_MANAGER_CLIENT.list_pipelines()
 
 
 @app.get(
@@ -125,7 +125,7 @@ async def list_pipelines(_: Request) -> ListPipelinesResponse:
 )
 @with_route_exceptions
 async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
-    return await PROCESSING_MANAGER_CLIENT.get_status(pipeline_id=pipeline_id)
+    return await STREAM_MANAGER_CLIENT.get_status(pipeline_id=pipeline_id)
 
 
 @app.post(
@@ -136,7 +136,7 @@ async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
 )
 @with_route_exceptions
 async def initialise(request: PipelineInitialisationRequest) -> CommandResponse:
-    return await PROCESSING_MANAGER_CLIENT.initialise_pipeline(
+    return await STREAM_MANAGER_CLIENT.initialise_pipeline(
         initialisation_request=request
     )
 
@@ -149,7 +149,7 @@ async def initialise(request: PipelineInitialisationRequest) -> CommandResponse:
 )
 @with_route_exceptions
 async def pause(pipeline_id: str) -> CommandResponse:
-    return await PROCESSING_MANAGER_CLIENT.pause_pipeline(pipeline_id=pipeline_id)
+    return await STREAM_MANAGER_CLIENT.pause_pipeline(pipeline_id=pipeline_id)
 
 
 @app.post(
@@ -160,7 +160,7 @@ async def pause(pipeline_id: str) -> CommandResponse:
 )
 @with_route_exceptions
 async def resume(pipeline_id: str) -> CommandResponse:
-    return await PROCESSING_MANAGER_CLIENT.resume_pipeline(pipeline_id=pipeline_id)
+    return await STREAM_MANAGER_CLIENT.resume_pipeline(pipeline_id=pipeline_id)
 
 
 @app.post(
@@ -171,7 +171,7 @@ async def resume(pipeline_id: str) -> CommandResponse:
 )
 @with_route_exceptions
 async def terminate(pipeline_id: str) -> CommandResponse:
-    return await PROCESSING_MANAGER_CLIENT.terminate_pipeline(pipeline_id=pipeline_id)
+    return await STREAM_MANAGER_CLIENT.terminate_pipeline(pipeline_id=pipeline_id)
 
 
 if __name__ == "__main__":
