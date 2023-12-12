@@ -18,7 +18,7 @@ class ProcessesManagerInvalidPayload(ProcessesManagerClientError):
     pass
 
 
-class ProcessesManagerNotFound(ProcessesManagerClientError):
+class ProcessesManagerNotFoundError(ProcessesManagerClientError):
     pass
 
 

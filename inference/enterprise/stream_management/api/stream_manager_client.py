@@ -1,6 +1,8 @@
 import asyncio
 import json
 from asyncio import StreamReader, StreamWriter
+from json import JSONDecodeError
+from typing import Optional, Tuple
 
 from inference.core import logger
 from inference.enterprise.stream_management.api.entities import (
@@ -16,7 +18,7 @@ from inference.enterprise.stream_management.api.errors import (
     ProcessesManagerClientError,
     ProcessesManagerInternalError,
     ProcessesManagerInvalidPayload,
-    ProcessesManagerNotFound,
+    ProcessesManagerNotFoundError,
     ProcessesManagerOperationError,
 )
 from inference.enterprise.stream_management.manager.entities import (
@@ -44,22 +46,41 @@ HEADER_SIZE = 4
 ERRORS_MAPPING = {
     ErrorType.INTERNAL_ERROR.value: ProcessesManagerInternalError,
     ErrorType.INVALID_PAYLOAD.value: ProcessesManagerInvalidPayload,
-    ErrorType.NOT_FOUND.value: ProcessesManagerNotFound,
+    ErrorType.NOT_FOUND.value: ProcessesManagerNotFoundError,
     ErrorType.OPERATION_ERROR.value: ProcessesManagerOperationError,
     ErrorType.AUTHORISATION_ERROR.value: ProcessesManagerAuthorisationError,
 }
 
 
-class ProcessesManagerClient:
+class StreamManagerClient:
+    @classmethod
+    def init(
+        cls,
+        host: str,
+        port: int,
+        operations_timeout: Optional[float] = None,
+        header_size: int = HEADER_SIZE,
+        buffer_size: int = BUFFER_SIZE,
+    ) -> "StreamManagerClient":
+        return cls(
+            host=host,
+            port=port,
+            operations_timeout=operations_timeout,
+            header_size=header_size,
+            buffer_size=buffer_size,
+        )
+
     def __init__(
         self,
         host: str,
         port: int,
-        header_size: int = HEADER_SIZE,
-        buffer_size: int = BUFFER_SIZE,
+        operations_timeout: Optional[float],
+        header_size: int,
+        buffer_size: int,
     ):
         self._host = host
         self._port = port
+        self._operations_timeout = operations_timeout
         self._header_size = header_size
         self._buffer_size = buffer_size
 
@@ -137,48 +158,72 @@ class ProcessesManagerClient:
             command=command,
             header_size=self._header_size,
             buffer_size=self._buffer_size,
+            timeout=self._operations_timeout,
         )
-        if (
-            response.get(RESPONSE_KEY, {}).get(
-                STATUS_KEY, OperationStatus.FAILURE.value
-            )
-            == OperationStatus.FAILURE.value
-        ):
+        if is_request_unsuccessful(response=response):
             dispatch_error(error_response=response)
         return response
 
 
 async def send_command(
-    host: str, port: int, command: dict, header_size: int, buffer_size: int
+    host: str,
+    port: int,
+    command: dict,
+    header_size: int,
+    buffer_size: int,
+    timeout: Optional[float] = None,
 ) -> dict:
     try:
-        reader, writer = await asyncio.open_connection(host, port)
-        await send_message(writer=writer, message=command)
+        reader, writer = await establish_socket_connection(
+            host=host, port=port, timeout=timeout
+        )
+        await send_message(
+            writer=writer, message=command, header_size=header_size, timeout=timeout
+        )
         data = await receive_message(
-            reader, header_size=header_size, buffer_size=buffer_size
+            reader, header_size=header_size, buffer_size=buffer_size, timeout=timeout
         )
         writer.close()
         await writer.wait_closed()
         return json.loads(data)
-    except (ConnectionError, TimeoutError) as errors:
+    except JSONDecodeError as error:
+        raise MalformedPayloadError(
+            f"Could not decode response. Cause: {error}"
+        ) from error
+    except (OSError, asyncio.TimeoutError) as errors:
         raise ConnectivityError(
             f"Could not communicate with Process Manager"
         ) from errors
 
 
-async def send_message(writer: StreamWriter, message: dict) -> None:
+async def establish_socket_connection(
+    host: str, port: int, timeout: Optional[float] = None
+) -> Tuple[StreamReader, StreamWriter]:
+    return await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
+
+
+async def send_message(
+    writer: StreamWriter,
+    message: dict,
+    header_size: int,
+    timeout: Optional[float] = None,
+) -> None:
     try:
         body = json.dumps(message).encode("utf-8")
-        header = len(body).to_bytes(length=4, byteorder="big")
+        header = len(body).to_bytes(length=header_size, byteorder="big")
         payload = header + body
         writer.write(payload)
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
     except TypeError as error:
         raise MalformedPayloadError(f"Could not serialise message. Details: {error}")
     except OverflowError as error:
         raise MessageToBigError(
             f"Could not send message due to size overflow. Details: {error}"
         )
+    except asyncio.TimeoutError as error:
+        raise ConnectivityError(
+            f"Could not communicate with Process Manager"
+        ) from error
     except Exception as error:
         raise CommunicationProtocolError(
             f"Could not send message. Cause: {error}"
@@ -186,15 +231,18 @@ async def send_message(writer: StreamWriter, message: dict) -> None:
 
 
 async def receive_message(
-    reader: StreamReader, header_size: int, buffer_size: int
+    reader: StreamReader,
+    header_size: int,
+    buffer_size: int,
+    timeout: Optional[float] = None,
 ) -> bytes:
-    header = await reader.read(header_size)
+    header = await asyncio.wait_for(reader.read(header_size), timeout=timeout)
     if len(header) != header_size:
         raise MalformedHeaderError("Header size missmatch")
     payload_size = int.from_bytes(bytes=header, byteorder="big")
     received = b""
     while len(received) < payload_size:
-        chunk = await reader.read(buffer_size)
+        chunk = await asyncio.wait_for(reader.read(buffer_size), timeout=timeout)
         if len(chunk) == 0:
             raise TransmissionChannelClosed(
                 "Socket was closed to read before payload was decoded."
@@ -203,11 +251,18 @@ async def receive_message(
     return received
 
 
+def is_request_unsuccessful(response: dict) -> bool:
+    return (
+        response.get(RESPONSE_KEY, {}).get(STATUS_KEY, OperationStatus.FAILURE.value)
+        != OperationStatus.SUCCESS.value
+    )
+
+
 def dispatch_error(error_response: dict) -> None:
     response_payload = error_response.get(RESPONSE_KEY, {})
     error_type = response_payload.get(ERROR_TYPE_KEY)
-    error_class = response_payload.get("error_class")
-    error_message = response_payload.get("error_message")
+    error_class = response_payload.get("error_class", "N/A")
+    error_message = response_payload.get("error_message", "N/A")
     logger.error(
         f"Error in ProcessesManagerClient. error_type={error_type} error_class={error_class} "
         f"error_message={error_message}"

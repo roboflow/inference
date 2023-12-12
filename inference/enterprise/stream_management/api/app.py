@@ -19,10 +19,10 @@ from inference.enterprise.stream_management.api.errors import (
     ProcessesManagerAuthorisationError,
     ProcessesManagerClientError,
     ProcessesManagerInvalidPayload,
-    ProcessesManagerNotFound,
+    ProcessesManagerNotFoundError,
 )
-from inference.enterprise.stream_management.api.processes_manager_client import (
-    ProcessesManagerClient,
+from inference.enterprise.stream_management.api.stream_manager_client import (
+    StreamManagerClient,
 )
 from inference.enterprise.stream_management.manager.entities import (
     STATUS_KEY,
@@ -32,10 +32,14 @@ from inference.enterprise.stream_management.manager.entities import (
 API_HOST = os.getenv("STREAM_MANAGEMENT_API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("STREAM_MANAGEMENT_API_PORT", "8080"))
 
+OPERATIONS_TIMEOUT = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
+if OPERATIONS_TIMEOUT is not None:
+    OPERATIONS_TIMEOUT = float(OPERATIONS_TIMEOUT)
 
-PROCESSING_MANAGER_CLIENT = ProcessesManagerClient(
+PROCESSING_MANAGER_CLIENT = StreamManagerClient.init(
     host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
     port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
+    operations_timeout=OPERATIONS_TIMEOUT,
 )
 
 app = FastAPI()
@@ -67,7 +71,7 @@ def with_route_exceptions(route: callable) -> Callable[[Any], Awaitable[JSONResp
             )
             logger.exception("Processes Manager - authorisation error")
             return resp
-        except ProcessesManagerNotFound as error:
+        except ProcessesManagerNotFoundError as error:
             resp = JSONResponse(
                 status_code=404,
                 content={STATUS_KEY: OperationStatus.FAILURE, "message": str(error)},
