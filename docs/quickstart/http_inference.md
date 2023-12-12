@@ -106,19 +106,19 @@ You can send a URL with an image, a NumPy array, or a base64-encoded image to an
         img_str = img_str.decode("ascii")
 
         infer_payload = {
-        "model_id": f"{project_id}/{model_version}",
-        "image": {
-            "type": "base64",
-            "value": img_str,
-        },
-        "confidence": confidence,
-        "iou_threshold": iou_thresh,
-        "api_key": api_key,
+            "model_id": f"{project_id}/{model_version}",
+            "image": {
+                "type": "base64",
+                "value": img_str,
+            },
+            "confidence": confidence,
+            "iou_threshold": iou_thresh,
+            "api_key": api_key,
         }
 
         res = requests.post(
-        f"http://localhost:9001/infer/{task}",
-        json=infer_payload,
+            f"http://localhost:9001/infer/{task}",
+            json=infer_payload,
         )
 
         predictions = res.json()
@@ -167,29 +167,29 @@ You can send a URL with an image, a NumPy array, or a base64-encoded image to an
         img_str = img_str.decode("ascii")
 
         infer_payload = {
-        "model_id": f"{project_id}/{model_version}",
-        "image": [
-            {
-                "type": "base64",
-                "value": img_str,
-            },
-            {
-                "type": "base64",
-                "value": img_str,
-            },
-            {
-                "type": "base64",
-                "value": img_str,
-            }
-        ],
-        "confidence": confidence,
-        "iou_threshold": iou_thresh,
-        "api_key": api_key,
+            "model_id": f"{project_id}/{model_version}",
+            "image": [
+                {
+                    "type": "base64",
+                    "value": img_str,
+                },
+                {
+                    "type": "base64",
+                    "value": img_str,
+                },
+                {
+                    "type": "base64",
+                    "value": img_str,
+                }
+            ],
+            "confidence": confidence,
+            "iou_threshold": iou_thresh,
+            "api_key": api_key,
         }
 
         res = requests.post(
-        f"http://localhost:9001/infer/{task}",
-        json=infer_payload,
+            f"http://localhost:9001/infer/{task}",
+            json=infer_payload,
         )
 
         predictions = res.json()
@@ -212,7 +212,60 @@ You can send a URL with an image, a NumPy array, or a base64-encoded image to an
     
     === "Numpy Array"
 
-        Numpy array inputs are currently not supported by V2 routes.
+        Create a new Python file and add the following code:
+
+        ```python
+        import requests
+        import base64
+        from PIL import Image
+        from io import BytesIO
+
+        project_id = "soccer-players-5fuqs"
+        model_version = 1
+        task = "object_detection"
+        confidence = 0.5
+        iou_thresh = 0.5
+        api_key = "YOUR ROBOFLOW API KEY"
+        file_name = "path/to/local/image.jpg"
+
+        image = cv2.imread(file_name)
+        numpy_data = pickle.dumps(image)
+        img_str = base64.b64encode(numpy_data)
+        img_str = img_str.decode("ascii")
+
+        infer_payload = {
+            "model_id": f"{project_id}/{model_version}",
+            "image": {
+                "type": "base64",
+                "value": img_str,
+            },
+            "confidence": confidence,
+            "iou_threshold": iou_thresh,
+            "api_key": api_key,
+        }
+
+        res = requests.post(
+            f"http://localhost:9001/infer/{task}",
+            json=infer_payload,
+        )
+
+        predictions = res.json()
+        print(predictions)
+        ```
+
+        Above, specify:
+
+        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
+        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        5. `filename`: The path to the image you want to run inference on.
+
+        Then, run the Python script:
+
+        ```
+        python app.py
+        ```
 
 ### V1 Routes
 

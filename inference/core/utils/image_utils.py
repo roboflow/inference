@@ -1,3 +1,4 @@
+import binascii
 import os
 import pickle
 import re
@@ -222,11 +223,11 @@ def load_image_from_buffer(
     return result
 
 
-def load_image_from_numpy_str(value: bytes) -> np.ndarray:
+def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     """Loads an image from a numpy array string.
 
     Args:
-        value (str): String representing the numpy array of the image.
+        value (Union[bytes, str]): Base64 string or byte sequence representing the pickled numpy array of the image.
 
     Returns:
         Image.Image: The loaded PIL image.
@@ -235,8 +236,10 @@ def load_image_from_numpy_str(value: bytes) -> np.ndarray:
         InvalidNumpyInput: If the numpy data is invalid.
     """
     try:
+        if isinstance(value, str):
+            value = pybase64.b64decode(value)
         data = pickle.loads(value)
-    except (EOFError, TypeError, pickle.UnpicklingError) as error:
+    except (EOFError, TypeError, pickle.UnpicklingError, binascii.Error) as error:
         raise InvalidNumpyInput(
             f"Could not unpickle image data. Cause: {error}"
         ) from error
