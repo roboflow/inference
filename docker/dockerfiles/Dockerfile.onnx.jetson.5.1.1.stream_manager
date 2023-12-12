@@ -22,7 +22,6 @@ RUN apt-get update -y && apt-get install -y \
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
-    requirements/requirements.doctr.txt \
     requirements/_requirements.txt \
     ./
 
@@ -32,7 +31,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
-    -r requirements.doctr.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 

@@ -52,13 +52,13 @@ docker run -d --name stream_management_api --network host roboflow/roboflow-infe
 
 ##### GPU-based devices
 ```bash
-docker run -d --name stream_manager --network host roboflow/roboflow-inference-stream-manager-gpu:latest
+docker run -d --name stream_manager --network host --runtime nvidia roboflow/roboflow-inference-stream-manager-gpu:latest
 docker run -d --name stream_management_api --network host roboflow/roboflow-inference-stream-management-api:latest
 ```
 
 ##### Jetson devices (`JetPack 5.1.1`)
 ```bash
-docker run -d --name stream_manager --network host roboflow/roboflow-inference-stream-manager-jetson-5.1.1:latest
+docker run -d --name stream_manager --network host --runtime nvidia roboflow/roboflow-inference-stream-manager-jetson-5.1.1:latest
 docker run -d --name stream_management_api --network host roboflow/roboflow-inference-stream-management-api:latest
 ```
 
