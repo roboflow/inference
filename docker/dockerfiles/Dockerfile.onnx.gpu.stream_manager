@@ -1,0 +1,36 @@
+# FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.http.txt \
+    requirements/requirements.gpu.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN pip3 install --upgrade pip  && pip3 install \
+    -r _requirements.txt \
+    -r requirements.http.txt \
+    -r requirements.gpu.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+WORKDIR /app/
+COPY inference inference
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV HOST=0.0.0.0
+ENV PORT=7070
+
+ENTRYPOINT ["python", "-m", "inference.enterprise.stream_management.manager.app"]
