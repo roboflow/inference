@@ -18,7 +18,7 @@ class UDPSinkConfiguration(BaseModel):
 
 class ObjectDetectionModelConfiguration(BaseModel):
     type: str = Field(
-        description="Type identifier field. Must be `object_detection`",
+        description="Type identifier field. Must be `object-detection`",
         default="object-detection",
     )
     class_agnostic_nms: Optional[bool] = Field(

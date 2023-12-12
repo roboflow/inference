@@ -7,12 +7,9 @@ from typing import Callable, Optional, Tuple
 
 from inference.core import logger
 from inference.core.exceptions import (
-    MalformedRoboflowAPIResponseError,
     MissingApiKeyError,
-    MissingDefaultModelError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
-    RoboflowAPIRequestError,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
