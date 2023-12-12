@@ -18,6 +18,25 @@ This functionality proves beneficial in various scenarios, **including but not l
 ## Design
 ![Stream Management - design](./assets/stream_management_api_design.jpg)
 
+
+## Example use-case
+
+Joe aims to monitor objects within the footage captured by a fleet of IP cameras installed in his factory. After 
+successfully training an object-detection model on the Roboflow platform, he is now prepared for deployment. With four 
+cameras in his factory, Joe opts for a model that is sufficiently compact, allowing for over 30 inferences per second 
+on his Jetson devices. Considering this computational budget per device, Joe determines that he requires two Jetson 
+devices to efficiently process footage from all cameras, anticipating an inference throughput of approximately 
+15 frames per second for each video source.
+
+To streamline the deployment, Joe chooses to deploy Stream Management containers to all available Jetson devices within 
+his local network. This setup enables him to communicate with each Jetson device via HTTP, facilitating the 
+orchestration of processing tasks. Joe develops a web app through which he can send commands to the devices and retrieve 
+metrics regarding the statuses of the video streams.
+
+Finally, Joe implements a UDP server capable of receiving predictions, leveraging the `supervision` package to 
+effectively track objects in the footage. This comprehensive approach allows Joe to manage and monitor the 
+object-detection process seamlessly across his fleet of Jetson devices.
+
 ## How to run?
 
 ### In docker - using `docker compose`
