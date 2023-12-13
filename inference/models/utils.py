@@ -1,4 +1,4 @@
-from inference.core.env import API_KEY
+from inference.core.env import API_KEY, API_KEY_ENV_NAMES
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.stubs import (
     ClassificationModelStub,
@@ -171,7 +171,10 @@ except:
 def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     if not api_key:
         raise MissingApiKeyError(
-            "No API Key Found, must provide an API Key via key word argument 'api_key' or as an environment variable on server startup"
+            "No API Key Found, must provide an API Key via key word argument 'api_key' or as an "
+            f"environment variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
+            f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+            f"retrieve the key."
         )
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

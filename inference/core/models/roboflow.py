@@ -41,7 +41,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
+    TENSORRT_CACHE_PATH, API_KEY_ENV_NAMES,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -117,7 +117,10 @@ class RoboflowInferenceModel(Model):
             AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
         ):
             raise MissingApiKeyError(
-                "No API Key Found, must provide an API Key in each request or as an environment variable on server startup"
+                "No API Key Found, must provide an API Key in each request or as an environment "
+                f"variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
+                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                f"retrieve the key."
             )
 
         self.dataset_id, self.version_id = model_id.split("/")

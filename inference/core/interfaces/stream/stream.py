@@ -26,7 +26,7 @@ from inference.core.env import (
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
-    STREAM_ID,
+    STREAM_ID, API_KEY_ENV_NAMES,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
@@ -99,7 +99,12 @@ class Stream(BaseInterface):
             raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
         if not self.api_key:
-            raise ValueError("API_KEY is not defined")
+            raise ValueError(
+                f"API key is missing. Either pass it explicitly to constructor, or use one of env variables: "
+                f"{API_KEY_ENV_NAMES}. Visit "
+                f"https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to generate "
+                f"the key."
+            )
 
         if isinstance(model, str):
             self.model = get_roboflow_model(model, self.api_key)
