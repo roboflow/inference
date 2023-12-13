@@ -236,7 +236,7 @@ You can send a URL with an image, a NumPy array, or a base64-encoded image to an
         infer_payload = {
             "model_id": f"{project_id}/{model_version}",
             "image": {
-                "type": "base64",
+                "type": "numpy",
                 "value": img_str,
             },
             "confidence": confidence,
