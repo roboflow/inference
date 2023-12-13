@@ -29,6 +29,7 @@ COPY requirements/requirements.clip.txt \
 RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN pip3 install --upgrade pip  && pip3 install \
+    git+https://github.com/pypdfium2-team/pypdfium2 \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
