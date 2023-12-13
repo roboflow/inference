@@ -357,6 +357,7 @@ def test_load_image_from_encoded_bytes_when_decoding_should_fail() -> None:
         "image_as_png_bytes",
         "image_as_jpeg_bytes",
         "image_as_pickled_bytes",
+        "image_as_base64_encoded_pickled_bytes",
     ],
 )
 def test_attempt_loading_image_from_string_when_parsing_should_be_successful(
@@ -505,6 +506,7 @@ def test_extract_image_payload_and_type_when_value_is_request_and_type_is_not_re
         ("image_as_local_path", ImageType.FILE, True),
         ("image_as_buffer", ImageType.MULTIPART, True),
         ("image_as_pickled_bytes", ImageType.NUMPY, True),
+        ("image_as_base64_encoded_pickled_bytes", ImageType.NUMPY, True),
         ("image_as_pillow", ImageType.PILLOW, False),
     ],
 )
@@ -626,6 +628,7 @@ def test_convert_gray_image_to_bgr_when_2d_input_submitted(
         ("image_as_rgba_buffer", True),  # works due to cv load flags
         ("image_as_gray_buffer", True),
         ("image_as_pickled_bytes", True),
+        ("image_as_base64_encoded_pickled_bytes", True),
         ("image_as_pickled_bytes_gray", True),
         ("image_as_pillow", False),
     ],
