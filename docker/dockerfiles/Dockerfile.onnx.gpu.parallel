@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04 as base
 
 WORKDIR /app
 
@@ -30,8 +30,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.parallel.txt \
-    wheel>=0.38.0 \
-    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -40,6 +38,10 @@ RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyri
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
+
+FROM scratch
+COPY --from=base / /
+
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py

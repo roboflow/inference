@@ -1,6 +1,4 @@
-FROM python:3.9
-
-WORKDIR /app
+FROM python:3.9 as base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -38,6 +36,11 @@ RUN pip3 install --upgrade pip  && pip3 install \
     setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+FROM scratch
+COPY --from=base / /
+
+WORKDIR /app
 
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
