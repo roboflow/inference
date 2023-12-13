@@ -32,6 +32,7 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
@@ -41,7 +42,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH, API_KEY_ENV_NAMES,
+    TENSORRT_CACHE_PATH,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,

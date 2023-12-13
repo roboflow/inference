@@ -15,6 +15,7 @@ from inference.core.active_learning.middlewares import ThreadingActiveLearningMi
 from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
     ENABLE_BYTE_TRACK,
@@ -25,7 +26,7 @@ from inference.core.env import (
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
-    STREAM_ID, API_KEY_ENV_NAMES,
+    STREAM_ID,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
