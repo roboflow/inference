@@ -56,7 +56,8 @@ DEFAULT_ERROR_HANDLERS = {
     401: lambda e: raise_from_lambda(
         e,
         RoboflowAPINotAuthorizedError,
-        "Unauthorized access to roboflow API - check API key.",
+        "Unauthorized access to roboflow API - check API key. Visit "
+        "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
     404: lambda e: raise_from_lambda(
         e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE

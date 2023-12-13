@@ -15,6 +15,7 @@ from inference.core.active_learning.middlewares import ThreadingActiveLearningMi
 from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
     ENABLE_BYTE_TRACK,
@@ -92,7 +93,12 @@ class UdpStream(BaseInterface):
             raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
         if not self.api_key:
-            raise ValueError("API_KEY is not defined")
+            raise ValueError(
+                f"API key is missing. Either pass it explicitly to constructor, or use one of env variables: "
+                f"{API_KEY_ENV_NAMES}. Visit "
+                f"https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to generate "
+                f"the key."
+            )
 
         self.model = get_roboflow_model(self.model_id, self.api_key)
         self.task_type = get_model_type(model_id=self.model_id, api_key=self.api_key)[0]
