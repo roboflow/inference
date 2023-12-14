@@ -1,0 +1,22 @@
+services:
+  management-api:
+    build:
+      context: ${PWD}
+      dockerfile: docker/dockerfiles/Dockerfile.stream_management_api
+    ports:
+      - "8080:8080"
+    environment:
+      - STREAM_MANAGER_HOST=stream_manager
+      - STREAM_MANAGER_PORT=7070
+    depends_on:
+      - stream_manager
+  stream_manager:
+    build:
+      context: ${PWD}
+      dockerfile: docker/dockerfiles/Dockerfile.onnx.gpu.stream_manager
+    privileged: true
+    runtime: nvidia
+    environment:
+      - STREAM_MANAGER_HOST=0.0.0.0
+    ports:
+      - "7070:7070"
