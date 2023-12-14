@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Union
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, ORJSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -97,6 +97,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
 
 if LAMBDA:
@@ -105,14 +106,6 @@ if METLO_KEY:
     from metlo.fastapi import ASGIMiddleware
 
 from inference.core.version import __version__
-
-
-def orjson_response(response: Union[List[InferenceResponse], InferenceResponse]):
-    if isinstance(response, list):
-        content = [r.dict(by_alias=True) for r in response]
-    else:
-        content = response.dict(by_alias=True)
-    return ORJSONResponse(content=content)
 
 
 def with_route_exceptions(route):
