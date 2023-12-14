@@ -15,7 +15,10 @@ class ORJSONResponseBytes(ORJSONResponse):
             option=orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY,
         )
 
-JSON = Union[Dict[str, "JSON"] , List["JSON"] , str , int , float , bool , None]
+
+JSON = Union[Dict[str, "JSON"], List["JSON"], str, int, float, bool, None]
+
+
 def default(obj: Any) -> JSON:
     if isinstance(obj, bytes):
         return base64.b64encode(obj).decode("ascii")
