@@ -1,4 +1,4 @@
-name: Build and Push CPU Container
+name: Build and Push Container with Stream Manager CPU
 
 on:
   release:

@@ -1,4 +1,4 @@
-name: Build and Push Jetson 5.X Container
+name: Build and Push Container with Stream Manager Jetson 5.1.1
 
 on:
   release:

@@ -1,4 +1,4 @@
-name: Build and Push GPU Container
+name: Build and Push Container with Stream Manager GPU
 
 on:
   release:
