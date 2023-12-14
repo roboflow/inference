@@ -34,3 +34,4 @@ coverage.xml
 .pytest_cache
 .hypothesis
 development
+.pytest_cache
