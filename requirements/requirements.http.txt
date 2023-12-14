@@ -1,3 +1,4 @@
 uvicorn[standard]<=0.22.0
 python-multipart<=0.0.6
 fastapi-cprofile<=0.0.2
+orjson>=3.9.10
