@@ -22,7 +22,7 @@ def default(obj):
     return obj
 
 
-def orjson_response(response: Union[List[InferenceResponse], InferenceResponse]):
+def orjson_response(response: Union[List[InferenceResponse], InferenceResponse]) -> ORJSONResponseBytes:
     if isinstance(response, list):
         content = [r.dict(by_alias=True) for r in response]
     else:
