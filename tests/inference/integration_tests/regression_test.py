@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from PIL import Image
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+from copy import deepcopy
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
@@ -52,6 +53,7 @@ def legacy_infer_with_image_url(
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
                     f"image={test['image_url']}",
+                    f'format={test.get("format", "json")}'
                 ]
             )
         ),
@@ -76,6 +78,7 @@ def legacy_infer_with_base64_image(
                     f"api_key={api_key}",
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
+                    f'format={test.get("format", "json")}'
                 ]
             ),
             data=img_str,
@@ -101,6 +104,7 @@ def legacy_infer_with_multipart_form_image(
                     f"api_key={api_key}",
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
+                    f"format={test.get('format', 'json')}"
                 ]
             ),
             data=m,
@@ -122,6 +126,7 @@ def infer_request_with_image_url(
         "confidence": test["confidence"],
         "iou_threshold": test["iou_threshold"],
         "api_key": api_key,
+        "visualize_predictions": test.get("format") is not None,
     }
     return (
         requests.post(
@@ -148,6 +153,7 @@ def infer_request_with_base64_image(
         "confidence": test["confidence"],
         "iou_threshold": test["iou_threshold"],
         "api_key": api_key,
+        "visualize_predictions": test.get("format") is not None
     }
     return (
         requests.post(
@@ -447,6 +453,46 @@ def test_detection(test, res_function):
                 type=test["type"],
                 multilabel=test.get("multi_label", False),
             )
+        print(
+            "\u2713"
+            + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."
+        )
+    except Exception as e:
+        raise Exception(f"Error in test {test['description']}: {e}")
+
+VISUALIZATION_TEST_PARAMS = [p for p in DETECTION_TEST_PARAMS if p[0]["type"] != "classification"]
+@pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
+def test_visualization(test, res_function):
+    test = deepcopy(test)
+    try:
+        try:
+            pil_image = Image.open(
+                requests.get(test["image_url"], stream=True).raw
+            ).convert("RGB")
+            test["pil_image"] = pil_image
+        except Exception as e:
+            raise ValueError(f"Unable to load image from URL: {test['image_url']}")
+
+        test["format"] = "image"
+        response, _image_type = res_function(
+            test, port, api_key=os.getenv(f"{test['project'].replace('-','_')}_API_KEY")
+        )
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise ValueError(f"Failed to make request to {res_function.__name__}: {e}")
+        try:
+            data = base64.b64decode(response.json()["visualization"])
+        except KeyError:
+            print(response.json())
+            raise ValueError("Response json lacks visualization key")
+        except json.JSONDecodeError:
+            data = response.content
+        try:
+            im = BytesIO(data)
+            Image.open(im).convert("RGB")
+        except Exception as error:
+            raise ValueError("Invalid image response") from error
         print(
             "\u2713"
             + f" Test {test['project']}/{test['version']} passed with {res_function.__name__}."

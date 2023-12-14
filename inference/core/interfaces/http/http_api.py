@@ -97,6 +97,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
 
 if LAMBDA:
@@ -273,9 +274,10 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 inference_request.model_id, inference_request.api_key
             )
-            return await self.model_manager.infer_from_request(
+            resp = await self.model_manager.infer_from_request(
                 inference_request.model_id, inference_request, **kwargs
             )
+            return orjson_response(resp)
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -1099,7 +1101,7 @@ class HttpInterface(BaseInterface):
                         media_type="image/jpeg",
                     )
                 else:
-                    return inference_response
+                    return orjson_response(inference_response)
 
         if not LAMBDA:
             # Legacy clear cache endpoint for backwards compatability
