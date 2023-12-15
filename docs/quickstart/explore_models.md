@@ -2,6 +2,17 @@ With Inference, you can run any of the 50,000+ models available on Roboflow Univ
 
 All models run on your own hardware.
 
+## Run pre-trained YOLOv8 model
+Roboflow Universe exposes pre-trained YOLOv8 models.
+
+* object-detection: `yolov8{model_size}-{inference_resolution}`
+  * supported model sizes: `[n, s, m, l, x]`
+  * supported inference resolutions: `[640, 1280]`
+
+* instance-segmentation: `yolov8{model_size}-seg-{inference_resolution}`
+  * supported model sizes: `[n, s, m, l, x]`
+  * supported inference resolutions: `[640, 1280]`
+
 ## Run a Model on Universe
 
 In the first example, we showed how to run a rock paper scissors model. This model was hosted on Universe. Let's find another model to try.
