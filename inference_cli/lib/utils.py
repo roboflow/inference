@@ -9,7 +9,9 @@ def read_env_file(path: str) -> Dict[str, str]:
     for line in file_lines:
         chunks = line.split("=")
         if len(chunks) != 2:
-            CLI_LOGGER.warning(f"Line: `{line}` in {path} file does not match pattern NAME=VALUE")
+            CLI_LOGGER.warning(
+                f"Line: `{line}` in {path} file does not match pattern NAME=VALUE"
+            )
             continue
         name, value = chunks[0], chunks[1]
         result[name] = value

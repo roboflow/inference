@@ -1,4 +1,4 @@
-from inference_cli.lib.utils import read_file_lines, read_env_file
+from inference_cli.lib.utils import read_env_file, read_file_lines
 
 
 def test_read_file_lines(text_file_path: str) -> None:

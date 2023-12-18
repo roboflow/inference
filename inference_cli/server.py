@@ -36,7 +36,7 @@ def start(
             "--env-file",
             "-e",
             help="Path to file with env variables (in each line KEY=VALUE). Optional. If given - values will be "
-                 "overriden by any explicit parameter of this command.",
+            "overriden by any explicit parameter of this command.",
         ),
     ] = None,
 ):

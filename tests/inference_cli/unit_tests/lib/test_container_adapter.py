@@ -1,10 +1,14 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
-
 from inference_cli.lib import container_adapter
-from inference_cli.lib.container_adapter import is_inference_server_container, is_container_running, kill_containers, \
-    find_running_inference_containers, terminate_running_containers
+from inference_cli.lib.container_adapter import (
+    find_running_inference_containers,
+    is_container_running,
+    is_inference_server_container,
+    kill_containers,
+    terminate_running_containers,
+)
 
 
 def test_is_inference_server_container_when_tag_matches() -> None:
@@ -16,7 +20,9 @@ def test_is_inference_server_container_when_tag_matches() -> None:
     result = is_inference_server_container(container=container)
 
     # then
-    assert result is True, "All containers starting from roboflow/roboflow-inference-server are assumed inference containers"
+    assert (
+        result is True
+    ), "All containers starting from roboflow/roboflow-inference-server are assumed inference containers"
 
 
 def test_is_inference_server_container_when_tag_does_not_match() -> None:
@@ -28,7 +34,9 @@ def test_is_inference_server_container_when_tag_does_not_match() -> None:
     result = is_inference_server_container(container=container)
 
     # then
-    assert result is False, "No containers starting from roboflow/roboflow-inference-server given"
+    assert (
+        result is False
+    ), "No containers starting from roboflow/roboflow-inference-server given"
 
 
 def test_is_container_running_when_stopped_container_given() -> None:
@@ -52,7 +60,9 @@ def test_is_container_running_when_container_in_undefined_state_given() -> None:
     result = is_container_running(container=container)
 
     # then
-    assert result is False, "Container with undefined status is assumed not to be running"
+    assert (
+        result is False
+    ), "Container with undefined status is assumed not to be running"
 
 
 def test_is_container_running_when_running_container_given() -> None:
@@ -102,13 +112,18 @@ def test_find_running_inference_containers(docker_client_mock: MagicMock) -> Non
 
 
 @mock.patch.object(container_adapter, "ask_user_to_kill_container")
-def test_terminate_running_containers_in_interactive_mode(ask_user_to_kill_container_mock: MagicMock) -> None:
+def test_terminate_running_containers_in_interactive_mode(
+    ask_user_to_kill_container_mock: MagicMock,
+) -> None:
     # given
     containers = [MagicMock(), MagicMock(), MagicMock()]
     containers[0].attrs = {"State": {"Status": "stopped"}}
     containers[1].attrs = {"State": {"Status": "running"}}
     containers[2].attrs = {"State": {"Status": "running"}}
-    ask_user_to_kill_container_mock.side_effect = [False, True]  # container 1, 2 should be queried, only 2 to terminate
+    ask_user_to_kill_container_mock.side_effect = [
+        False,
+        True,
+    ]  # container 1, 2 should be queried, only 2 to terminate
 
     # when
     result = terminate_running_containers(containers=containers, interactive_mode=True)

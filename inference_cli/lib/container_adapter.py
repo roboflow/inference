@@ -1,11 +1,10 @@
 import subprocess
-from typing import Optional, Union, Dict, List
+from typing import Dict, List, Optional, Union
 
 import typer
 from docker.models.containers import Container
 
 import docker
-
 from inference_cli.lib.utils import read_env_file
 
 docker_client = docker.from_env()
