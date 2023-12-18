@@ -17,6 +17,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.file_system import dump_json, read_json
 from inference.core.utils.roboflow import get_model_id_chunks
+from inference.models.aliases import resolve_roboflow_model_alias
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
@@ -69,6 +70,7 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")

@@ -32,6 +32,7 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
@@ -59,6 +60,7 @@ from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -117,9 +119,12 @@ class RoboflowInferenceModel(Model):
             AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
         ):
             raise MissingApiKeyError(
-                "No API Key Found, must provide an API Key in each request or as an environment variable on server startup"
+                "No API Key Found, must provide an API Key in each request or as an environment "
+                f"variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
+                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                f"retrieve the key."
             )
-
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID

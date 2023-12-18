@@ -44,7 +44,7 @@ jobs:
       - name: 🔨 Build and Push Test Docker - Parallel GPU
         run : |
           docker pull roboflow/roboflow-inference-server-gpu-parallel:test
-          docker build -t roboflow/roboflow-inference-server-gpu-parallel:test -f inference/enterprise/parallel/Dockerfile.onnx.gpu.parallel .
+          docker build -t roboflow/roboflow-inference-server-gpu-parallel:test -f docker/dockerfiles/Dockerfile.onnx.gpu.parallel .
           docker push roboflow/roboflow-inference-server-gpu-parallel:test
       - name: 🔋 Start Test Docker - Parallel GPU
         run: |

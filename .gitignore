@@ -154,3 +154,4 @@ inference_sdk/version.py
 
 **/.DS_Store
 !tests/inference/unit_tests/core/interfaces/assets/*.mp4
+!inference/enterprise/stream_management/assets/*.jpg

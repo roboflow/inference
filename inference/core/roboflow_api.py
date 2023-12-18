@@ -35,6 +35,7 @@ MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
     "instance-segmentation": "yolact",
     "classification": "vit",
+    "keypoint-detection": "yolov8n",
 }
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
@@ -55,7 +56,8 @@ DEFAULT_ERROR_HANDLERS = {
     401: lambda e: raise_from_lambda(
         e,
         RoboflowAPINotAuthorizedError,
-        "Unauthorized access to roboflow API - check API key.",
+        "Unauthorized access to roboflow API - check API key. Visit "
+        "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
     404: lambda e: raise_from_lambda(
         e, RoboflowAPINotNotFoundError, NOT_FOUND_ERROR_MESSAGE

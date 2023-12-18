@@ -14,8 +14,10 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.utils.validate import get_num_classes_from_model_prediction_shape
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):

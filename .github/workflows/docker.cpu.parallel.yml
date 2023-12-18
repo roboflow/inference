@@ -1,4 +1,4 @@
-name: Build and Push CPU Container
+name: Build and Push CPU Container Parallel
 
 on:
   release:
@@ -10,7 +10,8 @@ env:
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: group8core
     steps:
       -
         name: Set up QEMU

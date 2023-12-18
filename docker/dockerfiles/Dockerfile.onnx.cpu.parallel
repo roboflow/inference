@@ -1,4 +1,4 @@
-FROM python:3.9
+FROM python:3.9 as base
 
 WORKDIR /app
 
@@ -35,12 +35,17 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.parallel.txt \
+    wheel>=0.38.0 \
+    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 RUN apt-get update && apt-get install -y lsb-release curl gpg
 RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
+
+FROM scratch
+COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference

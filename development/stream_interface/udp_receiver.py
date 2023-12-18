@@ -2,13 +2,14 @@ import json
 import os
 import socket
 
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "9999"))
 BUFFER_SIZE = 65535
 
 
 def main() -> None:
     udp_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-    udp_socket.bind(("127.0.0.1", PORT))
+    udp_socket.bind((HOST, PORT))
     try:
         while True:
             message, _ = udp_socket.recvfrom(BUFFER_SIZE)

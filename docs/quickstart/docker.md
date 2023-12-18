@@ -131,7 +131,7 @@ Server in a container.
 
 You may add the flag `-e ROBOFLOW_API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your [Roboflow API key here](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
-You may add the flag `-v $(pwd)/cache:/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/cache`.
+You may add the flag `-v $(pwd)/cache:/tmp/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/tmp/cache`.
 
 ### Advanced: Build a Docker Container from Scratch
 
@@ -148,41 +148,41 @@ Choose a Dockerfile from the following options, depending on the hardware you wa
     === "x86 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.cpu \
+        -f docker/dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
 
     === "arm64 CPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.cpu \
+        -f docker/dockerfiles/Dockerfile.onnx.cpu \
         -t roboflow/roboflow-inference-server-cpu .
         ```
 
     === "GPU"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.gpu \
+        -f docker/dockerfiles/Dockerfile.onnx.gpu \
         -t roboflow/roboflow-inference-server-gpu .
         ```
 
     === "Jetson 4.5.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson \
         -t roboflow/roboflow-inference-server-jetson-4.5.0 .
         ```
 
     === "Jetson 4.6.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson \
         -t roboflow/roboflow-inference-server-jetson-4.6.1 .
         ```
 
     === "Jetson 5.x"
         ```
         docker build \
-        -f dockerfiles/Dockerfile.onnx.jetson.5.1.1 \
+        -f docker/dockerfiles/Dockerfile.onnx.jetson.5.1.1 \
         -t roboflow/roboflow-inference-server-jetson-5.1.1 .
         ```

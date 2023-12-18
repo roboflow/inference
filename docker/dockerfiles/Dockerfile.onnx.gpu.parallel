@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -38,24 +38,16 @@ RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyri
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
+
+FROM scratch
+COPY --from=base / /
+
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
-
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV NUM_CELERY_WORKERS=4 
+COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
 ENV PYTHONPATH=/app/
-ENV REDIS_HOST="localhost"
-ENV REDIS_PORT="6380"
+ENV PROJECT=roboflow-platform
 ENV CORE_MODELS_ENABLED=false
 
-
-ENTRYPOINT redis-server --io-threads 8 --save "" --port $REDIS_PORT & \
-    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier=4 --concurrency=$NUM_CELERY_WORKERS -Q pre  --loglevel=WARNING & \
-    celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier=4 --concurrency=$NUM_CELERY_WORKERS -Q post  --loglevel=INFO & \
-    python3 inference/enterprise/parallel/infer.py & \
-    gunicorn parallel_http:app --workers=$NUM_WORKERS --bind=$HOST:$PORT -k uvicorn.workers.UvicornWorker && fg
+ENTRYPOINT python3 entrypoint.py

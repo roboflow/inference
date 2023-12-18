@@ -37,16 +37,16 @@ class DocTR(RoboflowCoreModel):
         self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
         self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
 
-        os.makedirs("/tmp/cache/doctr_rec/models/", exist_ok=True)
-        os.makedirs("/tmp/cache/doctr_det/models/", exist_ok=True)
+        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_rec/models/", exist_ok=True)
+        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_det/models/", exist_ok=True)
 
         shutil.copyfile(
-            "/tmp/cache/doctr_det/db_resnet50/model.pt",
-            "/tmp/cache/doctr_det/models/db_resnet50-ac60cadc.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/db_resnet50/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/models/db_resnet50-ac60cadc.pt",
         )
         shutil.copyfile(
-            "/tmp/cache/doctr_rec/crnn_vgg16_bn/model.pt",
-            "/tmp/cache/doctr_rec/models/crnn_vgg16_bn-9762b0b0.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/crnn_vgg16_bn/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/models/crnn_vgg16_bn-9762b0b0.pt",
         )
 
         self.model = ocr_predictor(

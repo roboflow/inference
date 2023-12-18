@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -35,6 +35,9 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.cogvlm.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+FROM scratch
+COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
