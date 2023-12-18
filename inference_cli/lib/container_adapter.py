@@ -2,6 +2,7 @@ import subprocess
 from typing import Optional, Union, Dict, List
 
 import typer
+from docker.models.containers import Container
 
 import docker
 
@@ -10,9 +11,9 @@ from inference_cli.lib.utils import read_env_file
 docker_client = docker.from_env()
 
 
-def ask_user_to_kill_container(c):
-    name = c.attrs.get("Name", "")
-    env_vars = c.attrs.get("Config", {}).get("Env", {})
+def ask_user_to_kill_container(container: Container) -> bool:
+    name = container.attrs.get("Name", "")
+    env_vars = container.attrs.get("Config", {}).get("Env", {})
     port = 9001
     for var in env_vars:
         if var.startswith("PORT="):
@@ -23,7 +24,7 @@ def ask_user_to_kill_container(c):
     return should_delete
 
 
-def is_inference_server_container(container):
+def is_inference_server_container(container: Container) -> bool:
     image_tags = container.image.tags
     for t in image_tags:
         if t.startswith("roboflow/roboflow-inference-server"):
@@ -31,20 +32,39 @@ def is_inference_server_container(container):
     return False
 
 
-def handle_existing_containers(containers):
-    has_existing_containers = False
-    for c in containers:
-        if is_inference_server_container(c):
-            has_existing_containers = True
-            if c.attrs.get("State", {}).get("Status", "").lower() == "running":
-                should_kill = ask_user_to_kill_container(c)
-                if should_kill:
-                    c.kill()
-                    has_existing_containers = False
-    return has_existing_containers
+def terminate_running_containers(
+    containers: List[Container], interactive_mode: bool = True
+) -> bool:
+    """
+    Args:
+        containers (List[Container]): List of containers to handle
+        interactive_mode (bool): Flag to determine if user prompt should decide on container termination
+
+    Returns: boolean value that informs if there are containers that have not received SIGKILL
+        as a result of procedure.
+    """
+    running_inference_containers = [
+        c for c in containers if is_container_running(container=c)
+    ]
+    containers_to_kill = running_inference_containers
+    if interactive_mode:
+        containers_to_kill = [
+            c for c in running_inference_containers if ask_user_to_kill_container(c)
+        ]
+    kill_containers(containers=containers_to_kill)
+    return len(containers_to_kill) < len(running_inference_containers)
 
 
-def find_existing_containers():
+def is_container_running(container: Container) -> str:
+    return container.attrs.get("State", {}).get("Status", "").lower() == "running"
+
+
+def kill_containers(containers: List[Container]) -> None:
+    for container in containers:
+        container.kill()
+
+
+def find_running_inference_containers() -> List[Container]:
     containers = []
     for c in docker_client.containers.list():
         if is_inference_server_container(c):
@@ -53,7 +73,7 @@ def find_existing_containers():
     return containers
 
 
-def get_image():
+def get_image() -> str:
     try:
         subprocess.check_output("nvidia-smi")
         print("GPU detected. Using a GPU image.")
@@ -74,9 +94,9 @@ def start_inference_container(
     api_key: Optional[str] = None,
     env_file_path: Optional[str] = None,
 ) -> None:
-    containers = find_existing_containers()
+    containers = find_running_inference_containers()
     if len(containers) > 0:
-        still_has_containers = handle_existing_containers(containers)
+        still_has_containers = terminate_running_containers(containers)
         if still_has_containers:
             print("Please kill the existing containers and try again.")
             return
@@ -88,9 +108,9 @@ def start_inference_container(
     privileged = False
     if "gpu" in image:
         privileged = True
-        device_requests = (
-            [docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])],
-        )
+        device_requests = [
+            docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
+        ]
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -136,8 +156,16 @@ def prepare_container_environment(
     return [f"{key}={value}" for key, value in environment.items()]
 
 
+def stop_inference_containers() -> None:
+    inference_containers = find_running_inference_containers()
+    interactive_mode = len(inference_containers) > 1
+    terminate_running_containers(
+        containers=inference_containers, interactive_mode=interactive_mode
+    )
+
+
 def check_inference_server_status():
-    containers = find_existing_containers()
+    containers = find_running_inference_containers()
     if len(containers) > 0:
         for c in containers:
             container_name = c.attrs.get("Name", "")
@@ -163,7 +191,3 @@ Image: {image}
             )
             return
     print("No inference server container running.")
-
-
-if __name__ == "__main__":
-    start_inference_container("my_api_key")

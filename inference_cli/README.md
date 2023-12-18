@@ -53,6 +53,14 @@ Checks the status of the local inference server.
 inference server status
 ```
 
+### inference server stop
+
+Stops the inference server.
+
+```bash
+inference server stop
+```
+
 ### inference infer
 
 Runs inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run inference on our hosted inference server.
