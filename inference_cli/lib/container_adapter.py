@@ -3,10 +3,10 @@ from typing import Dict, List, Optional, Union
 
 import typer
 from docker.models.containers import Container
+from rich.progress import Progress, TaskID
 
 import docker
 from inference_cli.lib.utils import read_env_file
-from rich.progress import Progress, TaskID
 
 docker_client = docker.from_env()
 
@@ -200,22 +200,25 @@ def pull_image(image: str) -> None:
     with Progress() as progress:
         logs_stream = docker_client.api.pull(image, stream=True, decode=True)
         for line in logs_stream:
-            show_progress(log_line=line, progress=progress, progress_tasks=progress_tasks)
+            show_progress(
+                log_line=line, progress=progress, progress_tasks=progress_tasks
+            )
     print(f"Image {image} pulled.")
 
 
-def show_progress(log_line: dict, progress: Progress, progress_tasks: Dict[str, TaskID]) -> None:
+def show_progress(
+    log_line: dict, progress: Progress, progress_tasks: Dict[str, TaskID]
+) -> None:
     log_id, status = log_line.get("id"), log_line.get("status")
     if log_line["status"].lower() == "downloading":
         task_id = f"[red][Downloading {log_id}]"
     elif log_line["status"].lower() == "extracting":
-        task_id = f"[green][Extracting  {log_id}]"
+        task_id = f"[green][Extracting {log_id}]"
     else:
         return None
     if task_id not in progress_tasks:
         progress_tasks[task_id] = progress.add_task(
-            f"{task_id}",
-            total=log_line.get("progressDetail", {}).get("total")
+            f"{task_id}", total=log_line.get("progressDetail", {}).get("total")
         )
     else:
         progress.update(
