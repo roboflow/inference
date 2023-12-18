@@ -162,6 +162,11 @@ From there you can run the inference server. See [Docker quickstart via CLI](./q
 inference server start
 ```
 
+CLI supports also stopping the server via:
+```bash
+inference server stop
+```
+
 To use the CLI to make inferences, first [find your project ID and model version number in Roboflow](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
 See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
