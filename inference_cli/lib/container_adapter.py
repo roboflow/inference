@@ -1,10 +1,11 @@
 import subprocess
-from typing import List
+from typing import Dict, List, Optional, Union
 
 import typer
 from docker.models.containers import Container
 
 import docker
+from inference_cli.lib.utils import read_env_file
 
 docker_client = docker.from_env()
 
@@ -82,15 +83,16 @@ def get_image() -> str:
 
 
 def start_inference_container(
-    api_key,
-    image=None,
-    port=9001,
-    labels=None,
-    project="roboflow-platform",
-    metrics_enabled=True,
-    device_id=None,
-    num_workers=1,
-):
+    image: Optional[str] = None,
+    port: int = 9001,
+    labels: Optional[Union[Dict[str, str], List[str]]] = None,
+    project: str = "roboflow-platform",
+    metrics_enabled: bool = True,
+    device_id: Optional[str] = None,
+    num_workers: int = 1,
+    api_key: Optional[str] = None,
+    env_file_path: Optional[str] = None,
+) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
         still_has_containers = terminate_running_containers(containers)
@@ -108,7 +110,15 @@ def start_inference_container(
         device_requests = [
             docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
         ]
-
+    environment = prepare_container_environment(
+        port=port,
+        project=project,
+        metrics_enabled=metrics_enabled,
+        device_id=device_id,
+        num_workers=num_workers,
+        api_key=api_key,
+        env_file_path=env_file_path,
+    )
     print(f"Starting inference server container...")
     docker_client.containers.run(
         image=image,
@@ -116,18 +126,33 @@ def start_inference_container(
         detach=True,
         labels=labels,
         ports={"9001": port},
-        # network="host",
         device_requests=device_requests,
-        environment=[
-            "HOST=0.0.0.0",
-            f"PORT={port}",
-            f"PROJECT={project}",
-            f"METRICS_ENABLED={metrics_enabled}",
-            f"DEVICE_ID={device_id}",
-            f"API_KEY={api_key}",
-            f"NUM_WORKERS={num_workers}",
-        ],
+        environment=environment,
     )
+
+
+def prepare_container_environment(
+    port: int,
+    project: str,
+    metrics_enabled: bool,
+    device_id: Optional[str],
+    num_workers: int,
+    api_key: Optional[str],
+    env_file_path: Optional[str],
+) -> List[str]:
+    environment = {}
+    if env_file_path is not None:
+        environment = read_env_file(path=env_file_path)
+    environment["HOST"] = "0.0.0.0"
+    environment["PORT"] = str(port)
+    environment["PROJECT"] = project
+    environment["METRICS_ENABLED"] = str(metrics_enabled)
+    if device_id is not None:
+        environment["DEVICE_ID"] = device_id
+    if api_key is not None:
+        environment["API_KEY"] = api_key
+    environment["NUM_WORKERS"] = str(num_workers)
+    return [f"{key}={value}" for key, value in environment.items()]
 
 
 def stop_inference_containers() -> None:
