@@ -27,9 +27,6 @@ start_test_docker_jetson:
 stop_test_docker:
 	docker rm -f inference-test
 
-remove_test_docker_image:
-	docker rmi roboflow/${INFERENCE_SERVER_REPO}:test
-
 create_wheels:
 	python -m pip install --upgrade pip
 	python -m pip install wheel twine requests -r requirements/_requirements.txt
