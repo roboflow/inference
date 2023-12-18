@@ -147,7 +147,7 @@ def pull_image(image: str) -> None:
         logs_stream = docker_client.api.pull(image, stream=True, decode=True)
         for line in logs_stream:
             show_progress(log_line=line, progress=progress, progress_tasks=progress_tasks)
-    print(f"Image {image} pooled.")
+    print(f"Image {image} pulled.")
 
 
 def show_progress(log_line: dict, progress: Progress, progress_tasks: Dict[str, TaskID]) -> None:
