@@ -52,3 +52,7 @@ jobs:
         run: |
           python -m pip install -r requirements/requirements.sdk.http.txt
           python -m pytest tests/inference_sdk/unit_tests
+      - name: 🧪 Unit Tests of Inference CLI
+        run: |
+          python -m pip install -r requirements/requirements.cli.txt
+          python -m pytest tests/inference_cli/unit_tests
