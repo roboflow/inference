@@ -84,9 +84,9 @@ def start_inference_container(
     privileged = False
     if "gpu" in image:
         privileged = True
-        device_requests = (
-            [docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])],
-        )
+        device_requests = [
+            docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
+        ]
 
     print(f"Starting inference server container...")
     docker_client.containers.run(
