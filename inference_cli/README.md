@@ -38,8 +38,12 @@ you haven't installed Docker yet, you can get it from [Docker's official website
 The CLI will automatically detect the device you are running on and pull the appropriate Docker image.
 
 ```bash
-inference server start --port 9001
+inference server start --port 9001 [-e {optional_path_to_file_with_env_variables}]
 ```
+
+Parameter `--env-file` (or `-e`) is the optional path for .env file that will be loaded into inference server 
+in case that values of internal parameters needs to be adjusted. Any value passed explicitly as command parameter
+is considered as more important and will shadow the value defined in `.env` file under the same target variable name.
 
 ### inference server status
 
