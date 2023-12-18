@@ -171,8 +171,10 @@ def test_show_progress_when_new_downloading_status_encountered() -> None:
         )
 
         # then
-        assert len(progress_tasks) == 1
-        assert "[red][Downloading 1]" in progress_tasks
+        assert len(progress_tasks) == 1, "One new task is expected to be added"
+        assert (
+            "[red][Downloading 1]" in progress_tasks
+        ), "ID for new task should be [red][Downloading 1]"
 
 
 def test_show_progress_when_update_on_existing_download_encountered() -> None:
@@ -195,8 +197,10 @@ def test_show_progress_when_update_on_existing_download_encountered() -> None:
         )
 
         # then
-        assert len(progress_tasks) == 1
-        assert abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        assert len(progress_tasks) == 1, "No new task to be created"
+        assert (
+            abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        ), "Progress should match 3% (3.0 / 100.0)"
 
 
 def test_show_progress_when_new_extracting_status_encountered() -> None:
@@ -211,8 +215,10 @@ def test_show_progress_when_new_extracting_status_encountered() -> None:
         )
 
         # then
-        assert len(progress_tasks) == 1
-        assert "[green][Extracting 1]" in progress_tasks
+        assert len(progress_tasks) == 1, "One new task is expected to be added"
+        assert (
+            "[green][Extracting 1]" in progress_tasks
+        ), "ID for new task should be [green][Extracting 1]"
 
 
 def test_show_progress_when_update_on_existing_extracting_encountered() -> None:
@@ -231,8 +237,10 @@ def test_show_progress_when_update_on_existing_extracting_encountered() -> None:
         )
 
         # then
-        assert len(progress_tasks) == 1
-        assert abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        assert len(progress_tasks) == 1, "No new task to be created"
+        assert (
+            abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        ), "Progress should match 3% (3.0 / 100.0)"
 
 
 def test_show_progress_when_unknown_status_given() -> None:
@@ -247,4 +255,6 @@ def test_show_progress_when_unknown_status_given() -> None:
         )
 
         # then
-        assert len(progress_tasks) == 0
+        assert (
+            len(progress_tasks) == 0
+        ), "No new task should be added on the update which is not recognised"
