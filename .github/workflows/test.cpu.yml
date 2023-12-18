@@ -10,7 +10,6 @@ jobs:
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core
-      labels: ubuntu-latest
 
     steps:
       - name: Set up QEMU
