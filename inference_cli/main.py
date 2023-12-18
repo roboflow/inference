@@ -1,7 +1,8 @@
-import inference_cli.lib
 import typer
-from inference_cli.server import server_app
 from typing_extensions import Annotated
+
+import inference_cli.lib
+from inference_cli.server import server_app
 
 app = typer.Typer()
 
