@@ -60,6 +60,7 @@ from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -123,7 +124,7 @@ class RoboflowInferenceModel(Model):
                 f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 f"retrieve the key."
             )
-
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
