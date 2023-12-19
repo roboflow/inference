@@ -29,7 +29,13 @@ Below is a demo of CLIP classifying video frames in real time. The code for the 
   <source src="https://media.roboflow.com/clip-coffee.mp4" type="video/mp4">
 </video>
 
-Create a new Python file and add the following code:
+First, install the Inference CLIP extension:
+
+```
+pip install inference[clip]
+```
+
+Then, create a new Python file and add the following code:
 
 ```python
 import cv2
