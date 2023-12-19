@@ -704,11 +704,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the Grounding DINO model.
