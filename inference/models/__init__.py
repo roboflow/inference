@@ -22,7 +22,7 @@ try:
     from inference.models.grounding_dino import GroundingDINO
 except:
     pass
-  
+
 try:
     from inference.models.cogvlm import CogVLM
 except:
