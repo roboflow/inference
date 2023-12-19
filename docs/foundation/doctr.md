@@ -1,6 +1,6 @@
-[CogVLM](https://github.com/THUDM/CogVLM) is a Large Multimodal Model (LMM). CogVLM is available for use in Inference.
+[DocTR](https://github.com/mindee/doctr) is an Optical Character Recognition (OCR) model.
 
-You can ask CogVLM questions about the contents of an image and retrieve a text response.
+You can use DocTR to read the text in an image.
 
 To use DocTR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
 

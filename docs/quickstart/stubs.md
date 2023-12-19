@@ -1,27 +1,30 @@
-## `inference` without model? Is that possible?
-Inference offers a way to expose models stub - which will not produce any meaningful predictions, but can be used for
-several purposes:
-* initial integration on your end with `inference` serving
-* collecting dataset via `inference` Active Learning capabilities
+You can use Inference without a trained model. This is useful for testing your integration with Inference, or for collecting data for Active Learning.
 
-## How stubs work?
-Simply, create workspace and project at [Roboflow platform](https://app.roboflow.com). Once you are done - use the 
-client to send request to the API:
+We call model endpoints without a trained model "stubs".
+
+## Create a Stub
+
+To create a stub, first create workspace and project on the [Roboflow platform](https://app.roboflow.com). Then, use the Inference
+client to send request to your Inference HTTP API:
 
 ```python
 import cv2
 from inference_sdk import InferenceHTTPClient
+import os
 
 CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # if inference docker container is running locally
-    api_key="XXX"
+    api_url="http://localhost:9001",
+    api_key=os.environ["API_KEY"],
 )
 
 image = cv2.imread(...)
-CLIENT.infer(image, model_id="YOUR-PROJECT-NAME/0")   # use version "0" to denote that you want stub model
+CLIENT.infer(image, model_id="YOUR-PROJECT-NAME/0")
 ```
 
-As a result - you will receive the following response:
+Use `/0` at the end of your model ID to denote you want to use the stub model endpoint.
+
+You will receive a response in the following format:
+
 ```json
 {
     "time": 0.0002442499971948564,
@@ -30,6 +33,3 @@ As a result - you will receive the following response:
     "task_type": "instance-segmentation"
 }
 ```
-
-You should not rely on response format, as it will change once you train and deploy a model, but utilising stubs
-let you avoid integration cold start.

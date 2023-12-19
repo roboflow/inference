@@ -71,8 +71,9 @@ For example, you can use the following code to print the predictions to the cons
 
 ```python
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+import numpy as np
 
-def on_prediction(predictions, video_frame) -> None:
+def on_prediction(predictions: dict, video_frame: np.array) -> None:
     print(predictions)
     pass
 
@@ -85,42 +86,25 @@ pipeline.start()
 pipeline.join()
 ```
 
-## New stream interface!
+## Performance
 
-### Motivation
+We tested the performance of Inference on a variety of hardware devices.
 
-We've identified certain problems with our previous implementation of `inference.Stream`:
+Below are the results of our benchmarking tests for Inference.
 
-- it could not achieve high throughput of processing
-- in case of source disconnection - it was not attempting to re-connect automatically
+### MacBook M2
 
-That's why we've re-designed API and provided new abstraction - called `InferencePipeline`. At the moment, we
-are testing and improving implementation - hoping that over time it will be a replacement for `inference.Stream`.
-
-### Why to migrate?
-
-We understand that each breaking change may be hard to adopt on your end, but the changes we introduced were meant
-to improve the quality. Here are the results:
-
-#### Performance
-
-##### MacBook M2
-
-| Test     | OLD (FPS) | NEW (FPS) |
-| -------- | :-------: | :-------: |
-| yolov8-n |    ~6     |    ~26    |
-| yolov8-s |   ~4.5    |    ~12    |
-| yolov8-m |   ~3.5    |    ~5     |
+| Test     |   FPS     |
+| -------- | :-------: |
+| yolov8-n |    ~26    |
+| yolov8-s |    ~12    |
+| yolov8-m |    ~5     |
 
 Tested against the same 1080p 60fps RTSP stream emitted by localhost.
-For `yolov8-n` we also measured that new implementation operates on stream frames that are on average ~25ms old (
-measured from frame grabbing) compared to ~60ms for old implementation.
 
-##### Jetson Orin Nano
+### Jetson Orin Nano
 
-At Jetson, new implementation is also more performant:
-
-| Test     | NEW (FPS) |
+| Test     | FPS       |
 | -------- | :-------: |
 | yolov8-n |    ~25    |
 | yolov8-s |    ~18    |
@@ -130,10 +114,16 @@ With old version reaching at max 6-7 fps. This test was executed against 4K@60fp
 be decoded in native pace due to resource constrains. New implementation proved to run without stability issues
 for few hours straight.
 
-##### Tesla T4
+### Tesla T4
 
 GPU workstation with Tesla T4 was able to run 4 concurrent HD streams at 15FPS utilising ~80% GPU - reaching
 over 60FPS throughput per GPU (against `yolov8-n`).
+
+## Migrating from `inference.Stream` to `InferencePipeline`
+
+Inference is deprecating support for `inference.Stream`, our video stream inference interface. `inference.Stream` is being replaced with `InferencePipeline`, which has feature parity and achieves better performance. There are also new, more advanced features available in `InferencePipeline`.
+
+### New Features in `InferencePipeline`
 
 #### Stability
 
@@ -152,7 +142,7 @@ will automatically adjust to performance of the hardware to ensure best experien
 New implementation allows to create reports about InferencePipeline state in runtime - providing an easy way to
 build monitoring on top of it.
 
-### How to migrate?
+### Migrate from `inference.Stream` to `InferencePipeline`
 
 Let's assume you used `inference.Stream(...)` with your custom handlers:
 

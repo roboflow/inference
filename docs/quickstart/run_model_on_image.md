@@ -4,10 +4,13 @@ An Inference server will manage inference. Inference can be run on your local ma
 
 If you need to deploy to the edge, you can use a device like the Jetson Nano. If you need high-performance compute for batch jobs, you can deploy Inference to a server with a GPU.
 
-!!! tip "Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run."
+!!! tip
+
+    Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run.
 
 !!! info
-If you haven't already, follow our Run Your First Model guide to install and set up Inference.
+
+    If you haven't already, follow our [Run Your First Model guide](/quickstart/run_a_model/) to install and set up Inference.
 
 Create a new Python file and add the following code:
 

@@ -8,7 +8,7 @@ You can run multiple models in parallel with Inference with parallel processing,
 
 Inference Parallel supports all the same features as Roboflow Inference, with the exception that it does not support Core models (i.e. CLIP and SAM).
 
-With Inference Parallel, Preprocessing, auto batching, inference, and post processing all run in separate threads to increase server FPS throughput.
+With Inference Parallel, preprocessing, auto batching, inference, and post processing all run in separate threads to increase server FPS throughput.
 
 Separate requests to the same model will be batched on the fly as allowed by `$MAX_BATCH_SIZE`, and then response handling will occurr independently. Images are passed via Python's SharedMemory module to maximize throughput.
 

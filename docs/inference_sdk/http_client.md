@@ -360,7 +360,3 @@ at the moment for models deployed at Roboflow platform.
 will be defaulted to version `v0`.
 
 Usage of model registry control methods with `v0` clients will raise `WrongClientModeError`.
-
-### How I can adjust `InferenceHTTPClient` to work in my use-case?
-
-There are few ways on how configuration can be altered:

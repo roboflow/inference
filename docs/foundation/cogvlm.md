@@ -24,54 +24,68 @@ export ROBOFLOW_API_KEY=<your api key>
 
 Let's ask a question about the following image:
 
-[image]
+![A forklift in a warehouse](https://lh7-us.googleusercontent.com/4rgEU3nMJQzr54mYpGifEQp0hn3wu4oG8Sa21373M43eQ5TML-lBJyzYz3ZmPEETFwKnUGMmncsWA68wHo-4yzEGTV--TNCY7MJTxpJ-cS2w9JdUuIGVnwfAQN_72wK7TgGv-gtuLusJtAjAZxJVBFA)
 
 Create a new Python file and add the following code:
 
 ```python
-import requests
 import base64
-from PIL import Image
 import os
-from io import BytesIO
+from PIL import Image
+import requests
 
+PORT = 9001
 API_KEY = os.environ["API_KEY"]
-IMAGE = "container.jpeg"
+IMAGE_PATH = "forklift.png"
 
-image = Image.open(IMAGE)
-buffered = BytesIO()
 
-image.save(buffered, quality=100, format="JPEG")
+def encode_base64(image_path):
+    with open(image_path, "rb") as image:
+        x = image.read()
+        image_string = base64.b64encode(x)
 
-img_str = base64.b64encode(buffered.getvalue())
-img_str = img_str.decode("ascii")
+    return image_string.decode("ascii")
 
-data = {
+prompt = "Is there a forklift close to a conveyor belt?"
+
+infer_payload = {
     "image": {
         "type": "base64",
-        "value": img_str,
-    }
+        "value": encode_base64(IMAGE_PATH),
+    },
+    "api_key": API_KEY,
+    "prompt": prompt,
 }
 
-ocr_results = requests.post("http://localhost:9001/doctr/ocr?api_key=" + API_KEY, json=data).json()
+results = requests.post(
+    f"http://localhost:{PORT}/llm/cogvlm",
+    json=infer_payload,
+)
 
-print(ocr_results)
+print(results.json())
 ```
 
-Above, replace `container.jpeg` with the path to the image in which you want to detect objects.
+Above, replace `forklift.jpeg` with the path to the image in which you want to detect objects.
 
-Then, run the Python script you have created:
+Let's use the prompt "Is there a forklift close to a conveyor belt?”"
 
-```
+Run the Python script you have created:
+
+```bash
 python app.py
 ```
 
-The results of DocTR will appear in your terminal:
+The results of CogVLM will appear in your terminal:
 
+```python
+{
+    'response': 'yes, there is a forklift close to a conveyor belt, and it appears to be transporting a stack of items onto it.',
+    'time': 12.89864671198302
+}
 ```
-{'result': '', 'time': 3.98263641900121, 'result': 'MSKU 0439215', 'time': 3.870879542999319}
-```
+
+CogVLM successfully answered our question, noting there is a forklift close to the conveyor belt in the image.
 
 ## See Also
 
-- [How to detect text in images with OCR](https://blog.roboflow.com/ocr-api/)
+- [How to deploy CogVLM](https://blog.roboflow.com/how-to-deploy-cogvlm/)

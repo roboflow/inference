@@ -1,9 +1,5 @@
 # Active Learning
 
-!!! note
-
-    This feature is only available for Roboflow Enterprise users. [Contact our sales team](https://roboflow.com/sales) to learn more about Roboflow Enterprise.
-
 You can collect images automatically from Inference deployments for use in training new versions of a model. This is called active learning.
 
 By collecting data actively that you can later label and use in training, you can gather images representative of the 
