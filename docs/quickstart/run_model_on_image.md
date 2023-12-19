@@ -1,16 +1,10 @@
-# HTTP Inference
+A Roboflow Inference server provides a standard API through which to run inference on computer vision models.
 
-The Roboflow Inference Server provides a standard API through which to run inference on computer vision models.
+In this guide, we show how to run inference on object detection, classification, and segmentation models using Inference.
 
-In this guide, we show how to run inference on object detection, classification, and segmentation models using the Inference Server.
+!!! note
 
-Currently, the server is compatible with models trained on Roboflow, but stay tuned as we actively develop support for bringing your own models.
-
-To run inference with the server, we will:
-
-1. Install the server
-2. Download a model for use on the server
-3. Run inference
+    Inference is compatible with models trained on Roboflow, but stay tuned as we actively develop support for bringing your own models.
 
 You can run inference on images from:
 
