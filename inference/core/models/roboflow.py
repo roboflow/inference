@@ -40,10 +40,11 @@ from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     LAMBDA,
+    MAX_BATCH_SIZE,
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH, MAX_BATCH_SIZE,
+    TENSORRT_CACHE_PATH,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -52,7 +53,10 @@ from inference.core.exceptions import (
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
-from inference.core.models.utils.batching import calculate_input_elements, create_batches
+from inference.core.models.utils.batching import (
+    calculate_input_elements,
+    create_batches,
+)
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,

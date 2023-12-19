@@ -185,7 +185,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 )
                 masks.append(polys)
         else:
-            masks.extend([[]]*len(predictions))
+            masks.extend([[]] * len(predictions))
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )
