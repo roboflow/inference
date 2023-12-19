@@ -1,3 +1,6 @@
 :root {
     --md-primary-fg-color: #8315F9;
 }
+.md-typeset h1 {
+    margin-bottom: 0;
+}

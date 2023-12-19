@@ -1,0 +1,21 @@
+name: Docs Workflow
+
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+      - run: pip install mkdocs-material
+      - run: pip install "mkdocstrings[python]"
+      - run: pip install "mkdocs-material[imaging]"
+      - run: pip install "mkdocs-swagger-ui-tag"
+      - run: mkdocs gh-deploy --force

@@ -1,9 +1,10 @@
 import os
 from typing import Optional, Tuple, Union
 
+from inference.core.cache import cache
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
 from inference.core.env import MODEL_CACHE_DIR
-from inference.core.exceptions import InvalidModelIDError, ModelNotRecognisedError
+from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
@@ -15,14 +16,19 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
 )
 from inference.core.utils.file_system import dump_json, read_json
+from inference.core.utils.roboflow import get_model_id_chunks
+from inference.models.aliases import resolve_roboflow_model_alias
 
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
     "sam": ("embed", "sam"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
-    "grounding_dino": ("object-detection", "grounding-dino"),
+    "grounding-dino": ("object-detection", "grounding-dino"),
+    "cogvlm": ("llm", "cogvlm"),
 }
+
+STUB_VERSION_ID = "0"
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -65,6 +71,7 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
@@ -78,13 +85,16 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
     project_task_type = get_roboflow_dataset_type(
         api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
     )
-    model_type = get_roboflow_model_type(
-        api_key=api_key,
-        workspace_id=workspace_id,
-        dataset_id=dataset_id,
-        version_id=version_id,
-        project_task_type=project_task_type,
-    )
+    if version_id == STUB_VERSION_ID:
+        model_type = "stub"
+    else:
+        model_type = get_roboflow_model_type(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            project_task_type=project_task_type,
+        )
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,
@@ -94,31 +104,25 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
     return project_task_type, model_type
 
 
-def get_model_id_chunks(model_id: str) -> Tuple[DatasetID, VersionID]:
-    model_id_chunks = model_id.split("/")
-    if len(model_id_chunks) != 2:
-        raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
-    return model_id_chunks[0], model_id_chunks[1]
-
-
 def get_model_metadata_from_cache(
     dataset_id: str, version_id: str
 ) -> Optional[Tuple[TaskType, ModelType]]:
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
-    if not os.path.isfile(model_type_cache_path):
-        return None
-    try:
-        model_metadata = read_json(path=model_type_cache_path)
-        if model_metadata_content_is_invalid(content=model_metadata):
+    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
+        if not os.path.isfile(model_type_cache_path):
             return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-    except ValueError as e:
-        logger.warning(
-            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
-        )
-        return None
+        try:
+            model_metadata = read_json(path=model_type_cache_path)
+            if model_metadata_content_is_invalid(content=model_metadata):
+                return None
+            return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
+        except ValueError as e:
+            logger.warning(
+                f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
+            )
+            return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
@@ -142,13 +146,17 @@ def save_model_metadata_in_cache(
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
-    model_type_cache_path = construct_model_type_cache_path(
-        dataset_id=dataset_id, version_id=version_id
-    )
-    metadata = {PROJECT_TASK_TYPE_KEY: project_task_type, MODEL_TYPE_KEY: model_type}
-    dump_json(
-        path=model_type_cache_path, content=metadata, allow_override=True, indent=4
-    )
+    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
+        model_type_cache_path = construct_model_type_cache_path(
+            dataset_id=dataset_id, version_id=version_id
+        )
+        metadata = {
+            PROJECT_TASK_TYPE_KEY: project_task_type,
+            MODEL_TYPE_KEY: model_type,
+        }
+        dump_json(
+            path=model_type_cache_path, content=metadata, allow_override=True, indent=4
+        )
 
 
 def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:

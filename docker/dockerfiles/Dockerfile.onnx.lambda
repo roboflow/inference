@@ -14,6 +14,7 @@ RUN yum update -y && yum install -y \
     libjpeg-devel \
     gcc \
     mesa-libGL \
+    pango \
     && yum clean all
 
 COPY requirements/requirements.clip.txt \
@@ -49,6 +50,7 @@ ENV CORE_MODEL_SAM_ENABLED=False
 ENV ALLOW_NUMPY_INPUT=False
 ENV INFERENCE_SERVER_ID=HostedInferenceLambda
 ENV DISABLE_VERSION_CHECK=true
+ENV DOCTR_MULTIPROCESSING_DISABLE=TRUE
 WORKDIR ${LAMBDA_TASK_ROOT}
 
 CMD [ "lambda.handler" ]

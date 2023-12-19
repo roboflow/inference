@@ -7,8 +7,8 @@ from typing import Generator
 
 import cv2
 import numpy as np
-from PIL import Image
 from _pytest.fixtures import fixture
+from PIL import Image
 
 ASSETS_DIR_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 
@@ -83,6 +83,12 @@ def image_as_gray_buffer() -> Generator[io.BytesIO, None, None]:
 def image_as_pickled_bytes() -> bytes:
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     return pickle.dumps(image)
+
+@fixture(scope="function")
+def image_as_base64_encoded_pickled_bytes() -> bytes:
+    image = np.zeros((128, 128, 3), dtype=np.uint8)
+    bytes = pickle.dumps(image)
+    return base64.b64encode(bytes).decode()
 
 
 @fixture(scope="function")

@@ -44,6 +44,9 @@ inference.Stream(
 )
 ```
 
+> [!NOTE]  
+> Currently, the stream interface only supports object detection
+
 Now let's extend the example to use [Supervision](https://roboflow.com/supervision)
 to visualize the predictions and display them on screen with OpenCV:
 
@@ -118,13 +121,13 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 - Run on x86 CPU:
 
 ```bash
-docker run --net=host roboflow/roboflow-inference-server-cpu:latest
+docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
 
 - Run on NVIDIA GPU:
 
 ```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
+docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 <details close>
@@ -134,12 +137,6 @@ docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:late
 
 ```bash
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
-```
-
-- Run on NVIDIA GPU with TensorRT Runtime:
-
-```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
 ```
 
 - Run on NVIDIA Jetson with JetPack `4.x`:

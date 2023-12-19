@@ -1,9 +1,10 @@
+import base64
 import traceback
 from functools import partial, wraps
 from typing import Any, List, Optional, Union
 
 import uvicorn
-from fastapi import Body, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +16,7 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -38,6 +40,7 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
+from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -47,6 +50,7 @@ from inference.core.entities.responses.inference import (
     KeypointsDetectionInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    StubResponse,
 )
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
@@ -59,6 +63,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -94,6 +99,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
 
 if LAMBDA:
@@ -250,14 +256,14 @@ class HttpInterface(BaseInterface):
                 """
                 response = await call_next(request)
                 if response.status_code >= 400:
-                    model_manager.model_manager.num_errors += 1
+                    self.model_manager.num_errors += 1
                 return response
 
         self.app = app
         self.model_manager = model_manager
 
-        def process_inference_request(
-            inference_request: InferenceRequest,
+        async def process_inference_request(
+            inference_request: InferenceRequest, **kwargs
         ) -> InferenceResponse:
             """Processes an inference request by calling the appropriate model.
 
@@ -270,9 +276,10 @@ class HttpInterface(BaseInterface):
             self.model_manager.add_model(
                 inference_request.model_id, inference_request.api_key
             )
-            return self.model_manager.infer_from_request(
-                inference_request.model_id, inference_request
+            resp = await self.model_manager.infer_from_request(
+                inference_request.model_id, inference_request, **kwargs
             )
+            return orjson_response(resp)
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -341,6 +348,7 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
+        load_cogvlm_model = partial(load_core_model, core_model="cogvlm")
 
         load_grounding_dino_model = partial(
             load_core_model, core_model="grounding_dino"
@@ -464,6 +472,7 @@ class HttpInterface(BaseInterface):
                 response_model=Union[
                     ObjectDetectionInferenceResponse,
                     List[ObjectDetectionInferenceResponse],
+                    StubResponse,
                 ],
                 summary="Object detection infer",
                 description="Run inference with the specified object detection model",
@@ -472,44 +481,58 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified object detection model.
 
                 Args:
                     inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
-
-                return process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/instance_segmentation",
-                response_model=InstanceSegmentationInferenceResponse,
+                response_model=Union[
+                    InstanceSegmentationInferenceResponse, StubResponse
+                ],
                 summary="Instance segmentation infer",
                 description="Run inference with the specified instance segmentation model",
             )
             @with_route_exceptions
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified instance segmentation model.
 
                 Args:
                     inference_request (InstanceSegmentationInferenceRequest): The request containing the necessary details for instance segmentation.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
 
-                return process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/classification",
                 response_model=Union[
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                 ],
                 summary="Classification infer",
                 description="Run inference with the specified classification model",
@@ -517,21 +540,27 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ):
                 """Run inference with the specified classification model.
 
                 Args:
                     inference_request (ClassificationInferenceRequest): The request containing the necessary details for classification.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
                 Returns:
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
 
-                return process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
+                )
 
             @app.post(
                 "/infer/keypoints_detection",
-                response_model=KeypointsDetectionInferenceResponse,
+                response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
             )
@@ -562,11 +591,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the OpenAI CLIP model.
@@ -580,7 +609,7 @@ class HttpInterface(BaseInterface):
                         ClipEmbeddingResponse: The response containing the embedded image.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -599,11 +628,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds text data using the OpenAI CLIP model.
@@ -617,7 +646,7 @@ class HttpInterface(BaseInterface):
                         ClipEmbeddingResponse: The response containing the embedded text.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -636,11 +665,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Computes similarity scores using the OpenAI CLIP model.
@@ -654,7 +683,7 @@ class HttpInterface(BaseInterface):
                         ClipCompareResponse: The response containing the similarity scores.
                     """
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -716,11 +745,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the DocTR model.
@@ -736,7 +765,7 @@ class HttpInterface(BaseInterface):
                     doctr_model_id = load_doctr_model(
                         inference_request, api_key=api_key
                     )
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
                     )
                     if LAMBDA:
@@ -757,11 +786,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Embeds image data using the Meta AI Segmant Anything Model (SAM).
@@ -775,7 +804,7 @@ class HttpInterface(BaseInterface):
                         M.SamEmbeddingResponse or Response: The response containing the embedded image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_from_request(
+                    model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -799,11 +828,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
@@ -817,7 +846,7 @@ class HttpInterface(BaseInterface):
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
-                    model_response = self.model_manager.infer_from_request(
+                    model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -843,11 +872,11 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
+                    request: Request,
                     api_key: Optional[str] = Query(
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
-                    request: Request = Body(),
                 ):
                     """
                     Detect gaze using the gaze detection model.
@@ -861,7 +890,7 @@ class HttpInterface(BaseInterface):
                         M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
                     """
                     gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
-                    response = self.model_manager.infer_from_request(
+                    response = await self.model_manager.infer_from_request(
                         gaze_model_id, inference_request
                     )
                     if LAMBDA:
@@ -869,6 +898,45 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(gaze_model_id, actor)
+                    return response
+
+            if CORE_MODEL_COGVLM_ENABLED:
+
+                @app.post(
+                    "/llm/cogvlm",
+                    response_model=CogVLMResponse,
+                    summary="CogVLM",
+                    description="Run the CogVLM model to chat or describe an image.",
+                )
+                @with_route_exceptions
+                async def cog_vlm(
+                    inference_request: CogVLMInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Chat with CogVLM or ask it about an image. Multi-image requests not currently supported.
+
+                    Args:
+                        inference_request (M.CogVLMInferenceRequest): The request containing the prompt and image to be described.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.CogVLMResponse: The model's text response
+                    """
+                    cog_model_id = load_cogvlm_model(inference_request, api_key=api_key)
+                    response = await self.model_manager.infer_from_request(
+                        cog_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(cog_model_id, actor)
                     return response
 
         if LEGACY_ROUTE_ENABLED:
@@ -882,12 +950,15 @@ class HttpInterface(BaseInterface):
                     ObjectDetectionInferenceResponse,
                     ClassificationInferenceResponse,
                     MultiLabelClassificationInferenceResponse,
+                    StubResponse,
                     Any,
                 ],
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
             async def legacy_infer_from_request(
+                background_tasks: BackgroundTasks,
+                request: Request,
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference"
                 ),
@@ -938,7 +1009,6 @@ class HttpInterface(BaseInterface):
                     0.3,
                     description="The IoU threhsold that must be met for a box pair to be considered duplicate during NMS",
                 ),
-                request: Request = Body(),
                 stroke: int = Query(
                     1, description="The stroke width used when visualizing predictions"
                 ),
@@ -970,6 +1040,7 @@ class HttpInterface(BaseInterface):
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
 
                 Args:
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
                     dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference.
                     version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference.
                     api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
@@ -997,9 +1068,10 @@ class HttpInterface(BaseInterface):
                         )
                     if "multipart/form-data" in request.headers["Content-Type"]:
                         form_data = await request.form()
-                        base64_image_str = form_data["file"].file
+                        base64_image_str = await form_data["file"].read()
+                        base64_image_str = base64.b64encode(base64_image_str)
                         request_image = InferenceRequestImage(
-                            type="multipart", value=base64_image_str
+                            type="base64", value=base64_image_str.decode("ascii")
                         )
                     elif (
                         "application/x-www-form-urlencoded"
@@ -1040,7 +1112,9 @@ class HttpInterface(BaseInterface):
                     request_model_id, api_key, model_id_alias=model_id
                 )
 
-                task_type = self.model_manager.get_task_type(request_model_id)
+                task_type = self.model_manager.get_task_type(
+                    request_model_id, api_key=api_key
+                )
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":
@@ -1051,10 +1125,11 @@ class HttpInterface(BaseInterface):
                     }
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
-                elif task_type == "keypoints-detection":
+                elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(
+                    api_key=api_key,
                     model_id=request_model_id,
                     image=request_image,
                     confidence=confidence,
@@ -1070,8 +1145,11 @@ class HttpInterface(BaseInterface):
                     **args,
                 )
 
-                inference_response = self.model_manager.infer_from_request(
-                    inference_request.model_id, inference_request
+                inference_response = await self.model_manager.infer_from_request(
+                    inference_request.model_id,
+                    inference_request,
+                    active_learning_eligible=True,
+                    background_tasks=background_tasks,
                 )
                 if format == "image":
                     return Response(
@@ -1079,7 +1157,7 @@ class HttpInterface(BaseInterface):
                         media_type="image/jpeg",
                     )
                 else:
-                    return inference_response
+                    return orjson_response(inference_response)
 
         if not LAMBDA:
             # Legacy clear cache endpoint for backwards compatability

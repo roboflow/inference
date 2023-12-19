@@ -1,3 +1,4 @@
+import os
 import time
 from threading import Thread
 
@@ -34,9 +35,27 @@ class WebcamStream:
         self.enforce_fps = enforce_fps
         self.frame_id = 0
         self.vcap = cv2.VideoCapture(self.stream_id)
+
+        for key in os.environ:
+            if key.startswith("CV2_CAP_PROP"):
+                opencv_prop = key[4:]
+                opencv_constant = getattr(cv2, opencv_prop, None)
+                if opencv_constant is not None:
+                    value = int(os.getenv(key))
+                    self.vcap.set(opencv_constant, value)
+                    logger.info(f"set {opencv_prop} to {value}")
+                else:
+                    logger.warn(f"Property {opencv_prop} not found in cv2")
+
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.max_fps = 30
+        self.file_mode = self.vcap.get(cv2.CAP_PROP_FRAME_COUNT) > 0
+        if self.enforce_fps and not self.file_mode:
+            logger.warn(
+                "Ignoring enforce_fps flag for this stream. It is not compatible with streams and will cause the process to crash"
+            )
+            self.enforce_fps = False
+        self.max_fps = None
         if self.vcap.isOpened() is False:
             logger.debug("[Exiting]: Error accessing webcam stream.")
             exit(0)
@@ -61,8 +80,7 @@ class WebcamStream:
     def update(self):
         """Update the frame by reading from the webcam."""
         frame_id = 0
-        skip_seconds = 0
-        last_frame_position = time.perf_counter()
+        next_frame_time = 0
         t0 = time.perf_counter()
         while True:
             t1 = time.perf_counter()
@@ -70,36 +88,40 @@ class WebcamStream:
                 break
 
             self.grabbed = self.vcap.grab()
-            if self.grabbed:
-                frame_id += 1
-                if (
-                    self.enforce_fps != "skip"
-                    or t1 >= last_frame_position + skip_seconds
-                ):
-                    ret, frame = self.vcap.retrieve()
-                    logger.debug("video capture FPS: %s", frame_id / (t1 - t0))
-                    if frame is not None:
-                        last_frame_position = t1
-                        self.frame_id = frame_id
-                        self.frame = frame
-                    else:
-                        logger.debug("[Exiting] Frame not available to retrieve")
-                        self.stopped = True
-                        break
-
             if self.grabbed is False:
                 logger.debug("[Exiting] No more frames to read")
                 self.stopped = True
                 break
-            if self.enforce_fps:
-                t2 = time.perf_counter()
-                next_frame = max(
-                    1 / self.max_fps + 0.02, 1 / self.fps_input_stream - (t2 - t1)
+            frame_id += 1
+            # We can't retrieve each frame on nano and other lower powered devices quickly enough to keep up with the stream.
+            # By default, we will only retrieve frames when we'll be ready process them (determined by self.max_fps).
+            if t1 > next_frame_time:
+                ret, frame = self.vcap.retrieve()
+                if frame is None:
+                    logger.debug("[Exiting] Frame not available for read")
+                    self.stopped = True
+                    break
+                logger.debug(
+                    f"retrieved frame {frame_id}, effective FPS: {frame_id / (t1 - t0):.2f}"
                 )
-                if self.enforce_fps == "skip":
-                    skip_seconds = next_frame
+                self.frame_id = frame_id
+                self.frame = frame
+                while self.file_mode and self.enforce_fps and self.max_fps is None:
+                    # sleep until we have processed the first frame and we know what our FPS should be
+                    time.sleep(0.01)
+                if self.max_fps is None:
+                    self.max_fps = 30
+                next_frame_time = t1 + (1 / self.max_fps) + 0.02
+            if self.file_mode:
+                t2 = time.perf_counter()
+                if self.enforce_fps:
+                    # when enforce_fps is true, grab video frames 1:1 with inference speed
+                    time_to_sleep = next_frame_time - t2
                 else:
-                    time.sleep(next_frame)
+                    # otherwise, grab at native FPS of the video file
+                    time_to_sleep = (1 / self.fps_input_stream) - (t2 - t1)
+                if time_to_sleep > 0:
+                    time.sleep(time_to_sleep)
         self.vcap.release()
 
     def read_opencv(self):

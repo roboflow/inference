@@ -22,6 +22,11 @@ try:
     from inference.models.grounding_dino import GroundingDINO
 except:
     pass
+  
+try:
+    from inference.models.cogvlm import CogVLM
+except:
+    pass
 
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT

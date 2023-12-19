@@ -1,0 +1,14 @@
+python-dotenv<=2.0.0
+requests
+pytest
+pillow 
+requests_toolbelt
+requests-mock==1.11.0
+black
+isort
+flake8
+rich
+pytest-asyncio<=0.21.1
+pytest-timeout>=2.2.0
+httpx
+uvicorn>=0.24.0

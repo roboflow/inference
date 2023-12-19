@@ -11,6 +11,9 @@ from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
 from inference.core.logger import logger
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes
 
@@ -155,7 +158,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
         **kwargs,
-    ) -> List[List[List[float]]]:
+    ) -> List[ObjectDetectionInferenceResponse]:
         """Postprocesses the object detection predictions.
 
         Args:
@@ -168,7 +171,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             max_detections (int): Maximum number of final detections. Default is 300.
 
         Returns:
-            List[List[float]]: The postprocessed predictions.
+            List[ObjectDetectionInferenceResponse]: The post-processed predictions.
         """
         predictions = predictions[0]
 
@@ -193,9 +196,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 "disable_preproc_static_crop"
             ],
         )
-        if not return_image_dims:
-            return predictions
-        return predictions, img_dims
+        return self.make_response(predictions, img_dims, **kwargs)
 
     def preprocess(
         self,
@@ -278,3 +279,15 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError("predict must be implemented by a subclass")
+
+    def validate_model_classes(self) -> None:
+        output_shape = self.get_model_output_shape()
+        num_classes = get_num_classes_from_model_prediction_shape(
+            output_shape[2], masks=0
+        )
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )

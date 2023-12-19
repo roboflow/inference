@@ -20,8 +20,7 @@ RUN apt-get update -y && apt-get install -y \
     libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
+COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
@@ -31,8 +30,8 @@ COPY requirements/requirements.sam.txt \
 RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 RUN pip3 install --upgrade pip  && pip3 install \
+    git+https://github.com/pypdfium2-team/pypdfium2 \
     -r _requirements.txt \
-    -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
@@ -48,7 +47,7 @@ RUN pip3 install onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl "opencv-pyth
 
 WORKDIR /app/
 COPY inference inference
-COPY docker/config/trt_http.py trt_http.py
+COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -62,4 +61,4 @@ ENV PORT=9001
 ENV OPENBLAS_CORETYPE=ARMV8 
 ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0
 
-ENTRYPOINT uvicorn trt_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

@@ -1,3 +1,11 @@
+from inference.core.env import API_KEY, API_KEY_ENV_NAMES
+from inference.core.exceptions import MissingApiKeyError
+from inference.core.models.stubs import (
+    ClassificationModelStub,
+    InstanceSegmentationModelStub,
+    KeypointsDetectionModelStub,
+    ObjectDetectionModelStub,
+)
 from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
@@ -12,12 +20,14 @@ from inference.models import (
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
 ROBOFLOW_MODEL_TYPES = {
+    ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
     ("classification", "yolov8n"): YOLOv8Classification,
     ("classification", "yolov8s"): YOLOv8Classification,
     ("classification", "yolov8m"): YOLOv8Classification,
     ("classification", "yolov8l"): YOLOv8Classification,
     ("classification", "yolov8x"): YOLOv8Classification,
+    ("object-detection", "stub"): ObjectDetectionModelStub,
     ("object-detection", "yolov5"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v2s"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6n"): YOLOv5ObjectDetection,
@@ -32,6 +42,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov8m"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
+    ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
         "yolov5-seg",
@@ -108,16 +119,17 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov8-seg",
     ): YOLOv8InstanceSegmentation,
-    ("keypoints-detection", "yolov8n"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8s"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8m"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8l"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8x"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8n-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8s-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
-    ("keypoints-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "stub"): KeypointsDetectionModelStub,
+    ("keypoint-detection", "yolov8n"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8s"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8m"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8l"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8x"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8n-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8s-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
+    ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
 }
 
 try:
@@ -151,11 +163,25 @@ except:
 try:
     from inference.models import GroundingDINO
 
-    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding_dino")] = GroundingDINO
+    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
+except:
+    pass
+  
+try:
+    from inference.models import CogVLM
+
+    ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM
 except:
     pass
 
 
-def get_roboflow_model(model_id, api_key=None, **kwargs):
+def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
+    if not api_key:
+        raise MissingApiKeyError(
+            "No API Key Found, must provide an API Key via key word argument 'api_key' or as an "
+            f"environment variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
+            f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+            f"retrieve the key."
+        )
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

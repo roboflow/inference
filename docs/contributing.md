@@ -1,12 +1,12 @@
 # Contributing to the Roboflow Inference Server 🛠️
 
-Thank you for your interest in contributing to the Roboflow Inference Server!
+Thank you for your interest in contributing to Inference.
 
-We welcome any contributions to help us improve the quality of `inference-server` and expand the range of supported models.
+We welcome any contributions to help us improve the quality of Inference.
 
 !!! note
 
-    Interested in adding a new model to Inference? Check out our guide on [how to add a model](https://inference.roboflow.com/add_a_model/).
+    Interested in seeing a new model in Inference? [File a Feature Request on GitHub](https://github.com/roboflow/inference/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.yml).
 
 ## Contribution Guidelines
 

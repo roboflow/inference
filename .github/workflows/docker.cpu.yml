@@ -3,13 +3,15 @@ name: Build and Push CPU Container
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 env:
   VERSION: '0.0.0' # Default version, will be overwritten
 
 jobs:
   docker:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: group8core
     steps:
       -
         name: Set up QEMU

@@ -37,13 +37,13 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 - Run on x86 CPU:
 
   ```bash
-  docker run --net=host roboflow/roboflow-inference-server-cpu:latest
+  docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
   ```
-    
+
 - Run on Nvidia GPU:
 
   ```bash
-  docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
+  docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
   ```
 
 ### UDP
@@ -51,9 +51,9 @@ You can learn more about Roboflow Inference Docker Image build, pull and run in 
 - Run on Nvidia GPU:
 
 ```bash
-docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e API_KEY=<> roboflow/roboflow-inference-server-udp-gpu:latest
+docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e ROBOFLOW_API_KEY=<> roboflow/roboflow-inference-server-udp-gpu:latest
 ```
-  
+
 <details close>
 <summary>👉 more docker run options</summary>
 
@@ -64,19 +64,13 @@ docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e API_KEY=<> rob
   ```bash
   docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
   ```
-  
-- Run on Nvidia GPU with TensorRT Runtime:
 
-  ```bash
-  docker run --network=host --gpus=all roboflow/roboflow-inference-server-trt:latest
-  ```
-  
 - Run on Nvidia Jetson with JetPack `4.x`:
 
   ```bash
   docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
   ```
-  
+
 - Run on Nvidia Jetson with JetPack `5.x`:
 
   ```bash
@@ -95,16 +89,16 @@ Before running the inference script, ensure that the `API_KEY` is set as an envi
 
 - For Unix/Linux:
 
-    ```bash
-    export API_KEY=your_api_key_here
-    ```
+  ```bash
+  export ROBOFLOW_API_KEY=your_api_key_here
+  ```
 
 - For Windows:
 
-    ```bash
-    set API_KEY=your_api_key_here
-    ```
-  
+  ```bash
+  set ROBOFLOW_API_KEY=your_api_key_here
+  ```
+
 Replace `your_api_key_here` with your actual API key.
 
 ## 📷 image inference example (HTTP)

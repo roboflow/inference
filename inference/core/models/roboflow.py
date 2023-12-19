@@ -32,8 +32,10 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
+    CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     INFER_BUCKET,
     LAMBDA,
@@ -51,13 +53,14 @@ from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.roboflow_api import (
     ModelEndpointType,
-    get_from_roboflow_api,
+    get_from_url,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
+from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -116,9 +119,12 @@ class RoboflowInferenceModel(Model):
             AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
         ):
             raise MissingApiKeyError(
-                "No API Key Found, must provide an API Key in each request or as an environment variable on server startup"
+                "No API Key Found, must provide an API Key in each request or as an environment "
+                f"variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
+                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                f"retrieve the key."
             )
-
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
@@ -191,6 +197,11 @@ class RoboflowInferenceModel(Model):
     def cache_key(self):
         return f"metadata:{self.endpoint}"
 
+    @staticmethod
+    def model_metadata_from_memcache_endpoint(endpoint):
+        model_metadata = cache.get(f"metadata:{endpoint}")
+        return model_metadata
+
     def model_metadata_from_memcache(self):
         model_metadata = cache.get(self.cache_key)
         return model_metadata
@@ -223,24 +234,28 @@ class RoboflowInferenceModel(Model):
         infer_bucket_files = self.get_infer_bucket_file_list()
         infer_bucket_files.append(self.weights_file)
         logger.debug(f"List of files required to load model: {infer_bucket_files}")
-        return infer_bucket_files
+        return [f for f in infer_bucket_files if f is not None]
 
     def download_model_artefacts_from_s3(self) -> None:
         try:
             logger.debug("Downloading model artifacts from S3")
             infer_bucket_files = self.get_all_required_infer_bucket_file()
-            cache_directory = get_cache_dir(model_id=self.endpoint)
+            cache_directory = get_cache_dir()
             s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
             download_s3_files_to_directory(
-                bucket=INFER_BUCKET,
+                bucket=self.model_artifact_bucket,
                 keys=s3_keys,
                 target_dir=cache_directory,
                 s3_client=S3_CLIENT,
             )
         except Exception as error:
             raise ModelArtefactError(
-                f"Could not obtain model artefacts from S3. Cause: {error}"
+                f"Could not obtain model artefacts from S3 with keys {s3_keys}. Cause: {error}"
             ) from error
+
+    @property
+    def model_artifact_bucket(self):
+        return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
@@ -269,8 +284,8 @@ class RoboflowInferenceModel(Model):
             raise ModelArtefactError(
                 "Could not find `environment` key in roboflow API model description response."
             )
-        environment = get_from_roboflow_api(api_data["environment"], json_response=True)
-        model_weights_response = get_from_roboflow_api(api_data["model"])
+        environment = get_from_url(api_data["environment"])
+        model_weights_response = get_from_url(api_data["model"], json_response=False)
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,
@@ -342,7 +357,8 @@ class RoboflowInferenceModel(Model):
                 self.resize_method = "Stretch to"
         else:
             self.resize_method = "Stretch to"
-        self.log(f"Resize method is '{self.resize_method}'")
+        logger.debug(f"Resize method is '{self.resize_method}'")
+        self.multiclass = self.environment.get("MULTICLASS", False)
 
     def initialize_model(self) -> None:
         """Initialize the model.
@@ -493,7 +509,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         for weights_url_key in api_data["weights"]:
             weights_url = api_data["weights"][weights_url_key]
             t1 = perf_counter()
-            model_weights_response = get_from_roboflow_api(weights_url)
+            model_weights_response = get_from_url(weights_url, json_response=False)
             filename = weights_url.split("?")[0].split("/")[-1]
             save_bytes_in_cache(
                 content=model_weights_response.content,
@@ -501,7 +517,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 model_id=self.endpoint,
             )
             if perf_counter() - t1 > 120:
-                self.log(
+                logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
                 api_data = get_roboflow_model_data(
@@ -543,6 +559,15 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         """
         raise NotImplementedError(self.__class__.__name__ + ".preprocess_image")
 
+    @property
+    def weights_file(self) -> str:
+        """Abstract property representing the file containing the model weights. For core models, all model artifacts are handled through get_infer_bucket_file_list method."""
+        return None
+
+    @property
+    def model_artifact_bucket(self):
+        return CORE_MODEL_BUCKET
+
 
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
@@ -580,6 +605,45 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     )
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
+        try:
+            self.validate_model()
+        except ModelArtefactError as e:
+            logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
+            self.clear_cache()
+            raise ModelArtefactError from e
+
+    def validate_model(self) -> None:
+        if not self.load_weights:
+            return
+        try:
+            assert self.onnx_session is not None
+        except AssertionError as e:
+            raise ModelArtefactError(
+                "ONNX session not initialized. Check that the model weights are available."
+            ) from e
+        try:
+            self.run_test_inference()
+        except Exception as e:
+            raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
+        try:
+            self.validate_model_classes()
+        except Exception as e:
+            raise ModelArtefactError(
+                f"Unable to validate model classes. Cause: {e}"
+            ) from e
+
+    def run_test_inference(self) -> None:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        return self.infer(test_image)
+
+    def get_model_output_shape(self) -> Tuple[int, int, int]:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        test_image, _ = self.preprocess(test_image)
+        output = self.predict(test_image)[0]
+        return output.shape
+
+    def validate_model_classes(self) -> None:
+        pass
 
     def get_infer_bucket_file_list(self) -> list:
         """Returns the list of files to be downloaded from the inference bucket for ONNX model.
@@ -592,15 +656,24 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         self.get_model_artifacts()
-        self.log("Creating inference session")
+        logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
-            self.onnx_session = onnxruntime.InferenceSession(
-                self.cache_file(self.weights_file),
-                providers=self.onnxruntime_execution_providers,
-            )
-            self.log(f"Session created in {perf_counter() - t1_session} seconds")
+            providers = self.onnxruntime_execution_providers
+            if not self.load_weights:
+                providers = ["CPUExecutionProvider"]
+            try:
+                self.onnx_session = onnxruntime.InferenceSession(
+                    self.cache_file(self.weights_file),
+                    providers=providers,
+                )
+            except Exception as e:
+                self.clear_cache()
+                raise ModelArtefactError(
+                    f"Unable to load ONNX session. Cause: {e}"
+                ) from e
+            logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             if REQUIRED_ONNX_PROVIDERS:
                 available_providers = onnxruntime.get_available_providers()
@@ -626,12 +699,12 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching enabled"
                 )
             else:
                 self.batching_enabled = False
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
@@ -640,7 +713,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 "img_size_h": self.img_size_h,
                 "img_size_w": self.img_size_w,
             }
-            self.log(f"Writing model metadata to memcache")
+            logger.debug(f"Writing model metadata to memcache")
             self.write_model_metadata_to_memcache(model_metadata)
             if not self.load_weights:  # had to load weights to get metadata
                 del self.onnx_session
@@ -649,19 +722,19 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 raise ValueError(
                     "This should be unreachable, should get weights if we don't have model metadata"
                 )
-            self.log(f"Loading model metadata from memcache")
+            logger.debug(f"Loading model metadata from memcache")
             metadata = self.model_metadata_from_memcache()
             self.batch_size = metadata["batch_size"]
             self.img_size_h = metadata["img_size_h"]
             self.img_size_w = metadata["img_size_w"]
             if isinstance(self.batch_size, str):
                 self.batching_enabled = True
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching enabled"
                 )
             else:
                 self.batching_enabled = False
-                self.log(
+                logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 

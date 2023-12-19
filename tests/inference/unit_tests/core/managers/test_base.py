@@ -54,16 +54,18 @@ def test_check_for_model_when_model_not_loaded() -> None:
         model_manager.check_for_model(model_id="some/1")
 
 
-def test_infer_from_request_when_model_not_available() -> None:
+@pytest.mark.asyncio
+async def test_infer_from_request_when_model_not_available() -> None:
     # given
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
 
     with pytest.raises(InferenceModelNotFound):
-        model_manager.infer_from_request(model_id="some/1", request=MagicMock())
+        await model_manager.infer_from_request(model_id="some/1", request=MagicMock())
 
 
-def test_infer_from_request_when_model_is_available() -> None:
+@pytest.mark.asyncio
+async def test_infer_from_request_when_model_is_available() -> None:
     # given
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
@@ -71,14 +73,15 @@ def test_infer_from_request_when_model_is_available() -> None:
     request = MagicMock()
 
     # when
-    result = model_manager.infer_from_request(model_id="some/1", request=request)
+    result = await model_manager.infer_from_request(model_id="some/1", request=request)
 
     # then
     assert result == model_manager._models["some/1"].infer_from_request.return_value
     model_manager._models["some/1"].infer_from_request.assert_called_once_with(request)
 
 
-def test_infer_from_request_when_model_is_available_but_exception_raised() -> None:
+@pytest.mark.asyncio
+async def test_infer_from_request_when_model_is_available_but_exception_raised() -> None:
     # given
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
@@ -90,7 +93,7 @@ def test_infer_from_request_when_model_is_available_but_exception_raised() -> No
 
     # when
     with pytest.raises(ValueError) as thrown_exception:
-        _ = model_manager.infer_from_request(model_id="some/1", request=request)
+        _ = await model_manager.infer_from_request(model_id="some/1", request=request)
 
     # then
     assert thrown_exception.value is error
@@ -131,14 +134,19 @@ def test_postprocess_when_model_available() -> None:
     model_manager = ModelManager(model_registry=model_registry)
     model_manager._models = {"some/1": MagicMock()}
     predictions = MagicMock()
-
+    preprocess_return_metadata = MagicMock()
     # when
-    result = model_manager.postprocess(model_id="some/1", predictions=predictions, a=38)
+    result = model_manager.postprocess(
+        model_id="some/1",
+        predictions=predictions,
+        preprocess_return_metadata=preprocess_return_metadata,
+        a=38,
+    )
 
     # then
     assert result == model_manager._models["some/1"].postprocess.return_value
     model_manager._models["some/1"].postprocess.assert_called_once_with(
-        predictions, a=38
+        predictions, preprocess_return_metadata, a=38
     )
 
 
@@ -146,9 +154,14 @@ def test_postprocess_when_model_not_available() -> None:
     # given
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
+    preprocess_return_metadata = MagicMock()
 
     with pytest.raises(InferenceModelNotFound):
-        model_manager.postprocess(model_id="some/1", predictions=MagicMock())
+        model_manager.postprocess(
+            model_id="some/1",
+            predictions=MagicMock(),
+            preprocess_return_metadata=preprocess_return_metadata,
+        )
 
 
 def test_preprocess_when_model_available() -> None:
@@ -163,7 +176,7 @@ def test_preprocess_when_model_available() -> None:
 
     # then
     assert result == model_manager._models["some/1"].preprocess.return_value
-    model_manager._models["some/1"].preprocess.assert_called_once_with(request)
+    model_manager._models["some/1"].preprocess.assert_called_once_with(**request.dict())
 
 
 def test_preprocess_when_model_not_available() -> None:
@@ -267,8 +280,7 @@ def test_remove_when_model_not_available() -> None:
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)
 
-    with pytest.raises(InferenceModelNotFound):
-        model_manager.remove(model_id="some/1")
+    model_manager.remove(model_id="some/1")
 
 
 def test_clear() -> None:

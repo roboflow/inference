@@ -14,6 +14,9 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.validate import (
+    get_num_classes_from_model_prediction_shape,
+)
 from inference.core.utils.image_utils import load_image_rgb
 
 
@@ -166,12 +169,11 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         return_image_dims=False,
         **kwargs,
-    ) -> Any:
+    ) -> Union[ClassificationInferenceResponse, List[ClassificationInferenceResponse]]:
         predictions = predictions[0]
-        if return_image_dims:
-            return predictions, preprocess_return_metadata["img_dims"]
-        else:
-            return predictions
+        return self.make_response(
+            predictions, preprocess_return_metadata["img_dims"], **kwargs
+        )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         predictions = self.onnx_session.run(None, {self.input_name: img_in})
@@ -184,10 +186,18 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             imgs_with_dims = [
                 self.preproc_image(
                     i,
-                    disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
-                    disable_preproc_contrast=kwargs["disable_preproc_contrast"],
-                    disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
-                    disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+                    disable_preproc_auto_orient=kwargs.get(
+                        "disable_preproc_auto_orient", False
+                    ),
+                    disable_preproc_contrast=kwargs.get(
+                        "disable_preproc_contrast", False
+                    ),
+                    disable_preproc_grayscale=kwargs.get(
+                        "disable_preproc_grayscale", False
+                    ),
+                    disable_preproc_static_crop=kwargs.get(
+                        "disable_preproc_static_crop", False
+                    ),
                 )
                 for i in image
             ]
@@ -196,10 +206,16 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         else:
             img_in, img_dims = self.preproc_image(
                 image,
-                disable_preproc_auto_orient=kwargs["disable_preproc_auto_orient"],
-                disable_preproc_contrast=kwargs["disable_preproc_contrast"],
-                disable_preproc_grayscale=kwargs["disable_preproc_grayscale"],
-                disable_preproc_static_crop=kwargs["disable_preproc_static_crop"],
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+                disable_preproc_contrast=kwargs.get("disable_preproc_contrast", False),
+                disable_preproc_grayscale=kwargs.get(
+                    "disable_preproc_grayscale", False
+                ),
+                disable_preproc_static_crop=kwargs.get(
+                    "disable_preproc_static_crop", False
+                ),
             )
             img_dims = [img_dims]
 
@@ -236,11 +252,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - If visualization is requested, the predictions are drawn on the image.
         """
         t1 = perf_counter()
-        predictions_data = self.infer(**request.dict(), return_image_dims=True)
-        responses = self.make_response(
-            *predictions_data,
-            confidence=request.confidence,
-        )
+        responses = self.infer(**request.dict(), return_image_dims=True)
         for response in responses:
             response.time = perf_counter() - t1
 
@@ -335,3 +347,19 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         """
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
+
+    def get_model_output_shape(self) -> Tuple[int, int, int]:
+        test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        test_image, _ = self.preprocess(test_image)
+        output = np.array(self.predict(test_image))
+        return output.shape
+
+    def validate_model_classes(self) -> None:
+        output_shape = self.get_model_output_shape()
+        num_classes = output_shape[3]
+        try:
+            assert num_classes == self.num_classes
+        except AssertionError:
+            raise ValueError(
+                f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
+            )

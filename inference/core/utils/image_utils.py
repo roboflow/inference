@@ -1,3 +1,4 @@
+import binascii
 import os
 import pickle
 import re
@@ -21,6 +22,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
+from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
@@ -221,11 +223,11 @@ def load_image_from_buffer(
     return result
 
 
-def load_image_from_numpy_str(value: bytes) -> np.ndarray:
+def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     """Loads an image from a numpy array string.
 
     Args:
-        value (str): String representing the numpy array of the image.
+        value (Union[bytes, str]): Base64 string or byte sequence representing the pickled numpy array of the image.
 
     Returns:
         Image.Image: The loaded PIL image.
@@ -234,8 +236,10 @@ def load_image_from_numpy_str(value: bytes) -> np.ndarray:
         InvalidNumpyInput: If the numpy data is invalid.
     """
     try:
+        if isinstance(value, str):
+            value = pybase64.b64decode(value)
         data = pickle.loads(value)
-    except (EOFError, TypeError, pickle.UnpicklingError) as error:
+    except (EOFError, TypeError, pickle.UnpicklingError, binascii.Error) as error:
         raise InvalidNumpyInput(
             f"Could not unpickle image data. Cause: {error}"
         ) from error
@@ -256,11 +260,6 @@ def validate_numpy_image(data: np.ndarray) -> None:
         raise InvalidNumpyInput(
             f"For image given as np.ndarray expected 1 or 3 channels, got {data.shape[-1]} channels."
         )
-    if np.max(data) > 255 or np.min(data) < 0:
-        raise InvalidNumpyInput(
-            f"For image given as np.ndarray expected values between 0 and 255, got values between "
-            f"{np.min(data)} and {np.max(data)}."
-        )
 
 
 def load_image_from_url(
@@ -276,7 +275,7 @@ def load_image_from_url(
     """
     try:
         response = requests.get(value, stream=True)
-        response.raise_for_status()
+        api_key_safe_raise_for_status(response=response)
         return load_image_from_encoded_bytes(
             value=response.content, cv_imread_flags=cv_imread_flags
         )
@@ -330,3 +329,9 @@ def xyxy_to_xywh(xyxy):
     h_temp = abs(xyxy[1] - xyxy[3])
 
     return [int(x_temp), int(y_temp), int(w_temp), int(h_temp)]
+
+
+def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> bytes:
+    encoding_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+    _, img_encoded = cv2.imencode(".jpg", image, encoding_param)
+    return np.array(img_encoded).tobytes()

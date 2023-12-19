@@ -45,6 +45,8 @@ setuptools.setup(
             "inference_sdk.*",
             "inference",
             "inference.*",
+            "development",
+            "development.*",
         ),
     ),
     entry_points={

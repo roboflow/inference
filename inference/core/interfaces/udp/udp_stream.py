@@ -6,12 +6,16 @@ import time
 from typing import Union
 
 import cv2
+import numpy as np
 import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
+from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
+from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
+    API_KEY_ENV_NAMES,
     CLASS_AGNOSTIC_NMS,
     CONFIDENCE,
     ENABLE_BYTE_TRACK,
@@ -19,7 +23,6 @@ from inference.core.env import (
     IOU_THRESHOLD,
     IP_BROADCAST_ADDR,
     IP_BROADCAST_PORT,
-    JSON_RESPONSE,
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
@@ -28,6 +31,7 @@ from inference.core.env import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
+from inference.core.registries.roboflow import get_model_type
 from inference.core.version import __version__
 from inference.models.utils import get_roboflow_model
 
@@ -44,7 +48,6 @@ class UdpStream(BaseInterface):
         ip_broadcast_addr (str): The IP address to broadcast to.
         ip_broadcast_port (int): The port to broadcast on.
         iou_threshold (float): The intersection-over-union threshold for detection.
-        json_response (bool): Flag to toggle JSON response format.
         max_candidates (float): The maximum number of candidates for detection.
         max_detections (float): The maximum number of detections.
         model_id (str): The ID of the model to be used.
@@ -67,7 +70,6 @@ class UdpStream(BaseInterface):
         ip_broadcast_addr: str = IP_BROADCAST_ADDR,
         ip_broadcast_port: int = IP_BROADCAST_PORT,
         iou_threshold: float = IOU_THRESHOLD,
-        json_response: bool = JSON_RESPONSE,
         max_candidates: float = MAX_CANDIDATES,
         max_detections: float = MAX_DETECTIONS,
         model_id: str = MODEL_ID,
@@ -91,10 +93,20 @@ class UdpStream(BaseInterface):
             raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
         if not self.api_key:
-            raise ValueError("API_KEY is not defined")
+            raise ValueError(
+                f"API key is missing. Either pass it explicitly to constructor, or use one of env variables: "
+                f"{API_KEY_ENV_NAMES}. Visit "
+                f"https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to generate "
+                f"the key."
+            )
 
         self.model = get_roboflow_model(self.model_id, self.api_key)
-
+        self.task_type = get_model_type(model_id=self.model_id, api_key=self.api_key)[0]
+        self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+            api_key=self.api_key,
+            model_id=self.model_id,
+            cache=cache,
+        )
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
         self.iou_threshold = iou_threshold
@@ -102,7 +114,6 @@ class UdpStream(BaseInterface):
         self.max_detections = max_detections
         self.ip_broadcast_addr = ip_broadcast_addr
         self.ip_broadcast_port = ip_broadcast_port
-        self.json_response = json_response
 
         self.inference_request_type = (
             inference.core.entities.requests.inference.ObjectDetectionInferenceRequest
@@ -130,7 +141,6 @@ class UdpStream(BaseInterface):
         self.inference_response = None
         self.stop = False
 
-        self.frame = None
         self.frame_cv = None
         self.frame_id = None
         logger.info("Server initialized with settings:")
@@ -151,6 +161,7 @@ class UdpStream(BaseInterface):
         self.model.infer(
             frame, confidence=self.confidence, iou_threshold=self.iou_threshold
         )
+        self.active_learning_middleware.start_registration_thread()
 
     def preprocess_thread(self):
         """Preprocess incoming frames for inference.
@@ -169,8 +180,7 @@ class UdpStream(BaseInterface):
                     self.frame_cv, frame_id = webcam_stream.read_opencv()
                     if frame_id != self.frame_id:
                         self.frame_id = frame_id
-                        self.frame = cv2.cvtColor(self.frame_cv, cv2.COLOR_BGR2RGB)
-                        self.preproc_result = self.model.preprocess(self.frame)
+                        self.preproc_result = self.model.preprocess(self.frame_cv)
                         self.img_in, self.img_dims = self.preproc_result
                         self.queue_control = True
 
@@ -192,6 +202,7 @@ class UdpStream(BaseInterface):
             if self.queue_control:
                 self.queue_control = False
                 frame_id = self.frame_id
+                inference_input = np.copy(self.frame_cv)
                 predictions = self.model.predict(
                     self.img_in,
                 )
@@ -203,25 +214,21 @@ class UdpStream(BaseInterface):
                     iou_threshold=self.iou_threshold,
                     max_candidates=self.max_candidates,
                     max_detections=self.max_detections,
+                )[0]
+                self.active_learning_middleware.register(
+                    inference_input=inference_input,
+                    prediction=predictions.dict(by_alias=True, exclude_none=True),
+                    prediction_type=self.task_type,
                 )
-                if self.json_response:
-                    predictions = self.model.make_response(
-                        predictions,
-                        self.img_dims,
-                    )[0]
-                    if self.use_bytetrack:
-                        detections = sv.Detections.from_roboflow(
-                            predictions.dict(by_alias=True), self.model.class_names
-                        )
-                        detections = self.byte_tracker.update_with_detections(
-                            detections
-                        )
-                        for pred, detect in zip(predictions.predictions, detections):
-                            pred.tracker_id = int(detect[4])
-                    predictions.frame_id = frame_id
-                    predictions = predictions.json(exclude_none=True, by_alias=True)
-                else:
-                    predictions = json.dumps(predictions)
+                if self.use_bytetrack:
+                    detections = sv.Detections.from_roboflow(
+                        predictions.dict(by_alias=True), self.model.class_names
+                    )
+                    detections = self.byte_tracker.update_with_detections(detections)
+                    for pred, detect in zip(predictions.predictions, detections):
+                        pred.tracker_id = int(detect[4])
+                predictions.frame_id = frame_id
+                predictions = predictions.json(exclude_none=True, by_alias=True)
 
                 self.inference_response = predictions
                 self.frame_count += 1
@@ -258,5 +265,6 @@ class UdpStream(BaseInterface):
             except KeyboardInterrupt:
                 logger.info("Stopping server...")
                 self.stop = True
+                self.active_learning_middleware.stop_registration_thread()
                 time.sleep(3)
                 sys.exit(0)

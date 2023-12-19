@@ -40,11 +40,11 @@ Make sure you have docker installed. Learn more about building, pulling, and run
 x86 CPU:
 
 ```bash
-docker run --net=host roboflow/roboflow-inference-server-cpu:latest
+docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
 ```
 NVIDIA GPU
 ```bash
-docker run --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
+docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
 ```
 
 ### **⌗ 2 Setup and Run**

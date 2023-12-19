@@ -27,30 +27,37 @@ class DocTR(RoboflowCoreModel):
             **kwargs: Arbitrary keyword arguments.
         """
         self.api_key = kwargs.get("api_key")
+        self.dataset_id = "doctr"
+        self.version_id = "default"
+        self.endpoint = model_id
         model_id = model_id.lower()
 
         os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr_rec")
 
-        det_model = DocTRDet(api_key=kwargs.get("api_key"))
-        rec_model = DocTRRec(api_key=kwargs.get("api_key"))
+        self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
+        self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
 
-        os.makedirs("/tmp/cache/doctr_rec/models/", exist_ok=True)
-        os.makedirs("/tmp/cache/doctr_det/models/", exist_ok=True)
+        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_rec/models/", exist_ok=True)
+        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_det/models/", exist_ok=True)
 
         shutil.copyfile(
-            "/tmp/cache/doctr_det/db_resnet50/model.pt",
-            "/tmp/cache/doctr_det/models/db_resnet50-ac60cadc.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/db_resnet50/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/models/db_resnet50-ac60cadc.pt",
         )
         shutil.copyfile(
-            "/tmp/cache/doctr_rec/crnn_vgg16_bn/model.pt",
-            "/tmp/cache/doctr_rec/models/crnn_vgg16_bn-9762b0b0.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/crnn_vgg16_bn/model.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/models/crnn_vgg16_bn-9762b0b0.pt",
         )
 
         self.model = ocr_predictor(
-            det_arch=det_model.version_id,
-            reco_arch=rec_model.version_id,
+            det_arch=self.det_model.version_id,
+            reco_arch=self.rec_model.version_id,
             pretrained=True,
         )
+
+    def clear_cache(self) -> None:
+        self.det_model.clear_cache()
+        self.rec_model.clear_cache()
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:
         """

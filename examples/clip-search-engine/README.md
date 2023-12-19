@@ -31,16 +31,16 @@ Before running the inference script, ensure that the `API_KEY` is set as an envi
 
 - For Unix/Linux:
 
-    ```bash
-    export API_KEY=your_api_key_here
-    ```
+  ```bash
+  export ROBOFLOW_API_KEY=your_api_key_here
+  ```
 
 - For Windows:
 
-    ```bash
-    set API_KEY=your_api_key_here
-    ```
-  
+  ```bash
+  set ROBOFLOW_API_KEY=your_api_key_here
+  ```
+
 Replace `your_api_key_here` with your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
 ## 🎬 Run Inference
