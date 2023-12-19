@@ -1,3 +1,4 @@
+import itertools
 import json
 import os
 from collections import OrderedDict
@@ -42,7 +43,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
+    TENSORRT_CACHE_PATH, MAX_BATCH_SIZE,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -51,6 +52,7 @@ from inference.core.exceptions import (
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
+from inference.core.models.utils.batching import calculate_input_elements, create_batches
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
@@ -611,6 +613,24 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
             self.clear_cache()
             raise ModelArtefactError from e
+
+    def infer(self, image: Any, **kwargs) -> Any:
+        input_elements = calculate_input_elements(input_value=image)
+        max_batch_size = MAX_BATCH_SIZE if self.batching_enabled else self.batch_size
+        if (input_elements == 1) or (max_batch_size == float("inf")):
+            return super().infer(image, **kwargs)
+        logger.debug(
+            f"Inference will be executed in batches, as there is {input_elements} input elements and "
+            f"maximum batch size for a model is set to: {max_batch_size}"
+        )
+        inference_results = []
+        for batch_input in create_batches(sequence=image, batch_size=max_batch_size):
+            batch_inference_results = super().infer(batch_input, **kwargs)
+            inference_results.append(batch_inference_results)
+        return self.merge_inference_results(inference_results=inference_results)
+
+    def merge_inference_results(self, inference_results: List[Any]) -> Any:
+        return list(itertools.chain(*inference_results))
 
     def validate_model(self) -> None:
         if not self.load_weights:
