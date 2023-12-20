@@ -133,7 +133,7 @@ selected classes must be close to the threshold to accept the datapoint. If give
 (Optional - with default to `1`)
 * `only_top_classes`: (used for classification predictions only) Flag to decide whether only the `top` or 
 `predicted_classes` (for multi-class/multi-label cases, respectively) should be considered. This helps avoid sampling 
-based on non-leading classes in predictions.
+based on non-leading classes in predictions. Default: `True`.
 * `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
 #### Configuration example
