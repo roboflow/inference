@@ -2,11 +2,11 @@ import numpy as np
 import pytest
 
 from inference.core.entities.responses.inference import (
-    ObjectDetectionInferenceResponse,
     InstanceSegmentationInferenceResponse,
+    ObjectDetectionInferenceResponse,
 )
 from inference.core.env import MAX_BATCH_SIZE
-from inference.models import YOLOv5ObjectDetection, YOLOv5InstanceSegmentation
+from inference.models import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
 
 
 @pytest.mark.slow
@@ -50,7 +50,7 @@ def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch
     MAX_BATCH_SIZE > 8,
     reason="This test requires reasonably small MAX_BATCH_SIZE set via environment variable",
 )
-def test_yolov5_detection_batch_inference_when_batch_size_smaller_larger_max_batch_size(
+def test_yolov5_detection_batch_inference_when_batch_size_larger_then_max_batch_size(
     yolov5_det_model: str,
     example_image: np.ndarray,
 ) -> None:
@@ -137,7 +137,7 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     MAX_BATCH_SIZE > 8,
     reason="This test requires reasonably small MAX_BATCH_SIZE set via environment variable",
 )
-def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_larger_max_batch_size(
+def test_yolov5_segmentation_batch_inference_when_batch_size_larger_then_max_batch_size(
     yolov5_seg_model: str,
     example_image: np.ndarray,
 ) -> None:

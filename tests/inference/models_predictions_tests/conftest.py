@@ -1,6 +1,5 @@
 import os.path
 import shutil
-import tempfile
 import zipfile
 from typing import Generator
 
@@ -18,6 +17,7 @@ ASSETS_DIR = os.path.abspath(
     )
 )
 EXAMPLE_IMAGE_PATH = os.path.join(ASSETS_DIR, "example_image.jpg")
+PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
 
 
 @pytest.fixture(scope="function")
@@ -25,7 +25,12 @@ def example_image() -> np.ndarray:
     return cv2.imread(EXAMPLE_IMAGE_PATH)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
+def person_image() -> np.ndarray:
+    return cv2.imread(PERSON_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
 def vit_multi_class_model() -> Generator[str, None, None]:
     model_id = "vit_multi_class/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -36,7 +41,7 @@ def vit_multi_class_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def vit_multi_label_model() -> Generator[str, None, None]:
     model_id = "vit_multi_label/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -47,7 +52,7 @@ def vit_multi_label_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov5_det_model() -> Generator[str, None, None]:
     model_id = "yolov5_det/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -58,7 +63,7 @@ def yolov5_det_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov5_seg_model() -> Generator[str, None, None]:
     model_id = "yolov5_seg/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -69,7 +74,7 @@ def yolov5_seg_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov7_seg_model() -> Generator[str, None, None]:
     model_id = "yolov7_seg/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -80,7 +85,7 @@ def yolov7_seg_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov8_cls_model() -> Generator[str, None, None]:
     model_id = "yolov8_cls/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -91,7 +96,7 @@ def yolov8_cls_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov8_det_model() -> Generator[str, None, None]:
     model_id = "yolov8_det/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -102,7 +107,7 @@ def yolov8_det_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov8_pose_model() -> Generator[str, None, None]:
     model_id = "yolov8_pose/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -113,7 +118,7 @@ def yolov8_pose_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def yolov8_seg_model() -> Generator[str, None, None]:
     model_id = "yolov8_seg/1"
     model_cache_dir = fetch_and_place_model_in_cache(

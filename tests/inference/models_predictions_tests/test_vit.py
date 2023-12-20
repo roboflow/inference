@@ -51,7 +51,7 @@ def test_vit_multi_class_batch_inference_when_batch_size_smaller_than_max_batch_
     MAX_BATCH_SIZE > 8,
     reason="This test requires reasonably small MAX_BATCH_SIZE set via environment variable",
 )
-def test_vit_multi_class_batch_inference_when_batch_size_smaller_larger_max_batch_size(
+def test_vit_multi_class_batch_inference_when_batch_size_larger_then_max_batch_size(
     vit_multi_class_model: str,
     example_image: np.ndarray,
 ) -> None:
@@ -127,7 +127,7 @@ def test_vit_multi_label_batch_inference_when_batch_size_smaller_than_max_batch_
     MAX_BATCH_SIZE > 8,
     reason="This test requires reasonably small MAX_BATCH_SIZE set via environment variable",
 )
-def test_vit_multi_label_batch_inference_when_batch_size_smaller_larger_max_batch_size(
+def test_vit_multi_label_batch_inference_when_batch_size_larger_then_max_batch_size(
     vit_multi_label_model: str,
     example_image: np.ndarray,
 ) -> None:
