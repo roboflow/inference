@@ -10,6 +10,7 @@ def calculate_input_elements(input_value: Union[B, List[B]]) -> int:
 def create_batches(
     sequence: Iterable[B], batch_size: int
 ) -> Generator[List[B], None, None]:
+    batch_size = max(batch_size, 1)
     current_batch = []
     for element in sequence:
         if len(current_batch) == batch_size:
