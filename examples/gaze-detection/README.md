@@ -13,12 +13,12 @@ git clone https://github.com/roboflow/inference
 cd inference/examples/gaze-detection
 ```
 
-Next, set up a Python environment and install the required project dependencies:
+Next, set up a Python environment and install the required project dependencies (this assumes running these bash commands from the above terminal window install):
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r ../../requirements/_requirements.txt
 ```
 
 Next, set up a Roboflow Inference Docker container. This Docker container will manage inference for the gaze detection system. [Learn how to set up an Inference Docker container](https://inference.roboflow.com/quickstart/docker/).
