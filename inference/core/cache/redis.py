@@ -33,7 +33,7 @@ class RedisCache(BaseCache):
 
         self.zexpires = dict()
 
-        self._expire_thread = threading.Thread(target=self._expire)
+        self._expire_thread = threading.Thread(target=self._expire, daemon=True)
         self._expire_thread.start()
 
     def _expire(self):

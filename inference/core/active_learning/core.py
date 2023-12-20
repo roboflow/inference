@@ -76,7 +76,7 @@ def execute_datapoint_registration(
         matching_strategies_limits=matching_strategies_limits,
     )
     if strategy_with_spare_credit is None:
-        logger.warning(f"Limit on Active Learning strategy reached.")
+        logger.debug(f"Limit on Active Learning strategy reached.")
         return None
     register_datapoint_at_roboflow(
         cache=cache,
@@ -215,4 +215,5 @@ def is_prediction_registration_forbidden(
         roboflow_image_id is None
         or persist_predictions is False
         or prediction.get("is_stub", False) is True
+        or len(prediction.get("predictions", [])) == 0
     )

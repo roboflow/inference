@@ -1,3 +1,4 @@
+import queue
 from queue import Queue
 from threading import Thread
 from typing import Any, List, Optional
@@ -20,7 +21,7 @@ from inference.core.active_learning.entities import (
 from inference.core.cache.base import BaseCache
 from inference.core.utils.image_utils import load_image
 
-MAX_REGISTRATION_QUEUE_SIZE = 128
+MAX_REGISTRATION_QUEUE_SIZE = 512
 
 
 class NullActiveLearningMiddleware:
@@ -63,6 +64,7 @@ class ActiveLearningMiddleware:
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
             model_id=model_id,
+            cache=cache,
         )
         return cls(
             api_key=api_key,
@@ -140,7 +142,7 @@ class ActiveLearningMiddleware:
             max_batch_images=self._configuration.max_batch_images,
             api_key=self._api_key,
         ):
-            logger.warning(f"Limit on Active Learning batch size reached.")
+            logger.debug(f"Limit on Active Learning batch size reached.")
             return None
         execute_datapoint_registration(
             cache=self._cache,
@@ -166,6 +168,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
             model_id=model_id,
+            cache=cache,
         )
         task_queue = Queue(max_queue_size)
         return cls(
@@ -194,9 +197,15 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         disable_preproc_auto_orient: bool = False,
     ) -> None:
         logger.debug(f"Putting registration task into queue")
-        self._task_queue.put(
-            (inference_input, prediction, prediction_type, disable_preproc_auto_orient)
-        )
+        try:
+            self._task_queue.put_nowait(
+                (inference_input, prediction, prediction_type, disable_preproc_auto_orient)
+            )
+        except queue.Full:
+            logger.warning(
+                f"Dropping datapoint registered in Active Learning due to insufficient processing "
+                f"capabilities."
+            )
 
     def start_registration_thread(self) -> None:
         if self._registration_thread is not None:
@@ -209,6 +218,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def stop_registration_thread(self) -> None:
         if self._registration_thread is None:
             logger.warning("Registration thread is already stopped.")
+            return None
         logger.debug("Stopping registration thread")
         self._task_queue.put(None)
         self._registration_thread.join()
@@ -253,5 +263,3 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop_registration_thread()
 
-    def __del__(self) -> None:
-        self._task_queue.join()

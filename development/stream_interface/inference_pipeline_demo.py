@@ -29,6 +29,7 @@ MODELS = {
     "c": "microsoft-coco/10",
     "d": "microsoft-coco/11",
     "e": "microsoft-coco/12",
+    "f": "eye-detection/39"
 }
 
 STREAM_SERVER_URL = os.getenv("STREAM_SERVER", "rtsp://localhost:8554")
