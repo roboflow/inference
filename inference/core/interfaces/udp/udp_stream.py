@@ -11,9 +11,13 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
-from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware, NullActiveLearningMiddleware
+from inference.core.active_learning.middlewares import (
+    NullActiveLearningMiddleware,
+    ThreadingActiveLearningMiddleware,
+)
 from inference.core.cache import cache
 from inference.core.env import (
+    ACTIVE_LEARNING_ENABLED,
     API_KEY,
     API_KEY_ENV_NAMES,
     CLASS_AGNOSTIC_NMS,
@@ -26,7 +30,7 @@ from inference.core.env import (
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
-    STREAM_ID, ACTIVE_LEARNING_ENABLED,
+    STREAM_ID,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
