@@ -23,6 +23,7 @@ from inference.core.exceptions import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     annotate_image_at_roboflow,
+    get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
     get_roboflow_labeling_batches,
     get_roboflow_labeling_jobs,
@@ -32,7 +33,6 @@ from inference.core.roboflow_api import (
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
-    get_roboflow_active_learning_configuration,
 )
 from inference.core.utils.url_utils import wrap_url
 

@@ -1,27 +1,32 @@
 from datetime import datetime
+from functools import partial
 from queue import Queue
 from threading import Lock
-from typing import Tuple, List, Optional
+from typing import Any, List, Optional, Tuple
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
+from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
+from inference.core.cache import MemoryCache
 from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
-    InferenceResponseImage,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import SourceConnectionError
 from inference.core.interfaces.camera.video_source import (
-    lock_state_transition,
-    VideoSource,
     SourceMetadata,
-    StreamState,
     SourceProperties,
+    StreamState,
+    VideoSource,
+    lock_state_transition,
 )
 from inference.core.interfaces.stream.entities import ObjectDetectionInferenceConfig
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
@@ -160,6 +165,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
         inference_config=inference_config,
+        active_learning_middleware=None,
     )
 
     # when
@@ -202,6 +208,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
         inference_config=inference_config,
+        active_learning_middleware=None,
     )
 
     def stop() -> None:
@@ -248,6 +255,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
         inference_config=inference_config,
+        active_learning_middleware=None,
     )
 
     def stop() -> None:
@@ -264,3 +272,78 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     assert [p[0].frame_id for p in predictions] == list(
         range(1, 101)
     ), "Order of prediction frames violated"
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_inference_pipeline_works_correctly_against_video_file_with_active_learning_enabled(
+    local_video_path: str,
+) -> None:
+    # given
+    model = ModelStub()
+    video_source = VideoSource.init(video_reference=local_video_path)
+    watchdog = BasePipelineWatchDog()
+    predictions = []
+    al_datapoints = []
+    active_learning_middleware = ThreadingActiveLearningMiddleware(
+        api_key="xxx",
+        configuration=MagicMock(),
+        cache=MemoryCache(),
+        task_queue=Queue(),
+    )
+
+    def execute_registration_mock(
+        inference_input: Any,
+        prediction: dict,
+        prediction_type: str,
+        disable_preproc_auto_orient: bool = False,
+    ) -> None:
+        al_datapoints.append((inference_input, prediction))
+
+    active_learning_middleware._execute_registration = execute_registration_mock
+    al_sink = partial(
+        active_learning_sink,
+        active_learning_middleware=active_learning_middleware,
+        model_type="object-detection",
+        disable_preproc_auto_orient=False,
+    )
+
+    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
+        predictions.append((video_frame, prediction))
+
+    prediction_handler = partial(multi_sink, sinks=[on_prediction, al_sink])
+
+    status_update_handlers = [watchdog.on_status_update]
+    inference_config = ObjectDetectionInferenceConfig.init(
+        confidence=0.5, iou_threshold=0.5
+    )
+    predictions_queue = Queue(maxsize=512)
+    inference_pipeline = InferencePipeline(
+        model=model,
+        video_source=video_source,
+        on_prediction=prediction_handler,
+        max_fps=100,
+        predictions_queue=predictions_queue,
+        watchdog=watchdog,
+        status_update_handlers=status_update_handlers,
+        inference_config=inference_config,
+        active_learning_middleware=active_learning_middleware,
+    )
+
+    # when
+    inference_pipeline.start()
+    inference_pipeline.join()
+    inference_pipeline.start()
+    inference_pipeline.join()
+
+    # then
+    assert len(predictions) == 431 * 2, "Not all video frames processed"
+    assert (
+        len(al_datapoints) == 431 * 2
+    ), "Not all video frames and predictions registered in AL"
+    assert [p[0].frame_id for p in predictions] == list(
+        range(1, 431 * 2 + 1)
+    ), "Order of prediction frames violated"
+    assert all(
+        [(p[0].image == al_dp[0]).all() for p, al_dp in zip(predictions, al_datapoints)]
+    ), "The same images must be registered for explicit sink and Active Learning sink"

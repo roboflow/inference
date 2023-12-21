@@ -5,16 +5,12 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
-    InferenceResponseImage,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.sinks import (
-    render_boxes,
-    UDPSink,
-    multi_sink,
-)
+from inference.core.interfaces.stream.sinks import UDPSink, multi_sink, render_boxes
 
 
 def test_render_boxes_completes_successfully() -> None:
