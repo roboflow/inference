@@ -36,15 +36,16 @@ TYPE2SAMPLING_INITIALIZERS = {
     "classes_based": initialize_classes_based_sampling,
     "detections_number_based": initialize_detections_number_based_sampling,
 }
-ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE = 300  # 5 min
+ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE = 900  # 15 min
 
 
 def prepare_active_learning_configuration(
     api_key: str,
     model_id: str,
     cache: BaseCache,
+    active_learning_enabled: bool = ACTIVE_LEARNING_ENABLED,
 ) -> Optional[ActiveLearningConfiguration]:
-    if not ACTIVE_LEARNING_ENABLED:
+    if not active_learning_enabled:
         return None
     project_metadata = get_roboflow_project_metadata(
         api_key=api_key,
