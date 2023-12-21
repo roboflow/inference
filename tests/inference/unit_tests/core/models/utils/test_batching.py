@@ -1,6 +1,9 @@
 import numpy as np
 
-from inference.core.models.utils.batching import calculate_input_elements, create_batches
+from inference.core.models.utils.batching import (
+    calculate_input_elements,
+    create_batches,
+)
 
 
 def test_calculate_input_elements_when_non_list_given() -> None:
@@ -79,7 +82,9 @@ def test_create_batches_when_batch_size_multiplier_fits_sequence_length() -> Non
     assert result == [[1, 2], [3, 4]]
 
 
-def test_create_batches_when_batch_size_multiplier_does_not_fir_sequence_length() -> None:
+def test_create_batches_when_batch_size_multiplier_does_not_fir_sequence_length() -> (
+    None
+):
     # when
     result = list(create_batches(sequence=[1, 2, 3, 4], batch_size=3))
 

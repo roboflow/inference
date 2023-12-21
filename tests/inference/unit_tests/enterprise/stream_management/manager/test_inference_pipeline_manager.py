@@ -455,4 +455,5 @@ def assembly_valid_init_payload() -> dict:
         "model_id": "some/1",
         "api_key": "my_key",
         "model_configuration": {"type": "object-detection"},
+        "active_learning_enabled": True,
     }

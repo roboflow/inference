@@ -13,6 +13,8 @@ Here is the standard workflow for active learning:
 
 How active learning works with Inference is configured in your server active learning configuration. [Learn how to configure active learning](#active-learning-configuration).
 
+Active learning can be disabled by setting `ACTIVE_LEARNING_ENABLED=false` in the environment where you run `inference`.
+
 ## Sampling Strategies
 
 Inference supports five strategies for sampling image data for use in training new model versions. These strategies are:

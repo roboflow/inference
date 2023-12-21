@@ -8,6 +8,7 @@ import numpy as np
 import supervision as sv
 
 from inference.core import logger
+from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.utils.preprocess import letterbox_image
 
@@ -81,7 +82,7 @@ def render_boxes(
     labels = [p["class"] for p in predictions["predictions"]]
     detections = sv.Detections.from_roboflow(predictions)
     image = annotator.annotate(
-        scene=video_frame.image, detections=detections, labels=labels
+        scene=video_frame.image.copy(), detections=detections, labels=labels
     )
     if display_size is not None:
         image = letterbox_image(image, desired_size=display_size)
@@ -248,3 +249,18 @@ def multi_sink(
                 f"Could not sent prediction with frame_id={video_frame.frame_id} to sink "
                 f"due to error: {error}."
             )
+
+
+def active_learning_sink(
+    predictions: dict,
+    video_frame: VideoFrame,
+    active_learning_middleware: ActiveLearningMiddleware,
+    model_type: str,
+    disable_preproc_auto_orient: bool = False,
+) -> None:
+    active_learning_middleware.register(
+        inference_input=video_frame.image,
+        prediction=predictions,
+        prediction_type=model_type,
+        disable_preproc_auto_orient=disable_preproc_auto_orient,
+    )

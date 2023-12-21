@@ -1,20 +1,17 @@
 import json
 from datetime import datetime
+from functools import partial
 from unittest.mock import MagicMock
 
 import numpy as np
 
 from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
-    InferenceResponseImage,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.sinks import (
-    render_boxes,
-    UDPSink,
-    multi_sink,
-)
+from inference.core.interfaces.stream.sinks import UDPSink, multi_sink, render_boxes, active_learning_sink
 
 
 def test_render_boxes_completes_successfully() -> None:
@@ -169,3 +166,30 @@ def test_multi_sink_when_no_error_occurs() -> None:
         video_frame,
         predictions,
     ), "Call must happen according to contract (VideoFrame, dict)"
+
+
+def test_active_learning_sink() -> None:
+    # given
+    active_learning_middleware = MagicMock()
+    sink = partial(
+        active_learning_sink,
+        active_learning_middleware=active_learning_middleware,
+        model_type="object-detection",
+    )
+    video_frame = VideoFrame(
+        image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+    )
+    predictions = {"some": "prediction"}
+
+    # when
+    sink(predictions, video_frame)
+
+    # then
+    active_learning_middleware.register.assert_called_once_with(
+        inference_input=video_frame.image,
+        prediction=predictions,
+        prediction_type="object-detection",
+        disable_preproc_auto_orient=False,
+    )
