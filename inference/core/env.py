@@ -198,6 +198,15 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
 
+# Enable jupyter notebook server route, default is False
+NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
+
+# Jupyter notebook password, default is "roboflow"
+NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
+
+# Jupyter notebook port, default is 9002
+NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
+
 # Number of workers, default is 1
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 

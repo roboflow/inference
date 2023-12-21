@@ -90,6 +90,14 @@ export default function Home() {
               icon="💫"
             />
           </div>
+          <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
+            <HeaderLink
+              href="http://localhost:9001/notebook/start"
+              className=""
+              label="Jump into an Inference enabled notebook"
+              icon="📓"
+            />
+          </div>
         </div>
         <div className="mt-10 md:mt-16 flex flex-col w-full self-start">
           <div className="text-xl font-semibold text-gray-900 flex flex-col items-center sm:flex-row gap-1 sm:gap-4 px-4 sm:px-[10%] ">

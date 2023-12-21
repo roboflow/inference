@@ -1,12 +1,16 @@
 import base64
+import os
+import subprocess
 import traceback
 from functools import partial, wraps
 from typing import Any, List, Optional, Union
+from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.utils.notebooks import start_notebook
 
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
@@ -71,6 +75,9 @@ from inference.core.env import (
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
+    NOTEBOOK_ENABLED,
+    NOTEBOOK_PASSWORD,
+    NOTEBOOK_PORT,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
 )
@@ -1143,6 +1150,35 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+        
+        if not LAMBDA:
+            @app.get(
+                "/notebook/start",
+                summary="Jupyter Lab Server Start",
+                description="Starts a jupyter lab server for running development code",
+            )
+            @with_route_exceptions
+            async def notebook_start(browserless: bool = False):
+                """Starts a jupyter lab server for running development code.
+
+                Args:
+                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
+                """
+                if NOTEBOOK_ENABLED:
+                    start_notebook()
+                    if browserless:
+                        return {"success": True, "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}"}
+                    else:
+                        return RedirectResponse(f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}")
+                else:
+                    if browserless:
+                        return {"success": False, "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable."}
+                    else:
+                        return RedirectResponse(f"/notebook-instructions")
 
         app.mount(
             "/",
