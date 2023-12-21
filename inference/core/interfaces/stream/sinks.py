@@ -262,5 +262,5 @@ def active_learning_sink(
         inference_input=video_frame.image,
         prediction=predictions,
         prediction_type=model_type,
-        disable_preproc_auto_orient=disable_preproc_auto_orient
+        disable_preproc_auto_orient=disable_preproc_auto_orient,
     )

@@ -9,10 +9,12 @@ from inference.core import logger
 from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
 from inference.core.cache import cache
 from inference.core.env import (
+    ACTIVE_LEARNING_ENABLED,
     API_KEY,
     API_KEY_ENV_NAMES,
+    DISABLE_PREPROC_AUTO_ORIENT,
     PREDICTIONS_QUEUE_SIZE,
-    RESTART_ATTEMPT_DELAY, ACTIVE_LEARNING_ENABLED, DISABLE_PREPROC_AUTO_ORIENT,
+    RESTART_ATTEMPT_DELAY,
 )
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
@@ -184,7 +186,9 @@ class InferencePipeline:
                 model_type=model.task_type,
                 disable_preproc_auto_orient=DISABLE_PREPROC_AUTO_ORIENT,
             )
-            logger.info("AL enabled - wrapping `on_prediction` with multi_sink() and active_learning_sink()")
+            logger.info(
+                "AL enabled - wrapping `on_prediction` with multi_sink() and active_learning_sink()"
+            )
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         return cls(
             model=model,

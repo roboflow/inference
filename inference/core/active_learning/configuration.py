@@ -19,7 +19,10 @@ from inference.core.active_learning.samplers.number_of_detections import (
 from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.cache.base import BaseCache
 from inference.core.env import ACTIVE_LEARNING_ENABLED
-from inference.core.exceptions import ActiveLearningConfigurationError, ActiveLearningConfigurationDecodingError
+from inference.core.exceptions import (
+    ActiveLearningConfigurationDecodingError,
+    ActiveLearningConfigurationError,
+)
 from inference.core.roboflow_api import (
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
@@ -103,7 +106,11 @@ def get_roboflow_project_metadata(
         dataset_type=dataset_type,
         active_learning_configuration=roboflow_api_configuration,
     )
-    cache.set(key=config_cache_key, value=asdict(configuration), expire=ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE)
+    cache.set(
+        key=config_cache_key,
+        value=asdict(configuration),
+        expire=ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE,
+    )
     return configuration
 
 
@@ -112,7 +119,9 @@ def construct_cache_key_for_active_learning_config(model_id: str) -> str:
     return f"active_learning:configurations:{dataset_id}"
 
 
-def parse_cached_roboflow_project_metadata(cached_config: dict) -> RoboflowProjectMetadata:
+def parse_cached_roboflow_project_metadata(
+    cached_config: dict,
+) -> RoboflowProjectMetadata:
     try:
         return RoboflowProjectMetadata(**cached_config)
     except Exception as error:

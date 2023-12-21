@@ -199,7 +199,12 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         logger.debug(f"Putting registration task into queue")
         try:
             self._task_queue.put_nowait(
-                (inference_input, prediction, prediction_type, disable_preproc_auto_orient)
+                (
+                    inference_input,
+                    prediction,
+                    prediction_type,
+                    disable_preproc_auto_orient,
+                )
             )
         except queue.Full:
             logger.warning(
@@ -262,4 +267,3 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop_registration_thread()
-
