@@ -11,7 +11,7 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
-from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
+from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware, NullActiveLearningMiddleware
 from inference.core.cache import cache
 from inference.core.env import (
     API_KEY,
@@ -26,7 +26,7 @@ from inference.core.env import (
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
-    STREAM_ID,
+    STREAM_ID, ACTIVE_LEARNING_ENABLED,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
@@ -102,11 +102,13 @@ class UdpStream(BaseInterface):
 
         self.model = get_roboflow_model(self.model_id, self.api_key)
         self.task_type = get_model_type(model_id=self.model_id, api_key=self.api_key)[0]
-        self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
-            api_key=self.api_key,
-            model_id=self.model_id,
-            cache=cache,
-        )
+        self.active_learning_middleware = NullActiveLearningMiddleware()
+        if ACTIVE_LEARNING_ENABLED:
+            self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+                api_key=self.api_key,
+                model_id=self.model_id,
+                cache=cache,
+            )
         self.class_agnostic_nms = class_agnostic_nms
         self.confidence = confidence
         self.iou_threshold = iou_threshold

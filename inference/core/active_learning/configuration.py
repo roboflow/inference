@@ -18,7 +18,6 @@ from inference.core.active_learning.samplers.number_of_detections import (
 )
 from inference.core.active_learning.samplers.random import initialize_random_sampling
 from inference.core.cache.base import BaseCache
-from inference.core.env import ACTIVE_LEARNING_ENABLED
 from inference.core.exceptions import (
     ActiveLearningConfigurationDecodingError,
     ActiveLearningConfigurationError,
@@ -43,10 +42,7 @@ def prepare_active_learning_configuration(
     api_key: str,
     model_id: str,
     cache: BaseCache,
-    active_learning_enabled: bool = ACTIVE_LEARNING_ENABLED,
 ) -> Optional[ActiveLearningConfiguration]:
-    if not active_learning_enabled:
-        return None
     project_metadata = get_roboflow_project_metadata(
         api_key=api_key,
         model_id=model_id,

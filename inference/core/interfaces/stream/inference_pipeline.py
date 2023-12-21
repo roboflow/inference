@@ -6,7 +6,7 @@ from threading import Thread
 from typing import Callable, Generator, List, Optional, Tuple, Union
 
 from inference.core import logger
-from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
+from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware, NullActiveLearningMiddleware
 from inference.core.cache import cache
 from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
@@ -167,7 +167,7 @@ class InferencePipeline:
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
-        active_learning_middleware: Optional[ThreadingActiveLearningMiddleware] = None
+        active_learning_middleware = NullActiveLearningMiddleware()
         if active_learning_enabled is None:
             logger.info(
                 f"`active_learning_enabled` parameter not set - using env `ACTIVE_LEARNING_ENABLED` "
@@ -212,7 +212,7 @@ class InferencePipeline:
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         inference_config: ObjectDetectionInferenceConfig,
-        active_learning_middleware: Optional[ThreadingActiveLearningMiddleware],
+        active_learning_middleware: Union[NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware],
     ):
         self._model = model
         self._video_source = video_source

@@ -205,22 +205,6 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is
         )
 
 
-def test_prepare_active_learning_configuration_when_active_learning_disabled() -> None:
-    # given
-    cache = MemoryCache()
-
-    # when
-    result = prepare_active_learning_configuration(
-        api_key="api-key",
-        model_id="some/1",
-        cache=cache,
-        active_learning_enabled=False,
-    )
-
-    # then
-    assert result is None, "Expected null config when AL is disabled"
-
-
 @mock.patch.object(configuration, "get_roboflow_project_metadata")
 def test_prepare_active_learning_configuration_when_active_learning_disabled_by_configuration(
     get_roboflow_project_metadata_mock: MagicMock,
@@ -240,7 +224,6 @@ def test_prepare_active_learning_configuration_when_active_learning_disabled_by_
         api_key="api-key",
         model_id="some/1",
         cache=cache,
-        active_learning_enabled=True,
     )
 
     # then
@@ -292,7 +275,6 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
         api_key="api-key",
         model_id="some/1",
         cache=cache,
-        active_learning_enabled=True,
     )
 
     # then

@@ -27,7 +27,7 @@ from inference.core.env import (
     MAX_CANDIDATES,
     MAX_DETECTIONS,
     MODEL_ID,
-    STREAM_ID,
+    STREAM_ID, ACTIVE_LEARNING_ENABLED,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
@@ -107,19 +107,20 @@ class Stream(BaseInterface):
                 f"the key."
             )
 
+        self.active_learning_middleware = NullActiveLearningMiddleware()
         if isinstance(model, str):
             self.model = get_roboflow_model(model, self.api_key)
-            self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
-                api_key=self.api_key,
-                model_id=self.model_id,
-                cache=cache,
-            )
+            if ACTIVE_LEARNING_ENABLED:
+                self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+                    api_key=self.api_key,
+                    model_id=self.model_id,
+                    cache=cache,
+                )
             self.task_type = get_model_type(
                 model_id=self.model_id, api_key=self.api_key
             )[0]
         else:
             self.model = model
-            self.active_learning_middleware = NullActiveLearningMiddleware()
             self.task_type = "unknown"
 
         self.class_agnostic_nms = class_agnostic_nms
