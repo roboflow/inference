@@ -493,7 +493,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted(
         strategy_with_spare_credit="my-strategy",
         encoded_image=b"IMAGE",
         local_image_id="local-id",
-        prediction={"predictions": [{"x": 100.}]},
+        prediction={"predictions": [{"x": 100.0}]},
         prediction_type="object-detection",
         configuration=configuration,
         api_key="api-key",
@@ -520,7 +520,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted(
         dataset_id=configuration.dataset_id,
         local_image_id="local-id",
         roboflow_image_id="roboflow-id",
-        annotation_content=json.dumps({"predictions": [{"x": 100.}]}),
+        annotation_content=json.dumps({"predictions": [{"x": 100.0}]}),
         annotation_file_type="json",
         is_prediction=True,
     )
