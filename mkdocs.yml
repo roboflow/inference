@@ -65,6 +65,7 @@ theme:
   name: 'material'
   logo: inference-icon.png
   favicon: inference-icon.png
+  custom_dir: docs/theme
   font:
     text: Roboto
     code: Roboto Mono
