@@ -10,6 +10,7 @@ nodes = elasticache_auto_discovery.discover(ELASTICACHE_ENDPOINT)
 
 # set up memcache
 nodes = map(lambda x: (x[1], int(x[2])), nodes)
+print("EC NODES", nodes)
 memcache_client = HashClient(nodes)
 
 
