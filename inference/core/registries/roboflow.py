@@ -24,7 +24,7 @@ GENERIC_MODELS = {
     "sam": ("embed", "sam"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
-    "grounding-dino": ("object-detection", "grounding-dino"),
+    "grounding_dino": ("object-detection", "grounding-dino"),
     "cogvlm": ("llm", "cogvlm"),
 }
 

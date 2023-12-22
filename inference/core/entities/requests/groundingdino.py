@@ -2,10 +2,10 @@ from typing import List, Optional
 
 from pydantic import Field
 
-from inference.core.entities.requests.inference import InferenceRequest
+from inference.core.entities.requests.inference import CVInferenceRequest
 
 
-class GroundingDINOInferenceRequest(InferenceRequest):
+class GroundingDINOInferenceRequest(CVInferenceRequest):
     """Request for Grounding DINO zero-shot predictions.
 
     Attributes:

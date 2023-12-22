@@ -696,7 +696,7 @@ class HttpInterface(BaseInterface):
             if CORE_MODEL_GROUNDINGDINO_ENABLED:
 
                 @app.post(
-                    "/grounding-dino/infer",
+                    "/grounding_dino/infer",
                     response_model=ObjectDetectionInferenceResponse,
                     summary="Grounding DINO inference.",
                     description="Run the Grounding DINO zero-shot object detection model.",
@@ -724,9 +724,11 @@ class HttpInterface(BaseInterface):
                     grounding_dino_model_id = load_grounding_dino_model(
                         inference_request, api_key=api_key
                     )
-                    response = self.model_manager.infer_from_request(
+                    print("INFER REQUEST", inference_request.dict())
+                    response = await self.model_manager.infer_from_request(
                         grounding_dino_model_id, inference_request
                     )
+                    print("RESPONSE", response)
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"

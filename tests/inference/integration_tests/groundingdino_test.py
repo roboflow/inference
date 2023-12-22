@@ -15,6 +15,7 @@ TESTS = [
         "description": "Grounding DINO",
         "type": "ocr",
         "payload": {
+            "api_key": api_key,
             "image": {
                 "type": "url",
                 "value": "https://media.roboflow.com/fruit.png",
@@ -31,7 +32,7 @@ def test_grounding_dino(test):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
-        f"{base_url}:{port}/groundingdino/infer",
+        f"{base_url}:{port}/grounding_dino/infer",
         json=payload,
     )
     try:

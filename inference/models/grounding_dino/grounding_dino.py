@@ -1,6 +1,7 @@
 import os
 import urllib.request
 from time import perf_counter
+from typing import Any
 
 import torch
 from groundingdino.util.inference import Model
@@ -25,7 +26,7 @@ class GroundingDINO(RoboflowCoreModel):
     """
 
     def __init__(
-        self, *args, model_id="groundingdino/groundingdino_swint_ogc", **kwargs
+        self, *args, model_id="grounding_dino/groundingdino_swint_ogc", **kwargs
     ):
         """Initializes the GroundingDINO model.
 
@@ -36,7 +37,7 @@ class GroundingDINO(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-        GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, "groundingdino")
+        GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
 
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
             GROUDNING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
@@ -64,7 +65,7 @@ class GroundingDINO(RoboflowCoreModel):
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 
-    def preproc_image(self, image: InferenceRequestImage):
+    def preproc_image(self, image: Any):
         """Preprocesses an image.
 
         Args:
@@ -76,7 +77,17 @@ class GroundingDINO(RoboflowCoreModel):
         np_image = load_image_rgb(image)
         return np_image
 
-    def infer(self, request: GroundingDINOInferenceRequest):
+    def infer_from_request(
+        self,
+        request: GroundingDINOInferenceRequest,
+    ) -> ObjectDetectionInferenceResponse:
+        """
+        Perform inference based on the details provided in the request, and return the associated responses.
+        """
+        responses = self.infer(**request.dict(), return_image_dims=True)
+        return responses
+
+    def infer(self, image:Any=None, text:list=None, class_filter:list=None, **kwargs):
         """
         Run inference on a provided image.
 
@@ -88,18 +99,17 @@ class GroundingDINO(RoboflowCoreModel):
             GroundingDINOInferenceRequest: The inference response.
         """
         t1 = perf_counter()
-
-        image = self.preproc_image(request["image"])
+        image = self.preproc_image(image)
         img_dims = image.shape
 
         detections = self.model.predict_with_classes(
             image=image,
-            classes=request.get("text", []),
+            classes=text,
             box_threshold=0.5,
             text_threshold=0.5,
         )
 
-        self.class_names = request.get("text", [])
+        self.class_names = text
 
         xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
@@ -119,8 +129,8 @@ class GroundingDINO(RoboflowCoreModel):
                     }
                 )
                 for i, pred in enumerate(detections.xyxy)
-                if not request.get("class_filter")
-                or self.class_names[int(pred[6])] in request["class_filter"]
+                if not class_filter
+                or self.class_names[int(pred[6])] in class_filter
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,
