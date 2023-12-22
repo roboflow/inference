@@ -1074,7 +1074,7 @@ class HttpInterface(BaseInterface):
                     args = {"keypoint_confidence": keypoint_confidence}
                 inference_request = inference_request_type(
                     api_key=api_key,
-                    model_id=request_model_id,
+                    model_id=model_id,
                     image=request_image,
                     confidence=confidence,
                     iou_threshold=overlap,
