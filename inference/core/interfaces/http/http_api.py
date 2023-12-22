@@ -1056,9 +1056,7 @@ class HttpInterface(BaseInterface):
                     request_model_id, api_key, model_id_alias=model_id
                 )
 
-                task_type = self.model_manager.get_task_type(
-                    model_id, api_key=api_key
-                )
+                task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
                 if task_type == "instance-segmentation":
