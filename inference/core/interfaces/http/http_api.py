@@ -1057,7 +1057,7 @@ class HttpInterface(BaseInterface):
                 )
 
                 task_type = self.model_manager.get_task_type(
-                    request_model_id, api_key=api_key
+                    model_id, api_key=api_key
                 )
                 inference_request_type = ObjectDetectionInferenceRequest
                 args = dict()
