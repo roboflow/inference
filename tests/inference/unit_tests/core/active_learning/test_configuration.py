@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import asdict, replace
 from unittest import mock
 from unittest.mock import MagicMock
@@ -134,7 +135,8 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
     assert (
         result == expected_configuration
     ), "Returned configuration must contain values defined in mocks"
-    assert cache.get("active_learning:configurations:some") == asdict(
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    assert cache.get(f"active_learning:configurations:{api_key_hash}:some") == asdict(
         expected_configuration
     ), "Configuration (serialised to dict) must be saved in cache"
     get_roboflow_workspace_mock.assert_called_once_with(api_key="api-key")
@@ -153,8 +155,9 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
 def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
     # given
     cache = MemoryCache()
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
     cache.set(
-        key="active_learning:configurations:some",
+        key=f"active_learning:configurations:{api_key_hash}:some",
         value={
             "dataset_id": "some",
             "version_id": "1",
@@ -186,8 +189,9 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is
 ):
     # given
     cache = MemoryCache()
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
     cache.set(
-        key="active_learning:configurations:some",
+        key=f"active_learning:configurations:{api_key_hash}:some",
         value={
             "dataset_id": "some",
             "version_id": "1",
