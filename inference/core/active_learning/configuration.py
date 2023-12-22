@@ -21,7 +21,9 @@ from inference.core.active_learning.samplers.random import initialize_random_sam
 from inference.core.cache.base import BaseCache
 from inference.core.exceptions import (
     ActiveLearningConfigurationDecodingError,
-    ActiveLearningConfigurationError, RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError,
+    ActiveLearningConfigurationError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
 )
 from inference.core.roboflow_api import (
     get_roboflow_active_learning_configuration,
@@ -82,7 +84,9 @@ def get_roboflow_project_metadata(
     cache: BaseCache,
 ) -> RoboflowProjectMetadata:
     logger.info(f"Fetching active learning configuration.")
-    config_cache_key = construct_cache_key_for_active_learning_config(api_key=api_key, model_id=model_id)
+    config_cache_key = construct_cache_key_for_active_learning_config(
+        api_key=api_key, model_id=model_id
+    )
     cached_config = cache.get(config_cache_key)
     if cached_config is not None:
         logger.info("Found Active Learning configuration in cache.")
