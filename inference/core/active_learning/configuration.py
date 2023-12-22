@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +22,8 @@ from inference.core.cache.base import BaseCache
 from inference.core.exceptions import (
     ActiveLearningConfigurationDecodingError,
     ActiveLearningConfigurationError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
 )
 from inference.core.roboflow_api import (
     get_roboflow_active_learning_configuration,
@@ -81,7 +84,9 @@ def get_roboflow_project_metadata(
     cache: BaseCache,
 ) -> RoboflowProjectMetadata:
     logger.info(f"Fetching active learning configuration.")
-    config_cache_key = construct_cache_key_for_active_learning_config(model_id=model_id)
+    config_cache_key = construct_cache_key_for_active_learning_config(
+        api_key=api_key, model_id=model_id
+    )
     cached_config = cache.get(config_cache_key)
     if cached_config is not None:
         logger.info("Found Active Learning configuration in cache.")
@@ -93,9 +98,21 @@ def get_roboflow_project_metadata(
         workspace_id=workspace_id,
         dataset_id=dataset_id,
     )
-    roboflow_api_configuration = get_roboflow_active_learning_configuration(
-        api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
-    )
+    try:
+        roboflow_api_configuration = get_roboflow_active_learning_configuration(
+            api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
+        )
+    except (RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError):
+        # currently backend returns HTTP 404 if dataset does not exist
+        # or workspace_id from api_key indicate that the owner is different,
+        # so in the situation when we query for Universe dataset.
+        # We want the owner of public dataset to be able to set AL configs
+        # and use them, but not other people. At this point it's known
+        # that HTTP 404 means not authorised (which will probably change
+        # in future iteration of backend) - so on both NotAuth and NotFound
+        # errors we assume that we simply cannot use AL with this model and
+        # this api_key.
+        roboflow_api_configuration = {"enabled": False}
     configuration = RoboflowProjectMetadata(
         dataset_id=dataset_id,
         version_id=version_id,
@@ -111,9 +128,10 @@ def get_roboflow_project_metadata(
     return configuration
 
 
-def construct_cache_key_for_active_learning_config(model_id: str) -> str:
+def construct_cache_key_for_active_learning_config(api_key: str, model_id: str) -> str:
     dataset_id = model_id.split("/")[0]
-    return f"active_learning:configurations:{dataset_id}"
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    return f"active_learning:configurations:{api_key_hash}:{dataset_id}"
 
 
 def parse_cached_roboflow_project_metadata(
