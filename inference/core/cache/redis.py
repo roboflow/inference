@@ -29,8 +29,9 @@ class RedisCache(BaseCache):
         """
         Initializes a new instance of the MemoryCache class.
         """
+        print(f"CONNECTING TO REDIS host={host}, port={port}", flush=True)
         self.client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
-
+        print("CONNECTED TO REDIS", flush=True)
         self.zexpires = dict()
 
         self._expire_thread = threading.Thread(target=self._expire, daemon=True)
