@@ -21,7 +21,7 @@ export ROBOFLOW_API_KEY=<your api key>
 Once you have selected a model to run, create a new Python file and add the following code:
 
 ```python
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
 
 pipeline = InferencePipeline.init(
@@ -70,7 +70,7 @@ This function provides two parameters:
 For example, you can use the following code to print the predictions to the console:
 
 ```python
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference import InferencePipeline
 import numpy as np
 
 def on_prediction(predictions: dict, video_frame: np.array) -> None:

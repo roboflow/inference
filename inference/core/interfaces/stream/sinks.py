@@ -56,7 +56,7 @@ def render_boxes(
         ```python
         >>> from functools import partial
         >>> import cv2
-        >>> from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+        >>> from inference import InferencePipeline
 
         >>> output_size = (640, 480)
         >>> video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
@@ -225,7 +225,7 @@ def multi_sink(
         ```python
         >>> from functools import partial
         >>> import cv2
-        >>> from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+        >>> from inference import InferencePipeline
 
         >>> udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
         >>> on_prediction = partial(multi_sink, sinks=[udp_sink.send_predictions, render_boxes])
