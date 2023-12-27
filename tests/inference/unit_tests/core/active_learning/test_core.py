@@ -493,7 +493,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted(
         strategy_with_spare_credit="my-strategy",
         encoded_image=b"IMAGE",
         local_image_id="local-id",
-        prediction={"some": "prediction"},
+        prediction={"predictions": [{"x": 100.0}]},
         prediction_type="object-detection",
         configuration=configuration,
         api_key="api-key",
@@ -520,7 +520,7 @@ def test_register_datapoint_at_roboflow_when_predictions_to_be_persisted(
         dataset_id=configuration.dataset_id,
         local_image_id="local-id",
         roboflow_image_id="roboflow-id",
-        annotation_content=json.dumps({"some": "prediction"}),
+        annotation_content=json.dumps({"predictions": [{"x": 100.0}]}),
         annotation_file_type="json",
         is_prediction=True,
     )
@@ -719,9 +719,23 @@ def test_is_prediction_registration_forbidden_when_roboflow_image_id_not_registe
 ):
     # when
     result = is_prediction_registration_forbidden(
-        prediction={"predictions": [], "top": "cat"},
+        prediction={"predictions": [{"x": 37}], "top": "cat"},
         persist_predictions=True,
         roboflow_image_id=None,
+    )
+
+    # then
+    assert result is True
+
+
+def test_is_prediction_registration_forbidden_when_prediction_should_be_rejected_based_on_empty_content() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"predictions": [], "top": "cat"},
+        persist_predictions=True,
+        roboflow_image_id="some+id",
     )
 
     # then
@@ -733,7 +747,7 @@ def test_is_prediction_registration_forbidden_when_prediction_should_be_register
 ):
     # when
     result = is_prediction_registration_forbidden(
-        prediction={"predictions": [], "top": "cat"},
+        prediction={"predictions": [{"x": 37}], "top": "cat"},
         persist_predictions=True,
         roboflow_image_id="some+id",
     )

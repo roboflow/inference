@@ -67,6 +67,10 @@ class PipelineInitialisationRequest(BaseModel):
         description="Configuration of the model",
         default_factory=ObjectDetectionModelConfiguration,
     )
+    active_learning_enabled: Optional[bool] = Field(
+        description="Flag to decide if Active Learning middleware should be enabled. If not given - env variable `ACTIVE_LEARNING_ENABLED` will be used (with default `True`).",
+        default=None,
+    )
 
 
 class CommandContext(BaseModel):

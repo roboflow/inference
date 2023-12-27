@@ -1,0 +1,6 @@
+apiVersion: v2
+name: roboflow-inference-server
+description: This helm chart deploys roboflow-inference to a GPU-enabled kubernetes cluster. Licensed under The Roboflow Enterprise License 
+type: application
+version: 1.0.0
+appVersion: "0.9.7"

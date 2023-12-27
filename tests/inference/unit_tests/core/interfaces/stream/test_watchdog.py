@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from inference.core.interfaces.stream.watchdog import (
-    average_property_values,
-    are_events_compatible,
-    compute_events_latency,
-    BasePipelineWatchDog,
-)
 from inference.core.interfaces.stream.entities import (
-    ModelActivityEvent,
     LatencyMonitorReport,
+    ModelActivityEvent,
+)
+from inference.core.interfaces.stream.watchdog import (
+    BasePipelineWatchDog,
+    are_events_compatible,
+    average_property_values,
+    compute_events_latency,
 )
 
 

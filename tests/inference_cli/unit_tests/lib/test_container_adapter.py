@@ -1,12 +1,15 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+from rich.progress import Progress
+
 from inference_cli.lib import container_adapter
 from inference_cli.lib.container_adapter import (
     find_running_inference_containers,
     is_container_running,
     is_inference_server_container,
     kill_containers,
+    show_progress,
     terminate_running_containers,
 )
 
@@ -150,3 +153,108 @@ def test_terminate_running_containers_in_non_interactive_mode() -> None:
     containers[0].kill.assert_not_called()
     containers[1].kill.assert_called_once()
     containers[2].kill.assert_called_once()
+
+
+def test_show_progress_when_new_downloading_status_encountered() -> None:
+    # given
+    with Progress() as progress:
+        progress_tasks = {}
+        log_line = {
+            "id": 1,
+            "status": "Downloading",
+            "progressDetail": {"total": 100.0},
+        }
+
+        # when
+        show_progress(
+            log_line=log_line, progress=progress, progress_tasks=progress_tasks
+        )
+
+        # then
+        assert len(progress_tasks) == 1, "One new task is expected to be added"
+        assert (
+            "[red][Downloading 1]" in progress_tasks
+        ), "ID for new task should be [red][Downloading 1]"
+
+
+def test_show_progress_when_update_on_existing_download_encountered() -> None:
+    # given
+    with Progress() as progress:
+        progress_tasks = {
+            "[red][Downloading 1]": progress.add_task(
+                "[red][Downloading 1]", total=100.0
+            )
+        }
+        log_line = {
+            "id": 1,
+            "status": "Downloading",
+            "progressDetail": {"current": 3.0},
+        }
+
+        # when
+        show_progress(
+            log_line=log_line, progress=progress, progress_tasks=progress_tasks
+        )
+
+        # then
+        assert len(progress_tasks) == 1, "No new task to be created"
+        assert (
+            abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        ), "Progress should match 3% (3.0 / 100.0)"
+
+
+def test_show_progress_when_new_extracting_status_encountered() -> None:
+    # given
+    with Progress() as progress:
+        progress_tasks = {}
+        log_line = {"id": 1, "status": "Extracting", "progressDetail": {"total": 100.0}}
+
+        # when
+        show_progress(
+            log_line=log_line, progress=progress, progress_tasks=progress_tasks
+        )
+
+        # then
+        assert len(progress_tasks) == 1, "One new task is expected to be added"
+        assert (
+            "[green][Extracting 1]" in progress_tasks
+        ), "ID for new task should be [green][Extracting 1]"
+
+
+def test_show_progress_when_update_on_existing_extracting_encountered() -> None:
+    # given
+    with Progress() as progress:
+        progress_tasks = {
+            "[green][Extracting 1]": progress.add_task(
+                "[green][Extracting 1]", total=100.0
+            )
+        }
+        log_line = {"id": 1, "status": "Extracting", "progressDetail": {"current": 3.0}}
+
+        # when
+        show_progress(
+            log_line=log_line, progress=progress, progress_tasks=progress_tasks
+        )
+
+        # then
+        assert len(progress_tasks) == 1, "No new task to be created"
+        assert (
+            abs(progress.tasks[0].percentage - 3.0) < 1e-5
+        ), "Progress should match 3% (3.0 / 100.0)"
+
+
+def test_show_progress_when_unknown_status_given() -> None:
+    # given
+    with Progress() as progress:
+        progress_tasks = {}
+        log_line = {"id": 1, "status": "unknown", "progressDetail": {"total": 100.0}}
+
+        # when
+        show_progress(
+            log_line=log_line, progress=progress, progress_tasks=progress_tasks
+        )
+
+        # then
+        assert (
+            len(progress_tasks) == 0
+        ), "No new task should be added on the update which is not recognised"

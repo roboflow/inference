@@ -3,11 +3,17 @@ from typing import Dict, List, Optional, Union
 
 import typer
 from docker.models.containers import Container
+from rich.progress import Progress, TaskID
 
 import docker
 from inference_cli.lib.utils import read_env_file
 
-docker_client = docker.from_env()
+try:
+    docker_client = docker.from_env()
+except docker.errors.DockerException as e:
+    raise (
+        "Error connecting to Docker daemon. Is docker installed and running? See https://www.docker.com/get-started/ for installation instructions."
+    ) from e
 
 
 def ask_user_to_kill_container(container: Container) -> bool:
@@ -119,6 +125,7 @@ def start_inference_container(
         api_key=api_key,
         env_file_path=env_file_path,
     )
+    pull_image(image)
     print(f"Starting inference server container...")
     docker_client.containers.run(
         image=image,
@@ -190,3 +197,40 @@ Image: {image}
             )
             return
     print("No inference server container running.")
+
+
+def pull_image(image: str) -> None:
+    print(f"Pulling image: {image}")
+    progress_tasks = {}
+    with Progress() as progress:
+        logs_stream = docker_client.api.pull(image, stream=True, decode=True)
+        for line in logs_stream:
+            show_progress(
+                log_line=line, progress=progress, progress_tasks=progress_tasks
+            )
+    print(f"Image {image} pulled.")
+
+
+def show_progress(
+    log_line: dict, progress: Progress, progress_tasks: Dict[str, TaskID]
+) -> None:
+    log_id, status = log_line.get("id"), log_line.get("status")
+    if log_line["status"].lower() == "downloading":
+        task_id = f"[red][Downloading {log_id}]"
+    elif log_line["status"].lower() == "extracting":
+        task_id = f"[green][Extracting {log_id}]"
+    else:
+        return None
+    if task_id not in progress_tasks:
+        progress_tasks[task_id] = progress.add_task(
+            f"{task_id}", total=log_line.get("progressDetail", {}).get("total")
+        )
+    else:
+        progress.update(
+            progress_tasks[task_id],
+            completed=log_line.get("progressDetail", {}).get("current"),
+        )
+
+
+if __name__ == "__main__":
+    start_inference_container("my_api_key")

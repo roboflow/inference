@@ -125,6 +125,7 @@ class InferencePipelineManager(Process):
                 iou_threshold=model_configuration.get("iou_threshold"),
                 max_candidates=model_configuration.get("max_candidates"),
                 max_detections=model_configuration.get("max_detections"),
+                active_learning_enabled=payload.get("active_learning_enabled"),
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)

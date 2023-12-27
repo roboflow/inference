@@ -1,6 +1,4 @@
-from inference.core.models.utils.keypoints import (
-    superset_keypoints_count,
-)
+from inference.core.models.utils.keypoints import superset_keypoints_count
 
 
 def test_superset_keypoints_count() -> None:

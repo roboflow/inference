@@ -16,6 +16,7 @@ from inference.core.active_learning.middlewares import (
 )
 from inference.core.cache import cache
 from inference.core.env import (
+    ACTIVE_LEARNING_ENABLED,
     API_KEY,
     API_KEY_ENV_NAMES,
     CLASS_AGNOSTIC_NMS,
@@ -107,19 +108,22 @@ class Stream(BaseInterface):
                 f"the key."
             )
 
+        self.active_learning_middleware = NullActiveLearningMiddleware()
         if isinstance(model, str):
             self.model = get_roboflow_model(model, self.api_key)
-            self.active_learning_middleware = ThreadingActiveLearningMiddleware.init(
-                api_key=self.api_key,
-                model_id=self.model_id,
-                cache=cache,
-            )
+            if ACTIVE_LEARNING_ENABLED:
+                self.active_learning_middleware = (
+                    ThreadingActiveLearningMiddleware.init(
+                        api_key=self.api_key,
+                        model_id=self.model_id,
+                        cache=cache,
+                    )
+                )
             self.task_type = get_model_type(
                 model_id=self.model_id, api_key=self.api_key
             )[0]
         else:
             self.model = model
-            self.active_learning_middleware = NullActiveLearningMiddleware()
             self.task_type = "unknown"
 
         self.class_agnostic_nms = class_agnostic_nms

@@ -7,9 +7,10 @@ from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
-import supervision as sv
 import pytest
+import supervision as sv
 
+from inference.core.interfaces.camera import video_source
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
@@ -23,17 +24,16 @@ from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
     SourceMetadata,
-    StreamState,
-    VideoSource,
-    discover_source_properties,
-    purge_queue,
-    drop_single_frame_from_buffer,
-    decode_video_frame_to_buffer,
-    VideoConsumer,
     SourceProperties,
+    StreamState,
+    VideoConsumer,
+    VideoSource,
+    decode_video_frame_to_buffer,
+    discover_source_properties,
+    drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
+    purge_queue,
 )
-from inference.core.interfaces.camera import video_source
 
 
 def tear_down_source(source: VideoSource) -> None:

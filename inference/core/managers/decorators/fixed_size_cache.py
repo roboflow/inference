@@ -29,9 +29,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        queue_id = self._resolve_queue_id(
+            model_id=model_id, model_id_alias=model_id_alias
+        )
         if model_id in self:
-            self._key_queue.remove(model_id)
-            self._key_queue.append(model_id)
+            self._key_queue.remove(queue_id)
+            self._key_queue.append(queue_id)
             return
 
         should_pop = len(self) == self.max_size
@@ -39,7 +42,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             to_remove_model_id = self._key_queue.popleft()
             self.remove(to_remove_model_id)
 
-        self._key_queue.append(model_id)
+        self._key_queue.append(queue_id)
         return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
 
     def clear(self) -> None:
@@ -100,3 +103,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
 
     def describe_models(self) -> List[ModelDescription]:
         return self.model_manager.describe_models()
+
+    def _resolve_queue_id(
+        self, model_id: str, model_id_alias: Optional[str] = None
+    ) -> str:
+        return model_id if model_id_alias is None else model_id_alias

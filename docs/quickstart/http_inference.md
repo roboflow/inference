@@ -24,9 +24,11 @@ Start the server using `inference server start`. After you have installed the In
 
 ## Step #2: Run Inference
 
-You can send a URL with an image, a NumPy array, or a base64-encoded image to an Inference server. The server will return a JSON response with the predictions. There are two generations of routes in a Roboflow inference server, V1 and V2. To see exactly what routes are available for a running inference server instance, visit the `/docs` route in a browser to see dynamically generated swagger documentation. Note, Roboflow hosted inference endpoints (`detect.roboflow.com`) only support V1 routes.
+You can send a URL with an image, a NumPy array, or a base64-encoded image to an Inference server. The server will return a JSON response with the predictions.
 
-### V2 Routes
+There are two generations of routes in a Roboflow inference server To see what routes are available for a running inference server instance, visit the `/docs` route in a browser. Roboflow hosted inference endpoints (`detect.roboflow.com`) only support V1 routes.
+
+### Run Inference on a v2 Route
 
 !!! Run Inference
 
@@ -267,7 +269,7 @@ You can send a URL with an image, a NumPy array, or a base64-encoded image to an
         python app.py
         ```
 
-### V1 Routes
+### Run Inference on a v1 Route
 
 !!! Run Inference
     === "URL"
