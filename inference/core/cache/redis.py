@@ -25,11 +25,15 @@ class RedisCache(BaseCache):
         _expire_thread (threading.Thread): A thread that runs the _expire method.
     """
 
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0, ssl: bool = False) -> None:
+    def __init__(
+        self, host: str = "localhost", port: int = 6379, db: int = 0, ssl: bool = False
+    ) -> None:
         """
         Initializes a new instance of the MemoryCache class.
         """
-        self.client = redis.Redis(host=host, port=port, db=db, decode_responses=True, ssl=ssl)
+        self.client = redis.Redis(
+            host=host, port=port, db=db, decode_responses=True, ssl=ssl
+        )
 
         self.zexpires = dict()
 
