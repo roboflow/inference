@@ -38,7 +38,10 @@ from inference_sdk.http.utils.post_processing import (
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
-from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
+from inference_sdk.http.utils.requests import (
+    api_key_safe_raise_for_status,
+    inject_images_into_payload,
+)
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -380,15 +383,16 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         encoded_image = load_static_inference_input(
             inference_input=visual_prompt,
-        )[
-            0
-        ][0]
+        )
         payload = {
             "api_key": self.__api_key,
             "model_id": "cogvlm",
-            "image": {"type": "base64", "value": encoded_image},
             "prompt": text_prompt,
         }
+        payload = inject_images_into_payload(
+            payload=payload,
+            encoded_images=encoded_image,
+        )
         if chat_history is not None:
             payload["history"] = chat_history
         response = requests.post(
@@ -430,46 +434,18 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
         self.__ensure_v1_client_mode()
-        encoded_inference_inputs = load_static_inference_input(
-            inference_input=inference_input,
+        return self._post_images(
+            inference_input=inference_input, endpoint="/gaze/gaze_detection"
         )
-        images_payload = [
-            {"type": "base64", "value": image} for image, _ in encoded_inference_inputs
-        ]
-        payload = {
-            "api_key": self.__api_key,
-            "image": images_payload,
-        }
-        response = requests.post(
-            f"{self.__api_url}/gaze/gaze_detection",
-            json=payload,
-            headers=DEFAULT_HEADERS,
-        )
-        api_key_safe_raise_for_status(response=response)
-        return unwrap_single_element_list(sequence=response.json())
 
     def get_clip_image_embeddings(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
         self.__ensure_v1_client_mode()
-        encoded_inference_inputs = load_static_inference_input(
-            inference_input=inference_input,
+        return self._post_images(
+            inference_input=inference_input, endpoint="/clip/embed_image"
         )
-        images_payload = [
-            {"type": "base64", "value": image} for image, _ in encoded_inference_inputs
-        ]
-        payload = {
-            "api_key": self.__api_key,
-            "image": images_payload,
-        }
-        response = requests.post(
-            f"{self.__api_url}/clip/embed_image",
-            json=payload,
-            headers=DEFAULT_HEADERS,
-        )
-        api_key_safe_raise_for_status(response=response)
-        return unwrap_single_element_list(sequence=response.json())
 
     def get_clip_text_embeddings(
         self, text: Union[str, List[str]]
@@ -536,6 +512,32 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
+
+    def _post_images(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        endpoint: str,
+        model_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        payload = {
+            "api_key": self.__api_key,
+        }
+        if model_id is not None:
+            payload["model_id"] = model_id
+        payload = inject_images_into_payload(
+            payload=payload,
+            encoded_images=encoded_inference_inputs,
+        )
+        response = requests.post(
+            f"{self.__api_url}{endpoint}",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return unwrap_single_element_list(sequence=response.json())
 
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
