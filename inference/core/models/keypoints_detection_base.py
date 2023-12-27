@@ -185,7 +185,11 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                 y=keypoints[3 * keypoint_id + 1],
                 confidence=confidence,
                 class_id=keypoint_id,
-                class_name=keypoint_id2name[keypoint_id],
+                class_name=(
+                    keypoint_id2name[keypoint_id]
+                    if keypoint_id < len(keypoint_id2name)
+                    else "unknown"
+                ),
             )
             results.append(keypoint)
         return results
