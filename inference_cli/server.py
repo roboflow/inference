@@ -39,8 +39,30 @@ def start(
             "overriden by any explicit parameter of this command.",
         ),
     ] = None,
+    development: Annotated[
+        bool,
+        typer.Option(
+            "--dev",
+            "-d",
+            help="Run inference server in development mode (default is False).",
+        ),
+    ] = False,
+    api_key: Annotated[
+        str,
+        typer.Option(
+            "--roboflow-api-key",
+            "-k",
+            help="Roboflow API key (default is None).",
+        ),
+    ] = None,
 ):
-    start_inference_container(port=port, project=rf_env, env_file_path=env_file_path)
+    start_inference_container(
+        port=port,
+        project=rf_env,
+        env_file_path=env_file_path,
+        development=development,
+        api_key=api_key,
+    )
 
 
 @server_app.command()
