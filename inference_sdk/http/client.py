@@ -24,6 +24,7 @@ from inference_sdk.http.errors import (
     ModelNotInitializedError,
     ModelNotSelectedError,
     ModelTaskTypeNotSupportedError,
+    UnsupportedModeError,
     WrongClientModeError,
 )
 from inference_sdk.http.utils.iterables import unwrap_single_element_list
@@ -49,6 +50,7 @@ NEW_INFERENCE_ENDPOINTS = {
     CLASSIFICATION_TASK: "/infer/classification",
     KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
 }
+CLIP_ARGUMENT_TYPES = {"image", "text"}
 
 
 def wrap_errors(function: callable) -> callable:
@@ -285,7 +287,7 @@ class InferenceHTTPClient:
                 json=payload,
                 headers=DEFAULT_HEADERS,
             )
-            response.raise_for_status()
+            api_key_safe_raise_for_status(response=response)
             parsed_response = response.json()
             if parsed_response.get("visualization") is not None:
                 parsed_response["visualization"] = transform_base64_visualisation(
@@ -367,6 +369,173 @@ class InferenceHTTPClient:
         response_payload = response.json()
         self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
+
+    @wrap_errors
+    def prompt_cogvlm(
+        self,
+        visual_prompt: ImagesReference,
+        text_prompt: str,
+        chat_history: Optional[List[Tuple[str, str]]] = None,
+    ) -> dict:
+        self.__ensure_v1_client_mode()
+        encoded_image = load_static_inference_input(
+            inference_input=visual_prompt,
+        )[
+            0
+        ][0]
+        payload = {
+            "api_key": self.__api_key,
+            "model_id": "cogvlm",
+            "image": {"type": "base64", "value": encoded_image},
+            "prompt": text_prompt,
+        }
+        if chat_history is not None:
+            payload["history"] = chat_history
+        response = requests.post(
+            f"{self.__api_url}/llm/cogvlm",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @wrap_errors
+    def ocr_image(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        payload = {
+            "api_key": self.__api_key,
+        }
+        results = []
+        for element in encoded_inference_inputs:
+            image, _ = element
+            payload["image"] = {"type": "base64", "value": image}
+            response = requests.post(
+                f"{self.__api_url}/doctr/ocr",
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            )
+            api_key_safe_raise_for_status(response=response)
+            results.append(response.json())
+        return unwrap_single_element_list(sequence=results)
+
+    @wrap_errors
+    def detect_gazes(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        images_payload = [
+            {"type": "base64", "value": image} for image, _ in encoded_inference_inputs
+        ]
+        payload = {
+            "api_key": self.__api_key,
+            "image": images_payload,
+        }
+        response = requests.post(
+            f"{self.__api_url}/gaze/gaze_detection",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return unwrap_single_element_list(sequence=response.json())
+
+    def get_clip_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        images_payload = [
+            {"type": "base64", "value": image} for image, _ in encoded_inference_inputs
+        ]
+        payload = {
+            "api_key": self.__api_key,
+            "image": images_payload,
+        }
+        response = requests.post(
+            f"{self.__api_url}/clip/embed_image",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return unwrap_single_element_list(sequence=response.json())
+
+    def get_clip_text_embeddings(
+        self, text: Union[str, List[str]]
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
+        payload = {
+            "api_key": self.__api_key,
+            "text": text,
+        }
+        response = requests.post(
+            f"{self.__api_url}/clip/embed_text",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return unwrap_single_element_list(sequence=response.json())
+
+    def clip_compare(
+        self,
+        subject: Union[str, ImagesReference],
+        prompt: Union[str, List[str], ImagesReference, List[ImagesReference]],
+        subject_type: str = "image",
+        prompt_type: str = "text",
+    ) -> Union[dict, List[dict]]:
+        """
+        Both `subject_type` and `prompt_type` must be either "image" or "text"
+        """
+        if (
+            subject_type not in CLIP_ARGUMENT_TYPES
+            or prompt_type not in CLIP_ARGUMENT_TYPES
+        ):
+            raise UnsupportedModeError(
+                f"Could not accept `subject_type` and `prompt_type` with values different than {CLIP_ARGUMENT_TYPES}"
+            )
+        payload = {
+            "api_key": self.__api_key,
+            "subject_type": subject_type,
+            "prompt_type": prompt_type,
+        }
+        if subject_type == "image":
+            encoded_image = load_static_inference_input(
+                inference_input=subject,
+            )[
+                0
+            ][0]
+            payload["subject"] = {"type": "base64", "value": encoded_image}
+        else:
+            payload["subject"] = subject
+        if prompt_type == "image":
+            encoded_inference_inputs = load_static_inference_input(
+                inference_input=prompt,
+            )
+            images_payload = [
+                {"type": "base64", "value": image}
+                for image, _ in encoded_inference_inputs
+            ]
+            payload["prompt"] = images_payload
+        else:
+            payload["prompt"] = prompt
+        response = requests.post(
+            f"{self.__api_url}/clip/compare",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
 
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
