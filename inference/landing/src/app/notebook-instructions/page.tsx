@@ -43,8 +43,9 @@ export default function Home() {
             notebooks feature via the environment variable NOTEBOOK_ENABLED.
           </div>
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
-            To do this, update your docker run command with the argument `-e
-            NOTEBOOK_ENABLED=true`
+            To do this, use the `--dev` flag with the inference-cli: `inference
+            server start --dev`. Or, update your docker run command with the
+            argument `-e NOTEBOOK_ENABLED=true`
           </div>
           <HeaderLink
             href="http://localhost:9001/notebook/start"
