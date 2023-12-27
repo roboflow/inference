@@ -1,8 +1,7 @@
 import base64
-import os
-import subprocess
 import traceback
 from functools import partial, wraps
+from time import sleep
 from typing import Any, List, Optional, Union
 from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.utils.notebooks import start_notebook
@@ -1148,8 +1147,9 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
-        
+
         if not LAMBDA:
+
             @app.get(
                 "/notebook/start",
                 summary="Jupyter Lab Server Start",
@@ -1169,14 +1169,23 @@ class HttpInterface(BaseInterface):
                 if NOTEBOOK_ENABLED:
                     start_notebook()
                     if browserless:
-                        return {"success": True, "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}"}
+                        return {
+                            "success": True,
+                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
+                        }
                     else:
-                        return RedirectResponse(f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}")
+                        sleep(2)
+                        return RedirectResponse(
+                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
+                        )
                 else:
                     if browserless:
-                        return {"success": False, "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable."}
+                        return {
+                            "success": False,
+                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
+                        }
                     else:
-                        return RedirectResponse(f"/notebook-instructions")
+                        return RedirectResponse(f"/notebook-instructions.html")
 
         app.mount(
             "/",

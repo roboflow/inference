@@ -39,7 +39,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
-            To use the build in notebooks in Inference, you need to enable the
+            To use the built in notebooks in Inference, you need to enable the
             notebooks feature via the environment variable NOTEBOOK_ENABLED.
           </div>
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">

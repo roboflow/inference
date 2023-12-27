@@ -156,7 +156,7 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
 # Log level, default is "INFO"
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
