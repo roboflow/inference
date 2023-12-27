@@ -90,6 +90,10 @@ export default function Home() {
               icon="💫"
             />
           </div>
+          <div className="text-base md:text-lg font-medium max-w-xl">
+            This inference server comes with a built in Jupyterlab server for
+            development and testing:
+          </div>
           <div className="flex items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
               href="http://localhost:9001/notebook/start"
