@@ -488,21 +488,23 @@ class InferenceHTTPClient:
         if subject_type == "image":
             encoded_image = load_static_inference_input(
                 inference_input=subject,
-            )[
-                0
-            ][0]
-            payload["subject"] = {"type": "base64", "value": encoded_image}
+            )
+            payload = inject_images_into_payload(
+                payload=payload,
+                encoded_images=encoded_image,
+                key="subject"
+            )
         else:
             payload["subject"] = subject
         if prompt_type == "image":
             encoded_inference_inputs = load_static_inference_input(
                 inference_input=prompt,
             )
-            images_payload = [
-                {"type": "base64", "value": image}
-                for image, _ in encoded_inference_inputs
-            ]
-            payload["prompt"] = images_payload
+            payload = inject_images_into_payload(
+                payload=payload,
+                encoded_images=encoded_inference_inputs,
+                key="prompt"
+            )
         else:
             payload["prompt"] = prompt
         response = requests.post(
