@@ -149,7 +149,7 @@ if __name__ == "__main__":
         help=f"Flag to decide if output to be streamed or displayed on screen",
         required=False,
         type=str,
-        default="screen",
+        default="display",
     )
     args = parser.parse_args()
     main(

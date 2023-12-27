@@ -216,6 +216,7 @@ REDIS_HOST = os.getenv("REDIS_HOST", None)
 
 # Redis port, default is 6379
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_SSL = str2bool(os.getenv("REDIS_SSL", False))
 
 # Required ONNX providers, default is None
 REQUIRED_ONNX_PROVIDERS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
