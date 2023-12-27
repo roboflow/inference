@@ -1,3 +1,5 @@
+from redis.exceptions import ConnectionError, TimeoutError
+
 from inference.core import logger
 from inference.core.cache.memory import MemoryCache
 from inference.core.cache.redis import RedisCache
@@ -8,7 +10,7 @@ if REDIS_HOST is not None:
         cache = RedisCache(
             host=REDIS_HOST, port=REDIS_PORT, ssl=REDIS_SSL, timeout=REDIS_TIMEOUT
         )
-    except TimeoutError:
+    except (TimeoutError, ConnectionError):
         logger.error(
             f"Could not connect to Redis under {REDIS_HOST}:{REDIS_PORT}. MemoryCache to be used."
         )
