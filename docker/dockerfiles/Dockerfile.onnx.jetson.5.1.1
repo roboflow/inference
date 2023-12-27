@@ -34,6 +34,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
+    jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -42,6 +43,11 @@ RUN wget https://nvidia.box.com/shared/static/v59xkrnvederwewo2f1jtv6yurl92xso.w
 RUN pip3 install onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl "opencv-python-headless<4.3" \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl
+
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
 
 WORKDIR /app/
 COPY inference inference

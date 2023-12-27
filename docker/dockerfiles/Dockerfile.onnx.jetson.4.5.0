@@ -36,6 +36,7 @@ RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
+    jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -44,6 +45,11 @@ RUN wget https://nvidia.box.com/shared/static/2sv2fv1wseihaw8ym0d4srz41dzljwxh.w
 RUN python3.8 -m pip install onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl
+
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
 
 WORKDIR /app/
 COPY inference inference

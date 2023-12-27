@@ -33,11 +33,20 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
+    jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
 
 FROM scratch
 COPY --from=base / /
+
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
+
+WORKDIR /notebooks
+COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
