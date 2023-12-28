@@ -11,7 +11,6 @@ import supervision as sv
 from PIL import Image
 
 import inference.core.entities.requests.inference
-from inference import get_roboflow_model
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
     ThreadingActiveLearningMiddleware,
@@ -38,6 +37,7 @@ from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
 from inference.core.registries.roboflow import get_model_type
 from inference.core.version import __version__
+from inference.models.utils import get_roboflow_model
 
 
 class UdpStream(BaseInterface):

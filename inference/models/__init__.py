@@ -23,7 +23,6 @@ try:
 except:
     pass
 
-from inference.models.utils import get_roboflow_model
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
