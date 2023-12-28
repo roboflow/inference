@@ -69,5 +69,5 @@ class WrongClientModeError(HTTPClientError):
     pass
 
 
-class UnsupportedModeError(HTTPClientError):
+class InvalidParameterError(HTTPClientError):
     pass

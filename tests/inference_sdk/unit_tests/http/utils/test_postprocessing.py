@@ -9,13 +9,13 @@ from requests import Response
 
 from inference_sdk.http.entities import VisualisationResponseFormat
 from inference_sdk.http.utils.post_processing import (
-    adjust_points_coordinates_to_client_scaling_factor,
     adjust_bbox_coordinates_to_client_scaling_factor,
     adjust_object_detection_predictions_to_client_scaling_factor,
-    response_contains_jpeg_image,
-    transform_base64_visualisation,
+    adjust_points_coordinates_to_client_scaling_factor,
     adjust_prediction_to_client_scaling_factor,
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
+    response_contains_jpeg_image,
+    transform_base64_visualisation,
 )
 
 
@@ -259,7 +259,7 @@ def test_adjust_prediction_to_client_scaling_factor_when_sstub_prediction_is_rec
         "time": 0.0002442499971948564,
         "is_stub": True,
         "model_id": "instance-seg/0",
-        "task_type": "instance-segmentation"
+        "task_type": "instance-segmentation",
     }
     # when
     result = adjust_prediction_to_client_scaling_factor(

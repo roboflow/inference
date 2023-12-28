@@ -21,10 +21,10 @@ from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
+    InvalidParameterError,
     ModelNotInitializedError,
     ModelNotSelectedError,
     ModelTaskTypeNotSupportedError,
-    UnsupportedModeError,
     WrongClientModeError,
 )
 from inference_sdk.http.utils.iterables import unwrap_single_element_list
@@ -476,11 +476,12 @@ class InferenceHTTPClient:
         """
         Both `subject_type` and `prompt_type` must be either "image" or "text"
         """
+        self.__ensure_v1_client_mode()
         if (
             subject_type not in CLIP_ARGUMENT_TYPES
             or prompt_type not in CLIP_ARGUMENT_TYPES
         ):
-            raise UnsupportedModeError(
+            raise InvalidParameterError(
                 f"Could not accept `subject_type` and `prompt_type` with values different than {CLIP_ARGUMENT_TYPES}"
             )
         payload = {

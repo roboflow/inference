@@ -30,7 +30,9 @@ def inject_images_into_payload(
     encoded_images: List[Tuple[str, Optional[float]]],
     key: str = "image",
 ) -> dict:
-    if issubclass(type(encoded_images), list) and len(encoded_images) > 1:
+    if len(encoded_images) == 0:
+        return payload
+    if len(encoded_images) > 1:
         images_payload = [
             {"type": "base64", "value": image} for image, _ in encoded_images
         ]
