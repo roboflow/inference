@@ -161,6 +161,13 @@ except:
     pass
 
 try:
+    from inference.models import GroundingDINO
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
+except:
+    pass
+
+try:
     from inference.models import CogVLM
 
     ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM

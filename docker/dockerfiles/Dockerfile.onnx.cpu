@@ -20,6 +20,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
+    requirements/requirements.groundingdino.txt \
     requirements/_requirements.txt \
     ./
 
@@ -32,6 +33,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
+    -r requirements.groundingdino.txt \
     wheel>=0.38.0 \
     setuptools>=65.5.1 \
     --upgrade \
