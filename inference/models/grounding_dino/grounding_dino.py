@@ -87,7 +87,9 @@ class GroundingDINO(RoboflowCoreModel):
         result = self.infer(**request.dict())
         return result
 
-    def infer(self, image:Any=None, text:list=None, class_filter:list=None, **kwargs):
+    def infer(
+        self, image: Any = None, text: list = None, class_filter: list = None, **kwargs
+    ):
         """
         Run inference on a provided image.
 
@@ -129,8 +131,7 @@ class GroundingDINO(RoboflowCoreModel):
                     }
                 )
                 for i, pred in enumerate(detections.xyxy)
-                if not class_filter
-                or self.class_names[int(pred[6])] in class_filter
+                if not class_filter or self.class_names[int(pred[6])] in class_filter
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,
