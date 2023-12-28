@@ -39,20 +39,14 @@ def test_grounding_dino(test):
         response.raise_for_status()
         data = response.json()
         try:
-            assert "result" in data
+            assert "predictions" in data
         except:
-            print(f"Invalid response: {data}, expected 'result' in data")
-
+            print(f"Invalid response: {data}, expected 'predictions' in data")
         try:
-            assert isinstance(data["result"], str) and len(data["result"]) > 0
-        except:
-            print(f"Invalid response: {data['result']}, expected a non-empty string")
-
-        try:
-            assert data["result"] == test["expected_response"]["result"]
+            assert data == test
         except:
             print(
-                f"Invalid response: {data['result']}, expected {test['expected_response']['result']}"
+                f"Invalid response: {data}, expected {test['expected_response']}"
             )
     except Exception as e:
         raise e
@@ -83,4 +77,4 @@ def setup():
 
 
 if __name__ == "__main__":
-    test_doctr()
+    test_grounding_dino()
