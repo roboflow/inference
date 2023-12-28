@@ -121,15 +121,6 @@ class RoboflowInferenceModel(Model):
         self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
-        if not self.api_key and not (
-            AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
-        ):
-            raise MissingApiKeyError(
-                "No API Key Found, must provide an API Key in each request or as an environment "
-                f"variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
-                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                f"retrieve the key."
-            )
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id

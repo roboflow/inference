@@ -142,13 +142,6 @@ class InferencePipeline:
         """
         if api_key is None:
             api_key = API_KEY
-        if api_key is None:
-            raise MissingApiKeyError(
-                "Could not initialise InferencePipeline, as API key is missing either in initializer parameters "
-                f"or in one one of allowed env variables: {API_KEY_ENV_NAMES}. "
-                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                f"retrieve one."
-            )
         if status_update_handlers is None:
             status_update_handlers = []
         inference_config = ObjectDetectionInferenceConfig.init(

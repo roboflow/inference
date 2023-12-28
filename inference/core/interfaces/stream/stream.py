@@ -100,13 +100,6 @@ class Stream(BaseInterface):
         if not self.model_id:
             raise ValueError("MODEL_ID is not defined")
         self.api_key = api_key
-        if not self.api_key:
-            raise ValueError(
-                f"API key is missing. Either pass it explicitly to constructor, or use one of env variables: "
-                f"{API_KEY_ENV_NAMES}. Visit "
-                f"https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to generate "
-                f"the key."
-            )
 
         self.active_learning_middleware = NullActiveLearningMiddleware()
         if isinstance(model, str):
