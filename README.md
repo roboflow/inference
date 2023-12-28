@@ -8,9 +8,10 @@ You can [train and deploy your own custom model](https://github.com/roboflow/not
 [fine-tuned models shared by the community](https://universe.roboflow.com).
 
 There are three primary `inference` interfaces:
-* A Python-native package (`pip install inference`)
-* A self-hosted inference server (`inference server start`)
-* A [fully-managed, auto-scaling API](https://docs.roboflow.com).
+
+- A Python-native package (`pip install inference`)
+- A self-hosted inference server (`inference server start`)
+- A [fully-managed, auto-scaling API](https://docs.roboflow.com).
 
 You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
 
@@ -65,14 +66,14 @@ inference.Stream(
 
     output_channel_order="BGR",
     use_main_thread=True, # for opencv display
-    
+
     on_prediction=lambda predictions, image: (
         print(predictions), # now hold up your hand: 🪨 📄 ✂️
-        
+
         cv2.imshow(
-            "Prediction", 
+            "Prediction",
             annotator.annotate(
-                scene=image, 
+                scene=image,
                 detections=sv.Detections.from_roboflow(predictions)
             )
         ),
@@ -208,7 +209,7 @@ a `model` and using the `infer` method (don't forget to setup your
 `ROBOFLOW_API_KEY` environment variable or `.env` file):
 
 ```python
-from inference.models.utils import get_roboflow_model
+from inference import get_roboflow_model
 
 model = get_roboflow_model(
     model_id="soccer-players-5fuqs/1"
@@ -301,6 +302,7 @@ The Roboflow Inference code is distributed under an [Apache 2.0 license](https:/
 | `inference/models/yolov8` |                              [AGPL-3.0](https://github.com/ultralytics/ultralytics/blob/master/LICENSE)                               |
 
 ## Inference CLI
+
 We've created a CLI tool with useful commands to make the `inference` usage easier. Check out [docs](./inference_cli/README.md).
 
 ## 🚀 Enterprise

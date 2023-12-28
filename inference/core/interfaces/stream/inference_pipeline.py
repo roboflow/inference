@@ -5,6 +5,7 @@ from queue import Queue
 from threading import Thread
 from typing import Callable, Generator, List, Optional, Tuple, Union
 
+from inference import get_roboflow_model
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
@@ -42,7 +43,6 @@ from inference.core.interfaces.stream.watchdog import (
     PipelineWatchDog,
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
-from inference.models.utils import get_roboflow_model
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
