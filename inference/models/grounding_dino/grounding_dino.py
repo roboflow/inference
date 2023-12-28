@@ -84,8 +84,8 @@ class GroundingDINO(RoboflowCoreModel):
         """
         Perform inference based on the details provided in the request, and return the associated responses.
         """
-        responses = self.infer(**request.dict(), return_image_dims=True)
-        return responses
+        result = self.infer(**request.dict())
+        return result
 
     def infer(self, image:Any=None, text:list=None, class_filter:list=None, **kwargs):
         """
