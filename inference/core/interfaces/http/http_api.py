@@ -3,8 +3,6 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, List, Optional, Union
-from inference.core.entities.responses.notebooks import NotebookStartResponse
-from inference.core.utils.notebooks import start_notebook
 
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
@@ -55,6 +53,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     StubResponse,
 )
+from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -107,6 +106,7 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
+from inference.core.utils.notebooks import start_notebook
 
 if LAMBDA:
     from inference.core.usage import trackUsage
