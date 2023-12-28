@@ -8,7 +8,12 @@ from rich.progress import Progress, TaskID
 import docker
 from inference_cli.lib.utils import read_env_file
 
-docker_client = docker.from_env()
+try:
+    docker_client = docker.from_env()
+except docker.errors.DockerException as e:
+    raise (
+        "Error connecting to Docker daemon. Is docker installed and running? See https://www.docker.com/get-started/ for installation instructions."
+    ) from e
 
 
 def ask_user_to_kill_container(container: Container) -> bool:

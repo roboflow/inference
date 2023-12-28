@@ -1,13 +1,21 @@
 import time
 from datetime import datetime
+from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Callable, Generator, List, Optional, Tuple, Union
 
 from inference.core import logger
+from inference.core.active_learning.middlewares import (
+    NullActiveLearningMiddleware,
+    ThreadingActiveLearningMiddleware,
+)
+from inference.core.cache import cache
 from inference.core.env import (
+    ACTIVE_LEARNING_ENABLED,
     API_KEY,
     API_KEY_ENV_NAMES,
+    DISABLE_PREPROC_AUTO_ORIENT,
     PREDICTIONS_QUEUE_SIZE,
     RESTART_ATTEMPT_DELAY,
 )
@@ -28,6 +36,7 @@ from inference.core.interfaces.stream.entities import (
     ObjectDetectionInferenceConfig,
     ObjectDetectionPrediction,
 )
+from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
@@ -63,6 +72,7 @@ class InferencePipeline:
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
+        active_learning_enabled: Optional[bool] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from CV models against video stream.
@@ -114,10 +124,15 @@ class InferencePipeline:
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
+            active_learning_enabled (Optional[bool]): Flag to enable / disable Active Learning middleware (setting it
+                true does not guarantee any data to be collected, as data collection is controlled by Roboflow backend -
+                it just enables middleware intercepting predictions). If not given, env variable
+                `ACTIVE_LEARNING_ENABLED` will be used.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
+        * ACTIVE_LEARNING_ENABLED - controls Active Learning middleware if explicit parameter not given
 
         Returns: Instance of InferencePipeline
 
@@ -155,6 +170,29 @@ class InferencePipeline:
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
+        active_learning_middleware = NullActiveLearningMiddleware()
+        if active_learning_enabled is None:
+            logger.info(
+                f"`active_learning_enabled` parameter not set - using env `ACTIVE_LEARNING_ENABLED` "
+                f"with value: {ACTIVE_LEARNING_ENABLED}"
+            )
+            active_learning_enabled = ACTIVE_LEARNING_ENABLED
+        if active_learning_enabled is True:
+            active_learning_middleware = ThreadingActiveLearningMiddleware.init(
+                api_key=api_key,
+                model_id=model_id,
+                cache=cache,
+            )
+            al_sink = partial(
+                active_learning_sink,
+                active_learning_middleware=active_learning_middleware,
+                model_type=model.task_type,
+                disable_preproc_auto_orient=DISABLE_PREPROC_AUTO_ORIENT,
+            )
+            logger.info(
+                "AL enabled - wrapping `on_prediction` with multi_sink() and active_learning_sink()"
+            )
+            on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         return cls(
             model=model,
             video_source=video_source,
@@ -164,6 +202,7 @@ class InferencePipeline:
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
             inference_config=inference_config,
+            active_learning_middleware=active_learning_middleware,
         )
 
     def __init__(
@@ -176,6 +215,9 @@ class InferencePipeline:
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         inference_config: ObjectDetectionInferenceConfig,
+        active_learning_middleware: Union[
+            NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
+        ],
     ):
         self._model = model
         self._video_source = video_source
@@ -190,11 +232,14 @@ class InferencePipeline:
         self._camera_restart_ongoing = False
         self._status_update_handlers = status_update_handlers
         self._inference_config = inference_config
+        self._active_learning_middleware = active_learning_middleware
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
         self._inference_thread = Thread(target=self._execute_inference)
         self._inference_thread.start()
+        if self._active_learning_middleware is not None:
+            self._active_learning_middleware.start_registration_thread()
         if use_main_thread:
             self._dispatch_inference_results()
         else:
@@ -221,6 +266,8 @@ class InferencePipeline:
         if self._dispatching_thread is not None:
             self._dispatching_thread.join()
             self._dispatching_thread = None
+        if self._active_learning_middleware is not None:
+            self._active_learning_middleware.stop_registration_thread()
 
     def _execute_inference(self) -> None:
         send_inference_pipeline_status_update(

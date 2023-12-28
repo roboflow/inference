@@ -32,30 +32,28 @@ nav:
     - Get Started:
       - What is Inference?: quickstart/what_is_inference.md
       - What Devices Can I Use?: quickstart/devices.md
-      - Roboflow API Key: quickstart/roboflow_api_key.md
+      - Configure an API Key: quickstart/configure_api_key.md
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
     - Run a Model:
-      - On an Image (Using HTTP): quickstart/http_inference.md
-      - On an Image (Using SDK): quickstart/run_model_on_image.md
+      - On an Image: quickstart/run_model_on_image.md
       - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - Over UDP: quickstart/run_model_over_udp.md
     - Use a Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md
+      - CogVLM (Multimodal Language Model): foundation/cogvlm.md
       - DocTR (OCR): foundation/doctr.md
       - Grounding DINO (Object Detection): foundation/grounding_dino.md
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
-    - Integrate with Inference:
-        - SDK Reference: inference_sdk/http_client.md
-        - Collecting data without model: quickstart/stubs.md
     - Reference:
       - Model Licensing: quickstart/licensing.md
       - Model Device Compatability: quickstart/compatability_matrix.md
       - Install Inference with Docker: quickstart/docker.md
       - Docker Configuration Options: quickstart/docker_configuration_options.md
-      - HTTP Inference: quickstart/http_inference.md
+      - SDK Reference: inference_sdk/http_client.md
+      - Collect Data Without a Model: quickstart/stubs.md
   - HTTP API Reference:
     - API Reference: api.md
     - Back to Quickstart: /quickstart/what_is_inference/
@@ -67,6 +65,7 @@ theme:
   name: 'material'
   logo: inference-icon.png
   favicon: inference-icon.png
+  custom_dir: docs/theme
   font:
     text: Roboto
     code: Roboto Mono

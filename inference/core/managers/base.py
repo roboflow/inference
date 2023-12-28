@@ -54,7 +54,7 @@ class ModelManager:
             model_id=model_id,
             api_key=api_key,
         )
-        self._models[model_id] = model
+        self._models[model_id if model_id_alias is None else model_id_alias] = model
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.

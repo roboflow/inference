@@ -12,6 +12,8 @@ There are three primary `inference` interfaces:
 * A self-hosted inference server (`inference server start`)
 * A [fully-managed, auto-scaling API](https://docs.roboflow.com).
 
+You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
+
 ## 🏃 Getting Started
 
 Get up and running with `inference` on your local machine in 3 minutes.

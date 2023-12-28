@@ -37,7 +37,7 @@ def initialize_close_to_threshold_sampling(
             selected_class_names=selected_class_names,
             threshold=strategy_config["threshold"],
             epsilon=strategy_config["epsilon"],
-            only_top_classes=strategy_config.get("only_top_classes", False),
+            only_top_classes=strategy_config.get("only_top_classes", True),
             minimum_objects_close_to_threshold=strategy_config.get(
                 "minimum_objects_close_to_threshold",
                 1,

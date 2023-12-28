@@ -684,7 +684,7 @@ def test_initialize_close_to_threshold_sampling_when_classes_not_selected(
         selected_class_names=None,
         threshold=0.75,
         epsilon=0.25,
-        only_top_classes=False,
+        only_top_classes=True,
         minimum_objects_close_to_threshold=1,
         probability=0.6,
     )
@@ -712,7 +712,7 @@ def test_initialize_close_to_threshold_sampling_when_classes_selected(
         selected_class_names={"Ambulance", "Helicopter"},
         threshold=0.75,
         epsilon=0.25,
-        only_top_classes=False,
+        only_top_classes=True,
         minimum_objects_close_to_threshold=1,
         probability=0.6,
     )
@@ -729,7 +729,7 @@ def test_initialize_close_to_threshold_sampling_when_only_top_classes_mode_enabl
         "threshold": 0.75,
         "epsilon": 0.25,
         "probability": 0.6,
-        "only_top_classes": True,
+        "only_top_classes": False,
     }
 
     # when
@@ -741,7 +741,7 @@ def test_initialize_close_to_threshold_sampling_when_only_top_classes_mode_enabl
         selected_class_names={"Ambulance"},
         threshold=0.75,
         epsilon=0.25,
-        only_top_classes=True,
+        only_top_classes=False,
         minimum_objects_close_to_threshold=1,
         probability=0.6,
     )
@@ -770,7 +770,7 @@ def test_initialize_close_to_threshold_sampling_when_objects_close_to_threshold_
         selected_class_names={"Ambulance"},
         threshold=0.75,
         epsilon=0.25,
-        only_top_classes=False,
+        only_top_classes=True,
         minimum_objects_close_to_threshold=6,
         probability=0.6,
     )

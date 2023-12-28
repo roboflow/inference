@@ -1,4 +1,5 @@
-from dataclasses import replace
+import hashlib
+from dataclasses import asdict, replace
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -19,7 +20,11 @@ from inference.core.active_learning.entities import (
     StrategyLimit,
     StrategyLimitType,
 )
-from inference.core.exceptions import ActiveLearningConfigurationError
+from inference.core.cache import MemoryCache
+from inference.core.exceptions import (
+    ActiveLearningConfigurationDecodingError,
+    ActiveLearningConfigurationError,
+)
 
 
 def test_initialize_sampling_methods() -> None:
@@ -101,7 +106,7 @@ def test_initialize_sampling_methods() -> None:
 @mock.patch.object(configuration, "get_roboflow_active_learning_configuration")
 @mock.patch.object(configuration, "get_roboflow_dataset_type")
 @mock.patch.object(configuration, "get_roboflow_workspace")
-def test_get_roboflow_project_metadata(
+def test_get_roboflow_project_metadata_when_cache_miss_encountered(
     get_roboflow_workspace_mock: MagicMock,
     get_roboflow_dataset_type_mock: MagicMock,
     get_roboflow_active_learning_configuration_mock: MagicMock,
@@ -110,18 +115,30 @@ def test_get_roboflow_project_metadata(
     get_roboflow_workspace_mock.return_value = "my-workspace"
     get_roboflow_dataset_type_mock.return_value = "object-detection"
     get_roboflow_active_learning_configuration_mock.return_value = {"some": "config"}
+    cache = MemoryCache()
 
     # when
-    result = get_roboflow_project_metadata(api_key="api-key", model_id="some/1")
+    result = get_roboflow_project_metadata(
+        api_key="api-key",
+        model_id="some/1",
+        cache=cache,
+    )
 
     # then
-    assert result == RoboflowProjectMetadata(
+    expected_configuration = RoboflowProjectMetadata(
         dataset_id="some",
         version_id="1",
         workspace_id="my-workspace",
         dataset_type="object-detection",
         active_learning_configuration={"some": "config"},
     )
+    assert (
+        result == expected_configuration
+    ), "Returned configuration must contain values defined in mocks"
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    assert cache.get(f"active_learning:configurations:{api_key_hash}:some") == asdict(
+        expected_configuration
+    ), "Configuration (serialised to dict) must be saved in cache"
     get_roboflow_workspace_mock.assert_called_once_with(api_key="api-key")
     get_roboflow_dataset_type_mock.assert_called_once_with(
         api_key="api-key",
@@ -135,26 +152,69 @@ def test_get_roboflow_project_metadata(
     )
 
 
-@mock.patch.object(configuration, "ACTIVE_LEARNING_ENABLED", False)
-def test_prepare_active_learning_configuration_when_active_learning_disabled_by_env() -> (
-    None
-):
+def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
+    # given
+    cache = MemoryCache()
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    cache.set(
+        key=f"active_learning:configurations:{api_key_hash}:some",
+        value={
+            "dataset_id": "some",
+            "version_id": "1",
+            "workspace_id": "my-workspace",
+            "dataset_type": "object-detection",
+            "active_learning_configuration": {"some": "config"},
+        },
+    )
+
     # when
-    result = prepare_active_learning_configuration(
+    result = get_roboflow_project_metadata(
         api_key="api-key",
         model_id="some/1",
+        cache=cache,
     )
 
     # then
-    assert result is None
+    assert result == RoboflowProjectMetadata(
+        dataset_id="some",
+        version_id="1",
+        workspace_id="my-workspace",
+        dataset_type="object-detection",
+        active_learning_configuration={"some": "config"},
+    ), "Result must be cache content after de-serialisation"
 
 
-@mock.patch.object(configuration, "ACTIVE_LEARNING_ENABLED", True)
+def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is_malformed() -> (
+    None
+):
+    # given
+    cache = MemoryCache()
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    cache.set(
+        key=f"active_learning:configurations:{api_key_hash}:some",
+        value={
+            "dataset_id": "some",
+            "version_id": "1",
+            "workspace_id": "my-workspace",
+            "dataset_type": "object-detection",
+        },
+    )
+
+    # when
+    with pytest.raises(ActiveLearningConfigurationDecodingError):
+        _ = get_roboflow_project_metadata(
+            api_key="api-key",
+            model_id="some/1",
+            cache=cache,
+        )
+
+
 @mock.patch.object(configuration, "get_roboflow_project_metadata")
 def test_prepare_active_learning_configuration_when_active_learning_disabled_by_configuration(
     get_roboflow_project_metadata_mock: MagicMock,
 ) -> None:
     # given
+    cache = MemoryCache()
     get_roboflow_project_metadata_mock.return_value = RoboflowProjectMetadata(
         dataset_id="some",
         version_id="1",
@@ -167,18 +227,19 @@ def test_prepare_active_learning_configuration_when_active_learning_disabled_by_
     result = prepare_active_learning_configuration(
         api_key="api-key",
         model_id="some/1",
+        cache=cache,
     )
 
     # then
-    assert result is None
+    assert result is None, "Expected null config when AL is disabled"
 
 
-@mock.patch.object(configuration, "ACTIVE_LEARNING_ENABLED", True)
 @mock.patch.object(configuration, "get_roboflow_project_metadata")
 def test_prepare_active_learning_configuration_when_active_learning_enabled(
     get_roboflow_project_metadata_mock: MagicMock,
 ) -> None:
     # given
+    cache = MemoryCache()
     get_roboflow_project_metadata_mock.return_value = RoboflowProjectMetadata(
         dataset_id="some",
         version_id="1",
@@ -217,12 +278,15 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
     result = prepare_active_learning_configuration(
         api_key="api-key",
         model_id="some/1",
+        cache=cache,
     )
 
     # then
     sampling_methods = result.sampling_methods
-    assert len(sampling_methods) == 1
-    assert sampling_methods[0].name == "default_strategy"
+    assert len(sampling_methods) == 1, "One sampling method was defined"
+    assert (
+        sampling_methods[0].name == "default_strategy"
+    ), "Name of sampling method must match config"
     sampling_methods_mock = MagicMock()
     result = replace(result, sampling_methods=sampling_methods_mock)
     assert result == ActiveLearningConfiguration(
@@ -245,7 +309,7 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
         },
         tags=["a", "b"],
         strategies_tags={"default_strategy": ["c", "d"]},
-    )
+    ), "Configuration must be parsed correctly according to project metadata"
 
 
 def test_test_initialize_sampling_methods_when_duplicate_names_detected() -> None:

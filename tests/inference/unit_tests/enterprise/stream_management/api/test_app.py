@@ -161,7 +161,8 @@ def test_initialise_pipeline_when_valid_payload_given(
                 "port": 9090,
             },
             "api_key": "my_api_key",
-            "model_configuration": {"type": "object_detection"},
+            "model_configuration": {"type": "object-detection"},
+            "active_learning_enabled": True,
         },
     )
 

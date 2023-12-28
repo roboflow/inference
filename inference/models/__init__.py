@@ -35,5 +35,6 @@ from inference.models.yolov7 import YOLOv7InstanceSegmentation
 from inference.models.yolov8 import (
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
+    YOLOv8KeypointsDetection,
     YOLOv8ObjectDetection,
 )

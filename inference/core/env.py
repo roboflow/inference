@@ -167,7 +167,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
-# Maximum batch size, default is 8
+# Maximum batch size, default is infinite
 MAX_BATCH_SIZE = os.getenv("MAX_BATCH_SIZE", None)
 if MAX_BATCH_SIZE is not None:
     MAX_BATCH_SIZE = int(MAX_BATCH_SIZE)
@@ -222,6 +222,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", None)
 
 # Redis port, default is 6379
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_SSL = str2bool(os.getenv("REDIS_SSL", False))
+REDIS_TIMEOUT = float(os.getenv("REDIS_TIMEOUT", 2.0))
 
 # Required ONNX providers, default is None
 REQUIRED_ONNX_PROVIDERS = safe_split_value(os.getenv("REQUIRED_ONNX_PROVIDERS", None))
@@ -280,7 +282,7 @@ INFER_BUCKET = os.getenv(
     else "roboflow-infer-staging",
 )
 
-ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", False))
+ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager

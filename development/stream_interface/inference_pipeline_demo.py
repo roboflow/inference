@@ -29,6 +29,7 @@ MODELS = {
     "c": "microsoft-coco/10",
     "d": "microsoft-coco/11",
     "e": "microsoft-coco/12",
+    "f": "eye-detection/39"
 }
 
 STREAM_SERVER_URL = os.getenv("STREAM_SERVER", "rtsp://localhost:8554")
@@ -148,7 +149,7 @@ if __name__ == "__main__":
         help=f"Flag to decide if output to be streamed or displayed on screen",
         required=False,
         type=str,
-        default="screen",
+        default="display",
     )
     args = parser.parse_args()
     main(
