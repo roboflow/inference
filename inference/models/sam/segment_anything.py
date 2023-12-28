@@ -66,6 +66,7 @@ class SegmentAnything(RoboflowCoreModel):
 
         self.low_res_logits_cache = {}
         self.segmentation_cache_keys = []
+        self.task_type = "unsupervised-segmentation"
 
     def get_infer_bucket_file_list(self) -> List[str]:
         """Gets the list of files required for inference.

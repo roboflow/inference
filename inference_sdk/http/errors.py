@@ -67,3 +67,7 @@ class EncodingError(HTTPClientError):
 
 class WrongClientModeError(HTTPClientError):
     pass
+
+
+class InvalidParameterError(HTTPClientError):
+    pass

@@ -1,10 +1,11 @@
 import pytest
-from requests import Response, HTTPError
+from requests import HTTPError, Response
 
 from inference_sdk.http.utils.requests import (
     API_KEY_PATTERN,
-    deduct_api_key,
     api_key_safe_raise_for_status,
+    deduct_api_key,
+    inject_images_into_payload,
 )
 
 
@@ -86,3 +87,62 @@ def test_api_keysafe_raise_for_status_when_error_occurs(status_code: int) -> Non
     assert "https://some.com/endpoint?api_key=19***0s&param_2=some_value" in str(
         expected_error.value
     )
+
+
+def test_inject_images_into_payload_when_empty_list_of_images_is_given() -> None:
+    # when
+    result = inject_images_into_payload(
+        payload={"my": "payload"},
+        encoded_images=[],
+    )
+
+    # then
+    assert result == {
+        "my": "payload"
+    }, "Payload is expected not to be modified when no image given to be injected"
+
+
+def test_inject_images_into_payload_when_non_empty_list_of_images_is_given() -> None:
+    # when
+    result = inject_images_into_payload(
+        payload={"my": "payload"},
+        encoded_images=[("image_payload_1", 0.3), ("image_payload_2", 0.5)],
+    )
+
+    # then
+    assert result == {
+        "my": "payload",
+        "image": [
+            {"type": "base64", "value": "image_payload_1"},
+            {"type": "base64", "value": "image_payload_2"},
+        ],
+    }, "Payload is expected to be extended with the content of all encoded images given"
+
+
+def test_inject_images_into_payload_when_single_image_is_given() -> None:
+    # when
+    result = inject_images_into_payload(
+        payload={"my": "payload"},
+        encoded_images=[("image_payload_1", 0.3)],
+    )
+
+    # then
+    assert result == {
+        "my": "payload",
+        "image": {"type": "base64", "value": "image_payload_1"},
+    }, "Payload is expected to be extended with the content of only single image"
+
+
+def test_inject_images_into_payload_when_payload_key_is_specified() -> None:
+    # when
+    result = inject_images_into_payload(
+        payload={"my": "payload"},
+        encoded_images=[("image_payload_1", 0.3)],
+        key="prompt",
+    )
+
+    # then
+    assert result == {
+        "my": "payload",
+        "prompt": {"type": "base64", "value": "image_payload_1"},
+    }, "Payload is expected to be extended with the content of only single image under `prompt` key"
