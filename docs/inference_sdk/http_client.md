@@ -7,18 +7,109 @@ You can use this client to run models hosted:
 1. On the Roboflow platform (use client version `v0`), and;
 2. On device with Inference.
 
-This client accepts the following inputs:
+For models trained at Roboflow platform, client accepts the following inputs:
 
 - A single image (Given as a local path, URL, `np.ndarray` or `PIL.Image`);
 - Multiple images;
 - A directory of images, or;
 - A video file.
 
+For core model - client exposes dedicated methods to be used, but standard image loader used accepts 
+file paths, URLs, `np.ndarray` and `PIL.Image` formats. Apart from client version (`v0` or `v1`) - options 
+provided via configuration are used against models trained at the platform, not the core models.
+
 The client returns a dictionary of predictions for each image or frame.
 
 !!! tip
 
     Read our [Run Model on an Image](/docs/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
+
+## Client for core models
+`InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used at Roboflow hosted
+inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
+local server will be available under `http://localhost:9001`).
+
+!!! tip
+    
+    Install `inference-cli` package to easily run `inference` API locally
+    ```bash
+    pip install inference-cli
+    inference server start
+    ```
+
+### Clip
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+    api_key="ROBOFLOW_API_KEY"
+)
+
+CLIENT.get_clip_image_embeddings(inference_input="./my_image.jpg")  # single image request
+CLIENT.get_clip_image_embeddings(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
+CLIENT.get_clip_text_embeddings(text="some")  # single text request
+CLIENT.get_clip_text_embeddings(text=["some", "other"])  # other text request
+CLIENT.clip_compare(
+    subject="./my_image.jpg",
+    prompt=["fox", "dog"],
+)
+```
+
+`CLIENT.clip_compare(...)` method allows to compare different combination of `subject_type` and `prompt_type`:
+* `(image, image)`
+* `(image, text)`
+* `(text, image)`
+* `(text, text)`
+Default mode is `(image, text)`.
+
+
+### CogLVM
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # only local hosting supported
+    api_key="ROBOFLOW_API_KEY"
+)
+
+CLIENT.prompt_cogvlm(
+    visual_prompt="./my_image.jpg",
+    text_prompt="So - what is your final judgement about the content of the picture?",
+    chat_history=[("I think the image shows XXX", "You are wrong - the image shows YYY")], # optional parameter
+)
+```
+
+### DocTR
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+    api_key="ROBOFLOW_API_KEY"
+)
+
+CLIENT.ocr_image(inference_input="./my_image.jpg")  # single image request
+CLIENT.ocr_image(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
+```
+
+### Gaze
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # only local hosting supported
+    api_key="ROBOFLOW_API_KEY"
+)
+
+CLIENT.detect_gazes(inference_input="./my_image.jpg")  # single image request
+CLIENT.detect_gazes(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
+```
+
+## Configuration options (used for models trained at Roboflow platform)
 
 ### configuring with context managers
 Methods `use_configuration(...)`, `use_api_v0(...)`, `use_api_v1(...)`, `use_model(...)` are designed to

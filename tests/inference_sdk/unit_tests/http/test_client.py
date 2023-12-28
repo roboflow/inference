@@ -10,24 +10,25 @@ from requests_mock.mocker import Mocker
 
 from inference_sdk.http import client
 from inference_sdk.http.client import (
-    _ensure_model_is_selected,
-    _determine_client_mode,
-    _determine_client_downsizing_parameters,
-    wrap_errors,
     InferenceHTTPClient,
+    _determine_client_downsizing_parameters,
+    _determine_client_mode,
+    _ensure_model_is_selected,
+    wrap_errors,
 )
 from inference_sdk.http.entities import (
-    HTTPClientMode,
-    ModelDescription,
     CLASSIFICATION_TASK,
-    RegisteredModels,
+    HTTPClientMode,
     InferenceConfiguration,
+    ModelDescription,
+    RegisteredModels,
 )
 from inference_sdk.http.errors import (
-    ModelNotSelectedError,
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
+    InvalidParameterError,
+    ModelNotSelectedError,
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
@@ -1036,3 +1037,592 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_visual
         "visualize_predictions": True,
         "confidence": 0.5,
     }
+
+
+def test_prompt_cogvlm_in_v0_mode() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.select_api_v0()
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        _ = http_client.prompt_cogvlm(
+            visual_prompt="https://some.com/image.jpg",
+            text_prompt="What is the content of that picture?",
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_prompt_cogvlm_when_successful_response_is_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/llm/cogvlm",
+        json={
+            "response": "The image portrays a confident and happy man, possibly in a professional setting.",
+            "time": 12.274745374999952,
+        },
+    )
+
+    # when
+    result = http_client.prompt_cogvlm(
+        visual_prompt="/some/image.jpg",
+        text_prompt="What is the topic of that picture?",
+        chat_history=[("A", "B")],
+    )
+
+    # then
+    assert result == {
+        "response": "The image portrays a confident and happy man, possibly in a professional setting.",
+        "time": 12.274745374999952,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "model_id": "cogvlm",
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+        "prompt": "What is the topic of that picture?",
+        "history": [["A", "B"]],
+    }, "Request must contain API key, model id, prompt, chat history and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_prompt_cogvlm_when_unsuccessful_response_is_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/llm/cogvlm",
+        json={
+            "message": "Cannot load CogLVM.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.prompt_cogvlm(
+            visual_prompt="/some/image.jpg",
+            text_prompt="What is the topic of that picture?",
+            chat_history=[("A", "B")],
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_single_image_given_in_v1_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_single_image_given_in_v0_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr?api_key=my-api-key",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_multiple_images_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [
+        ("base64_image_1", 0.5),
+        ("base64_image_2", 0.6),
+    ]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        response_list=[
+            {
+                "json": {
+                    "response": "Image text 1.",
+                    "time": 0.33,
+                }
+            },
+            {
+                "json": {
+                    "response": "Image text 2.",
+                    "time": 0.33,
+                }
+            },
+        ],
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input=["/some/image.jpg"] * 2)
+
+    # then
+    assert result == [
+        {
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+        {
+            "response": "Image text 2.",
+            "time": 0.33,
+        },
+    ], "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image_1"},
+    }, "First request must contain API key and first image encoded in standard format"
+    assert requests_mock.request_history[1].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image_2"},
+    }, "Second request must contain API key and second image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_faulty_response_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr",
+        json={
+            "message": "Cannot load DocTR model.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.ocr_image(inference_input="/some/image.jpg")
+
+
+def test_detect_gazes_in_v0_mode() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.select_api_v0()
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        _ = http_client.detect_gazes(
+            inference_input="https://some.com/image.jpg",
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_detect_gazes_when_single_image_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "predictions": [
+            {
+                "face": {
+                    "x": 272.0,
+                    "y": 112.0,
+                    "width": 92.0,
+                    "height": 92.0,
+                    "confidence": 0.9473056197166443,
+                    "class": "face",
+                    "class_confidence": None,
+                    "class_id": 0,
+                    "tracker_id": None,
+                    "landmarks": [
+                        {"x": 252.0, "y": 90.0},
+                        {"x": 295.0, "y": 90.0},
+                        {"x": 275.0, "y": 111.0},
+                        {"x": 274.0, "y": 130.0},
+                        {"x": 225.0, "y": 99.0},
+                        {"x": 316.0, "y": 101.0},
+                    ],
+                },
+                "yaw": -0.060329124331474304,
+                "pitch": -0.012491557747125626,
+            }
+        ],
+        "time": 0.22586208400025498,
+        "time_face_det": None,
+        "time_gaze_det": None,
+    }
+    requests_mock.post(
+        f"{api_url}/gaze/gaze_detection",
+        json=expected_prediction,
+    )
+
+    # when
+    result = http_client.detect_gazes(inference_input="/some/image.jpg")
+
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_detect_gazes_when_faulty_response_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/gaze/gaze_detection",
+        json={
+            "message": "Cannot load gaze model.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.detect_gazes(inference_input="/some/image.jpg")
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_when_single_image_given_in_v1_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+    requests_mock.post(
+        f"{api_url}/clip/embed_image",
+        json=expected_prediction,
+    )
+
+    # when
+    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+    requests_mock.post(
+        f"{api_url}/clip/embed_image?api_key=my-api-key",
+        json=expected_prediction,
+    )
+
+    # when
+    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_when_faulty_response_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/clip/embed_image",
+        json={
+            "message": "Cannot load Clip model.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+
+
+def test_get_clip_text_embeddings_when_single_image_given(
+    requests_mock: Mocker,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+    requests_mock.post(
+        f"{api_url}/clip/embed_text",
+        json=expected_prediction,
+    )
+
+    # when
+    result = http_client.get_clip_text_embeddings(text="some")
+
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "text": "some",
+    }, "Request must contain API key and text"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_text_embeddings_when_faulty_response_returned(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/clip/embed_text",
+        json={
+            "message": "Cannot load Clip model.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.get_clip_text_embeddings(text="some")
+
+
+def test_clip_compare_when_invalid_subject_given() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.clip_compare(
+            subject="/some/image.jpg", prompt=["dog", "house"], subject_type="unknown"
+        )
+
+
+def test_clip_compare_when_invalid_prompt_given() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.clip_compare(
+            subject="/some/image.jpg", prompt=["dog", "house"], prompt_type="unknown"
+        )
+
+
+def test_clip_compare_when_both_prompt_and_subject_are_texts(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/clip/compare",
+        json={
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        },
+    )
+
+    # when
+    result = http_client.clip_compare(
+        subject="some",
+        prompt=["dog", "house"],
+        subject_type="text",
+        prompt_type="text",
+    )
+
+    # then
+    assert result == {
+        "frame_id": None,
+        "time": 0.1435863340011565,
+        "similarity": [0.8963012099266052, 0.8830886483192444],
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "subject": "some",
+        "prompt": ["dog", "house"],
+        "prompt_type": "text",
+        "subject_type": "text",
+    }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_when_both_prompt_and_subject_are_images(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+    requests_mock.post(
+        f"{api_url}/clip/compare",
+        json={
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        },
+    )
+
+    # when
+    result = http_client.clip_compare(
+        subject="/some/image_1.jpg",
+        prompt=["/some/image_2.jpg", "/some/image_3.jpg"],
+        subject_type="image",
+        prompt_type="image",
+    )
+
+    # then
+    assert result == {
+        "frame_id": None,
+        "time": 0.1435863340011565,
+        "similarity": [0.8963012099266052, 0.8830886483192444],
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "subject": {"type": "base64", "value": "base64_image_1"},
+        "prompt": [
+            {"type": "base64", "value": "base64_image_2"},
+            {"type": "base64", "value": "base64_image_3"},
+        ],
+        "prompt_type": "image",
+        "subject_type": "image",
+    }, "Request must contain API key, subject and prompt types as image, and encoded image - image 1 as subject, images 2 and 3 as prompt"
+
+
+def test_clip_compare_when_faulty_response_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/clip/compare",
+        json={
+            "message": "Cannot load Clip model.",
+        },
+        status_code=500,
+    )
+
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.clip_compare(
+            subject="some", prompt=["dog", "house"], subject_type="text"
+        )

@@ -95,7 +95,7 @@ class Gaze(OnnxRoboflowCoreModel):
                 ),
             ]
         )
-
+        self.task_type = "gaze-detection"
         self.log(f"GAZE model loaded in {perf_counter() - t1:.2f} seconds")
 
     def _crop_face_img(self, np_img: np.ndarray, face: Detection) -> np.ndarray:

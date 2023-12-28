@@ -8,6 +8,7 @@ from requests import Response
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
+from inference.core.cache import cache
 from inference.core.entities.types import (
     DatasetID,
     ModelType,
@@ -183,16 +184,33 @@ def get_roboflow_model_data(
     endpoint_type: ModelEndpointType,
     device_id: str,
 ) -> dict:
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
-        params=[
-            ("api_key", api_key),
+    api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
+    api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    else:
+        params = [
             ("nocache", "true"),
             ("device", device_id),
             ("dynamic", "true"),
-        ],
-    )
-    return _get_from_url(url=api_url)
+        ]
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            params=params,
+        )
+        api_data = _get_from_url(url=api_url)
+        cache.set(
+            api_data_cache_key,
+            api_data,
+            expire=10,
+        )
+        logger.debug(
+            f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+        )
+        return api_data
 
 
 @wrap_roboflow_api_errors()

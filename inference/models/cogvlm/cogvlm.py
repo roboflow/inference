@@ -45,6 +45,7 @@ class CogVLM(Model):
                 load_in_8bit=COGVLM_LOAD_8BIT,
                 cache_dir=self.cache_dir,
             ).eval()
+        self.task_type = "lmm"
 
     def preprocess(
         self, image: Any, **kwargs

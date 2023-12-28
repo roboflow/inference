@@ -19,42 +19,19 @@ Let's retrieve the text in the following image:
 Create a new Python file and add the following code:
 
 ```python
-import requests
-import base64
-from PIL import Image
 import os
-from io import BytesIO
+from inference_sdk import InferenceHTTPClient
 
-API_KEY = os.environ["API_KEY"]
-IMAGE = "container.jpeg"
+CLIENT = InferenceHTTPClient(
+    api_url="https://infer.roboflow.com",
+    api_key=os.environ["ROBOFLOW_API_KEY"]
+)
 
-image = Image.open(IMAGE)
-buffered = BytesIO()
-
-image.save(buffered, quality=100, format="JPEG")
-
-img_str = base64.b64encode(buffered.getvalue())
-img_str = img_str.decode("ascii")
-
-data = {
-    "image": {
-        "type": "base64",
-        "value": img_str,
-    }
-}
-
-ocr_results = requests.post("http://localhost:9001/doctr/ocr?api_key=" + API_KEY, json=data).json()
-
-print(ocr_results)
+result = CLIENT.ocr_image(inference_input="./container.jpg")  # single image request
+print(result)
 ```
 
 Above, replace `container.jpeg` with the path to the image in which you want to detect objects.
-
-Then, run the Python script you have created:
-
-```
-python app.py
-```
 
 The results of DocTR will appear in your terminal:
 

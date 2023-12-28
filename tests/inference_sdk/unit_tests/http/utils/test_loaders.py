@@ -8,18 +8,18 @@ import cv2
 import numpy as np
 import pytest
 from PIL import Image
-from requests import Response, HTTPError
+from requests import HTTPError, Response
 
 from inference_sdk.http.errors import EncodingError, InvalidInputFormatError
-from inference_sdk.http.utils.loaders import (
-    uri_is_http_link,
-    load_image_from_url,
-    load_image_from_uri,
-    load_static_inference_input,
-    load_directory_inference_input,
-    load_stream_inference_input,
-)
 from inference_sdk.http.utils import loaders
+from inference_sdk.http.utils.loaders import (
+    load_directory_inference_input,
+    load_image_from_uri,
+    load_image_from_url,
+    load_static_inference_input,
+    load_stream_inference_input,
+    uri_is_http_link,
+)
 
 
 def test_uri_is_http_link_when_local_absolute_path_provided() -> None:

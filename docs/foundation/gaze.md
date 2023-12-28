@@ -15,39 +15,25 @@ L2CS-Net accepts an image and returns pitch and yaw values that you can use to:
 1. Figure out the direction in which someone is looking, and;
 2. Estimate, roughly, where someone is looking.
 
-Create a new Python file and add the following code:
+We recommend using L2CS-Net paired with inference HTTP API. It's easy to set up with our `inference-cli` tool. Run the 
+following command to set up environment and run the API under `http://localhost:9001`
+
+```bash
+pip install inference inference-cli inference-sdk
+inference server start  # this starts server under http://localhost:9001
+```
+
 
 ```python
-import base64
-
-import cv2
-import numpy as np
-import requests
 import os
+from inference_sdk import InferenceHTTPClient
 
-IMG_PATH = "image.jpg"
-ROBOFLOW_API_KEY = os.environ["ROBOFLOW_API_KEY"]
-DISTANCE_TO_OBJECT = 1000  # mm
-HEIGHT_OF_HUMAN_FACE = 250  # mm
-GAZE_DETECTION_URL = "http://127.0.0.1:9001/gaze/gaze_detection?api_key=" + ROBOFLOW_API_KEY
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # only local hosting supported
+    api_key=os.environ["ROBOFLOW_API_KEY"]
+)
 
-def detect_gazes(frame: np.ndarray):
-    img_encode = cv2.imencode(".jpg", frame)[1]
-    img_base64 = base64.b64encode(img_encode)
-    resp = requests.post(
-        GAZE_DETECTION_URL,
-        json={
-            "api_key": ROBOFLOW_API_KEY,
-            "image": {"type": "base64", "value": img_base64.decode("utf-8")},
-        },
-    )
-    # print(resp.json())
-    gazes = resp.json()[0]["predictions"]
-    return gazes
-
-image = cv2.imread(IMG_PATH)
-gazes = detect_gazes(image)
-print(gazes)
+CLIENT.detect_gazes(inference_input="./image.jpg")  # single image request
 ```
 
 Above, replace `image.jpg` with the image in which you want to detect gazes.
@@ -58,12 +44,6 @@ The code above makes two assumptions:
 2. Faces are roughly 250mm tall.
 
 These assumptions are a good starting point if you are using a computer webcam with L2CS-Net, where people in the frame are likely to be sitting at a desk.
-
-Then, run the Python script you have created:
-
-```
-python app.py
-```
 
 On the first run, the model will be downloaded. On subsequent runs, the model will be cached locally and loaded from the cache. It will take a few moments for the model to download.
 

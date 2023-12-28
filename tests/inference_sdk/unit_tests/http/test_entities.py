@@ -1,10 +1,10 @@
 from inference_sdk.http.entities import (
+    CLASSIFICATION_TASK,
+    DEFAULT_IMAGE_EXTENSIONS,
+    OBJECT_DETECTION_TASK,
+    HTTPClientMode,
     InferenceConfiguration,
     get_non_empty_attributes,
-    DEFAULT_IMAGE_EXTENSIONS,
-    HTTPClientMode,
-    CLASSIFICATION_TASK,
-    OBJECT_DETECTION_TASK,
 )
 
 REFERENCE_IMAGE_CONFIGURATION = InferenceConfiguration(
