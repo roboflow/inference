@@ -205,7 +205,7 @@ def get_roboflow_model_data(
         cache.set(
             api_data_cache_key,
             api_data,
-            expire=60,
+            expire=10,
         )
         logger.debug(
             f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."

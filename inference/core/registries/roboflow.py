@@ -5,7 +5,11 @@ from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
 from inference.core.env import MODEL_CACHE_DIR
-from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    ModelArtefactError,
+    ModelNotRecognisedError,
+)
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
@@ -108,8 +112,12 @@ def get_model_type(
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     ).get("ort")
+    if api_data is None:
+        raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     project_task_type = api_data.get("type", "object-detection")
     model_type = api_data.get("modelType")
+    if model_type is None or project_task_type is None:
+        raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,
