@@ -54,6 +54,7 @@ class DocTR(RoboflowCoreModel):
             reco_arch=self.rec_model.version_id,
             pretrained=True,
         )
+        self.task_type = "ocr"
 
     def clear_cache(self) -> None:
         self.det_model.clear_cache()

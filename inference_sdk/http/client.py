@@ -438,6 +438,7 @@ class InferenceHTTPClient:
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
         )
 
+    @wrap_errors
     def get_clip_image_embeddings(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -447,6 +448,7 @@ class InferenceHTTPClient:
             inference_input=inference_input, endpoint="/clip/embed_image"
         )
 
+    @wrap_errors
     def get_clip_text_embeddings(
         self, text: Union[str, List[str]]
     ) -> Union[dict, List[dict]]:
@@ -463,6 +465,7 @@ class InferenceHTTPClient:
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
 
+    @wrap_errors
     def clip_compare(
         self,
         subject: Union[str, ImagesReference],
@@ -490,9 +493,7 @@ class InferenceHTTPClient:
                 inference_input=subject,
             )
             payload = inject_images_into_payload(
-                payload=payload,
-                encoded_images=encoded_image,
-                key="subject"
+                payload=payload, encoded_images=encoded_image, key="subject"
             )
         else:
             payload["subject"] = subject
@@ -501,9 +502,7 @@ class InferenceHTTPClient:
                 inference_input=prompt,
             )
             payload = inject_images_into_payload(
-                payload=payload,
-                encoded_images=encoded_inference_inputs,
-                key="prompt"
+                payload=payload, encoded_images=encoded_inference_inputs, key="prompt"
             )
         else:
             payload["prompt"] = prompt

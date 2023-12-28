@@ -83,6 +83,7 @@ class Clip(OnnxRoboflowCoreModel):
 
         self.clip_preprocess = clip.clip._transform(self.resolution)
         self.log(f"CLIP model loaded in {perf_counter() - t1:.2f} seconds")
+        self.task_type = "embedding"
 
     def compare(
         self,
