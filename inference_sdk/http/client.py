@@ -380,7 +380,7 @@ class InferenceHTTPClient:
         text_prompt: str,
         chat_history: Optional[List[Tuple[str, str]]] = None,
     ) -> dict:
-        self.__ensure_v1_client_mode()
+        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
         encoded_image = load_static_inference_input(
             inference_input=visual_prompt,
         )
@@ -408,19 +408,16 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        self.__ensure_v1_client_mode()
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
-        payload = {
-            "api_key": self.__api_key,
-        }
+        payload = self.__initialise_payload()
         results = []
         for element in encoded_inference_inputs:
             image, _ = element
             payload["image"] = {"type": "base64", "value": image}
             response = requests.post(
-                f"{self.__api_url}/doctr/ocr",
+                self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr"),
                 json=payload,
                 headers=DEFAULT_HEADERS,
             )
@@ -433,7 +430,7 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        self.__ensure_v1_client_mode()
+        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
         return self._post_images(
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
         )
@@ -443,7 +440,6 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        self.__ensure_v1_client_mode()
         return self._post_images(
             inference_input=inference_input, endpoint="/clip/embed_image"
         )
@@ -452,13 +448,10 @@ class InferenceHTTPClient:
     def get_clip_text_embeddings(
         self, text: Union[str, List[str]]
     ) -> Union[dict, List[dict]]:
-        self.__ensure_v1_client_mode()
-        payload = {
-            "api_key": self.__api_key,
-            "text": text,
-        }
+        payload = self.__initialise_payload()
+        payload["text"] = text
         response = requests.post(
-            f"{self.__api_url}/clip/embed_text",
+            self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
             headers=DEFAULT_HEADERS,
         )
@@ -476,7 +469,6 @@ class InferenceHTTPClient:
         """
         Both `subject_type` and `prompt_type` must be either "image" or "text"
         """
-        self.__ensure_v1_client_mode()
         if (
             subject_type not in CLIP_ARGUMENT_TYPES
             or prompt_type not in CLIP_ARGUMENT_TYPES
@@ -484,11 +476,9 @@ class InferenceHTTPClient:
             raise InvalidParameterError(
                 f"Could not accept `subject_type` and `prompt_type` with values different than {CLIP_ARGUMENT_TYPES}"
             )
-        payload = {
-            "api_key": self.__api_key,
-            "subject_type": subject_type,
-            "prompt_type": prompt_type,
-        }
+        payload = self.__initialise_payload()
+        payload["subject_type"] = subject_type
+        payload["prompt_type"] = subject_type
         if subject_type == "image":
             encoded_image = load_static_inference_input(
                 inference_input=subject,
@@ -508,7 +498,7 @@ class InferenceHTTPClient:
         else:
             payload["prompt"] = prompt
         response = requests.post(
-            f"{self.__api_url}/clip/compare",
+            self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
             headers=DEFAULT_HEADERS,
         )
@@ -524,9 +514,7 @@ class InferenceHTTPClient:
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
-        payload = {
-            "api_key": self.__api_key,
-        }
+        payload = self.__initialise_payload()
         if model_id is not None:
             payload["model_id"] = model_id
         payload = inject_images_into_payload(
@@ -534,12 +522,22 @@ class InferenceHTTPClient:
             encoded_images=encoded_inference_inputs,
         )
         response = requests.post(
-            f"{self.__api_url}{endpoint}",
+            self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}"),
             json=payload,
             headers=DEFAULT_HEADERS,
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
+
+    def __initialise_payload(self) -> dict:
+        if self.__client_mode is not HTTPClientMode.V0:
+            return {"api_key": self.__api_key}
+        return {}
+
+    def __wrap_url_with_api_key(self, url: str) -> str:
+        if self.__client_mode is not HTTPClientMode.V0:
+            return url
+        return f"{url}?api_key={self.__api_key}"
 
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:

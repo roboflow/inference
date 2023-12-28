@@ -1115,20 +1115,8 @@ def test_prompt_cogvlm_when_unsuccessful_response_is_returned(
         )
 
 
-def test_ocr_image_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.ocr_image(
-            inference_input="https://some.com/image.jpg",
-        )
-
-
 @mock.patch.object(client, "load_static_inference_input")
-def test_ocr_image_when_single_image_given(
+def test_ocr_image_when_single_image_given_in_v1_mode(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
@@ -1155,6 +1143,35 @@ def test_ocr_image_when_single_image_given(
         "api_key": "my-api-key",
         "image": {"type": "base64", "value": "base64_image"},
     }, "Request must contain API key and image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_ocr_image_when_single_image_given_in_v0_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    requests_mock.post(
+        f"{api_url}/doctr/ocr?api_key=my-api-key",
+        json={
+            "response": "Image text 1.",
+            "time": 0.33,
+        },
+    )
+
+    # when
+    result = http_client.ocr_image(inference_input="/some/image.jpg")
+
+    # then
+    assert result == {
+        "response": "Image text 1.",
+        "time": 0.33,
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must image encoded in standard format"
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -1320,20 +1337,8 @@ def test_detect_gazes_when_faulty_response_returned(
         _ = http_client.detect_gazes(inference_input="/some/image.jpg")
 
 
-def test_get_clip_image_embeddings_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.get_clip_image_embeddings(
-            inference_input="https://some.com/image.jpg",
-        )
-
-
 @mock.patch.object(client, "load_static_inference_input")
-def test_get_clip_image_embeddings_when_single_image_given(
+def test_get_clip_image_embeddings_when_single_image_given_in_v1_mode(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
@@ -1375,6 +1380,47 @@ def test_get_clip_image_embeddings_when_single_image_given(
 
 
 @mock.patch.object(client, "load_static_inference_input")
+def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+    requests_mock.post(
+        f"{api_url}/clip/embed_image?api_key=my-api-key",
+        json=expected_prediction,
+    )
+
+    # when
+    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+
+    # then
+    assert (
+        result == expected_prediction
+    ), "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "image": {"type": "base64", "value": "base64_image"},
+    }, "Request must contain image encoded in standard format"
+
+
+@mock.patch.object(client, "load_static_inference_input")
 def test_get_clip_image_embeddings_when_faulty_response_returned(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
@@ -1393,16 +1439,6 @@ def test_get_clip_image_embeddings_when_faulty_response_returned(
 
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
-
-
-def test_get_clip_text_embeddings_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.get_clip_text_embeddings(text="some")
 
 
 def test_get_clip_text_embeddings_when_single_image_given(
@@ -1463,16 +1499,6 @@ def test_get_clip_text_embeddings_when_faulty_response_returned(
 
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.get_clip_text_embeddings(text="some")
-
-
-def test_clip_compare_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.clip_compare(subject="/some/image.jpg", prompt=["dog", "house"])
 
 
 def test_clip_compare_when_invalid_subject_given() -> None:

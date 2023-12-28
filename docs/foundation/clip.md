@@ -15,6 +15,12 @@ In this guide, we will show:
 1. How to classify video frames with CLIP in real time, and;
 2. How to calculate CLIP image and text embeddings for use in clustering and comparison.
 
+## How can I use CLIP model in `inference`?
+* directly from `inference[clip]` package, integrating the model directly into your code
+* using `inference` HTTP API (hosted locally, or at Roboflow platform), integrating via HTTP protocol
+  * using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
+  * creating custom code to make HTTP requests (see [API Reference](https://inference.roboflow.com/api/))
+
 ## Classify Video Frames
 
 With CLIP, you can classify images and video frames without training a model. This is because CLIP has been pre-trained to recognize many different objects.
@@ -98,35 +104,26 @@ Below we show how to calculate, then compare, both types of embeddings.
 
 ### Image Embedding
 
+!!! tip
+    
+    In this example, we assume `inference-sdk` package installed
+    ```
+    pip install inference-sdk
+    ```
+
 In the code below, we calculate an image embedding.
 
 Create a new Python file and add this code:
 
 ```python
 import os
-import requests
-#Define Request Payload
-infer_clip_payload = {
-    #Images can be provided as urls or as bas64 encoded strings
-    "image": {
-        "type": "url",
-        "value": "https://i.imgur.com/Q6lDy8B.jpg",
-    },
-}
+from inference_sdk import InferenceHTTPClient
 
-# Define inference server url (localhost:9001, infer.roboflow.com, etc.)
-base_url = "https://infer.roboflow.com"
-
-# Define your Roboflow API Key
-api_key = os.environ["API_KEY"]
-
-res = requests.post(
-    f"{base_url}/clip/embed_image?api_key={api_key}",
-    json=infer_clip_payload,
+CLIENT = InferenceHTTPClient(
+    api_url="https://infer.roboflow.com",
+    api_key=os.environ["ROBOFLOW_API_KEY"],
 )
-
-embeddings = res.json()['embeddings']
-
+embeddings = CLIENT.get_clip_image_embeddings(inference_input="https://i.imgur.com/Q6lDy8B.jpg")
 print(embeddings)
 ```
 
@@ -134,20 +131,23 @@ print(embeddings)
 
 In the code below, we calculate a text embedding.
 
-```python
-import requests
-#Define Request Payload
-infer_clip_payload = {
-    "text": "the quick brown fox jumped over the lazy dog",
-}
+!!! tip
+    
+    In this example, we assume `inference-sdk` package installed
+    ```
+    pip install inference-sdk
+    ```
 
-res = requests.post(
-    f"{base_url}/clip/embed_text?api_key={api_key}",
-    json=infer_clip_payload,
+```python
+import os
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="https://infer.roboflow.com",
+    api_key=os.environ["ROBOFLOW_API_KEY"],
 )
 
-embeddings = res.json()['embeddings']
-
+embeddings = CLIENT.get_clip_text_embeddings(text="the quick brown fox jumped over the lazy dog")
 print(embeddings)
 ```
 
@@ -157,10 +157,27 @@ To compare embeddings for similarity, you can use cosine similarity.
 
 The code you need to compare image and text embeddings is the same.
 
-```python
-from inference.core.utils.postprocess import cosine_similarity
+!!! tip
+    
+    In this example, we assume `inference-sdk` package installed
+    ```
+    pip install inference-sdk
+    ```
 
-similarity = cosine_similarity(image_embedding, text_embedding)
+```python
+import os
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="https://infer.roboflow.com",
+    api_key=os.environ["ROBOFLOW_API_KEY"],
+)
+
+result = CLIENT.clip_compare(
+  subject="./image.jpg",
+  prompt=["dog", "cat"] 
+)
+print(result)
 ```
 
 The resulting number will be between 0 and 1. The higher the number, the more similar the image and text are.
