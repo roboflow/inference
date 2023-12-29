@@ -478,7 +478,7 @@ class InferenceHTTPClient:
             )
         payload = self.__initialise_payload()
         payload["subject_type"] = subject_type
-        payload["prompt_type"] = subject_type
+        payload["prompt_type"] = prompt_type
         if subject_type == "image":
             encoded_image = load_static_inference_input(
                 inference_input=subject,
