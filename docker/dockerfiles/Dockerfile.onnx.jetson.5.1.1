@@ -46,11 +46,6 @@ RUN pip3 install onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl "opencv-pyth
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl
 
-WORKDIR /build
-COPY . .
-RUN make create_wheels
-RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
-
 WORKDIR /app/
 COPY inference inference
 COPY docker/config/gpu_http.py gpu_http.py
