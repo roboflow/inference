@@ -126,7 +126,6 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
         Returns:
             List[KeypointsDetectionInferenceResponse]: A list of response objects containing keypoints detection predictions.
         """
-
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
         keypoint_confidence_threshold = 0.0
@@ -143,13 +142,13 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                             "width": pred[2] - pred[0],
                             "height": pred[3] - pred[1],
                             "confidence": pred[4],
-                            "class": self.class_names[int(pred[6])],
-                            "class_id": int(pred[6]),
+                            "class": self.class_names[int(pred[4 + len(self.get_class_names)])],
+                            "class_id": int(pred[4 + len(self.get_class_names)]),
                             "keypoints": self._model_keypoints_to_response(
                                 keypoints=pred[
-                                    -(len(pred) - 6 - len(self.get_class_names)) :
+                                    -(len(pred) - 5 - len(self.get_class_names)) :
                                 ],
-                                predicted_object_class_id=int(pred[6]),
+                                predicted_object_class_id=int(pred[4 + len(self.get_class_names)]),
                                 keypoint_confidence_threshold=keypoint_confidence_threshold,
                             ),
                         }
