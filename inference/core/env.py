@@ -162,7 +162,7 @@ LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 LICENSE_SERVER = os.getenv("LICENSE_SERVER", None)
 
 # Log level, default is "INFO"
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
@@ -203,6 +203,15 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
+
+# Enable jupyter notebook server route, default is False
+NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
+
+# Jupyter notebook password, default is "roboflow"
+NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
+
+# Jupyter notebook port, default is 9002
+NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 
 # Number of workers, default is 1
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))

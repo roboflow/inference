@@ -34,6 +34,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
+    jupyterlab \
     wheel>=0.38.0 \
     setuptools>=65.5.1 \
     --upgrade \
@@ -42,8 +43,15 @@ RUN pip3 install --upgrade pip  && pip3 install \
 FROM scratch
 COPY --from=base / /
 
-WORKDIR /app
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
 
+WORKDIR /notebooks
+COPY examples/notebooks .
+
+WORKDIR /app
 COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
 
