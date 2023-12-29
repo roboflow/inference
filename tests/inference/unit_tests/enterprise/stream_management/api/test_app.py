@@ -178,6 +178,44 @@ def test_initialise_pipeline_when_valid_payload_given(
 
 
 @mock.patch.object(app, "STREAM_MANAGER_CLIENT", new_callable=AsyncMock)
+def test_initialise_pipeline_when_valid_payload_given_without_api_key(
+    stream_manager_client: AsyncMock,
+) -> None:
+    # given
+    client = TestClient(app.app)
+    stream_manager_client.initialise_pipeline.return_value = CommandResponse(
+        status="success",
+        context=CommandContext(request_id="my_request", pipeline_id="my_pipeline"),
+    )
+
+    # when
+    response = client.post(
+        "/initialise",
+        json={
+            "model_id": "some/1",
+            "video_reference": "rtsp://some:543",
+            "sink_configuration": {
+                "type": "udp_sink",
+                "host": "127.0.0.1",
+                "port": 9090,
+            },
+            "model_configuration": {"type": "object-detection"},
+            "active_learning_enabled": True,
+        },
+    )
+
+    # then
+    assert response.status_code == 200, "Status code for success must be 200"
+    assert response.json() == {
+        "status": "success",
+        "context": {
+            "request_id": "my_request",
+            "pipeline_id": "my_pipeline",
+        },
+    }, "CommandResponse must be serialised directly to JSON response"
+
+
+@mock.patch.object(app, "STREAM_MANAGER_CLIENT", new_callable=AsyncMock)
 def test_pause_pipeline_when_successful_response_expected(
     stream_manager_client: AsyncMock,
 ) -> None:

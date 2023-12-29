@@ -34,7 +34,7 @@ class ActiveLearningManager(ModelManager):
             model_id=model_id, request=request
         )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
-        if not active_learning_eligible:
+        if not active_learning_eligible or request.api_key is None:
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction

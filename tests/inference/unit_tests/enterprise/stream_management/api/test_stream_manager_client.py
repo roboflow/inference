@@ -508,6 +508,52 @@ async def test_stream_manager_client_can_successfully_initialise_pipeline(
 
 @pytest.mark.asyncio
 @mock.patch.object(stream_manager_client, "establish_socket_connection")
+async def test_stream_manager_client_can_successfully_initialise_pipeline_without_api_key(
+    establish_socket_connection_mock: AsyncMock,
+) -> None:
+    # given
+    reader = assembly_socket_reader(
+        message={
+            "request_id": "my_request",
+            "pipeline_id": "new_pipeline",
+            "response": {"status": "success"},
+        },
+        header_size=4,
+    )
+    writer = DummyStreamWriter()
+    establish_socket_connection_mock.return_value = (reader, writer)
+    initialisation_request = PipelineInitialisationRequest(
+        model_id="some/1",
+        video_reference="rtsp://some:543",
+        sink_configuration=UDPSinkConfiguration(
+            type="udp_sink",
+            host="127.0.0.1",
+            port=9090,
+        ),
+        model_configuration=ObjectDetectionModelConfiguration(type="object_detection"),
+    )
+    client = StreamManagerClient.init(
+        host="127.0.0.1",
+        port=7070,
+        operations_timeout=1.0,
+        header_size=4,
+        buffer_size=16438,
+    )
+
+    # when
+    result = await client.initialise_pipeline(
+        initialisation_request=initialisation_request
+    )
+
+    # then
+    assert result == CommandResponse(
+        status="success",
+        context=CommandContext(request_id="my_request", pipeline_id="new_pipeline"),
+    )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(stream_manager_client, "establish_socket_connection")
 async def test_stream_manager_client_can_successfully_terminate_pipeline(
     establish_socket_connection_mock: AsyncMock,
 ) -> None:
