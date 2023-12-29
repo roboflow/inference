@@ -64,7 +64,7 @@ CLIENT.clip_compare(
 Default mode is `(image, text)`.
 
 
-### CogLVM
+### CogVLM
 
 ```python
 from inference_sdk import InferenceHTTPClient

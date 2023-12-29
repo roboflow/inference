@@ -1102,7 +1102,7 @@ def test_prompt_cogvlm_when_unsuccessful_response_is_returned(
     requests_mock.post(
         f"{api_url}/llm/cogvlm",
         json={
-            "message": "Cannot load CogLVM.",
+            "message": "Cannot load CogVLM.",
         },
         status_code=500,
     )
