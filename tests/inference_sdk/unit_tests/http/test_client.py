@@ -1562,6 +1562,47 @@ def test_clip_compare_when_both_prompt_and_subject_are_texts(
 
 
 @mock.patch.object(client, "load_static_inference_input")
+def test_clip_compare_when_mixed_input_is_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)]
+    ]
+    requests_mock.post(
+        f"{api_url}/clip/compare",
+        json={
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        },
+    )
+
+    # when
+    result = http_client.clip_compare(
+        subject="/some/image.jpg",
+        prompt=["dog", "house"],
+    )
+
+    # then
+    assert result == {
+        "frame_id": None,
+        "time": 0.1435863340011565,
+        "similarity": [0.8963012099266052, 0.8830886483192444],
+    }, "Result must match the value returned by HTTP endpoint"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "subject": {"type": "base64", "value": "base64_image_1"},
+        "prompt": ["dog", "house"],
+        "prompt_type": "text",
+        "subject_type": "image",
+    }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
+
+
+@mock.patch.object(client, "load_static_inference_input")
 def test_clip_compare_when_both_prompt_and_subject_are_images(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,

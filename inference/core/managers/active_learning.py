@@ -31,10 +31,10 @@ class ActiveLearningManager(ModelManager):
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         prediction = await super().infer_from_request(
-            model_id=model_id, request=request
+            model_id=model_id, request=request, **kwargs
         )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
-        if not active_learning_eligible:
+        if not active_learning_eligible or request.api_key is None:
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction
@@ -108,11 +108,12 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
-        prediction = await super().infer_from_request(
-            model_id=model_id, request=request
-        )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
-        if not active_learning_eligible:
+        kwargs[ACTIVE_LEARNING_ELIGIBLE_PARAM] = False  # disabling AL in super-classes
+        prediction = await super().infer_from_request(
+            model_id=model_id, request=request, **kwargs
+        )
+        if not active_learning_eligible or request.api_key is None:
             return prediction
         if BACKGROUND_TASKS_PARAM not in kwargs:
             logger.warning(

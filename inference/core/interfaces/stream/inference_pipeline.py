@@ -127,7 +127,9 @@ class InferencePipeline:
             active_learning_enabled (Optional[bool]): Flag to enable / disable Active Learning middleware (setting it
                 true does not guarantee any data to be collected, as data collection is controlled by Roboflow backend -
                 it just enables middleware intercepting predictions). If not given, env variable
-                `ACTIVE_LEARNING_ENABLED` will be used.
+                `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
+                disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
+                for this feature to be operational.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -170,6 +172,11 @@ class InferencePipeline:
                 f"with value: {ACTIVE_LEARNING_ENABLED}"
             )
             active_learning_enabled = ACTIVE_LEARNING_ENABLED
+        if api_key is None:
+            logger.info(
+                f"Roboflow API key not given - Active Learning is forced to be disabled."
+            )
+            active_learning_enabled = False
         if active_learning_enabled is True:
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,
