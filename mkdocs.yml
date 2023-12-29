@@ -35,6 +35,7 @@ nav:
       - Configure an API Key: quickstart/configure_api_key.md
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
+      - Inference Notebook: quickstart/inference_notebook.md
     - Run a Model:
       - On an Image: quickstart/run_model_on_image.md
       - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
