@@ -30,11 +30,17 @@ nav:
   - Home:
     - Home: index.md
     - Get Started:
+      - YOLOV8: yolov8.md
       - What is Inference?: quickstart/what_is_inference.md
       - What Devices Can I Use?: quickstart/devices.md
       - Configure an API Key: quickstart/configure_api_key.md
+      - Inference 101: quickstart/inference_101.md
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
+    - Using Inference:
+      - Native Python API: using_inference/native_python_api.md
+      - HTTP API: using_inference/http_api.md
+      - Inference Pipeline: using_inference/inference_pipeline.md
     - Run a Model:
       - On an Image: quickstart/run_model_on_image.md
       - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
@@ -48,6 +54,7 @@ nav:
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
     - Reference:
+      - Reference: docs/reference/
       - Model Licensing: quickstart/licensing.md
       - Model Device Compatability: quickstart/compatability_matrix.md
       - Install Inference with Docker: quickstart/docker.md
@@ -56,7 +63,7 @@ nav:
       - Collect Data Without a Model: quickstart/stubs.md
   - HTTP API Reference:
     - API Reference: api.md
-    - Back to Quickstart: /quickstart/what_is_inference/
+    - Back to Quickstart: quickstart/what_is_inference.md
   - Contribute:
     - Contribute to Inference: contributing.md
   - Changelog: https://github.com/roboflow/inference/releases
@@ -84,12 +91,20 @@ theme:
     - content.code.copy
 
 plugins:
-  - mkdocstrings
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
   - search
   - swagger-ui-tag
   - social:
       cards_layout_dir: docs/layouts
       cards_layout: custom
+  - gen-files:
+      scripts:
+      - docs/scripts/gen_ref_pages.py
+  - literate-nav:
+      nav_file: nav.md
 
 markdown_extensions:
   - admonition
