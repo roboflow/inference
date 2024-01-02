@@ -145,6 +145,11 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         example=False,
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
+    disable_active_learning: Optional[bool] = Field(
+        default=False,
+        example=False,
+        description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
+    )
 
 
 class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
@@ -198,6 +203,11 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         default=False,
         example=False,
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
+    )
+    disable_active_learning: Optional[bool] = Field(
+        default=False,
+        example=False,
+        description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
     )
 
 

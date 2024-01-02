@@ -1042,6 +1042,10 @@ class HttpInterface(BaseInterface):
                 disable_preproc_static_crop: Optional[bool] = Query(
                     False, description="If true, disables automatic static crop"
                 ),
+                disable_active_learning: Optional[bool] = Query(
+                    default=False,
+                    description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -1147,6 +1151,7 @@ class HttpInterface(BaseInterface):
                     disable_preproc_contrast=disable_preproc_contrast,
                     disable_preproc_grayscale=disable_preproc_grayscale,
                     disable_preproc_static_crop=disable_preproc_static_crop,
+                    disable_active_learning=disable_active_learning,
                     **args,
                 )
 

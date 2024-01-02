@@ -83,6 +83,7 @@ class InferenceConfiguration:
     )
     client_downsizing_disabled: bool = False
     default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
+    disable_active_learning: bool = False
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -126,6 +127,7 @@ class InferenceConfiguration:
             ("visualize_labels", "visualization_labels"),
             ("stroke_width", "visualization_stroke_width"),
             ("visualize_predictions", "visualize_predictions"),
+            ("disable_active_learning", "disable_active_learning"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -151,6 +153,7 @@ class InferenceConfiguration:
             ("confidence_threshold", "confidence"),
             ("visualize_predictions", "visualize_predictions"),
             ("stroke_width", "visualization_stroke_width"),
+            ("disable_active_learning", "disable_active_learning"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -174,6 +177,7 @@ class InferenceConfiguration:
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),
+            ("disable_active_learning", "disable_active_learning"),
         ]
         return get_non_empty_attributes(
             source_object=self,

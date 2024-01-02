@@ -735,8 +735,14 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
             ],
         },
     ]
-    assert requests_mock.request_history[0].query == "api_key=my-api-key&confidence=0.5"
-    assert requests_mock.request_history[1].query == "api_key=my-api-key&confidence=0.5"
+    assert (
+        requests_mock.request_history[0].query
+        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+    )
+    assert (
+        requests_mock.request_history[1].query
+        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+    )
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -765,7 +771,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     assert result == {"visualization": base64.b64encode(b"data").decode("utf-8")}
     assert (
         requests_mock.last_request.query
-        == "api_key=my-api-key&confidence=0.5&format=image"
+        == "api_key=my-api-key&confidence=0.5&format=image&disable_active_learning=false"
     )
 
 
@@ -816,7 +822,10 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection(
             }
         ],
     }
-    assert requests_mock.last_request.query == "api_key=my-api-key&confidence=0.5"
+    assert (
+        requests_mock.last_request.query
+        == "api_key=my-api-key&confidence=0.5&disable_active_learning=false"
+    )
 
 
 def test_infer_from_api_v1_when_model_id_is_not_selected() -> None:
@@ -881,7 +890,9 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
         ("base64_image", 0.5),
         ("another_image", None),
     ]
-    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, disable_active_learning=True
+    )
     http_client.configure(inference_configuration=configuration)
     requests_mock.post(
         f"{api_url}/infer/object_detection",
@@ -962,6 +973,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
         "image": {"type": "base64", "value": "base64_image"},
         "visualize_predictions": False,
         "confidence": 0.5,
+        "disable_active_learning": True,
     }
     assert requests_mock.request_history[1].json() == {
         "model_id": "some/1",
@@ -969,6 +981,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
         "image": {"type": "base64", "value": "another_image"},
         "visualize_predictions": False,
         "confidence": 0.5,
+        "disable_active_learning": True,
     }
 
 
@@ -1036,6 +1049,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_visual
         "image": {"type": "base64", "value": "base64_image"},
         "visualize_predictions": True,
         "confidence": 0.5,
+        "disable_active_learning": False,
     }
 
 
@@ -1569,9 +1583,7 @@ def test_clip_compare_when_mixed_input_is_given(
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.side_effect = [
-        [("base64_image_1", 0.5)]
-    ]
+    load_static_inference_input_mock.side_effect = [[("base64_image_1", 0.5)]]
     requests_mock.post(
         f"{api_url}/clip/compare",
         json={
