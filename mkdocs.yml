@@ -45,9 +45,9 @@ nav:
       - Over UDP: quickstart/run_model_over_udp.md
       - Collect Data Without a Model: quickstart/stubs.md
     - Advanced Usage:
-      - Active Learning: advanced/active_learning.md
-      - Parallel HTTP API: advanced/parallel_http_api.md
-      - Stream Management API: advanced/stream_management_api.md
+      - Active Learning: enterprise/active-learning/
+      - Parallel HTTP API: enterprise/parallel_processing.md
+      - Stream Management API: enterprise/stream_management_api.md
     - Inference Helpers:
       - Inference Landing Page: inference_helpers/inference_landing_page.md
       - Inference CLI: inference_helpers/inference_cli.md
