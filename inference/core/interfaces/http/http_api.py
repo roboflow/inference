@@ -582,8 +582,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
-
-                return process_inference_request(inference_request)
+                return await process_inference_request(inference_request)
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
