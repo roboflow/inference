@@ -36,7 +36,7 @@ class ActiveLearningManager(ModelManager):
         )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
         active_learning_disabled_for_request = kwargs.get(
-            DISABLE_ACTIVE_LEARNING_PARAM, True
+            DISABLE_ACTIVE_LEARNING_PARAM, False
         )
         if (
             not active_learning_eligible
@@ -118,7 +118,7 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
     ) -> InferenceResponse:
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
         active_learning_disabled_for_request = kwargs.get(
-            DISABLE_ACTIVE_LEARNING_PARAM, True
+            DISABLE_ACTIVE_LEARNING_PARAM, False
         )
         kwargs[ACTIVE_LEARNING_ELIGIBLE_PARAM] = False  # disabling AL in super-classes
         prediction = await super().infer_from_request(
