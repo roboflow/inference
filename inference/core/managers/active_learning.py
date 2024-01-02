@@ -13,6 +13,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
+DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"
 BACKGROUND_TASKS_PARAM = "background_tasks"
 
 
@@ -34,7 +35,14 @@ class ActiveLearningManager(ModelManager):
             model_id=model_id, request=request, **kwargs
         )
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
-        if not active_learning_eligible or request.api_key is None:
+        active_learning_disabled_for_request = kwargs.get(
+            DISABLE_ACTIVE_LEARNING_PARAM, True
+        )
+        if (
+            not active_learning_eligible
+            or active_learning_disabled_for_request
+            or request.api_key is None
+        ):
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction
@@ -109,11 +117,18 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
         active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
+        active_learning_disabled_for_request = kwargs.get(
+            DISABLE_ACTIVE_LEARNING_PARAM, True
+        )
         kwargs[ACTIVE_LEARNING_ELIGIBLE_PARAM] = False  # disabling AL in super-classes
         prediction = await super().infer_from_request(
             model_id=model_id, request=request, **kwargs
         )
-        if not active_learning_eligible or request.api_key is None:
+        if (
+            not active_learning_eligible
+            or active_learning_disabled_for_request
+            or request.api_key is None
+        ):
             return prediction
         if BACKGROUND_TASKS_PARAM not in kwargs:
             logger.warning(
