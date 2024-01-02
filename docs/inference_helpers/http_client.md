@@ -364,6 +364,7 @@ based on model confidence
 * `service_secret`
 * `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
 `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 
 ### Classification model in `v1` mode:
@@ -372,6 +373,7 @@ based on model confidence
 * `stroke_width`: width of stroke in visualisation
 * `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
 `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 
 ### Object detection model in `v1` mode:
@@ -387,6 +389,7 @@ based on model confidence
 * `max_candidates`: max candidates to post-processing from model
 * `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
 `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 
 ### Keypoints detection model in `v1` mode:
@@ -404,6 +407,7 @@ based on model confidence
 * `max_candidates`: max candidates to post-processing from model
 * `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
 `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 
 ### Instance segmentation model in `v1` mode:
@@ -421,6 +425,7 @@ based on model confidence
 `disable_preproc_static_crop` to alter server-side pre-processing
 * `mask_decode_mode`
 * `tradeoff_factor`
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 ### Configuration of client
 * `output_visualisation_format`: one of (`VisualisationResponseFormat.BASE64`, `VisualisationResponseFormat.NUMPY`, 
