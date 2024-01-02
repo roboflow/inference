@@ -17,7 +17,8 @@ def w_np_non_max_suppression(
     """Applies non-maximum suppression to predictions.
 
     Args:
-        prediction (np.ndarray): Array of predictions.
+        prediction (np.ndarray): Array of predictions. Format for single prediction is
+            [bbox x 4, max_class_confidence, (confidence) x num_of_classes, additional_element x num_masks]
         conf_thresh (float, optional): Confidence threshold. Defaults to 0.25.
         iou_thresh (float, optional): IOU threshold. Defaults to 0.45.
         class_agnostic (bool, optional): Whether to ignore class labels. Defaults to False.
@@ -28,7 +29,9 @@ def w_np_non_max_suppression(
         box_format (str, optional): Format of bounding boxes. Either 'xywh' or 'xyxy'. Defaults to 'xywh'.
 
     Returns:
-        list: List of filtered predictions after non-maximum suppression.
+        list: List of filtered predictions after non-maximum suppression. Format of a single result is:
+            [bbox x 4, max_class_confidence, max_class_confidence, id_of_class_with_max_confidence,
+            additional_element x num_masks]
     """
     num_classes = prediction.shape[2] - 5 - num_masks
 
