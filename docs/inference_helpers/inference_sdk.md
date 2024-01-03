@@ -66,7 +66,7 @@ CLIENT.clip_compare(
 - `(text, text)`
   Default mode is `(image, text)`.
 
-### CogLVM
+### CogVLM
 
 ```python
 from inference_sdk import InferenceHTTPClient
@@ -355,6 +355,28 @@ used in specific contexts. In particular:
 
 ### Inference in `v0` mode
 
+# <<<<<<< HEAD:docs/inference_helpers/inference_sdk.md
+
+The following fields are passed to API
+
+- `confidence_threshold` (as `confidence`) - to alter model thresholding
+- `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+  based on model confidence
+- `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
+- `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
+- `mask_decode_mode`
+- `tradeoff_factor`
+- `max_detections`: max detections to return from model
+- `iou_threshold` (as `overlap`) - to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `count_inference` as `countinference`
+- `service_secret`
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
+  > > > > > > > dfec32274e82c99ca74fce696538ad1522c1f187:docs/inference_sdk/http_client.md
+
 The following fields are passed to API
 
 - `confidence_threshold` (as `confidence`) - to alter model thresholding
@@ -380,7 +402,15 @@ The following fields are passed to API
 - `stroke_width`: width of stroke in visualisation
 - `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
   `disable_preproc_static_crop` to alter server-side pre-processing
-- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
+
+* `visualize_predictions`: flag to enable / disable visualisation
+* `confidence_threshold` as `confidence`
+* `stroke_width`: width of stroke in visualisation
+* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 ### Object detection model in `v1` mode:
 
@@ -396,7 +426,8 @@ The following fields are passed to API
 - `max_candidates`: max candidates to post-processing from model
 - `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
   `disable_preproc_static_crop` to alter server-side pre-processing
-- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Keypoints detection model in `v1` mode:
 
@@ -414,7 +445,8 @@ The following fields are passed to API
 - `max_candidates`: max candidates to post-processing from model
 - `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
   `disable_preproc_static_crop` to alter server-side pre-processing
-- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Instance segmentation model in `v1` mode:
 
@@ -432,7 +464,8 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `mask_decode_mode`
 - `tradeoff_factor`
-- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Configuration of client
 

@@ -28,7 +28,7 @@ with our `inference-cli` tool. Run the following command to set up environment a
 
 ```bash
 pip install inference inference-cli inference-sdk
-inference server start  # make sure that you are running this at machine with GPU! Otherwise CogLVM will not be available
+inference server start  # make sure that you are running this at machine with GPU! Otherwise CogVLM will not be available
 ```
 
 Let's ask a question about the following image:
