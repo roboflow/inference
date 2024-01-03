@@ -3,13 +3,13 @@ Inference is designed to fit every computer vision use case. Within Inference, t
 - [Native Python API](#native-python-api)
 - [HTTP API](#http-api)
 - [Inference Pipeline](#inference-pipeline)
-- [Advanced Interfaces (Enterprise)](#advanced-interfaces)
+- [Advanced Interfaces (Enterprise)](#advanced-usage-interfaces)
 
 ## Native Python API
 
 The native python API is the most simple and involves accessing the base package APIs directly. Going this route, you will import Inference modules directly into your python code. You will load models, run inference, and handle the results all within your own logic. You will also need to manage the dependencies within your python environment. If you are creating a simple app or just testing, the native Python API is a great place to start.
 
-[See Docs and Examples](http://127.0.0.1:8000/using_inference/native_python_api/)
+[See Docs and Examples](/using_inference/native_python_api/)
 
 ## HTTP API
 
@@ -24,22 +24,22 @@ Running Inference this way can have several advantages:
 
 !!! Hint
 
-    Checkout the [Inference SDK](https://inference.roboflow.com/inference_sdk) for an ready made client that makes using the HTTP interface even easier.
+    Checkout the [Inference SDK](https://inference.roboflow.com/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
 
-[See Docs and Examples](http://127.0.0.1:8000/using_inference/http_api/)
+[See Docs and Examples](/using_inference/http_api/)
 
 ## Inference Pipeline
 
 The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. It is an asynchronous interface that can consume many different video sources including local devices (like webcams), RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks. Sinks are methods that operate on the results of inferring on a single frame. The Inference package has several built in sinks but also gives you the ability to write custom sinks for integrating with the rest of your software.
 
-[See Docs and Examples](http://127.0.0.1:8000/using_inference/inference_pipeline/)
+[See Docs and Examples](/using_inference/inference_pipeline/)
 
 ## Advanced Usage & Interfaces
 
 There are several advanced interfaces that enhance the capabilities of the base Inference package.
 
-- Active Learning: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](http://127.0.0.1:8000/advanced/active_learning.md)
-- Parallel HTTP API\*: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](http://127.0.0.1:8000/advanced/parallel_http_api.md)
-- Stream Manager API\*: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](http://127.0.0.1:8000/advanced/stream_management_api.md)
+- Active Learning: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](/advanced/active_learning.md)
+- Parallel HTTP API\*: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/advanced/parallel_http_api.md)
+- Stream Manager API\*: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](/advanced/stream_management_api.md)
 
 \*For Roboflow enterprise users only. Contact sales@roboflow.com to learn more.

@@ -55,18 +55,20 @@ nav:
     - Reference:
       - Inference API Reference: docs/reference/
       - HTTP API Reference: api.md
+      - Model Aliases: reference_pages/model_aliases.md
       - Model Licensing: quickstart/licensing.md
       - Model Device Compatability: quickstart/compatability_matrix.md
+      - Running With Docker: quickstart/docker.md
       - Docker Configuration Options: quickstart/docker_configuration_options.md
       - Contribute to Inference: contributing.md
       - Changelog: https://github.com/roboflow/inference/releases
   - Models:
-    - Models: models.md
-    - Fine Tuned Models:
-      - ViT: models/vit.md
-      - YOLOv5: models/yolov5.md
-      - YOLOv7: models/yolov7.md
-      - YOLOv8: models/yolov8.md
+    # - Models: models.md
+    # - Fine Tuned Models:
+    #   - ViT: models/vit.md
+    #   - YOLOv5: models/yolov5.md
+    #   - YOLOv7: models/yolov7.md
+    #   - YOLOv8: models/yolov8.md
     - Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md

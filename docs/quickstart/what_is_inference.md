@@ -38,7 +38,7 @@ First, we import a utility function which will help us load a computer vision mo
 
 #### `model = get_roboflow_model(model_id="yolov8x-1280")`
 
-Next, we load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`. You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](https://inference.roboflow.com/model_aliases).
+Next, we load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`. You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](../../reference_pages/model_aliases).
 
 #### `results = model.infer("people-walking.jpg")`
 

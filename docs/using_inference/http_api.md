@@ -38,6 +38,10 @@ client.select_api(model_version)
 results = client.infer(image_url, model_id=f"{model_id}")
 ```
 
+!!! Hint
+
+    See [full docs for the Inference SDK](../../inference_helpers/inference_sdk).
+
 ### Visualize Results
 
 ```python

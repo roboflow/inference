@@ -3,21 +3,24 @@ With Inference, you can run any of the 50,000+ models available on Roboflow Univ
 All models run on your own hardware.
 
 ## Run pre-trained YOLOv8 model
+
 Roboflow Universe exposes pre-trained YOLOv8 models.
 
-* object-detection: `yolov8{model_size}-{inference_resolution}`
-  * supported model sizes: `[n, s, m, l, x]`
-  * supported inference resolutions: `[640, 1280]`
+- object-detection: `yolov8{model_size}-{inference_resolution}`
 
-* instance-segmentation: `yolov8{model_size}-seg-{inference_resolution}`
-  * supported model sizes: `[n, s, m, l, x]`
-  * supported inference resolutions: `[640, 1280]`
+  - supported model sizes: `[n, s, m, l, x]`
+  - supported inference resolutions: `[640, 1280]`
+
+- instance-segmentation: `yolov8{model_size}-seg-{inference_resolution}`
+  - supported model sizes: `[n, s, m, l, x]`
+  - supported inference resolutions: `[640, 1280]`
 
 ## Run a Model on Universe
 
 In the first example, we showed how to run a rock paper scissors model. This model was hosted on Universe. Let's find another model to try.
 
 !!! info
+
 If you haven't already, follow our Run Your First Model guide to install and set up Inference.
 
 Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use the search bar to find a model.
@@ -25,6 +28,7 @@ Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use th
 ![Roboflow Universe search bar](https://media.roboflow.com/universe-search.png)
 
 !!! info
+
 Add "model" to your search query to only find models.
 
 Browse the search page to find a model.
@@ -90,9 +94,9 @@ You can run models you have trained privately on Roboflow with Inference. To do 
 
 ![Roboflow dashboard](https://media.roboflow.com/docs-models.png)
 
-Click the "Deploy" link in the sidebar to find the information you will need to use your model with Inference:
+Click the "Deploy" link in the sidebar to find the information you will need to use your model with Inference.
 
-<img src="https://media.roboflow.com/docs-model-deploy.png" alt="Model deploy page" width="100%" style="max-height: 200px;">
+<!-- <img src="https://media.roboflow.com/docs-model-deploy.png" alt="Model deploy page" width="100%" style="max-height: 200px;"> -->
 
 Copy the model ID on the page (in this case, `taylor-swift-records/3`).
 

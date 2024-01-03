@@ -24,7 +24,7 @@ The `get_roboflow_model` method is a utility function which will help us load a 
 
 !!! Hint
 
-    You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](https://inference.roboflow.com/model_aliases).
+    You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](../../reference_pages/model_aliases).
 
 Next, we can run inference with our model by providing an input image:
 
@@ -36,7 +36,7 @@ model = get_roboflow_model(model_id="yolov8x-1280")
 results = model.infer("people-walking.jpg")
 ```
 
-The results object is an [inference response object](https:inference.roboflow.com/docs/reference/inference/core/entities/responses/inference/#inference.core.entities.responses.inference.ObjectDetectionInferenceResponse). It contains some meta data (e.g. processing time) as well as an array of the predictions. The type of response and its attributes will depend on the type of model. [See all of the Inference Response objects](https:inference.roboflow.com/docs/reference/inference/core/entities/responses/inference/).
+The results object is an [inference response object](../../docs/reference/inference/core/entities/responses/inference/#inference.core.entities.responses.inference.ObjectDetectionInferenceResponse). It contains some meta data (e.g. processing time) as well as an array of the predictions. The type of response and its attributes will depend on the type of model. [See all of the Inference Response objects](../../docs/reference/inference/core/entities/responses/inference/).
 
 Now, lets visualize the results using [Supervision](https://supervision.roboflow.com):
 
@@ -84,7 +84,7 @@ cv2.imwrite("people-walking-annotated.jpg", annotated_image)
 
 ## Different Image Types
 
-In the previous example, we saw that we can provide different image types to the `infer(...)` method. The `infer(...)` method accepts images in many forms including PIL images, OpenCV images (Numpy arrays), paths to local images, image URLs, and more. Under the hood, models use the `load_image(...)` method in the [`image_utils` module](http://127.0.0.1:8000/docs/reference/inference/core/utils/image_utils/).
+In the previous example, we saw that we can provide different image types to the `infer(...)` method. The `infer(...)` method accepts images in many forms including PIL images, OpenCV images (Numpy arrays), paths to local images, image URLs, and more. Under the hood, models use the `load_image(...)` method in the [`image_utils` module](../../docs/reference/inference/core/utils/image_utils/).
 
 ```python
 from inference import get_roboflow_model
@@ -107,7 +107,7 @@ results = model.infer(image_url)
 
 ## Inference Parameters
 
-The `infer(...)` method accepts [keyword arguments to set inference parameters](http://127.0.0.1:8000/docs/reference/inference/core/models/object_detection_base/#inference.core.models.object_detection_base.ObjectDetectionBaseOnnxRoboflowInferenceModel.infer). The example below shows setting the confidence threshold and the IoU threshold.
+The `infer(...)` method accepts [keyword arguments to set inference parameters](../../docs/reference/inference/core/models/object_detection_base/#inference.core.models.object_detection_base.ObjectDetectionBaseOnnxRoboflowInferenceModel.infer). The example below shows setting the confidence threshold and the IoU threshold.
 
 ```python
 from inference import get_roboflow_model

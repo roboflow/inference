@@ -26,23 +26,23 @@ pipeline.join()
 
 Let's break down the example line by line:
 
-### `pipeline = InferencePipeline.init(...)`
+#### `pipeline = InferencePipeline.init(...)`
 
 Here, we are calling a class method of InferencePipeline.
 
-### `model_id="yolov8x-1280"`
+#### `model_id="yolov8x-1280"`
 
 We set the model ID to a YOLOv8x model with input resolution `1280x1280`.
 
-### `video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4"`
+#### `video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4"`
 
 We set the video reference to a URL. Later we will show the various values that can be used as a video reference.
 
-### `on_prediction=render_boxes`
+#### `on_prediction=render_boxes`
 
 The `on_prediction` argument defines our sink (or a list of sinks).
 
-### `pipeline.start(); pipeline.join()`
+#### `pipeline.start(); pipeline.join()`
 
 Here, we start and join the thread that processes the video stream.
 
@@ -61,24 +61,24 @@ def on_prediction(
 The arguments are:
 
 - `predictions`: A dictionary that is the response object resulting from a call to a model's `infer(...)` method.
-- `video_frame`: A [VideoFrame object](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
+- `video_frame`: A [VideoFrame object](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
 - `**kwargs`: Other keyward arguments can be defined for the ability to configure a sink.
 
 ### Built In Sinks
 
-Inference has [several sinks built in](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
+Inference has [several sinks built in](../../docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
 
 #### `render_boxes(...)`
 
-The [render boxes sink](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
+The [render boxes sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
 
 #### `UDPSink(...)`
 
-The [UDP sink](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
+The [UDP sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
 
 #### `multi_sink(...)`
 
-The [Multi-Sink](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
+The [Multi-Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
 
 ## Other Pipeline Configuration
 
@@ -97,4 +97,4 @@ pipeline = InferencePipeline.init(
 )
 ```
 
-See the reference docs for the [full list of Inference Pipeline parameters](http://127.0.0.1:8000/docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
+See the reference docs for the [full list of Inference Pipeline parameters](../../docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
