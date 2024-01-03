@@ -1,18 +1,31 @@
-from typing import Set
+from typing import Set, Any
 
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
+from inference.enterprise.deployments.entities.deployment_specs import (
+    DeploymentSpecV1,
+    StepType,
+)
 from inference.enterprise.deployments.entities.steps import ConditionSpecs
 
 
 def get_input_parameters_selectors(deployment_spec: DeploymentSpecV1) -> Set[str]:
     return {
-        f"$inputs.{input_definition.name}"
+        construct_input_selector(input_name=input_definition.name)
         for input_definition in deployment_spec.inputs
     }
 
 
+def construct_input_selector(input_name: str) -> str:
+    return f"$inputs.{input_name}"
+
+
 def get_steps_selectors(deployment_spec: DeploymentSpecV1) -> Set[str]:
-    return {f"$steps.{step.name}" for step in deployment_spec.steps}
+    return {
+        construct_step_selector(step_name=step.name) for step in deployment_spec.steps
+    }
+
+
+def construct_step_selector(step_name: str) -> str:
+    return f"$steps.{step_name}"
 
 
 def get_steps_input_selectors(deployment_spec: DeploymentSpecV1) -> Set[str]:
@@ -20,7 +33,15 @@ def get_steps_input_selectors(deployment_spec: DeploymentSpecV1) -> Set[str]:
         step_input
         for step in deployment_spec.steps
         for step_input in step.inputs.values()
-        if step_input.startswith("$")
+        if is_selector(selector_or_value=step_input)
+    }
+
+
+def get_step_input_selectors(step: StepType) -> Set[str]:
+    return {
+        step_input
+        for step_input in step.inputs.values()
+        if is_selector(selector_or_value=step_input)
     }
 
 
@@ -49,12 +70,31 @@ def get_selectors_from_condition_specs(condition_specs: ConditionSpecs) -> Set[s
         result = result | get_selectors_from_condition_specs(
             condition_specs=condition_specs.left
         )
-    elif str(condition_specs.left).startswith("$"):
+    elif is_selector(condition_specs.left):
         result.add(condition_specs.left)
     if issubclass(type(condition_specs.right), ConditionSpecs):
         result = result | get_selectors_from_condition_specs(
             condition_specs=condition_specs.right
         )
-    elif str(condition_specs.right).startswith("$"):
+    elif is_selector(condition_specs.right):
         result.add(condition_specs.right)
     return result
+
+
+def is_step_output_selector(selector_or_value: Any) -> bool:
+    if not is_selector(selector_or_value=selector_or_value):
+        return False
+    return (
+        selector_or_value.startswith("$steps.")
+        and len(selector_or_value.split(".")) == 3
+    )
+
+
+def is_selector(selector_or_value: Any) -> bool:
+    if not issubclass(type(selector_or_value), str):
+        return False
+    return selector_or_value.startswith("$")
+
+
+def get_step_selector_from_its_output(step_output_selector: str) -> str:
+    return ".".join(step_output_selector.split(".")[:2])
