@@ -13,6 +13,7 @@ from inference.core.env import (
     METRICS_ENABLED,
     METRICS_INTERVAL,
     ROBOFLOW_SERVER_UUID,
+    LAMBDA,
 )
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.logger import logger
@@ -98,6 +99,7 @@ class ModelManager:
                     and request.image.type == "numpy"
                 ):
                     request.image.value = str(request.image.value)
+                expiry = 0 if LAMBDA else METRICS_INTERVAL * 2
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
@@ -105,7 +107,7 @@ class ModelManager:
                         "response": jsonable_encoder(rtn_val),
                     },
                     score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
+                    expire=expiry,
                 )
             return rtn_val
         except Exception as e:
