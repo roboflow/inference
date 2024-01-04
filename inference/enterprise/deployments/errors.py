@@ -16,3 +16,15 @@ class InvalidReferenceError(ValidationError):
 
 class VariableNotBounderError(ValidationError):
     pass
+
+
+class ExecutionGraphError(DeploymentCompilerError):
+    pass
+
+
+class NotAcyclicGraphError(ExecutionGraphError):
+    pass
+
+
+class NodesNotReachingOutputError(ExecutionGraphError):
+    pass

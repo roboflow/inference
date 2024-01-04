@@ -1,4 +1,4 @@
-from typing import Set, Any
+from typing import Any, Set
 
 from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecV1,

@@ -1,18 +1,18 @@
 from inference.enterprise.deployments.complier.utils import (
     get_input_parameters_selectors,
-    get_steps_input_selectors,
-    get_steps_output_selectors,
+    get_output_names,
     get_output_selectors,
     get_selectors_from_condition_specs,
+    get_steps_input_selectors,
+    get_steps_output_selectors,
     get_steps_selectors,
-    get_output_names,
 )
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
-from inference.enterprise.deployments.entities.steps import CVModel, Crop, Condition
+from inference.enterprise.deployments.entities.steps import Condition, Crop, CVModel
 from inference.enterprise.deployments.errors import (
+    DuplicatedSymbolError,
     InvalidReferenceError,
     VariableNotBounderError,
-    DuplicatedSymbolError,
 )
 
 

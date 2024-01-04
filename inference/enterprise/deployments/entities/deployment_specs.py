@@ -1,4 +1,4 @@
-from typing import Literal, List, Union, Annotated
+from typing import Annotated, List, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -7,7 +7,7 @@ from inference.enterprise.deployments.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import CVModel, Crop, Condition
+from inference.enterprise.deployments.entities.steps import Condition, Crop, CVModel
 
 InputType = Annotated[
     Union[InferenceImage, InferenceParameter], Field(discriminator="type")
