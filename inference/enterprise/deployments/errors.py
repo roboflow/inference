@@ -28,3 +28,15 @@ class NotAcyclicGraphError(ExecutionGraphError):
 
 class NodesNotReachingOutputError(ExecutionGraphError):
     pass
+
+
+class AmbiguousPathDetected(ExecutionGraphError):
+    pass
+
+
+class DeploymentCompilerRuntimeError(DeploymentCompilerError):
+    pass
+
+
+class RuntimeParameterMissingError(DeploymentCompilerRuntimeError):
+    pass

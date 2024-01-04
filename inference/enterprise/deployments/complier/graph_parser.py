@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Set
 
 import networkx as nx
@@ -8,17 +9,14 @@ from inference.enterprise.deployments.complier.utils import (
     construct_step_selector,
     get_step_input_selectors,
     get_step_selector_from_its_output,
-    is_step_output_selector,
+    is_step_output_selector, get_nodes_of_specific_kind,
 )
+from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND, OUTPUT_NODE_KIND
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
 from inference.enterprise.deployments.errors import (
     NodesNotReachingOutputError,
-    NotAcyclicGraphError,
+    NotAcyclicGraphError, AmbiguousPathDetected,
 )
-
-INPUT_NODE_KIND = "INPUT_NODE"
-STEP_NODE_KIND = "STEP_NODE"
-OUTPUT_NODE_KIND = "OUTPUT_NODE"
 
 
 def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
@@ -41,6 +39,7 @@ def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reachable_from_at_least_one_output(execution_graph=execution_graph)
+    verify_each_node_step_has_at_most_one_parent_being_step(execution_graph=execution_graph)
     return execution_graph
 
 
@@ -135,11 +134,7 @@ def verify_each_node_reachable_from_at_least_one_output(
     execution_graph: DiGraph,
 ) -> None:
     all_nodes = set(execution_graph.nodes())
-    output_nodes = {
-        node[0]
-        for node in execution_graph.nodes(data=True)
-        if node[1]["kind"] == OUTPUT_NODE_KIND
-    }
+    output_nodes = get_nodes_of_specific_kind(execution_graph=execution_graph, kind=OUTPUT_NODE_KIND)
     nodes_reaching_output = get_nodes_that_reach_pointed_ones(
         execution_graph=execution_graph,
         pointed_nodes=output_nodes,
@@ -164,3 +159,42 @@ def get_nodes_that_reach_pointed_ones(
         )
         result.update(nodes_reaching_pointed_one)
     return result
+
+
+def verify_each_node_step_has_at_most_one_parent_being_step(execution_graph: DiGraph) -> None:
+    """
+    Conditional branching creates a bit of mess, in terms of determining which
+    steps to execute.
+    Let's imagine graph:
+              / -> B -> C -> D
+    A -> IF <             \
+              \ -> E -> F -> G -> H
+    where node G requires node C even though IF branched the execution. In other
+    words - the problem emerges if a node of kind STEP has a parent (node from which
+    it can be achieved) of kind STEP and this parent is in a different branch (point out that
+    we allow for a single step to have multiple steps as input, but they must be at the same
+    execution path - for instance if D requires an output from C and D - this is allowed)
+    """
+    steps_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=STEP_NODE_KIND,
+    )
+    edges_of_steps_nodes = [
+        edge for edge in execution_graph.edges()
+        if edge[0] in steps_nodes or edge[1] in steps_nodes
+    ]
+    steps_parents = defaultdict(set)
+    for edge in edges_of_steps_nodes:
+        parent, child = edge
+        if parent not in steps_nodes or child not in steps_nodes:
+            continue
+        steps_parents[child].add(parent)
+    steps_with_more_than_one_parent = [key for key, value in steps_parents.items() if len(value) > 1]
+    if len(steps_with_more_than_one_parent) == 0:
+        return None
+    
+        # raise AmbiguousPathDetected(
+        #     f"Detected steps that require more than one parent: {steps_with_more_than_one_parent}"
+        # )
+
+

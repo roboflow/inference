@@ -26,9 +26,9 @@ class Operator(Enum):
 
 
 class ConditionSpecs(BaseModel):
-    left: Union["ConditionSpecs", str, int, float, bool]
+    left: Union[str, int, float, bool]
     operator: Operator
-    right: Union["ConditionSpecs", str, int, float, bool]
+    right: Union[str, int, float, bool]
 
 
 class Condition(BaseModel):

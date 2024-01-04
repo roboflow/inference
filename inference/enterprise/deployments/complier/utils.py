@@ -1,4 +1,6 @@
-from typing import Any, Set
+from typing import Any, Set, Tuple
+
+from networkx import DiGraph
 
 from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecV1,
@@ -98,3 +100,15 @@ def is_selector(selector_or_value: Any) -> bool:
 
 def get_step_selector_from_its_output(step_output_selector: str) -> str:
     return ".".join(step_output_selector.split(".")[:2])
+
+
+def get_nodes_of_specific_kind(execution_graph: DiGraph, kind: str) -> Set[str]:
+    return {
+        node[0]
+        for node in execution_graph.nodes(data=True)
+        if node[1].get("kind") == kind
+    }
+
+
+def get_selector_chunks(selector: str) -> Tuple[str, ...]:
+    return tuple(selector.split(".")[1:])
