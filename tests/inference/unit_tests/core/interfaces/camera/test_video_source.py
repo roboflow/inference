@@ -207,12 +207,12 @@ def test_pausing_video_stream(local_video_path: str) -> None:
     try:
         # when
         source.start()
-        _ = source.read_frame()
+        last_frame_before_resume = source.read_frame()
         source.pause()
         time.sleep(pause_resume_delay)
         timestamp_of_resume = datetime.now()
         source.resume()
-        last_frame_before_resume, first_frame_after_resume = None, None
+
         while True:
             frame = source.read_frame()
             if (frame.frame_timestamp - timestamp_of_resume).total_seconds() >= 0:
