@@ -20,10 +20,12 @@ from inference.core.registries.roboflow import (
 )
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_does_not_exist(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     construct_model_type_cache_path_mock.return_value = os.path.join(
@@ -31,16 +33,19 @@ def test_get_model_metadata_from_cache_when_metadata_file_does_not_exist(
     )
 
     # when
-    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_not_json(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -49,16 +54,19 @@ def test_get_model_metadata_from_cache_when_metadata_file_is_not_json(
         f.write("FOR SURE NOT JSON :)")
 
     # when
-    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_empty(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -67,16 +75,19 @@ def test_get_model_metadata_from_cache_when_metadata_file_is_empty(
         f.write("")
 
     # when
-    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_is_invalid(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -85,16 +96,19 @@ def test_get_model_metadata_from_cache_when_metadata_is_invalid(
         f.write(json.dumps({"some": "key"}))
 
     # when
-    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
-def test_get_model_metadata_from_cache_when_metadata_invalid(
+def test_get_model_metadata_from_cache_when_metadata_is_valid(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -110,7 +124,8 @@ def test_get_model_metadata_from_cache_when_metadata_invalid(
         )
 
     # when
-    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result == ("object-detection", "yolov8n")
@@ -156,22 +171,25 @@ def test_model_metadata_content_is_invalid_when_task_type_is_missing() -> None:
     assert result is True
 
 
+@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_save_model_metadata_in_cache(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
+    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
     construct_model_type_cache_path_mock.return_value = metadata_path
 
     # when
-    save_model_metadata_in_cache(
-        dataset_id="some",
-        version_id="1",
-        project_task_type="instance-segmentation",
-        model_type="yolov8l",
-    )
+    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
+        save_model_metadata_in_cache(
+            dataset_id="some",
+            version_id="1",
+            project_task_type="instance-segmentation",
+            model_type="yolov8l",
+        )
     with open(metadata_path) as f:
         result = json.load(f)
 
