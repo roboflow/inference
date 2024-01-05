@@ -70,7 +70,7 @@ from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
-
+MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT = 3600  # 1 hour
 
 S3_CLIENT = None
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
@@ -204,7 +204,9 @@ class RoboflowInferenceModel(Model):
         return model_metadata
 
     def write_model_metadata_to_memcache(self, metadata):
-        cache.set(self.cache_key, metadata)
+        cache.set(
+            self.cache_key, metadata, expire=MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT
+        )
 
     @property
     def has_model_metadata(self):
