@@ -75,8 +75,8 @@ def assert_vit_multi_class_prediction_matches_reference(
     prediction: ClassificationInferenceResponse,
 ) -> None:
     assert (
-        prediction.top == "bird"
-    ), "This is assertion for model from random weights, it was checked to be bird while model was created"
+        prediction.top == "train"
+    ), "This is assertion for model from random weights, it was checked to be train while model was created"
     assert (
         abs(prediction.confidence - 0.0386) < 1e-5
     ), "This is assertion for model from random weights, it was checked to be 0.038 while model was created"
@@ -152,16 +152,16 @@ def assert_vit_multi_label_prediction_matches_reference(
 ) -> None:
     assert sorted(prediction.predicted_classes) == sorted(
         [
-            "parking meter",
-            "horse",
-            "giraffe",
-            "backpack",
-            "umbrella",
-            "handbag",
-            "frisbee",
             "airplane",
-            "truck",
-            "boat",
+            "cow",
+            "dog",
+            "frisbee",
+            "handbag",
+            "horse",
+            "sheep",
+            "skis",
+            "traffic light",
+            "zebra",
         ]
     ), "This is assertion for model from random weights, it was checked while model was created"
     assert (
