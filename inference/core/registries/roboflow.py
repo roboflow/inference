@@ -14,6 +14,7 @@ from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import (
+    MODEL_TYPE_DEFAULTS,
     MODEL_TYPE_KEY,
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
@@ -116,8 +117,13 @@ def get_model_type(
     ).get("ort")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+    # some older projects do not have type field - hence defaulting
     project_task_type = api_data.get("type", "object-detection")
     model_type = api_data.get("modelType")
+    if model_type is None or model_type == "ort":
+        # some very old model versions do not have modelType reported - and API respond in a generic way -
+        # then we shall attempt using default model for given task type
+        model_type = MODEL_TYPE_DEFAULTS.get(project_task_type)
     if model_type is None or project_task_type is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(

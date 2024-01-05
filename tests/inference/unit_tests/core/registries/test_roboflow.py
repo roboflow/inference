@@ -3,11 +3,10 @@ import os.path
 from typing import Tuple
 from unittest import mock
 from unittest.mock import MagicMock
-from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.roboflow_api import ModelEndpointType
 
 import pytest
 
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import ModelType, TaskType
 from inference.core.exceptions import MissingApiKeyError, ModelNotRecognisedError
 from inference.core.registries import roboflow
@@ -18,6 +17,7 @@ from inference.core.registries.roboflow import (
     model_metadata_content_is_invalid,
     save_model_metadata_in_cache,
 )
+from inference.core.roboflow_api import ModelEndpointType
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
@@ -276,6 +276,111 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     with open(metadata_path) as f:
         persisted_metadata = json.load(f)
     assert persisted_metadata["model_type"] == "yolov8n"
+    assert persisted_metadata["project_task_type"] == "object-detection"
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+    )
+
+
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_specified_as_ort(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_model_data_mock.return_value = {
+        "ort": {
+            "type": "object-detection",
+            "modelType": "ort",
+        }
+    }
+
+    # when
+    result = get_model_type(
+        model_id="some/1",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("object-detection", "yolov5v2s")
+    with open(metadata_path) as f:
+        persisted_metadata = json.load(f)
+    assert persisted_metadata["model_type"] == "yolov5v2s"
+    assert persisted_metadata["project_task_type"] == "object-detection"
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+    )
+
+
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_model_data_mock.return_value = {
+        "ort": {
+            "type": "object-detection",
+        }
+    }
+
+    # when
+    result = get_model_type(
+        model_id="some/1",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("object-detection", "yolov5v2s")
+    with open(metadata_path) as f:
+        persisted_metadata = json.load(f)
+    assert persisted_metadata["model_type"] == "yolov5v2s"
+    assert persisted_metadata["project_task_type"] == "object-detection"
+    get_roboflow_model_data_mock.assert_called_once_with(
+        api_key="my_api_key",
+        model_id="some/1",
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+    )
+
+
+@mock.patch.object(roboflow, "get_roboflow_model_data")
+@mock.patch.object(roboflow, "construct_model_type_cache_path")
+def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_project_type_not_specified(
+    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_model_data_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    metadata_path = os.path.join(empty_local_dir, "model_type.json")
+    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_model_data_mock.return_value = {"ort": {}}
+
+    # when
+    result = get_model_type(
+        model_id="some/1",
+        api_key="my_api_key",
+    )
+
+    # then
+    assert result == ("object-detection", "yolov5v2s")
+    with open(metadata_path) as f:
+        persisted_metadata = json.load(f)
+    assert persisted_metadata["model_type"] == "yolov5v2s"
     assert persisted_metadata["project_task_type"] == "object-detection"
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
