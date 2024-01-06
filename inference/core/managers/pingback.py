@@ -13,7 +13,10 @@ from inference.core.env import (
     TAGS,
 )
 from inference.core.logger import logger
-from inference.core.managers.metrics import get_model_metrics, get_system_info
+from inference.core.managers.metrics import (
+    get_system_info,
+    get_inference_results_for_model,
+)
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 from inference.core.version import __version__
@@ -47,10 +50,16 @@ class PingbackInfo:
             logger.debug(
                 "UUID: " + self.model_manager.uuid
             )  # To correlate with UI container view
-            self.METRICS_URL = METRICS_URL  # Test URL
-
-            self.system_info = get_system_info()
             self.window_start_timestamp = str(int(time.time()))
+            context = {
+                "api_key": API_KEY,
+                "timestamp": str(int(time.time())),
+                "device_id": GLOBAL_DEVICE_ID,
+                "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
+                "inference_server_version": __version__,
+                "tags": TAGS,
+            }
+            self.environment_info = context | get_system_info()
         except Exception as e:
             logger.debug(
                 "Error sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
@@ -63,7 +72,7 @@ class PingbackInfo:
         If METRICS_ENABLED is False, a warning is logged, and the method returns without starting the scheduler.
         """
         if METRICS_ENABLED == False:
-            logger.debug(
+            logger.warning(
                 "Metrics reporting to Roboflow is disabled; not sending back stats to Roboflow."
             )
             return
@@ -90,45 +99,16 @@ class PingbackInfo:
 
         The data is collected and reset for the next window, and a POST request is made to the pingback URL.
         """
-        all_data = {}
+        all_data = self.environment_info.copy()
+        all_data["inference_results"] = []
         try:
-            all_data = {
-                "api_key": API_KEY,
-                "timestamp": self.window_start_timestamp,
-                "device": {
-                    "id": GLOBAL_DEVICE_ID,
-                    "name": GLOBAL_DEVICE_ID,
-                    "type": f"roboflow-inference-server=={__version__}",
-                    "tags": TAGS,
-                    "system_info": self.system_info,
-                    "containers": [
-                        {
-                            "startup_time": self.process_startup_time,
-                            "uuid": GLOBAL_INFERENCE_SERVER_ID,
-                            "models": [],
-                        }
-                    ],
-                },
-            }
             now = time.time()
             start = now - METRICS_INTERVAL
-            for key in model_manager.models():
-                model = model_manager.models()[key]
-                if all_data["api_key"] is None and model.api_key is not None:
-                    all_data["api_key"] = model.api_key
-                model_data = {
-                    "api_key": model.api_key,
-                    "dataset_id": model.dataset_id,
-                    "version": model.version_id,
-                    "metrics": get_model_metrics(
-                        GLOBAL_INFERENCE_SERVER_ID, key, min=start
-                    ),
-                }
-                all_data["device"]["containers"][0]["models"].append(model_data)
-
-            timestamp = str(int(time.time()))
-            all_data["timestamp"] = timestamp
-            self.window_start_timestamp = timestamp
+            for model_id in model_manager.models():
+                results = get_inference_results_for_model(
+                    GLOBAL_INFERENCE_SERVER_ID, model_id, min=start, max=now
+                )
+                all_data["inference_results"] = all_data["inference_results"] + results
             res = requests.post(wrap_url(METRICS_URL), json=all_data)
             try:
                 api_key_safe_raise_for_status(response=res)
