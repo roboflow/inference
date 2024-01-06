@@ -1,6 +1,8 @@
 from contextlib import contextmanager
 from typing import Any, Optional
 
+from inference.core import logger
+
 
 class BaseCache:
     """
@@ -93,8 +95,10 @@ class BaseCache:
 
     @contextmanager
     def lock(self, key: str, expire: float = None) -> Any:
+        logger.debug(f"Acquiring lock at cache key: {key}")
         l = self.acquire_lock(key, expire=expire)
         try:
             yield l
         finally:
+            logger.debug(f"Releasing lock at cache key: {key}")
             l.release()

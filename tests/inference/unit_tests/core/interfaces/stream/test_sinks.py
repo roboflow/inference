@@ -11,7 +11,12 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.stream.sinks import UDPSink, multi_sink, render_boxes, active_learning_sink
+from inference.core.interfaces.stream.sinks import (
+    UDPSink,
+    active_learning_sink,
+    multi_sink,
+    render_boxes,
+)
 
 
 def test_render_boxes_completes_successfully() -> None:
