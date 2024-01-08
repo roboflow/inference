@@ -176,6 +176,9 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
         keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
         results = []
         for keypoint_id in range(len(keypoints) // 3):
+            if keypoint_id >= len(keypoint_id2name):
+                # Ultralytics only supports single class keypoint detection, so points might be padded with zeros
+                break
             confidence = keypoints[3 * keypoint_id + 2]
             if confidence < keypoint_confidence_threshold:
                 continue
