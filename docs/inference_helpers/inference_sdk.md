@@ -14,23 +14,24 @@ For models trained at Roboflow platform, client accepts the following inputs:
 - A directory of images, or;
 - A video file.
 
-For core model - client exposes dedicated methods to be used, but standard image loader used accepts 
-file paths, URLs, `np.ndarray` and `PIL.Image` formats. Apart from client version (`v0` or `v1`) - options 
+For core model - client exposes dedicated methods to be used, but standard image loader used accepts
+file paths, URLs, `np.ndarray` and `PIL.Image` formats. Apart from client version (`v0` or `v1`) - options
 provided via configuration are used against models trained at the platform, not the core models.
 
 The client returns a dictionary of predictions for each image or frame.
 
 !!! tip
 
-    Read our [Run Model on an Image](/docs/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
+    Read our [Run Model on an Image](/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
 
 ## Client for core models
+
 `InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used at Roboflow hosted
 inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
 local server will be available under `http://localhost:9001`).
 
 !!! tip
-    
+
     Install `inference-cli` package to easily run `inference` API locally
     ```bash
     pip install inference-cli
@@ -38,6 +39,7 @@ local server will be available under `http://localhost:9001`).
     ```
 
 ### Clip
+
 ```python
 from inference_sdk import InferenceHTTPClient
 
@@ -57,12 +59,12 @@ CLIENT.clip_compare(
 ```
 
 `CLIENT.clip_compare(...)` method allows to compare different combination of `subject_type` and `prompt_type`:
-* `(image, image)`
-* `(image, text)`
-* `(text, image)`
-* `(text, text)`
-Default mode is `(image, text)`.
 
+- `(image, image)`
+- `(image, text)`
+- `(text, image)`
+- `(text, text)`
+  Default mode is `(image, text)`.
 
 ### CogVLM
 
@@ -112,6 +114,7 @@ CLIENT.detect_gazes(inference_input=["./my_image.jpg", "./other_image.jpg"])  # 
 ## Configuration options (used for models trained at Roboflow platform)
 
 ### configuring with context managers
+
 Methods `use_configuration(...)`, `use_api_v0(...)`, `use_api_v1(...)`, `use_model(...)` are designed to
 work in context managers. **Once context manager is left - old config values are restored.**
 
@@ -142,6 +145,7 @@ _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
 As you can see - `model_id` is required to be given for prediction method only when default model is not configured.
 
 ### Setting the configuration once and using till next change
+
 Methods `configure(...)`, `select_api_v0(...)`, `select_api_v1(...)`, `select_model(...)` are designed alter the client
 state and will be preserved until next change.
 
@@ -183,6 +187,7 @@ CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_
 ```
 
 ### Overriding `model_id` for specific call
+
 `model_id` can be overriden for specific call
 
 ```python
@@ -198,6 +203,7 @@ _ = CLIENT.infer(image_url, model_id="another-model/1")
 ```
 
 ## Batch inference
+
 You may want to predict against multiple images at single call. It is possible, but so far - client-side
 batching is implemented in naive way (sequential requests to API) - stay tuned for future improvements.
 
@@ -217,6 +223,7 @@ print(predictions)
 ```
 
 ## Inference against stream
+
 One may want to infer against video or directory of images - and that modes are supported in `inference-client`
 
 ```python
@@ -241,6 +248,7 @@ for file_path, image, prediction in CLIENT.infer_on_stream("local/dir/", model_i
 ```
 
 ## What is actually returned as prediction?
+
 `inference_client` returns plain Python dictionaries that are responses from model serving API. Modification
 is done only in context of `visualization` key that keep server-generated prediction visualisation (it
 can be transcoded to the format of choice) and in terms of client-side re-scaling.
@@ -289,7 +297,6 @@ CLIENT.get_model_description(model_id="some/1", allow_loading=True)
 If `allow_loading` is set to `True`: model will be loaded as side-effect if it is not already loaded.
 Default: `True`.
 
-
 ### Loading model
 
 ```python
@@ -305,7 +312,6 @@ CLIENT.load_model(model_id="some/1", set_as_default=True)
 
 The pointed model will be loaded. If `set_as_default` is set to `True`: after successful load, model
 will be used as default model for the client. Default value: `False`.
-
 
 ### Unloading model
 
@@ -336,7 +342,6 @@ CLIENT = InferenceHTTPClient(
 CLIENT.unload_all_models()
 ```
 
-
 ## Details about client configuration
 
 `inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
@@ -349,100 +354,132 @@ Overriding fields in this config changes the behaviour of client (and API servin
 used in specific contexts. In particular:
 
 ### Inference in `v0` mode
-The following fields are passed to API
-* `confidence_threshold` (as `confidence`) - to alter model thresholding
-* `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
-based on model confidence
-* `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
-* `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
-* `mask_decode_mode`
-* `tradeoff_factor`
-* `max_detections`: max detections to return from model
-* `iou_threshold` (as `overlap`) - to dictate NMS IoU threshold
-* `stroke_width`: width of stroke in visualisation
-* `count_inference` as `countinference`
-* `service_secret`
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
-`disable_preproc_static_crop` to alter server-side pre-processing
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for 
-instance while testing model)
 
+# <<<<<<< HEAD:docs/inference_helpers/inference_sdk.md
+
+The following fields are passed to API
+
+- `confidence_threshold` (as `confidence`) - to alter model thresholding
+- `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+  based on model confidence
+- `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
+- `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
+- `mask_decode_mode`
+- `tradeoff_factor`
+- `max_detections`: max detections to return from model
+- `iou_threshold` (as `overlap`) - to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `count_inference` as `countinference`
+- `service_secret`
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
+  > > > > > > > dfec32274e82c99ca74fce696538ad1522c1f187:docs/inference_sdk/http_client.md
+
+The following fields are passed to API
+
+- `confidence_threshold` (as `confidence`) - to alter model thresholding
+- `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+  based on model confidence
+- `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
+- `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
+- `mask_decode_mode`
+- `tradeoff_factor`
+- `max_detections`: max detections to return from model
+- `iou_threshold` (as `overlap`) - to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `count_inference` as `countinference`
+- `service_secret`
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 ### Classification model in `v1` mode:
+
+- `visualize_predictions`: flag to enable / disable visualisation
+- `confidence_threshold` as `confidence`
+- `stroke_width`: width of stroke in visualisation
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
+
 * `visualize_predictions`: flag to enable / disable visualisation
 * `confidence_threshold` as `confidence`
 * `stroke_width`: width of stroke in visualisation
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
-`disable_preproc_static_crop` to alter server-side pre-processing
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for 
-instance while testing model)
-
+* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 ### Object detection model in `v1` mode:
-* `visualize_predictions`: flag to enable / disable visualisation
-* `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
-* `confidence_threshold` as `confidence`
-* `class_filter` to filter out list of classes
-* `class_agnostic_nms`: flag to control whether NMS is class-agnostic
-* `fix_batch_size`
-* `iou_threshold`: to dictate NMS IoU threshold
-* `stroke_width`: width of stroke in visualisation
-* `max_detections`: max detections to return from model
-* `max_candidates`: max candidates to post-processing from model
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
-`disable_preproc_static_crop` to alter server-side pre-processing
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for 
-instance while testing model)
+
+- `visualize_predictions`: flag to enable / disable visualisation
+- `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
+- `confidence_threshold` as `confidence`
+- `class_filter` to filter out list of classes
+- `class_agnostic_nms`: flag to control whether NMS is class-agnostic
+- `fix_batch_size`
+- `iou_threshold`: to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `max_detections`: max detections to return from model
+- `max_candidates`: max candidates to post-processing from model
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Keypoints detection model in `v1` mode:
-* `visualize_predictions`: flag to enable / disable visualisation
-* `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
-* `confidence_threshold` as `confidence`
-* `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
-based on model confidence
-* `class_filter` to filter out list of object classes
-* `class_agnostic_nms`: flag to control whether NMS is class-agnostic
-* `fix_batch_size`
-* `iou_threshold`: to dictate NMS IoU threshold
-* `stroke_width`: width of stroke in visualisation
-* `max_detections`: max detections to return from model
-* `max_candidates`: max candidates to post-processing from model
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
-`disable_preproc_static_crop` to alter server-side pre-processing
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for 
-instance while testing model)
+
+- `visualize_predictions`: flag to enable / disable visualisation
+- `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
+- `confidence_threshold` as `confidence`
+- `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
+  based on model confidence
+- `class_filter` to filter out list of object classes
+- `class_agnostic_nms`: flag to control whether NMS is class-agnostic
+- `fix_batch_size`
+- `iou_threshold`: to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `max_detections`: max detections to return from model
+- `max_candidates`: max candidates to post-processing from model
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Instance segmentation model in `v1` mode:
-* `visualize_predictions`: flag to enable / disable visualisation
-* `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
-* `confidence_threshold` as `confidence`
-* `class_filter` to filter out list of classes
-* `class_agnostic_nms`: flag to control whether NMS is class-agnostic
-* `fix_batch_size`
-* `iou_threshold`: to dictate NMS IoU threshold
-* `stroke_width`: width of stroke in visualisation
-* `max_detections`: max detections to return from model
-* `max_candidates`: max candidates to post-processing from model
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`, 
-`disable_preproc_static_crop` to alter server-side pre-processing
-* `mask_decode_mode`
-* `tradeoff_factor`
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for 
-instance while testing model)
 
+- `visualize_predictions`: flag to enable / disable visualisation
+- `visualize_labels`: flag to enable / disable labels visualisation if visualisation is enabled
+- `confidence_threshold` as `confidence`
+- `class_filter` to filter out list of classes
+- `class_agnostic_nms`: flag to control whether NMS is class-agnostic
+- `fix_batch_size`
+- `iou_threshold`: to dictate NMS IoU threshold
+- `stroke_width`: width of stroke in visualisation
+- `max_detections`: max detections to return from model
+- `max_candidates`: max candidates to post-processing from model
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+  `disable_preproc_static_crop` to alter server-side pre-processing
+- `mask_decode_mode`
+- `tradeoff_factor`
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
+  instance while testing model)
 
 ### Configuration of client
-* `output_visualisation_format`: one of (`VisualisationResponseFormat.BASE64`, `VisualisationResponseFormat.NUMPY`, 
-`VisualisationResponseFormat.PILLOW`) - given that server-side visualisation is enabled - one may choose what
-format should be used in output
-* `image_extensions_for_directory_scan`: while using `CLIENT.infer_on_stream(...)` with local directory
-this parameter controls type of files (extensions) allowed to be processed - 
-default: `["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]`
-* `client_downsizing_disabled`: set to `True` if you want to avoid client-side downsizing - default `False`.
-Client-side scaling is only supposed to down-scale (keeping aspect-ratio) the input for inference -
-to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
-If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
-`default_max_input_size` will be in use.
+
+- `output_visualisation_format`: one of (`VisualisationResponseFormat.BASE64`, `VisualisationResponseFormat.NUMPY`,
+  `VisualisationResponseFormat.PILLOW`) - given that server-side visualisation is enabled - one may choose what
+  format should be used in output
+- `image_extensions_for_directory_scan`: while using `CLIENT.infer_on_stream(...)` with local directory
+  this parameter controls type of files (extensions) allowed to be processed -
+  default: `["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]`
+- `client_downsizing_disabled`: set to `True` if you want to avoid client-side downsizing - default `False`.
+  Client-side scaling is only supposed to down-scale (keeping aspect-ratio) the input for inference -
+  to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
+  If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
+  `default_max_input_size` will be in use.
 
 ## FAQs
 
@@ -451,7 +488,7 @@ If model registry endpoint is available (mode `v1`) - model input size informati
 We are constantly improving our `infrence` package - initial version (`v0`) is compatible with
 models deployed at Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
 `keypoints-detection`)
-are supported. Version `v1` is available in locally hosted Docker images with HTTP API. 
+are supported. Version `v1` is available in locally hosted Docker images with HTTP API.
 
 Locally hosted `inference` server exposes endpoints for model manipulations, but those endpoints are not available
 at the moment for models deployed at Roboflow platform.
