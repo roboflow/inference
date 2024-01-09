@@ -1,10 +1,20 @@
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from networkx import DiGraph
 
 from inference.core.managers.base import ModelManager
-from inference.enterprise.deployments.complier.utils import construct_step_selector, is_selector, get_selector_chunks
-from inference.enterprise.deployments.entities.steps import CVModel, Crop, Condition, ConditionSpecs, Operator
+from inference.enterprise.deployments.complier.utils import (
+    construct_step_selector,
+    get_selector_chunks,
+    is_selector,
+)
+from inference.enterprise.deployments.entities.steps import (
+    Condition,
+    ConditionSpecs,
+    Crop,
+    CVModel,
+    Operator,
+)
 
 OPERATORS = {
     Operator.EQUAL: lambda a, b: a == b,
@@ -34,7 +44,9 @@ def execute_cv_model_step(
     step_selector = construct_step_selector(step_name=step.name)
     print(f"Executing CVModel step: {step_selector}")
     outputs_lookup[f"{step_selector}.top"] = "cat"
-    outputs_lookup[f"{step_selector}.predictions"] = {"predictions": step.inputs["model_id"]}
+    outputs_lookup[f"{step_selector}.predictions"] = {
+        "predictions": step.inputs["model_id"]
+    }
     return outputs_lookup
 
 

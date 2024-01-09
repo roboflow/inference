@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Set
+from typing import Dict, List, Set, Tuple
 
 import networkx as nx
 from networkx import DiGraph
@@ -7,15 +7,21 @@ from networkx import DiGraph
 from inference.enterprise.deployments.complier.utils import (
     construct_input_selector,
     construct_step_selector,
+    get_nodes_of_specific_kind,
     get_step_input_selectors,
     get_step_selector_from_its_output,
-    is_step_output_selector, get_nodes_of_specific_kind,
+    is_step_output_selector,
 )
-from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND, OUTPUT_NODE_KIND
+from inference.enterprise.deployments.constants import (
+    INPUT_NODE_KIND,
+    OUTPUT_NODE_KIND,
+    STEP_NODE_KIND,
+)
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
 from inference.enterprise.deployments.errors import (
+    AmbiguousPathDetected,
     NodesNotReachingOutputError,
-    NotAcyclicGraphError, AmbiguousPathDetected,
+    NotAcyclicGraphError,
 )
 
 
@@ -39,7 +45,7 @@ def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reachable_from_at_least_one_output(execution_graph=execution_graph)
-    verify_each_node_step_has_at_most_one_parent_being_step(execution_graph=execution_graph)
+    verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     return execution_graph
 
 
@@ -134,7 +140,9 @@ def verify_each_node_reachable_from_at_least_one_output(
     execution_graph: DiGraph,
 ) -> None:
     all_nodes = set(execution_graph.nodes())
-    output_nodes = get_nodes_of_specific_kind(execution_graph=execution_graph, kind=OUTPUT_NODE_KIND)
+    output_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
+    )
     nodes_reaching_output = get_nodes_that_reach_pointed_ones(
         execution_graph=execution_graph,
         pointed_nodes=output_nodes,
@@ -161,7 +169,9 @@ def get_nodes_that_reach_pointed_ones(
     return result
 
 
-def verify_each_node_step_has_at_most_one_parent_being_step(execution_graph: DiGraph) -> None:
+def verify_each_node_step_has_parent_in_the_same_branch(
+    execution_graph: DiGraph,
+) -> None:
     """
     Conditional branching creates a bit of mess, in terms of determining which
     steps to execute.
@@ -173,14 +183,63 @@ def verify_each_node_step_has_at_most_one_parent_being_step(execution_graph: DiG
     words - the problem emerges if a node of kind STEP has a parent (node from which
     it can be achieved) of kind STEP and this parent is in a different branch (point out that
     we allow for a single step to have multiple steps as input, but they must be at the same
-    execution path - for instance if D requires an output from C and D - this is allowed)
+    execution path - for instance if D requires an output from C and D - this is allowed).
+    Additionally, we must prevent situation when outcomes of branches started by two or more
+    condition steps merge with each other, as condition eval may result in contradictory
+    execution (2).
+
+
+    We need to detect that situation upfront, such that we can raise error of ambiguous execution path
+    rather than run time-consuming computations that will end up in error.
+
+    To detect problem, first we detect steps with more than one parent step.
+    From those steps we trace what sequence of steps would lead to execution of problematic one.
+    For each problematic node we take its parent nodes. Then, we analyse paths from
+    those parent nodes in reversed topological order (from those nodes towards entry nodes
+    of execution graph). While our analysis, on each path we denote `Condition` steps and
+    result of condition evaluation that must have been observed in runtime, to reach
+    the problematic node while graph execution in normal direction. If we detect that
+    for any `Condition` step we would need to output both True and False (more than one registered
+    next step of `Condition` step) - we raise error.
+    To detect problem (2) - we only let number of different condition steps considered be the number of
+    max condition steps in a single path from origin to parent of problematic step.
+
+    Beware that the latter part of algorithm has quite bad time complexity in general case.
+    Worst part of algorithm runs at O(V^4) - at least taking coarse, worst-case estimations.
+    In fact, there is not so bad:
+    * The number of step nodes with multiple parents that we loop over in main loop, reduces the number of
+    steps we iterate through in inner loops, as we are dealing with DAG (with quite limited amount of edges)
+    and for each multi-parent node takes at least two other nodes (to construct a suspicious group) -
+    so expected number of iterations in main loop is low - let's say 1-3 for a real graph.
+    * for any reasonable execution graph, the complexity should be acceptable.
     """
+    steps_with_more_than_one_parent = detect_steps_with_more_than_one_parent_step(
+        execution_graph=execution_graph
+    )  # O(V+E)
+    if len(steps_with_more_than_one_parent) == 0:
+        return None
+    reversed_steps_graph = construct_reversed_steps_graph(
+        execution_graph=execution_graph
+    )  # O(V+E)
+    reversed_topological_order = list(
+        nx.topological_sort(reversed_steps_graph)
+    )  # O(V+E)
+    for step in steps_with_more_than_one_parent:  # O(V)
+        verify_multi_parent_step_execution_paths(
+            reversed_steps_graph=reversed_steps_graph,
+            reversed_topological_order=reversed_topological_order,
+            step=step,
+        )
+
+
+def detect_steps_with_more_than_one_parent_step(execution_graph: DiGraph) -> Set[str]:
     steps_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph,
         kind=STEP_NODE_KIND,
     )
     edges_of_steps_nodes = [
-        edge for edge in execution_graph.edges()
+        edge
+        for edge in execution_graph.edges()
         if edge[0] in steps_nodes or edge[1] in steps_nodes
     ]
     steps_parents = defaultdict(set)
@@ -189,12 +248,77 @@ def verify_each_node_step_has_at_most_one_parent_being_step(execution_graph: DiG
         if parent not in steps_nodes or child not in steps_nodes:
             continue
         steps_parents[child].add(parent)
-    steps_with_more_than_one_parent = [key for key, value in steps_parents.items() if len(value) > 1]
-    if len(steps_with_more_than_one_parent) == 0:
-        return None
-    
-        # raise AmbiguousPathDetected(
-        #     f"Detected steps that require more than one parent: {steps_with_more_than_one_parent}"
-        # )
+    return {key for key, value in steps_parents.items() if len(value) > 1}
 
 
+def construct_reversed_steps_graph(execution_graph: DiGraph) -> DiGraph:
+    reversed_steps_graph = execution_graph.reverse()
+    for node, node_data in list(reversed_steps_graph.nodes(data=True)):
+        if node_data.get("kind") != STEP_NODE_KIND:
+            reversed_steps_graph.remove_node(node)
+    return reversed_steps_graph
+
+
+def verify_multi_parent_step_execution_paths(
+    reversed_steps_graph: nx.DiGraph,
+    reversed_topological_order: List[str],
+    step: str,
+) -> None:
+    condition_steps_successors = defaultdict(set)
+    max_conditions_steps = 0
+    for normal_flow_predecessor in reversed_steps_graph.successors(step):  # O(V)
+        reversed_flow_path = (
+            construct_reversed_path_to_multi_parent_step_parent(  # O(E) -> O(V^2)
+                reversed_steps_graph=reversed_steps_graph,
+                reversed_topological_order=reversed_topological_order,
+                parent_step=normal_flow_predecessor,
+                step=step,
+            )
+        )
+        (
+            condition_steps_successors,
+            condition_steps,
+        ) = denote_condition_steps_successors_in_normal_flow(  # O(V)
+            reversed_steps_graph=reversed_steps_graph,
+            reversed_flow_path=reversed_flow_path,
+            condition_steps_successors=condition_steps_successors,
+        )
+        max_conditions_steps = max(condition_steps, max_conditions_steps)
+    if len(condition_steps_successors) > max_conditions_steps:
+        raise AmbiguousPathDetected(
+            f"In execution graph, detected collision of branches that originate in different condition steps."
+        )
+    for condition_step, potential_next_steps in condition_steps_successors.items():
+        if len(potential_next_steps) > 1:
+            raise AmbiguousPathDetected(
+                f"In execution graph, condition step: {condition_step} creates ambiguous execution paths."
+            )
+
+
+def construct_reversed_path_to_multi_parent_step_parent(
+    reversed_steps_graph: nx.DiGraph,
+    reversed_topological_order: List[str],
+    parent_step: str,
+    step: str,
+) -> List[str]:
+    normal_flow_path_nodes = nx.descendants(reversed_steps_graph, parent_step)
+    normal_flow_path_nodes.add(parent_step)
+    normal_flow_path_nodes.add(step)
+    return [n for n in reversed_topological_order if n in normal_flow_path_nodes]
+
+
+def denote_condition_steps_successors_in_normal_flow(
+    reversed_steps_graph: nx.DiGraph,
+    reversed_flow_path: List[str],
+    condition_steps_successors: Dict[str, Set[str]],
+) -> Tuple[Dict[str, Set[str]], int]:
+    conditions_steps = 0
+    if len(reversed_flow_path) == 0:
+        return condition_steps_successors, conditions_steps
+    previous_node = reversed_flow_path[0]
+    for node in reversed_flow_path[1:]:
+        if reversed_steps_graph.nodes[node]["definition"].type == "Condition":
+            condition_steps_successors[node].add(previous_node)
+            conditions_steps += 1
+        previous_node = node
+    return condition_steps_successors, conditions_steps

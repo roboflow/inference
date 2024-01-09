@@ -1,4 +1,4 @@
-from typing import Dict, Any, Set
+from typing import Any, Dict, Set
 
 from networkx import DiGraph
 
