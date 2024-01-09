@@ -10,6 +10,7 @@ from inference.enterprise.deployments.complier.utils import (
     get_nodes_of_specific_kind,
     get_step_input_selectors,
     get_step_selector_from_its_output,
+    is_condition_step,
     is_step_output_selector,
 )
 from inference.enterprise.deployments.constants import (
@@ -317,7 +318,7 @@ def denote_condition_steps_successors_in_normal_flow(
         return condition_steps_successors, conditions_steps
     previous_node = reversed_flow_path[0]
     for node in reversed_flow_path[1:]:
-        if reversed_steps_graph.nodes[node]["definition"].type == "Condition":
+        if is_condition_step(execution_graph=reversed_steps_graph, node=node):
             condition_steps_successors[node].add(previous_node)
             conditions_steps += 1
         previous_node = node
