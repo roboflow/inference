@@ -11,4 +11,6 @@ class InferenceImage(BaseModel):
 class InferenceParameter(BaseModel):
     type: Literal["InferenceParameter"]
     name: str
-    default_value: Optional[Union[float, int, str, bool]] = Field(default=None)
+    default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
+        default=None
+    )

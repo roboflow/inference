@@ -6,6 +6,7 @@ from networkx import DiGraph
 
 from inference.enterprise.deployments.complier.utils import (
     construct_input_selector,
+    construct_output_name,
     construct_step_selector,
     get_nodes_of_specific_kind,
     get_step_input_selectors,
@@ -84,7 +85,7 @@ def add_output_nodes_for_graph(
 ) -> DiGraph:
     for output_spec in deployment_spec.outputs:
         execution_graph.add_node(
-            output_spec.name,
+            construct_output_name(name=output_spec.name),
             kind=OUTPUT_NODE_KIND,
             definition=output_spec,
         )
@@ -133,7 +134,9 @@ def add_edges_for_outputs(
             output_selector = get_step_selector_from_its_output(
                 step_output_selector=output_selector
             )
-        execution_graph.add_edge(output_selector, output.name)
+        execution_graph.add_edge(
+            output_selector, construct_output_name(name=output.name)
+        )
     return execution_graph
 
 

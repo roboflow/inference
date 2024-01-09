@@ -15,15 +15,14 @@ from inference.enterprise.deployments.complier.utils import (
     is_condition_step,
     is_crop_step,
     is_cv_model_step,
-    is_selector,
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.deployments.entities.steps import (
     Condition,
-    ConditionSpecs,
     Crop,
-    CVModel,
     Operator,
+    RoboflowModel,
+    is_selector,
 )
 
 OPERATORS = {
@@ -118,7 +117,7 @@ def get_all_nodes_in_execution_path(
 
 
 def execute_cv_model_step(
-    step: CVModel,
+    step: RoboflowModel,
     model_manager: ModelManager,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: Dict[str, Any],
@@ -164,7 +163,7 @@ def execute_condition_step_step(
 
 
 def evaluate_condition(
-    condition: ConditionSpecs,
+    condition: Condition,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: Dict[str, Any],
 ) -> bool:

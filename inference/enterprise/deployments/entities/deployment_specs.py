@@ -7,12 +7,33 @@ from inference.enterprise.deployments.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import Condition, Crop, CVModel
+from inference.enterprise.deployments.entities.steps import (
+    ClassificationModel,
+    Condition,
+    Crop,
+    InstanceSegmentationModel,
+    KeypointsDetectionModel,
+    MultiLabelClassificationModel,
+    ObjectDetectionModel,
+    OCRModel,
+)
 
 InputType = Annotated[
     Union[InferenceImage, InferenceParameter], Field(discriminator="type")
 ]
-StepType = Annotated[Union[CVModel, Crop, Condition], Field(discriminator="type")]
+StepType = Annotated[
+    Union[
+        ClassificationModel,
+        MultiLabelClassificationModel,
+        ObjectDetectionModel,
+        KeypointsDetectionModel,
+        InstanceSegmentationModel,
+        OCRModel,
+        Crop,
+        Condition,
+    ],
+    Field(discriminator="type"),
+]
 
 
 class DeploymentSpecV1(BaseModel):
@@ -20,3 +41,7 @@ class DeploymentSpecV1(BaseModel):
     inputs: List[InputType]
     steps: List[StepType]
     outputs: List[JsonField]
+
+
+class DeploymentSpecification(BaseModel):
+    specification: DeploymentSpecV1  # in the future - union with discriminator can be used

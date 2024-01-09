@@ -6,15 +6,15 @@ class ValidationError(DeploymentCompilerError):
     pass
 
 
+class InvalidSpecificationVersionError(ValidationError):
+    pass
+
+
 class DuplicatedSymbolError(ValidationError):
     pass
 
 
 class InvalidReferenceError(ValidationError):
-    pass
-
-
-class VariableNotBounderError(ValidationError):
     pass
 
 
@@ -34,9 +34,17 @@ class AmbiguousPathDetected(ExecutionGraphError):
     pass
 
 
+class InvalidStepInputDetected(ExecutionGraphError):
+    pass
+
+
 class DeploymentCompilerRuntimeError(DeploymentCompilerError):
     pass
 
 
 class RuntimeParameterMissingError(DeploymentCompilerRuntimeError):
+    pass
+
+
+class VariableTypeError(DeploymentCompilerRuntimeError):
     pass
