@@ -2,17 +2,24 @@ import os
 from typing import Optional, Tuple, Union
 
 from inference.core.cache import cache
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
-from inference.core.env import MODEL_CACHE_DIR
-from inference.core.exceptions import ModelNotRecognisedError
+from inference.core.env import LAMBDA, MODEL_CACHE_DIR
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    ModelArtefactError,
+    ModelNotRecognisedError,
+)
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import (
+    MODEL_TYPE_DEFAULTS,
     MODEL_TYPE_KEY,
     PROJECT_TASK_TYPE_KEY,
+    ModelEndpointType,
     get_roboflow_dataset_type,
-    get_roboflow_model_type,
+    get_roboflow_model_data,
     get_roboflow_workspace,
 )
 from inference.core.utils.file_system import dump_json, read_json
@@ -24,10 +31,12 @@ GENERIC_MODELS = {
     "sam": ("embed", "sam"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    "grounding_dino": ("object-detection", "grounding-dino"),
     "cogvlm": ("llm", "cogvlm"),
 }
 
 STUB_VERSION_ID = "0"
+CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -54,7 +63,10 @@ class RoboflowModelRegistry(ModelRegistry):
         return self.registry_dict[model_type]
 
 
-def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
+def get_model_type(
+    model_id: str,
+    api_key: Optional[str] = None,
+) -> Tuple[TaskType, ModelType]:
     """Retrieves the model type based on the given model ID and API key.
 
     Args:
@@ -80,48 +92,83 @@ def get_model_type(model_id: str, api_key: str) -> Tuple[TaskType, ModelType]:
     )
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
-    workspace_id = get_roboflow_workspace(api_key=api_key)
-    project_task_type = get_roboflow_dataset_type(
-        api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
-    )
     if version_id == STUB_VERSION_ID:
+        if api_key is None:
+            raise MissingApiKeyError(
+                "Stub model version provided but no API key was provided. API key is required to load stub models."
+            )
+        workspace_id = get_roboflow_workspace(api_key=api_key)
+        project_task_type = get_roboflow_dataset_type(
+            api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
+        )
         model_type = "stub"
-    else:
-        model_type = get_roboflow_model_type(
-            api_key=api_key,
-            workspace_id=workspace_id,
+        save_model_metadata_in_cache(
             dataset_id=dataset_id,
             version_id=version_id,
             project_task_type=project_task_type,
+            model_type=model_type,
         )
+        return project_task_type, model_type
+    api_data = get_roboflow_model_data(
+        api_key=api_key,
+        model_id=model_id,
+        endpoint_type=ModelEndpointType.ORT,
+        device_id=GLOBAL_DEVICE_ID,
+    ).get("ort")
+    if api_data is None:
+        raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+    # some older projects do not have type field - hence defaulting
+    project_task_type = api_data.get("type", "object-detection")
+    model_type = api_data.get("modelType")
+    if model_type is None or model_type == "ort":
+        # some very old model versions do not have modelType reported - and API respond in a generic way -
+        # then we shall attempt using default model for given task type
+        model_type = MODEL_TYPE_DEFAULTS.get(project_task_type)
+    if model_type is None or project_task_type is None:
+        raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     save_model_metadata_in_cache(
         dataset_id=dataset_id,
         version_id=version_id,
         project_task_type=project_task_type,
         model_type=model_type,
     )
+
     return project_task_type, model_type
 
 
 def get_model_metadata_from_cache(
     dataset_id: str, version_id: str
 ) -> Optional[Tuple[TaskType, ModelType]]:
+    if LAMBDA:
+        return _get_model_metadata_from_cache(
+            dataset_id=dataset_id, version_id=version_id
+        )
+    with cache.lock(
+        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
+    ):
+        return _get_model_metadata_from_cache(
+            dataset_id=dataset_id, version_id=version_id
+        )
+
+
+def _get_model_metadata_from_cache(
+    dataset_id: str, version_id: str
+) -> Optional[Tuple[TaskType, ModelType]]:
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
-    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
-        if not os.path.isfile(model_type_cache_path):
+    if not os.path.isfile(model_type_cache_path):
+        return None
+    try:
+        model_metadata = read_json(path=model_type_cache_path)
+        if model_metadata_content_is_invalid(content=model_metadata):
             return None
-        try:
-            model_metadata = read_json(path=model_type_cache_path)
-            if model_metadata_content_is_invalid(content=model_metadata):
-                return None
-            return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
-        except ValueError as e:
-            logger.warning(
-                f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
-            )
-            return None
+        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
+    except ValueError as e:
+        logger.warning(
+            f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
+        )
+        return None
 
 
 def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> bool:
@@ -145,17 +192,42 @@ def save_model_metadata_in_cache(
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
-    with cache.lock(f"lock:metadata:{dataset_id}:{version_id}"):
-        model_type_cache_path = construct_model_type_cache_path(
-            dataset_id=dataset_id, version_id=version_id
+    if LAMBDA:
+        _save_model_metadata_in_cache(
+            dataset_id=dataset_id,
+            version_id=version_id,
+            project_task_type=project_task_type,
+            model_type=model_type,
         )
-        metadata = {
-            PROJECT_TASK_TYPE_KEY: project_task_type,
-            MODEL_TYPE_KEY: model_type,
-        }
-        dump_json(
-            path=model_type_cache_path, content=metadata, allow_override=True, indent=4
+        return None
+    with cache.lock(
+        f"lock:metadata:{dataset_id}:{version_id}", expire=CACHE_METADATA_LOCK_TIMEOUT
+    ):
+        _save_model_metadata_in_cache(
+            dataset_id=dataset_id,
+            version_id=version_id,
+            project_task_type=project_task_type,
+            model_type=model_type,
         )
+        return None
+
+
+def _save_model_metadata_in_cache(
+    dataset_id: DatasetID,
+    version_id: VersionID,
+    project_task_type: TaskType,
+    model_type: ModelType,
+) -> None:
+    model_type_cache_path = construct_model_type_cache_path(
+        dataset_id=dataset_id, version_id=version_id
+    )
+    metadata = {
+        PROJECT_TASK_TYPE_KEY: project_task_type,
+        MODEL_TYPE_KEY: model_type,
+    }
+    dump_json(
+        path=model_type_cache_path, content=metadata, allow_override=True, indent=4
+    )
 
 
 def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:

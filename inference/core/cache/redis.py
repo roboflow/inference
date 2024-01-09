@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import redis
 
+from inference.core import logger
 from inference.core.cache.base import BaseCache
 from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
@@ -45,8 +46,9 @@ class RedisCache(BaseCache):
             socket_timeout=timeout,
             socket_connect_timeout=timeout,
         )
+        logger.debug("Attempting to diagnose Redis connection...")
         self.client.ping()
-
+        logger.debug("Redis connection established.")
         self.zexpires = dict()
 
         self._expire_thread = threading.Thread(target=self._expire, daemon=True)
@@ -59,6 +61,7 @@ class RedisCache(BaseCache):
         This method runs in an infinite loop and sleeps for MEMORY_CACHE_EXPIRE_INTERVAL seconds between each iteration.
         """
         while True:
+            logger.debug("Redis cleaner thread starts cleaning...")
             now = time.time()
             for k, v in copy(list(self.zexpires.items())):
                 if v < now:
@@ -67,7 +70,7 @@ class RedisCache(BaseCache):
                         k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
                     )
                     del self.zexpires[k]
-
+            logger.debug("Redis cleaner finished task.")
             time.sleep(MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now))
 
     def get(self, key: str):

@@ -127,7 +127,9 @@ class InferencePipeline:
             active_learning_enabled (Optional[bool]): Flag to enable / disable Active Learning middleware (setting it
                 true does not guarantee any data to be collected, as data collection is controlled by Roboflow backend -
                 it just enables middleware intercepting predictions). If not given, env variable
-                `ACTIVE_LEARNING_ENABLED` will be used.
+                `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
+                disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
+                for this feature to be operational.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -142,13 +144,6 @@ class InferencePipeline:
         """
         if api_key is None:
             api_key = API_KEY
-        if api_key is None:
-            raise MissingApiKeyError(
-                "Could not initialise InferencePipeline, as API key is missing either in initializer parameters "
-                f"or in one one of allowed env variables: {API_KEY_ENV_NAMES}. "
-                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                f"retrieve one."
-            )
         if status_update_handlers is None:
             status_update_handlers = []
         inference_config = ObjectDetectionInferenceConfig.init(
@@ -177,6 +172,11 @@ class InferencePipeline:
                 f"with value: {ACTIVE_LEARNING_ENABLED}"
             )
             active_learning_enabled = ACTIVE_LEARNING_ENABLED
+        if api_key is None:
+            logger.info(
+                f"Roboflow API key not given - Active Learning is forced to be disabled."
+            )
+            active_learning_enabled = False
         if active_learning_enabled is True:
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,

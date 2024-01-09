@@ -29,7 +29,7 @@ def orjson_response(
     response: Union[List[InferenceResponse], InferenceResponse]
 ) -> ORJSONResponseBytes:
     if isinstance(response, list):
-        content = [r.dict(by_alias=True) for r in response]
+        content = [r.dict(by_alias=True, exclude_none=True) for r in response]
     else:
-        content = response.dict(by_alias=True)
+        content = response.dict(by_alias=True, exclude_none=True)
     return ORJSONResponseBytes(content=content)

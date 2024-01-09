@@ -16,64 +16,46 @@ To use CogVLM with Inference, you will need a Roboflow API key. If you don't alr
 
 Then, retrieve your API key from the Roboflow dashboard. [Learn how to retrieve your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
 
-Run the following command to set your API key in your development environment:
+Run the following command to set your API key in your coding environment:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>
+```
+
+We recommend using CogVLM paired with inference HTTP API adjusted to run in GPU environment. It's easy to set up 
+with our `inference-cli` tool. Run the following command to set up environment and run the API under 
+`http://localhost:9001`
+
+```bash
+pip install inference inference-cli inference-sdk
+inference server start  # make sure that you are running this at machine with GPU! Otherwise CogVLM will not be available
 ```
 
 Let's ask a question about the following image:
 
 ![A forklift in a warehouse](https://lh7-us.googleusercontent.com/4rgEU3nMJQzr54mYpGifEQp0hn3wu4oG8Sa21373M43eQ5TML-lBJyzYz3ZmPEETFwKnUGMmncsWA68wHo-4yzEGTV--TNCY7MJTxpJ-cS2w9JdUuIGVnwfAQN_72wK7TgGv-gtuLusJtAjAZxJVBFA)
 
-Create a new Python file and add the following code:
+Use `inference-sdk` to prompt the model:
 
 ```python
-import base64
 import os
-from PIL import Image
-import requests
+from inference_sdk import InferenceHTTPClient
 
-PORT = 9001
-API_KEY = os.environ["API_KEY"]
-IMAGE_PATH = "forklift.png"
-
-
-def encode_base64(image_path):
-    with open(image_path, "rb") as image:
-        x = image.read()
-        image_string = base64.b64encode(x)
-
-    return image_string.decode("ascii")
-
-prompt = "Is there a forklift close to a conveyor belt?"
-
-infer_payload = {
-    "image": {
-        "type": "base64",
-        "value": encode_base64(IMAGE_PATH),
-    },
-    "api_key": API_KEY,
-    "prompt": prompt,
-}
-
-results = requests.post(
-    f"http://localhost:{PORT}/llm/cogvlm",
-    json=infer_payload,
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",  # only local hosting supported
+    api_key=os.environ["ROBOFLOW_API_KEY"]
 )
 
-print(results.json())
+result = CLIENT.prompt_cogvlm(
+    visual_prompt="./forklift.jpg",
+    text_prompt="Is there a forklift close to a conveyor belt?",
+)
+print(result)
 ```
 
 Above, replace `forklift.jpeg` with the path to the image in which you want to detect objects.
 
 Let's use the prompt "Is there a forklift close to a conveyor belt?”"
-
-Run the Python script you have created:
-
-```bash
-python app.py
-```
 
 The results of CogVLM will appear in your terminal:
 

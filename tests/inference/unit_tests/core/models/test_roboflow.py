@@ -132,8 +132,8 @@ def test_get_color_mapping_from_environment_when_color_mapping_not_in_environmen
     "environment, expected_result",
     [
         ({}, True),
-        ({"CLASS_MAP": json.dumps({"1": "class_a"})}, True),
-        ({"CLASS_MAP": {"1": "class_1"}}, False),
+        ({"CLASS_MAP": json.dumps({"0": "class_a"})}, True),
+        ({"CLASS_MAP": {"0": "class_1"}}, False),
     ],
 )
 def test_class_mapping_not_available_in_environment(
@@ -147,7 +147,7 @@ def test_class_mapping_not_available_in_environment(
 
 
 @pytest.mark.parametrize(
-    "environment", [None, {}, {"CLASS_MAP": json.dumps({"1": "class_a"})}]
+    "environment", [None, {}, {"CLASS_MAP": json.dumps({"0": "class_a"})}]
 )
 def test_get_class_names_from_environment_file_when_procedure_should_fail(
     environment: Optional[dict],
@@ -159,10 +159,28 @@ def test_get_class_names_from_environment_file_when_procedure_should_fail(
 
 def test_get_class_names_from_environment_file() -> None:
     # given
-    environment = {"CLASS_MAP": {"1": "class_a", "2": "class_b", "3": "class_c"}}
+    environment = {
+        "CLASS_MAP": {
+            "0": "class_a",
+            "1": "class_b",
+            "2": "class_c",
+            "3": "class_d",
+            "4": "class_e",
+            "5": "class_f",
+            "6": "class_g",
+            "7": "class_h",
+            "8": "class_i",
+            "9": "class_j",
+            "10": "class_k",
+            "11": "class_l",
+        }
+    }
 
     # when
     result = get_class_names_from_environment_file(environment=environment)
 
     # then
-    assert result == ["class_a", "class_b", "class_c"]
+    assert result == [
+        "class_a", "class_b", "class_c", "class_d", "class_e", "class_f", "class_g", "class_h",
+        "class_i", "class_j", "class_k", "class_l"
+    ]

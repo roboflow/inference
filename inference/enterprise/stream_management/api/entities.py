@@ -51,7 +51,7 @@ class PipelineInitialisationRequest(BaseModel):
     sink_configuration: UDPSinkConfiguration = Field(
         description="Configuration of the sink."
     )
-    api_key: str = Field(description="Roboflow API key")
+    api_key: Optional[str] = Field(description="Roboflow API key", default=None)
     max_fps: Optional[Union[float, int]] = Field(
         description="Limit of FPS in video processing.", default=None
     )

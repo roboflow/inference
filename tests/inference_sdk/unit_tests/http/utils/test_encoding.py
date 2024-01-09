@@ -9,11 +9,11 @@ from PIL import Image, ImageChops
 
 from inference_sdk.http.errors import EncodingError
 from inference_sdk.http.utils.encoding import (
-    numpy_array_to_base64_jpeg,
-    pillow_image_to_base64_jpeg,
-    encode_base_64,
     bytes_to_opencv_image,
     bytes_to_pillow_image,
+    encode_base_64,
+    numpy_array_to_base64_jpeg,
+    pillow_image_to_base64_jpeg,
 )
 
 

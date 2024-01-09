@@ -115,7 +115,7 @@ class InferencePipelineManager(Process):
                 model_id=payload["model_id"],
                 video_reference=payload["video_reference"],
                 on_prediction=sink,
-                api_key=payload["api_key"],
+                api_key=payload.get("api_key"),
                 max_fps=payload.get("max_fps"),
                 watchdog=watchdog,
                 source_buffer_filling_strategy=source_buffer_filling_strategy,

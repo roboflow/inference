@@ -5,3 +5,5 @@ mkdocstrings-python
 mkdocs-swagger-ui-tag==0.6.3
 pillow
 cairosvg
+mkdocs-gen-files
+mkdocs-literate-nav

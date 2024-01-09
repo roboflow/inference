@@ -60,7 +60,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested(
 
 @pytest.mark.timeout(30)
 @mock.patch.object(inference_pipeline_manager.InferencePipeline, "init")
-def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_but_invalid_payload_sent(
+def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_without_api_key(
     pipeline_init_mock: MagicMock,
 ) -> None:
     # given
@@ -70,7 +70,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_bu
         command_queue=command_queue, responses_queue=responses_queue
     )
     init_payload = assembly_valid_init_payload()
-    del init_payload["model_configuration"]
+    del init_payload["api_key"]
 
     # when
     command_queue.put(("1", init_payload))
@@ -82,24 +82,19 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_bu
     status_2 = responses_queue.get()
 
     # then
-    assert (
-        status_1[0] == "1"
-    ), "First request should be reported in responses_queue at first"
-    assert (
-        status_1[1]["status"] == OperationStatus.FAILURE
-    ), "Init operation should fail"
-    assert (
-        status_1[1]["error_type"] == ErrorType.INVALID_PAYLOAD
-    ), "Invalid Payload error is expected"
+    assert status_1 == (
+        "1",
+        {"status": OperationStatus.SUCCESS},
+    ), "Initialisation operation must succeed"
     assert status_2 == (
         "2",
         {"status": OperationStatus.SUCCESS},
-    ), "Termination of pipeline must happen"
+    ), "Termination operation must succeed"
 
 
 @pytest.mark.timeout(30)
 @mock.patch.object(inference_pipeline_manager.InferencePipeline, "init")
-def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_but_api_key_not_given(
+def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_but_invalid_payload_sent(
     pipeline_init_mock: MagicMock,
 ) -> None:
     # given
@@ -109,7 +104,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_bu
         command_queue=command_queue, responses_queue=responses_queue
     )
     init_payload = assembly_valid_init_payload()
-    del init_payload["api_key"]
+    del init_payload["model_configuration"]
 
     # when
     command_queue.put(("1", init_payload))

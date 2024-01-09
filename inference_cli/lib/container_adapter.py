@@ -1,5 +1,6 @@
 import subprocess
 from typing import Dict, List, Optional, Union
+from inference_cli.lib.exceptions import DockerConnectionErrorException
 
 import typer
 from docker.models.containers import Container
@@ -11,7 +12,7 @@ from inference_cli.lib.utils import read_env_file
 try:
     docker_client = docker.from_env()
 except docker.errors.DockerException as e:
-    raise (
+    raise DockerConnectionErrorException(
         "Error connecting to Docker daemon. Is docker installed and running? See https://www.docker.com/get-started/ for installation instructions."
     ) from e
 
@@ -98,6 +99,7 @@ def start_inference_container(
     num_workers: int = 1,
     api_key: Optional[str] = None,
     env_file_path: Optional[str] = None,
+    development: bool = False,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -124,15 +126,19 @@ def start_inference_container(
         num_workers=num_workers,
         api_key=api_key,
         env_file_path=env_file_path,
+        development=development,
     )
     pull_image(image)
     print(f"Starting inference server container...")
+    ports = {"9001": port}
+    if development:
+        ports["9002"] = 9002
     docker_client.containers.run(
         image=image,
         privileged=privileged,
         detach=True,
         labels=labels,
-        ports={"9001": port},
+        ports=ports,
         device_requests=device_requests,
         environment=environment,
     )
@@ -146,6 +152,7 @@ def prepare_container_environment(
     num_workers: int,
     api_key: Optional[str],
     env_file_path: Optional[str],
+    development: bool = False,
 ) -> List[str]:
     environment = {}
     if env_file_path is not None:
@@ -157,8 +164,10 @@ def prepare_container_environment(
     if device_id is not None:
         environment["DEVICE_ID"] = device_id
     if api_key is not None:
-        environment["API_KEY"] = api_key
+        environment["ROBOFLOW_API_KEY"] = api_key
     environment["NUM_WORKERS"] = str(num_workers)
+    if development:
+        environment["NOTEBOOK_ENABLED"] = "True"
     return [f"{key}={value}" for key, value in environment.items()]
 
 

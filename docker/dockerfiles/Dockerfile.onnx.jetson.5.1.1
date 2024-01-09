@@ -23,6 +23,7 @@ RUN apt-get update -y && apt-get install -y \
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
+    requirements/requirements.groundingdino.txt \
     requirements/_requirements.txt \
     ./
 
@@ -34,6 +35,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
+    -r requirements.groundingdino.txt \
+    jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
 

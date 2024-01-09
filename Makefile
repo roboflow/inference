@@ -4,16 +4,17 @@ export PYTHONPATH = .
 check_dirs := inference inference_sdk
 
 style:
-	python3 -m black  $(check_dirs)
-	python3 -m isort --profile black $(check_dirs)
+	python3 -m black $(check_dirs) --exclude '__init__\.py|node_modules'
+	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**'
 
 check_code_quality:
-	python3 -m black --check $(check_dirs)
-	python3 -m isort --check-only --profile black $(check_dirs)
+	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules'
+	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**'
 	# stop the build if there are Python syntax errors or undefined names
-	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics
+	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics --exclude __init__.py,inference/inference/landing/node_modules
 	# exit-zero treats all errors as warnings. E203 for black, E501 for docstring, W503 for line breaks before logical operators 
-	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics
+	flake8 $(check_dirs) --count --max-line-length=88 --exit-zero  --ignore=D --extend-ignore=E203,E501,W503  --statistics --exclude __init__.py,inference/inference/landing/node_modules
+
 
 start_test_docker_cpu:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test

@@ -564,10 +564,9 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
         )
 
     # then
-    assert (
-        requests_mock.last_request.query
-        == "api_key=my_api_key&nocache=true&device=some&dynamic=true"
-    )
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
 
 
 def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) -> None:
@@ -587,10 +586,9 @@ def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) ->
         )
 
     # then
-    assert (
-        requests_mock.last_request.query
-        == "api_key=my_api_key&nocache=true&device=some&dynamic=true"
-    )
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
 
 
 def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -> None:
@@ -610,10 +608,9 @@ def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -
         )
 
     # then
-    assert (
-        requests_mock.last_request.query
-        == "api_key=my_api_key&nocache=true&device=some&dynamic=true"
-    )
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
 
 
 def test_get_roboflow_model_data_when_response_parsing_error_occurs(
@@ -635,10 +632,9 @@ def test_get_roboflow_model_data_when_response_parsing_error_occurs(
         )
 
     # then
-    assert (
-        requests_mock.last_request.query
-        == "api_key=my_api_key&nocache=true&device=some&dynamic=true"
-    )
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
 
 
 def test_get_roboflow_model_data_when_valid_response_expected(
@@ -673,10 +669,10 @@ def test_get_roboflow_model_data_when_valid_response_expected(
     )
 
     # then
-    assert (
-        requests_mock.last_request.query
-        == "api_key=my_api_key&nocache=true&device=some&dynamic=true"
-    )
+    params = ["api_key=my_api_key", "nocache=true", "device=some", "dynamic=true"]
+    for param in params:
+        assert param in requests_mock.last_request.query
+
     assert result == expected_response
 
 

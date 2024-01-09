@@ -70,7 +70,7 @@ from inference.models.aliases import resolve_roboflow_model_alias
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
-
+MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT = 3600  # 1 hour
 
 S3_CLIENT = None
 if AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID:
@@ -121,15 +121,6 @@ class RoboflowInferenceModel(Model):
         self.load_weights = load_weights
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
-        if not self.api_key and not (
-            AWS_SECRET_ACCESS_KEY and AWS_ACCESS_KEY_ID and LAMBDA
-        ):
-            raise MissingApiKeyError(
-                "No API Key Found, must provide an API Key in each request or as an environment "
-                f"variable on server startup. Supported variables: {API_KEY_ENV_NAMES}. "
-                f"Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                f"retrieve the key."
-            )
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         self.dataset_id, self.version_id = model_id.split("/")
         self.endpoint = model_id
@@ -213,7 +204,9 @@ class RoboflowInferenceModel(Model):
         return model_metadata
 
     def write_model_metadata_to_memcache(self, metadata):
-        cache.set(self.cache_key, metadata)
+        cache.set(
+            self.cache_key, metadata, expire=MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT
+        )
 
     @property
     def has_model_metadata(self):
@@ -817,9 +810,10 @@ def get_class_names_from_environment_file(environment: Optional[dict]) -> List[s
         raise ModelArtefactError(
             f"Missing `CLASS_MAP` in environment or `CLASS_MAP` is not dict."
         )
-    return [
-        environment["CLASS_MAP"][key] for key in sorted(environment["CLASS_MAP"].keys())
-    ]
+    class_names = []
+    for i in range(len(environment["CLASS_MAP"].keys())):
+        class_names.append(environment["CLASS_MAP"][str(i)])
+    return class_names
 
 
 def class_mapping_not_available_in_environment(environment: dict) -> bool:
