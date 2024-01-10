@@ -14,8 +14,8 @@ from inference.core.env import (
 )
 from inference.core.logger import logger
 from inference.core.managers.metrics import (
-    get_system_info,
     get_inference_results_for_model,
+    get_system_info,
 )
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
