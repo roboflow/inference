@@ -20,6 +20,7 @@ from inference.enterprise.deployments.constants import (
     STEP_NODE_KIND,
 )
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
+from inference.enterprise.deployments.entities.steps import is_selector
 from inference.enterprise.deployments.errors import (
     AmbiguousPathDetected,
     NodesNotReachingOutputError,
@@ -48,6 +49,9 @@ def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reachable_from_at_least_one_output(execution_graph=execution_graph)
     verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
+    verify_that_steps_are_connected_with_compatible_inputs(
+        execution_graph=execution_graph
+    )
     return execution_graph
 
 
@@ -326,3 +330,34 @@ def denote_condition_steps_successors_in_normal_flow(
             conditions_steps += 1
         previous_node = node
     return condition_steps_successors, conditions_steps
+
+
+def verify_that_steps_are_connected_with_compatible_inputs(
+    execution_graph: nx.DiGraph,
+) -> None:
+    steps_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=STEP_NODE_KIND,
+    )
+    for step in steps_nodes:
+        verify_step_inputs_selectors(step=step, execution_graph=execution_graph)
+
+
+def verify_step_inputs_selectors(step: str, execution_graph: nx.DiGraph) -> None:
+    step_definition = execution_graph.nodes[step]["definition"]
+    all_inputs = step_definition.get_input_names()
+    for input_step in all_inputs:
+        input_selector_or_value = getattr(step_definition, input_step)
+        if not is_selector(selector_or_value=input_selector_or_value):
+            continue
+        if is_step_output_selector(selector_or_value=input_selector_or_value):
+            input_selector_or_value = get_step_selector_from_its_output(
+                step_output_selector=input_selector_or_value
+            )
+        input_node_definition = execution_graph.nodes[input_selector_or_value][
+            "definition"
+        ]
+        step_definition.validate_field_selector(
+            field_name=input_step,
+            input_type=input_node_definition.type,
+        )
