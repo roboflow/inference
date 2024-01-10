@@ -1,9 +1,7 @@
 from typing import List
 
+from inference.core.entities.responses.inference import Keypoint
 from inference.core.exceptions import ModelArtefactError
-from inference.core.entities.responses.inference import (
-    Keypoint,
-)
 
 
 def superset_keypoints_count(keypoints_metadata={}) -> int:

@@ -13,12 +13,12 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.keypoints import model_keypoints_to_response
 from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes, post_process_keypoints
-from inference.core.models.utils.keypoints import model_keypoints_to_response
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
