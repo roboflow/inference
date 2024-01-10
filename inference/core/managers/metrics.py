@@ -86,6 +86,13 @@ def get_inference_results_for_model(
     )
     inference_results = []
     for result, score in inferences_with_times:
+        # Don't send large image files
+        if result.get("request", {}).get("image"):
+            del result["request"]["image"]
+        if result.get("response", {}).get("image"):
+            for image in result["response"]["image"]:
+                if image["type"] != "url":
+                    del image["image"]
         inference_results.append({"request_time": score, "inference": result})
 
     return inference_results
