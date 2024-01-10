@@ -1,0 +1,2 @@
+class DockerConnectionErrorException(Exception):
+    pass

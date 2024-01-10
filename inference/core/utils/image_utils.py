@@ -81,6 +81,14 @@ def load_image(
 
 
 def choose_image_decoding_flags(disable_preproc_auto_orient: bool) -> int:
+    """Choose the appropriate OpenCV image decoding flags.
+
+    Args:
+        disable_preproc_auto_orient (bool): Flag to disable preprocessing auto-orientation.
+
+    Returns:
+        int: OpenCV image decoding flags.
+    """
     cv_imread_flags = cv2.IMREAD_COLOR
     if disable_preproc_auto_orient:
         cv_imread_flags = cv_imread_flags | cv2.IMREAD_IGNORE_ORIENTATION
@@ -88,6 +96,17 @@ def choose_image_decoding_flags(disable_preproc_auto_orient: bool) -> int:
 
 
 def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]]:
+    """Extract the image payload and type from the given value.
+
+    This function supports different types of image inputs (e.g., InferenceRequestImage, dict, etc.)
+    and extracts the relevant data and image type for further processing.
+
+    Args:
+        value (Any): The input value which can be an image or information to derive the image.
+
+    Returns:
+        Tuple[Any, Optional[ImageType]]: A tuple containing the extracted image data and the corresponding image type.
+    """
     image_type = None
     if issubclass(type(value), InferenceRequestImage):
         image_type = value.type
@@ -110,6 +129,18 @@ def load_image_with_known_type(
     image_type: ImageType,
     cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> Tuple[np.ndarray, bool]:
+    """Load an image using the known image type.
+
+    Supports various image types (e.g., NUMPY, PILLOW, etc.) and loads them into a numpy array format.
+
+    Args:
+        value (Any): The image data.
+        image_type (ImageType): The type of the image.
+        cv_imread_flags (int): Flags used for OpenCV's imread function.
+
+    Returns:
+        Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
+    """
     if image_type is ImageType.NUMPY and not ALLOW_NUMPY_INPUT:
         raise InvalidImageTypeDeclared(
             f"NumPy image type is not supported in this configuration of `inference`."
@@ -124,13 +155,14 @@ def load_image_with_inferred_type(
     value: Any,
     cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> Tuple[np.ndarray, bool]:
-    """Tries to infer the image type from the value and loads it.
+    """Load an image by inferring its type.
 
     Args:
-        value (Any): Image value to infer and load.
+        value (Any): The image data.
+        cv_imread_flags (int): Flags used for OpenCV's imread function.
 
     Returns:
-        Image.Image: The loaded PIL image.
+        Tuple[np.ndarray, bool]: Loaded image as a numpy array and a boolean indicating if the image is in BGR format.
 
     Raises:
         NotImplementedError: If the image type could not be inferred.
@@ -154,6 +186,16 @@ def attempt_loading_image_from_string(
     value: Union[str, bytes, bytearray, _IOBase],
     cv_imread_flags: int = cv2.IMREAD_COLOR,
 ) -> Tuple[np.ndarray, bool]:
+    """
+    Attempt to load an image from a string.
+
+    Args:
+        value (Union[str, bytes, bytearray, _IOBase]): The image data in string format.
+        cv_imread_flags (int): OpenCV flags used for image reading.
+
+    Returns:
+        Tuple[np.ndarray, bool]: A tuple of the loaded image in numpy array format and a boolean flag indicating if the image is in BGR format.
+    """
     try:
         return load_image_base64(value=value, cv_imread_flags=cv_imread_flags), True
     except:
@@ -248,6 +290,15 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
 
 
 def validate_numpy_image(data: np.ndarray) -> None:
+    """
+    Validate if the provided data is a valid numpy image.
+
+    Args:
+        data (np.ndarray): The numpy array representing an image.
+
+    Raises:
+        InvalidNumpyInput: If the provided data is not a valid numpy image.
+    """
     if not issubclass(type(data), np.ndarray):
         raise InvalidNumpyInput(
             f"Data provided as input could not be decoded into np.ndarray object."
@@ -288,6 +339,16 @@ def load_image_from_url(
 def load_image_from_encoded_bytes(
     value: bytes, cv_imread_flags: int = cv2.IMREAD_COLOR
 ) -> np.ndarray:
+    """
+    Load an image from encoded bytes.
+
+    Args:
+        value (bytes): The byte sequence representing the image.
+        cv_imread_flags (int): OpenCV flags used for image reading.
+
+    Returns:
+        np.ndarray: The loaded image as a numpy array.
+    """
     image_np = np.asarray(bytearray(value), dtype=np.uint8)
     image = cv2.imdecode(image_np, cv_imread_flags)
     if image is None:
@@ -308,12 +369,31 @@ IMAGE_LOADERS = {
 
 
 def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
+    """
+    Convert a grayscale image to BGR format.
+
+    Args:
+        image (np.ndarray): The grayscale image.
+
+    Returns:
+        np.ndarray: The converted BGR image.
+    """
+
     if len(image.shape) == 2 or image.shape[2] == 1:
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     return image
 
 
 def np_image_to_base64(image: np.ndarray) -> bytes:
+    """
+    Convert a numpy image to a base64 encoded byte string.
+
+    Args:
+        image (np.ndarray): The numpy array representing an image.
+
+    Returns:
+        bytes: The base64 encoded image.
+    """
     image = Image.fromarray(image)
     with BytesIO() as buffer:
         image = image.convert("RGB")
@@ -323,6 +403,15 @@ def np_image_to_base64(image: np.ndarray) -> bytes:
 
 
 def xyxy_to_xywh(xyxy):
+    """
+    Convert bounding box format from (xmin, ymin, xmax, ymax) to (xcenter, ycenter, width, height).
+
+    Args:
+        xyxy (List[int]): List containing the coordinates in (xmin, ymin, xmax, ymax) format.
+
+    Returns:
+        List[int]: List containing the converted coordinates in (xcenter, ycenter, width, height) format.
+    """
     x_temp = (xyxy[0] + xyxy[2]) / 2
     y_temp = (xyxy[1] + xyxy[3]) / 2
     w_temp = abs(xyxy[0] - xyxy[2])
@@ -332,6 +421,16 @@ def xyxy_to_xywh(xyxy):
 
 
 def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> bytes:
+    """
+    Encode a numpy image to JPEG format in bytes.
+
+    Args:
+        image (np.ndarray): The numpy array representing an image.
+        jpeg_quality (int): Quality of the JPEG image.
+
+    Returns:
+        bytes: The JPEG encoded image.
+    """
     encoding_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
     _, img_encoded = cv2.imencode(".jpg", image, encoding_param)
     return np.array(img_encoded).tobytes()

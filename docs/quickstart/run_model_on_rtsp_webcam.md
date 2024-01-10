@@ -8,7 +8,7 @@ You can run Inference on video frames from `.mp4` and `.mov` files.
 
 You can run both fine-tuned models and foundation models on the above three input types. See the "Foundation Models" section in the sidebar to learn how to import and run foundation models.
 
-!!! tip "Follow our [Run a Fine-Tuned Model on Images](/docs/quickstart/run_model_on_image) guide to learn how to find a model to run."
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image) guide to learn how to find a model to run."
 
 ## Run a Vision Model on Video Frames
 
@@ -63,9 +63,9 @@ This function provides two parameters:
 
 - `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
 - `video_frame`: A dataclass that contains:
-    - `image`: The video frame as a NumPy array,
-    - `frame_id`: The frame ID, and;
-    - `frame_timestamp`: The timestamp of the frame.
+  - `image`: The video frame as a NumPy array,
+  - `frame_id`: The frame ID, and;
+  - `frame_timestamp`: The timestamp of the frame.
 
 For example, you can use the following code to print the predictions to the console:
 
@@ -94,21 +94,21 @@ Below are the results of our benchmarking tests for Inference.
 
 ### MacBook M2
 
-| Test     |   FPS     |
-| -------- | :-------: |
-| yolov8-n |    ~26    |
-| yolov8-s |    ~12    |
-| yolov8-m |    ~5     |
+| Test     | FPS |
+| -------- | :-: |
+| yolov8-n | ~26 |
+| yolov8-s | ~12 |
+| yolov8-m | ~5  |
 
 Tested against the same 1080p 60fps RTSP stream emitted by localhost.
 
 ### Jetson Orin Nano
 
-| Test     | FPS       |
-| -------- | :-------: |
-| yolov8-n |    ~25    |
-| yolov8-s |    ~18    |
-| yolov8-m |    ~8     |
+| Test     | FPS |
+| -------- | :-: |
+| yolov8-n | ~25 |
+| yolov8-s | ~18 |
+| yolov8-m | ~8  |
 
 With old version reaching at max 6-7 fps. This test was executed against 4K@60fps stream, which is not possible to
 be decoded in native pace due to resource constrains. New implementation proved to run without stability issues

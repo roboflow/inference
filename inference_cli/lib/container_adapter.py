@@ -1,5 +1,6 @@
 import subprocess
 from typing import Dict, List, Optional, Union
+from inference_cli.lib.exceptions import DockerConnectionErrorException
 
 import typer
 from docker.models.containers import Container
@@ -11,7 +12,7 @@ from inference_cli.lib.utils import read_env_file
 try:
     docker_client = docker.from_env()
 except docker.errors.DockerException as e:
-    raise (
+    raise DockerConnectionErrorException(
         "Error connecting to Docker daemon. Is docker installed and running? See https://www.docker.com/get-started/ for installation instructions."
     ) from e
 
