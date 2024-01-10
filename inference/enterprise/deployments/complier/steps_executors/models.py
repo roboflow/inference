@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Tuple, Union
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
-    InferenceRequest,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
@@ -14,23 +13,19 @@ from inference.enterprise.deployments.complier.steps_executors.types import (
     NextStepReference,
     OutputsLookup,
 )
-from inference.enterprise.deployments.complier.utils import (
-    construct_step_selector,
-    get_last_selector_chunk,
-    get_step_selector_from_its_output,
-    is_input_selector,
-    is_step_output_selector,
+from inference.enterprise.deployments.complier.steps_executors.utils import (
+    get_image,
+    resolve_parameter,
 )
+from inference.enterprise.deployments.complier.utils import construct_step_selector
 from inference.enterprise.deployments.entities.steps import (
     ClassificationModel,
-    Crop,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
     RoboflowModel,
-    is_selector,
 )
 
 
@@ -41,8 +36,13 @@ async def run_roboflow_model_step(
     model_manager: ModelManager,
     api_key: Optional[str],
 ) -> Tuple[NextStepReference, OutputsLookup]:
+    model_id = resolve_parameter(
+        selector_or_value=step.model_id,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     model_manager.add_model(
-        model_id=step.model_id,
+        model_id=model_id,
         api_key=api_key,
     )
     image = get_image(
@@ -58,9 +58,7 @@ async def run_roboflow_model_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    result = await model_manager.infer_from_request(
-        model_id=step.model_id, request=request
-    )
+    result = await model_manager.infer_from_request(model_id=model_id, request=request)
     if issubclass(type(result), list):
         serialised_result = [e.dict() for e in result]
     else:
@@ -167,22 +165,6 @@ def construct_keypoints_detection_request(
     )
 
 
-def resolve_parameter(
-    selector_or_value: Any,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-) -> Any:
-    if not is_selector(selector_or_value=selector_or_value):
-        return selector_or_value
-    if is_step_output_selector(selector_or_value=selector_or_value):
-        step_selector = get_step_selector_from_its_output(
-            step_output_selector=selector_or_value
-        )
-        step_output = outputs_lookup[step_selector]
-        return step_output[get_last_selector_chunk(selector=selector_or_value)]
-    return runtime_parameters[get_last_selector_chunk(selector=selector_or_value)]
-
-
 MODEL_TYPE2REQUEST_CONSTRUCTOR = {
     "ClassificationModel": construct_classification_request,
     "MultiLabelClassificationModel": construct_classification_request,
@@ -241,31 +223,3 @@ def load_core_model(
     )
     model_manager.add_model(core_model_id, inference_request.api_key)
     return core_model_id
-
-
-def get_image(
-    step: Union[RoboflowModel, OCRModel],
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-) -> Any:
-    if is_input_selector(selector_or_value=step.image):
-        image = runtime_parameters[get_last_selector_chunk(selector=step.image)]
-    elif is_step_output_selector(selector_or_value=step.image):
-        step_selector = get_step_selector_from_its_output(
-            step_output_selector=step.image
-        )
-        step_output = outputs_lookup[step_selector]
-        image = step_output[get_last_selector_chunk(selector=step.image)]
-    else:
-        raise RuntimeError("Cannot find image")
-    return image
-
-
-async def run_crop_step(
-    step: Crop,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-) -> Tuple[NextStepReference, OutputsLookup]:
-    pass

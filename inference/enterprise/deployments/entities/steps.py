@@ -65,10 +65,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             return value
         if not issubclass(type(value), str):
             raise ValueError("`model_id` field must be string")
-        if len(value.split("/")) != 2:
-            raise ValueError(
-                "`model_id` field must be a valid Roboflow model identifier"
-            )
         return value
 
     @validator("disable_active_learning")
@@ -110,11 +106,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         if field_name == "model_id":
             if not issubclass(type(value), str):
                 raise VariableTypeError("Parameter `model_id` must be string")
-            chunks = value.split("/")
-            if len(chunks) != 2:
-                raise VariableTypeError(
-                    "Parameter `model_id` must be a valid model id, example: some/3"
-                )
         if field_name == "disable_active_learning":
             if not issubclass(type(value), bool):
                 raise VariableTypeError(

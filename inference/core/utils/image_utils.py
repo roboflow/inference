@@ -101,7 +101,7 @@ def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]
         return value, image_type
     if image_type.lower() not in allowed_payload_types:
         raise InvalidImageTypeDeclared(
-            f"Declared image type: {value} which is not in allowed types: {allowed_payload_types}."
+            f"Declared image type: {image_type.lower()} which is not in allowed types: {allowed_payload_types}."
         )
     return value, ImageType(image_type.lower())
 
