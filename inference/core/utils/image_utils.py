@@ -32,6 +32,7 @@ class ImageType(Enum):
     FILE = "file"
     MULTIPART = "multipart"
     NUMPY = "numpy"
+    NUMPY_OBJECT = "numpy_object"
     PILLOW = "pil"
     URL = "url"
 
@@ -247,6 +248,11 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     return data
 
 
+def load_image_from_numpy_object(value: np.ndarray) -> np.ndarray:
+    validate_numpy_image(data=value)
+    return value
+
+
 def validate_numpy_image(data: np.ndarray) -> None:
     if not issubclass(type(data), np.ndarray):
         raise InvalidNumpyInput(
@@ -302,6 +308,7 @@ IMAGE_LOADERS = {
     ImageType.FILE: cv2.imread,
     ImageType.MULTIPART: load_image_from_buffer,
     ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
+    ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
     ImageType.URL: load_image_from_url,
 }

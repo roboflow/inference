@@ -1,5 +1,9 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from inference.core.env import MAX_ACTIVE_MODELS
+from inference.core.managers.base import ModelManager
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.deployments.complier.execution_engine import execute_graph
 from inference.enterprise.deployments.complier.graph_parser import (
     construct_execution_graph,
@@ -9,12 +13,17 @@ from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecification,
 )
 from inference.enterprise.deployments.errors import InvalidSpecificationVersionError
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
-def compile_and_execute(
+async def compile_and_execute(
     deployment_spec: dict,
     runtime_parameters: Dict[str, Any],
+    api_key: Optional[str] = None,
 ) -> dict:
+    model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
     parsed_deployment_spec = DeploymentSpecification.parse_obj(deployment_spec)
     if parsed_deployment_spec.specification.version != "1.0":
         raise InvalidSpecificationVersionError(
@@ -24,8 +33,9 @@ def compile_and_execute(
     execution_graph = construct_execution_graph(
         deployment_spec=parsed_deployment_spec.specification
     )
-    return execute_graph(
+    return await execute_graph(
         execution_graph=execution_graph,
         runtime_parameters=runtime_parameters,
-        model_manager=None,
+        model_manager=model_manager,
+        api_key=api_key,
     )

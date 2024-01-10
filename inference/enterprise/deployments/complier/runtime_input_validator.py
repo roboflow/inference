@@ -2,8 +2,12 @@ from typing import Any, Dict, Set
 
 from networkx import DiGraph
 
-from inference.enterprise.deployments.complier.utils import get_nodes_of_specific_kind
-from inference.enterprise.deployments.constants import INPUT_NODE_KIND
+from inference.enterprise.deployments.complier.utils import (
+    get_last_selector_chunk,
+    get_nodes_of_specific_kind,
+    is_input_selector,
+)
+from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.deployments.errors import RuntimeParameterMissingError
 
 
@@ -22,6 +26,10 @@ def validate_runtime_input(
         raise RuntimeParameterMissingError(
             f"Parameters passed to execution runtime do not define required inputs: {missing_parameters}"
         )
+    validate_inputs_binding(
+        execution_graph=execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
 
 
 def get_input_parameters_without_default_values(execution_graph: DiGraph) -> Set[str]:
@@ -38,4 +46,69 @@ def get_input_parameters_without_default_values(execution_graph: DiGraph) -> Set
         if definition.type == "InferenceParameter" and definition.default_value is None:
             result.add(definition.name)
             continue
+    return result
+
+
+def validate_inputs_binding(
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+) -> None:
+    step_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=STEP_NODE_KIND,
+    )
+    for step in step_nodes:
+        validate_step_input_bindings(
+            step=step,
+            execution_graph=execution_graph,
+            runtime_parameters=runtime_parameters,
+        )
+
+
+def validate_step_input_bindings(
+    step: str,
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+) -> None:
+    step_definition = execution_graph.nodes[step]["definition"]
+    for input_name in step_definition.get_input_names():
+        selector_or_value = getattr(step_definition, input_name)
+        if not is_input_selector(selector_or_value=selector_or_value):
+            continue
+        input_parameter_name = get_last_selector_chunk(selector=selector_or_value)
+        if input_parameter_name in runtime_parameters:
+            parameter_value = runtime_parameters[input_parameter_name]
+        else:
+            parameter_value = execution_graph.nodes[selector_or_value][
+                "definition"
+            ].default_value
+        step_definition.validate_field_binding(
+            field_name=input_name, value=parameter_value
+        )
+
+
+def fill_runtime_parameters_with_defaults(
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+) -> Dict[str, Any]:
+    default_values_parameters = get_input_parameters_default_values(
+        execution_graph=execution_graph
+    )
+    default_values_parameters.update(runtime_parameters)
+    return default_values_parameters
+
+
+def get_input_parameters_default_values(execution_graph: DiGraph) -> Dict[str, Any]:
+    input_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=INPUT_NODE_KIND,
+    )
+    result = {}
+    for input_node in input_nodes:
+        definition = execution_graph.nodes[input_node]["definition"]
+        if (
+            definition.type == "InferenceParameter"
+            and definition.default_value is not None
+        ):
+            result[definition.name] = definition.default_value
     return result
