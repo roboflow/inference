@@ -18,6 +18,7 @@ from inference.core.models.utils.validate import (
 )
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes, post_process_keypoints
+from inference.core.models.utils.keypoints import model_keypoints_to_response
 
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IOU_THRESH = 0.5
@@ -144,7 +145,8 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
                             "class_id": int(pred[6]),
-                            "keypoints": self._model_keypoints_to_response(
+                            "keypoints": model_keypoints_to_response(
+                                keypoints_metadata=self.keypoints_metadata,
                                 keypoints=pred[7:],
                                 predicted_object_class_id=int(
                                     pred[4 + len(self.get_class_names)]
@@ -164,33 +166,6 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
-
-    def _model_keypoints_to_response(
-        self,
-        keypoints: List[float],
-        predicted_object_class_id: int,
-        keypoint_confidence_threshold: float,
-    ) -> List[Keypoint]:
-        if self.keypoints_metadata is None:
-            raise ModelArtefactError("Keypoints metadata not available.")
-        keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
-        results = []
-        for keypoint_id in range(len(keypoints) // 3):
-            if keypoint_id >= len(keypoint_id2name):
-                # Ultralytics only supports single class keypoint detection, so points might be padded with zeros
-                break
-            confidence = keypoints[3 * keypoint_id + 2]
-            if confidence < keypoint_confidence_threshold:
-                continue
-            keypoint = Keypoint(
-                x=keypoints[3 * keypoint_id],
-                y=keypoints[3 * keypoint_id + 1],
-                confidence=confidence,
-                class_id=keypoint_id,
-                class_name=keypoint_id2name[keypoint_id],
-            )
-            results.append(keypoint)
-        return results
 
     def keypoints_count(self) -> int:
         raise NotImplementedError
