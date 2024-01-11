@@ -5,6 +5,7 @@ from typing import Any, List, Literal, Optional, Set, Union
 from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.enterprise.deployments.entities.base import GraphNone
 from inference.enterprise.deployments.errors import (
     ExecutionGraphError,
     InvalidStepInputDetected,
@@ -12,7 +13,7 @@ from inference.enterprise.deployments.errors import (
 )
 
 
-class StepInterface(ABC):
+class StepInterface(GraphNone, metaclass=ABCMeta):
     @abstractmethod
     def get_input_names(self) -> Set[str]:
         """
@@ -27,7 +28,7 @@ class StepInterface(ABC):
         """
 
     @abstractmethod
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         """
         Supposed to validate the type of input is referred
         """
@@ -79,27 +80,30 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             raise ValueError("`disable_active_learning` field must be bool")
         return value
 
+    def get_type(self) -> str:
+        return self.type
+
     def get_input_names(self) -> Set[str]:
         return {"image", "model_id", "disable_active_learning"}
 
     def get_output_names(self) -> Set[str]:
         return set()
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
         if field_name == "image":
-            if input_type not in {"InferenceImage", "Crop"}:
+            if input_step.get_type() not in {"InferenceImage", "Crop"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceImage`, `Crop`"
                 )
         if field_name in {"model_id", "disable_active_learning"}:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -151,12 +155,12 @@ class ClassificationModel(RoboflowModel):
         outputs.update(["predictions", "top", "confidence", "parent_id"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
-        super().validate_field_selector(field_name=field_name, input_type=input_type)
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        super().validate_field_selector(field_name=field_name, input_step=input_step)
         if field_name in {"confidence"}:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -198,12 +202,12 @@ class MultiLabelClassificationModel(RoboflowModel):
         outputs.update(["predictions", "predicted_classes", "parent_id"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
-        super().validate_field_selector(field_name=field_name, input_type=input_type)
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        super().validate_field_selector(field_name=field_name, input_step=input_step)
         if field_name in {"confidence"}:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -296,8 +300,8 @@ class ObjectDetectionModel(RoboflowModel):
         outputs.update(["predictions", "parent_id"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
-        super().validate_field_selector(field_name=field_name, input_type=input_type)
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        super().validate_field_selector(field_name=field_name, input_step=input_step)
         if field_name in {
             "class_agnostic_nms",
             "class_filter",
@@ -306,9 +310,9 @@ class ObjectDetectionModel(RoboflowModel):
             "max_detections",
             "max_candidates",
         }:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -362,12 +366,12 @@ class KeypointsDetectionModel(ObjectDetectionModel):
         inputs.add("keypoint_confidence")
         return inputs
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
-        super().validate_field_selector(field_name=field_name, input_type=input_type)
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        super().validate_field_selector(field_name=field_name, input_step=input_step)
         if field_name in {"keypoint_confidence"}:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -420,12 +424,12 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         inputs.update(["mask_decode_mode", "tradeoff_factor"])
         return inputs
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
-        super().validate_field_selector(field_name=field_name, input_type=input_type)
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        super().validate_field_selector(field_name=field_name, input_step=input_step)
         if field_name in {"mask_decode_mode", "tradeoff_factor"}:
-            if input_type not in {"InferenceParameter"}:
+            if input_step.get_type() not in {"InferenceParameter"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceParameter`"
                 )
 
@@ -462,11 +466,11 @@ class OCRModel(BaseModel, StepInterface):
             raise ValueError("`image` field can only contain selector values")
         return value
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         if field_name == "image":
-            if input_type not in {"InferenceImage", "Crop"}:
+            if input_step.get_type() not in {"InferenceImage", "Crop"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceImage`, `Crop`"
                 )
 
@@ -482,6 +486,9 @@ class OCRModel(BaseModel, StepInterface):
                     "Parameter `image` must be compatible with `InferenceRequestImage`"
                 ) from error
 
+    def get_type(self) -> str:
+        return self.type
+
     def get_input_names(self) -> Set[str]:
         return {"image"}
 
@@ -489,7 +496,7 @@ class OCRModel(BaseModel, StepInterface):
         return {"result", "parent_id"}
 
 
-class Crop(BaseModel):
+class Crop(BaseModel, StepInterface):
     type: Literal["Crop"]
     name: str
     image: Union[str, List[str]]
@@ -512,28 +519,38 @@ class Crop(BaseModel):
             raise ValueError("`image` field can only contain selector values")
         return value
 
+    def get_type(self) -> str:
+        return self.type
+
     def get_input_names(self) -> Set[str]:
         return {"image", "detections"}
 
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         if field_name == "image":
-            if input_type not in {"InferenceImage"}:
+            if input_step.get_type() not in {"InferenceImage"}:
                 raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_type}. "
+                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
                     f"Expected: `InferenceImage`"
                 )
         if field_name == "detections":
-            if input_type not in {
+            if input_step.get_type() not in {
                 "ObjectDetectionModel",
                 "KeypointsDetectionModel",
                 "InstanceSegmentationModel",
             }:
                 raise InvalidStepInputDetected(
-                    f"Crop step with name {self.name} cannot take as an input predictions from {input_type}. "
+                    f"Crop step with name {self.name} cannot take as an input predictions from {input_step.get_type()}. "
                     f"Cropping requires detection-based output."
+                )
+            crop_step_image_reference = self.image
+            input_step_image_reference = input_step.image
+            if crop_step_image_reference != input_step_image_reference:
+                raise InvalidStepInputDetected(
+                    f"Crop step with name {self.name} was given detections reference that is bound to different image: "
+                    f"crop.image: {crop_step_image_reference}, detections step image: {input_step_image_reference}"
                 )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
@@ -568,13 +585,17 @@ class Condition(BaseModel, StepInterface):
     step_if_true: str
     step_if_false: str
 
+    def get_type(self) -> str:
+        return self.type
+
     def get_input_names(self) -> Set[str]:
         return {"left", "right"}
 
     def get_output_names(self) -> Set[str]:
         return set()
 
-    def validate_field_selector(self, field_name: str, input_type: str) -> None:
+    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+        input_type = input_step.get_type()
         if field_name in {"left", "right"}:
             if input_type == "InferenceImage":
                 raise InvalidStepInputDetected(

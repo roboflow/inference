@@ -359,5 +359,5 @@ def verify_step_inputs_selectors(step: str, execution_graph: nx.DiGraph) -> None
         ]
         step_definition.validate_field_selector(
             field_name=input_step,
-            input_type=input_node_definition.type,
+            input_step=input_node_definition,
         )
