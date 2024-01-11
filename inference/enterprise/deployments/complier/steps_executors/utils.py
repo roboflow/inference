@@ -4,21 +4,31 @@ from inference.enterprise.deployments.complier.steps_executors.types import (
     OutputsLookup,
 )
 from inference.enterprise.deployments.complier.utils import (
-    get_last_selector_chunk,
     get_step_selector_from_its_output,
     is_input_selector,
     is_step_output_selector,
 )
 from inference.enterprise.deployments.entities.steps import (
+    AbsoluteStaticCrop,
+    ClipComparison,
     Crop,
     OCRModel,
+    RelativeStaticCrop,
     RoboflowModel,
+    get_last_selector_chunk,
     is_selector,
 )
 
 
 def get_image(
-    step: Union[RoboflowModel, OCRModel, Crop],
+    step: Union[
+        RoboflowModel,
+        OCRModel,
+        Crop,
+        AbsoluteStaticCrop,
+        RelativeStaticCrop,
+        ClipComparison,
+    ],
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
 ) -> Any:

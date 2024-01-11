@@ -4,11 +4,11 @@ import numpy as np
 from networkx import DiGraph
 
 from inference.enterprise.deployments.complier.utils import (
-    get_last_selector_chunk,
     get_nodes_of_specific_kind,
     is_input_selector,
 )
 from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.deployments.entities.steps import get_last_selector_chunk
 from inference.enterprise.deployments.errors import (
     InvalidStepInputDetected,
     RuntimeParameterMissingError,

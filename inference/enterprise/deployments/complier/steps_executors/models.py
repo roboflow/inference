@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -20,6 +21,7 @@ from inference.enterprise.deployments.complier.steps_executors.utils import (
 from inference.enterprise.deployments.complier.utils import construct_step_selector
 from inference.enterprise.deployments.entities.steps import (
     ClassificationModel,
+    ClipComparison,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
@@ -221,9 +223,55 @@ async def run_ocr_model_step(
     return None, outputs_lookup
 
 
+async def run_clip_comparison_step(
+    step: ClipComparison,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    text = resolve_parameter(
+        selector_or_value=step.text,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    if not issubclass(type(image), list):
+        image = [image]
+    serialised_result = []
+    for single_image in image:
+        inference_request = ClipCompareRequest(
+            subject=single_image, subject_type="image", prompt=text, prompt_type="text"
+        )
+        doctr_model_id = load_core_model(
+            model_manager=model_manager,
+            inference_request=inference_request,
+            core_model="clip",
+            api_key=api_key,
+        )
+        result = await model_manager.infer_from_request(
+            doctr_model_id, inference_request
+        )
+        serialised_result.append(result.dict())
+    if len(serialised_result) == 1:
+        serialised_result = serialised_result[0]
+        image = image[0]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
 def load_core_model(
     model_manager: ModelManager,
-    inference_request: DoctrOCRInferenceRequest,
+    inference_request: Union[DoctrOCRInferenceRequest, ClipCompareRequest],
     core_model: str,
     api_key: Optional[str] = None,
 ) -> str:

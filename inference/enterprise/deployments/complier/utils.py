@@ -73,10 +73,6 @@ def is_input_selector(selector_or_value: Any) -> bool:
     return selector_or_value.startswith("$inputs")
 
 
-def get_last_selector_chunk(selector: str) -> str:
-    return selector.split(".")[-1]
-
-
 def is_step_output_selector(selector_or_value: Any) -> bool:
     if not is_selector(selector_or_value=selector_or_value):
         return False

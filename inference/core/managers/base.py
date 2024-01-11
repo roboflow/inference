@@ -101,7 +101,9 @@ class ModelManager:
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
-                        "request": jsonable_encoder(request.dict(exclude={"image"})),
+                        "request": jsonable_encoder(
+                            request.dict(exclude={"image", "subject", "prompt"})
+                        ),
                         "response": jsonable_encoder(rtn_val),
                     },
                     score=finish_time,
@@ -120,7 +122,9 @@ class ModelManager:
                 cache.zadd(
                     f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
-                        "request": jsonable_encoder(request.dict(exclude={"image"})),
+                        "request": jsonable_encoder(
+                            request.dict(exclude={"image", "subject", "prompt"})
+                        ),
                         "error": str(e),
                     },
                     score=finish_time,

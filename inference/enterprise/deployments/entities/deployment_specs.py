@@ -8,14 +8,19 @@ from inference.enterprise.deployments.entities.inputs import (
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.steps import (
+    AbsoluteStaticCrop,
     ClassificationModel,
+    ClipComparison,
     Condition,
     Crop,
+    DetectionFilter,
+    DetectionOffset,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    RelativeStaticCrop,
 )
 
 InputType = Annotated[
@@ -31,6 +36,11 @@ StepType = Annotated[
         OCRModel,
         Crop,
         Condition,
+        DetectionFilter,
+        DetectionOffset,
+        ClipComparison,
+        RelativeStaticCrop,
+        AbsoluteStaticCrop,
     ],
     Field(discriminator="type"),
 ]

@@ -5,26 +5,28 @@ from networkx import DiGraph
 
 from inference.core.managers.base import ModelManager
 from inference.enterprise.deployments.complier.runtime_input_validator import (
-    fill_runtime_parameters_with_defaults,
     prepare_runtime_parameters,
-    validate_runtime_input,
 )
 from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
     run_condition_step,
     run_crop_step,
+    run_detection_filter,
+    run_detection_offset_step,
+    run_static_crop_step,
 )
 from inference.enterprise.deployments.complier.steps_executors.models import (
+    run_clip_comparison_step,
     run_ocr_model_step,
     run_roboflow_model_step,
 )
 from inference.enterprise.deployments.complier.utils import (
-    get_last_selector_chunk,
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
     is_condition_step,
     is_step_output_selector,
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.deployments.entities.steps import get_last_selector_chunk
 
 STEP_TYPE2EXECUTOR_MAPPING = {
     "ClassificationModel": run_roboflow_model_step,
@@ -35,6 +37,11 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "OCRModel": run_ocr_model_step,
     "Crop": run_crop_step,
     "Condition": run_condition_step,
+    "DetectionFilter": run_detection_filter,
+    "DetectionOffset": run_detection_offset_step,
+    "AbsoluteStaticCrop": run_static_crop_step,
+    "RelativeStaticCrop": run_static_crop_step,
+    "ClipComparison": run_clip_comparison_step,
 }
 
 
