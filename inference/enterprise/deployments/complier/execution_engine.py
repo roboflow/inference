@@ -6,6 +6,7 @@ from networkx import DiGraph
 from inference.core.managers.base import ModelManager
 from inference.enterprise.deployments.complier.runtime_input_validator import (
     fill_runtime_parameters_with_defaults,
+    prepare_runtime_parameters,
     validate_runtime_input,
 )
 from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
@@ -43,11 +44,7 @@ async def execute_graph(
     model_manager: ModelManager,
     api_key: Optional[str] = None,
 ) -> dict:
-    validate_runtime_input(
-        execution_graph=execution_graph,
-        runtime_parameters=runtime_parameters,
-    )
-    runtime_parameters = fill_runtime_parameters_with_defaults(
+    runtime_parameters = prepare_runtime_parameters(
         execution_graph=execution_graph,
         runtime_parameters=runtime_parameters,
     )

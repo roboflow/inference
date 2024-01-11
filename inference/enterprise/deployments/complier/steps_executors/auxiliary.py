@@ -1,3 +1,4 @@
+import itertools
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -48,15 +49,22 @@ async def run_crop_step(
         decoded_image = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_image
         ]
-        crops = [
-            crop_image(image=i, detections=d) for i, d in zip(decoded_image, detections)
-        ]
+        crops = list(
+            itertools.chain.from_iterable(
+                crop_image(image=i, detections=d)
+                for i, d in zip(decoded_image, detections)
+            )
+        )
     else:
         decoded_image, is_bgr = load_image(image)
         if not is_bgr:
             decoded_image = decoded_image[:, :, ::-1]
         crops = crop_image(image=decoded_image, detections=detections)
-    outputs_lookup[construct_step_selector(step_name=step.name)] = {"crops": crops}
+    parent_ids = [c["parent_id"] for c in crops]
+    outputs_lookup[construct_step_selector(step_name=step.name)] = {
+        "crops": crops,
+        "parent_id": parent_ids,
+    }
     return None, outputs_lookup
 
 
@@ -71,7 +79,13 @@ def crop_image(
         x_max = round(x_min + detection["width"])
         y_max = round(y_min + detection["height"])
         cropped_image = image[y_min:y_max, x_min:x_max]
-        crops.append({"type": ImageType.NUMPY_OBJECT.value, "value": cropped_image})
+        crops.append(
+            {
+                "type": ImageType.NUMPY_OBJECT.value,
+                "value": cropped_image,
+                "parent_id": detection["detection_id"],
+            }
+        )
     return crops
 
 

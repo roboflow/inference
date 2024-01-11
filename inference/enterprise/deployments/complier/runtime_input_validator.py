@@ -1,5 +1,6 @@
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set, Union
 
+import numpy as np
 from networkx import DiGraph
 
 from inference.enterprise.deployments.complier.utils import (
@@ -8,7 +9,33 @@ from inference.enterprise.deployments.complier.utils import (
     is_input_selector,
 )
 from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.deployments.errors import RuntimeParameterMissingError
+from inference.enterprise.deployments.errors import (
+    InvalidStepInputDetected,
+    RuntimeParameterMissingError,
+)
+
+
+def prepare_runtime_parameters(
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+) -> Dict[str, Any]:
+    validate_runtime_input(
+        execution_graph=execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    runtime_parameters = fill_runtime_parameters_with_defaults(
+        execution_graph=execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    runtime_parameters = assembly_input_images(
+        execution_graph=execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    validate_inputs_binding(
+        execution_graph=execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    return runtime_parameters
 
 
 def validate_runtime_input(
@@ -26,10 +53,6 @@ def validate_runtime_input(
         raise RuntimeParameterMissingError(
             f"Parameters passed to execution runtime do not define required inputs: {missing_parameters}"
         )
-    validate_inputs_binding(
-        execution_graph=execution_graph,
-        runtime_parameters=runtime_parameters,
-    )
 
 
 def get_input_parameters_without_default_values(execution_graph: DiGraph) -> Set[str]:
@@ -47,6 +70,81 @@ def get_input_parameters_without_default_values(execution_graph: DiGraph) -> Set
             result.add(definition.name)
             continue
     return result
+
+
+def fill_runtime_parameters_with_defaults(
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+) -> Dict[str, Any]:
+    default_values_parameters = get_input_parameters_default_values(
+        execution_graph=execution_graph
+    )
+    default_values_parameters.update(runtime_parameters)
+    return default_values_parameters
+
+
+def get_input_parameters_default_values(execution_graph: DiGraph) -> Dict[str, Any]:
+    input_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=INPUT_NODE_KIND,
+    )
+    result = {}
+    for input_node in input_nodes:
+        definition = execution_graph.nodes[input_node]["definition"]
+        if (
+            definition.type == "InferenceParameter"
+            and definition.default_value is not None
+        ):
+            result[definition.name] = definition.default_value
+    return result
+
+
+def assembly_input_images(
+    runtime_parameters: Dict[str, Any],
+    execution_graph: DiGraph,
+) -> Dict[str, Any]:
+    input_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph,
+        kind=INPUT_NODE_KIND,
+    )
+    for input_node in input_nodes:
+        definition = execution_graph.nodes[input_node]["definition"]
+        if definition.type != "InferenceImage":
+            continue
+        if issubclass(type(runtime_parameters[definition.name]), list):
+            runtime_parameters[definition.name] = [
+                assembly_input_image(
+                    parameter=definition.name,
+                    image=image,
+                    identifier=i,
+                )
+                for i, image in enumerate(runtime_parameters[definition.name])
+            ]
+        else:
+            runtime_parameters[definition.name] = assembly_input_image(
+                parameter=definition.name, image=runtime_parameters[definition.name]
+            )
+    return runtime_parameters
+
+
+def assembly_input_image(
+    parameter: str, image: Any, identifier: Optional[int] = None
+) -> Dict[str, Union[str, np.ndarray]]:
+    parent = parameter
+    if identifier is not None:
+        parent = f"{parent}.[{identifier}]"
+    if issubclass(type(image), dict):
+        image["parent_id"] = parent
+        return image
+    if issubclass(type(image), np.ndarray):
+        return {
+            "type": "numpy_object",
+            "value": image,
+            "parent_id": parent,
+        }
+    raise InvalidStepInputDetected(
+        f"Detected runtime parameter `{parameter}` defined as `InferenceImage` with type {type(image)} that is invalid."
+    )
 
 
 def validate_inputs_binding(
@@ -85,30 +183,3 @@ def validate_step_input_bindings(
         step_definition.validate_field_binding(
             field_name=input_name, value=parameter_value
         )
-
-
-def fill_runtime_parameters_with_defaults(
-    execution_graph: DiGraph,
-    runtime_parameters: Dict[str, Any],
-) -> Dict[str, Any]:
-    default_values_parameters = get_input_parameters_default_values(
-        execution_graph=execution_graph
-    )
-    default_values_parameters.update(runtime_parameters)
-    return default_values_parameters
-
-
-def get_input_parameters_default_values(execution_graph: DiGraph) -> Dict[str, Any]:
-    input_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph,
-        kind=INPUT_NODE_KIND,
-    )
-    result = {}
-    for input_node in input_nodes:
-        definition = execution_graph.nodes[input_node]["definition"]
-        if (
-            definition.type == "InferenceParameter"
-            and definition.default_value is not None
-        ):
-            result[definition.name] = definition.default_value
-    return result

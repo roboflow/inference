@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
@@ -65,6 +65,12 @@ async def run_roboflow_model_step(
         serialised_result = result.dict()
     if issubclass(type(serialised_result), list) and len(serialised_result) == 1:
         serialised_result = serialised_result[0]
+    if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
+        serialised_result = attach_parent_info(
+            image=image, results=serialised_result, nested_key=None
+        )
+    else:
+        serialised_result = attach_parent_info(image=image, results=serialised_result)
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -205,6 +211,12 @@ async def run_ocr_model_step(
         serialised_result.append(result.dict())
     if len(serialised_result) == 1:
         serialised_result = serialised_result[0]
+        image = image[0]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -223,3 +235,33 @@ def load_core_model(
     )
     model_manager.add_model(core_model_id, inference_request.api_key)
     return core_model_id
+
+
+def attach_parent_info(
+    image: Union[Dict[str, Any], List[Dict[str, Any]]],
+    results: Union[Dict[str, Any], List[Dict[str, Any]]],
+    nested_key: Optional[str] = "predictions",
+) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    if issubclass(type(image), list):
+        return [
+            attach_parent_info_to_image_detections(
+                image=i, predictions=p, nested_key=nested_key
+            )
+            for i, p in zip(image, results)
+        ]
+    return attach_parent_info_to_image_detections(
+        image=image, predictions=results, nested_key=nested_key
+    )
+
+
+def attach_parent_info_to_image_detections(
+    image: Dict[str, Any],
+    predictions: Dict[str, Any],
+    nested_key: Optional[str],
+) -> Dict[str, Any]:
+    predictions["parent_id"] = image["parent_id"]
+    if nested_key is None:
+        return predictions
+    for prediction in predictions[nested_key]:
+        prediction["parent_id"] = image["parent_id"]
+    return predictions

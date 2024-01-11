@@ -17,7 +17,7 @@ def validate_deployment_spec(deployment_spec: DeploymentSpecV1) -> None:
     validate_inputs_names_are_unique(deployment_spec=deployment_spec)
     validate_steps_names_are_unique(deployment_spec=deployment_spec)
     validate_outputs_names_are_unique(deployment_spec=deployment_spec)
-    validate_selectors_references(deployment_spec=deployment_spec)
+    validate_selectors_references_correctness(deployment_spec=deployment_spec)
 
 
 def validate_inputs_names_are_unique(deployment_spec: DeploymentSpecV1) -> None:
@@ -40,7 +40,9 @@ def validate_outputs_names_are_unique(deployment_spec: DeploymentSpecV1) -> None
         raise DuplicatedSymbolError("Found duplicated outputs names")
 
 
-def validate_selectors_references(deployment_spec: DeploymentSpecV1) -> None:
+def validate_selectors_references_correctness(
+    deployment_spec: DeploymentSpecV1,
+) -> None:
     input_parameters_selectors = get_input_parameters_selectors(
         deployment_spec=deployment_spec
     )

@@ -1,3 +1,5 @@
+import asyncio
+from asyncio import AbstractEventLoop
 from typing import Any, Dict, Optional
 
 from inference.core.env import MAX_ACTIVE_MODELS
@@ -16,7 +18,24 @@ from inference.enterprise.deployments.errors import InvalidSpecificationVersionE
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
-async def compile_and_execute(
+def compile_and_execute(
+    deployment_spec: dict,
+    runtime_parameters: Dict[str, Any],
+    api_key: Optional[str] = None,
+    loop: Optional[AbstractEventLoop] = None,
+) -> dict:
+    if loop is None:
+        loop = asyncio.get_event_loop()
+    return loop.run_until_complete(
+        compile_and_execute_async(
+            deployment_spec=deployment_spec,
+            runtime_parameters=runtime_parameters,
+            api_key=api_key,
+        )
+    )
+
+
+async def compile_and_execute_async(
     deployment_spec: dict,
     runtime_parameters: Dict[str, Any],
     api_key: Optional[str] = None,

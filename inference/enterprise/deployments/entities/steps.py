@@ -4,6 +4,7 @@ from typing import Any, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field, validator
 
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.enterprise.deployments.errors import (
     ExecutionGraphError,
     InvalidStepInputDetected,
@@ -103,6 +104,16 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
                 )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            try:
+                if not issubclass(type(value), list):
+                    value = [value]
+                for e in value:
+                    InferenceRequestImage.validate(e)
+            except ValueError as error:
+                raise VariableTypeError(
+                    "Parameter `image` must be compatible with `InferenceRequestImage`"
+                ) from error
         if field_name == "model_id":
             if not issubclass(type(value), str):
                 raise VariableTypeError("Parameter `model_id` must be string")
@@ -137,7 +148,7 @@ class ClassificationModel(RoboflowModel):
 
     def get_output_names(self) -> Set[str]:
         outputs = super().get_output_names()
-        outputs.update(["predictions", "top", "confidence"])
+        outputs.update(["predictions", "top", "confidence", "parent_id"])
         return outputs
 
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
@@ -184,7 +195,7 @@ class MultiLabelClassificationModel(RoboflowModel):
 
     def get_output_names(self) -> Set[str]:
         outputs = super().get_output_names()
-        outputs.update(["predictions", "predicted_classes"])
+        outputs.update(["predictions", "predicted_classes", "parent_id"])
         return outputs
 
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
@@ -282,7 +293,7 @@ class ObjectDetectionModel(RoboflowModel):
 
     def get_output_names(self) -> Set[str]:
         outputs = super().get_output_names()
-        outputs.add("predictions")
+        outputs.update(["predictions", "parent_id"])
         return outputs
 
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
@@ -351,11 +362,6 @@ class KeypointsDetectionModel(ObjectDetectionModel):
         inputs.add("keypoint_confidence")
         return inputs
 
-    def get_output_names(self) -> Set[str]:
-        outputs = super().get_output_names()
-        outputs.add("predictions")
-        return outputs
-
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
         super().validate_field_selector(field_name=field_name, input_type=input_type)
         if field_name in {"keypoint_confidence"}:
@@ -414,11 +420,6 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         inputs.update(["mask_decode_mode", "tradeoff_factor"])
         return inputs
 
-    def get_output_names(self) -> Set[str]:
-        outputs = super().get_output_names()
-        outputs.add("predictions")
-        return outputs
-
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
         super().validate_field_selector(field_name=field_name, input_type=input_type)
         if field_name in {"mask_decode_mode", "tradeoff_factor"}:
@@ -470,13 +471,22 @@ class OCRModel(BaseModel, StepInterface):
                 )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
-        pass
+        if field_name == "image":
+            try:
+                if not issubclass(type(value), list):
+                    value = [value]
+                for e in value:
+                    InferenceRequestImage.validate(e)
+            except ValueError as error:
+                raise VariableTypeError(
+                    "Parameter `image` must be compatible with `InferenceRequestImage`"
+                ) from error
 
     def get_input_names(self) -> Set[str]:
         return {"image"}
 
     def get_output_names(self) -> Set[str]:
-        return {"result"}
+        return {"result", "parent_id"}
 
 
 class Crop(BaseModel):
@@ -506,7 +516,7 @@ class Crop(BaseModel):
         return {"image", "detections"}
 
     def get_output_names(self) -> Set[str]:
-        return {"crops"}
+        return {"crops", "parent_id"}
 
     def validate_field_selector(self, field_name: str, input_type: str) -> None:
         if field_name == "image":
@@ -527,7 +537,16 @@ class Crop(BaseModel):
                 )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
-        pass
+        if field_name == "image":
+            try:
+                if not issubclass(type(value), list):
+                    value = [value]
+                for e in value:
+                    InferenceRequestImage.validate(e)
+            except ValueError as error:
+                raise VariableTypeError(
+                    "Parameter `image` must be compatible with `InferenceRequestImage`"
+                ) from error
 
 
 class Operator(Enum):
