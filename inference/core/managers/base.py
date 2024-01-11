@@ -5,6 +5,7 @@ import numpy as np
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
+from inference.core.cache.transforms import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
@@ -117,10 +118,7 @@ class ModelManager:
                     request.image.value = str(request.image.value)
                 cache.zadd(
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                    value={
-                        "request": jsonable_encoder(request.dict()),
-                        "response": jsonable_encoder(rtn_val),
-                    },
+                    value=to_cachable_inference_item(request, rtn_val),
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
                 )
