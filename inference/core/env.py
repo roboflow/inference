@@ -207,6 +207,9 @@ MODEL_ID = os.getenv("MODEL_ID")
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
 
+# Jupyter notebook hidden flag, default is False
+NOTEBOOK_HIDDEN = str2bool(os.getenv("NOTEBOOK_HIDDEN", False))
+
 # Jupyter notebook password, default is "roboflow"
 NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 

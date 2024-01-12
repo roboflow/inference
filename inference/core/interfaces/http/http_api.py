@@ -4,12 +4,17 @@ from functools import partial, wraps
 from time import sleep
 from typing import Any, List, Optional, Union
 
+import httpx
 import uvicorn
 from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.responses import StreamingResponse
+from starlette.background import BackgroundTask
+
+
 
 from inference.core import logger
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
@@ -77,6 +82,7 @@ from inference.core.env import (
     METLO_KEY,
     METRICS_ENABLED,
     NOTEBOOK_ENABLED,
+    NOTEBOOK_HIDDEN,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
     PROFILE,
@@ -1268,6 +1274,44 @@ class HttpInterface(BaseInterface):
                         }
                     else:
                         return RedirectResponse(f"/notebook-instructions.html")
+
+            @app.route("/notebook/run/{path:path}", methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"])
+            async def proxy(request: Request):
+                async with httpx.AsyncClient(base_url=f"http://localhost:{NOTEBOOK_PORT}/") as client:
+                    url = httpx.URL(path=request.url.path, query=request.url.query.encode("utf-8"))
+                    print("request", request.url.path)
+                    print("URL", url)
+                    headers = dict(request.headers)
+                    headers.pop("host", None)  # Remove the 'host' header
+                    rp_req = client.build_request(request.method, url, headers=headers, content=await request.body())
+                    rp_resp = await client.send(rp_req, stream=True)
+                    response_headers = dict(rp_resp.headers)
+                    response_headers.pop("transfer-encoding", None)  
+                    return StreamingResponse(
+                        rp_resp.aiter_raw(),
+                        status_code=rp_resp.status_code,
+                        headers=response_headers,
+                        background=BackgroundTask(rp_resp.aclose),
+                    )
+                    
+            @app.get(
+                "/notebook/config",
+                summary="Jupyter Lab Configuration",
+                description="Checks server configurations for Jupyter Lab integrations",
+            )
+            @with_route_exceptions
+            async def notebook_config():
+                return {"enabled": NOTEBOOK_ENABLED, "hidden": NOTEBOOK_HIDDEN, "port": NOTEBOOK_PORT, "password": NOTEBOOK_PASSWORD}
+
+
+            # #Redirect all /static paths to /jupyter/static
+            # @app.route("/static/{path:path}", methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"])
+            # async def jupyter_static(request: Request):
+            #     return RedirectResponse(f"/jupyter{request.url.path}")
+            
+            # @app.route("/lab/{path:path}", methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"])
+            # async def jupyter_static(request: Request):
+            #     return RedirectResponse(f"/jupyter{request.url.path}")
 
         app.mount(
             "/",

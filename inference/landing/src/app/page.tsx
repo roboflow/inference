@@ -90,16 +90,22 @@ export default function Home() {
               icon="💫"
             />
           </div>
-          <div className="text-base md:text-lg font-medium max-w-xl">
-          
-          </div>
+          <div className="text-base md:text-lg font-medium max-w-xl"></div>
           <div className="flex w-full items-center justify-center gap-2 flex-col sm:flex-row flex-nowrap sm:flex-wrap sm:px-10">
-            <a href="http://localhost:9001/notebook/start" target="_blank"
+            <a
+              href="notebook/start"
+              target="_blank"
               className="w-full sm:w-max m-0 lg:mx-12 xl:mx-0 xl:w-max gap-0 xl:gap-8 flex-col lg:flex-row justify-between h-auto lg:h-20 xl:h-16 items-center  group flex bg-[#A351FB]  bg-opacity-10 hover:bg-opacity-20 transition duration-400 shadow-none hover:shadow rounded-sm border border-[#A351FB]"
-              
-            > <span className="text-[15px] px-6 lg:pl-6 md:pr-0 py-5 md:py-4  whitespace-normal xl:whitespace-nowrap tracking-tight font-semibold text-purple-600 text-left font-mono">This inference server comes with a built in Jupyterlab server for development and testing.</span>
-            
-            <div className="h-12 w-full lg:h-full lg:w-max font-medium group-hover:bg-purple-600 transition duration-400 bg-[#A351FB] px-5 whitespace-nowrap flex-row text-sm text-white rounded-r-sm flex items-center justify-center">Jump Into an Inference Enabled Notebook    <div className="pl-4 font-bold">→</div></div>
+            >
+              {" "}
+              <span className="text-[15px] px-6 lg:pl-6 md:pr-0 py-5 md:py-4  whitespace-normal xl:whitespace-nowrap tracking-tight font-semibold text-purple-600 text-left font-mono">
+                This inference server comes with a built in Jupyterlab server
+                for development and testing.
+              </span>
+              <div className="h-12 w-full lg:h-full lg:w-max font-medium group-hover:bg-purple-600 transition duration-400 bg-[#A351FB] px-5 whitespace-nowrap flex-row text-sm text-white rounded-r-sm flex items-center justify-center">
+                Jump Into an Inference Enabled Notebook{" "}
+                <div className="pl-4 font-bold">→</div>
+              </div>
             </a>
           </div>
         </div>

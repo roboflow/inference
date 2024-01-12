@@ -18,7 +18,7 @@ def start_notebook():
     if not check_notebook_is_running():
         os.makedirs("/notebooks", exist_ok=True)
         subprocess.Popen(
-            f"jupyter-lab --allow-root --port={NOTEBOOK_PORT} --ip=0.0.0.0 --notebook-dir=/notebooks --NotebookApp.token='{NOTEBOOK_PASSWORD}' --NotebookApp.password='{NOTEBOOK_PASSWORD}'".split(
+            f"jupyter-lab --allow-root --port={NOTEBOOK_PORT} --ip=0.0.0.0 --notebook-dir=/notebooks --NotebookApp.base_url=notebook/run --NotebookApp.token='{NOTEBOOK_PASSWORD}' --NotebookApp.password='{NOTEBOOK_PASSWORD}'".split(
                 " "
             )
         )
