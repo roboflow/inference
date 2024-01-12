@@ -110,6 +110,62 @@ This parameter defaults to `parent` and describe the coordinate system of detect
 This setting is only important in case of more complicated graphs (where we crop based on predicted detections and
 later on make another detections on each and every crop).
 
+### Example
+In the following example, we create a pipeline that at first makes classification first. Based on results
+(the top class), `step_2` decides which object detection model to use (if model predicts car, `step_3` will be executed,
+`step_4` will be used otherwise).
+Result is build from the outputs of all models. Always one of field `step_3_predictions` and `step_4_predictions` will
+be empty due to conditional execution.
+```json
+{
+    "specification": {
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"}
+        ],
+        "steps": [
+            {
+                "type": "ClassificationModel",
+                "name": "step_1",
+                "image": "$inputs.image",
+                "model_id": "vehicle-classification-eapcd/2",
+                "confidence": 0.4
+            },
+            {
+                "type": "Condition",
+                "name": "step_2",
+                "left": "$steps.step_1.top",
+                "operator": "equal",
+                "right": "Car",
+                "step_if_true": "$steps.step_3",
+                "step_if_false": "$steps.step_4"
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "step_3",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "confidence": 0.5,
+                "iou_threshold": 0.4
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "step_4",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-1280",
+                "confidence": 0.5,
+                "iou_threshold": 0.4
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "top_class", "selector": "$steps.step_1.top"},
+            {"type": "JsonField", "name": "step_3_predictions", "selector": "$steps.step_3.predictions"},
+            {"type": "JsonField", "name": "step_4_predictions", "selector": "$steps.step_4.predictions"}
+        ]  
+    }
+}
+```
+
 ### What kind of steps are available?
 
 #### `ClassificationModel`
