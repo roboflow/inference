@@ -6,7 +6,7 @@ from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecV1,
     StepType,
 )
-from inference.enterprise.deployments.entities.steps import is_selector
+from inference.enterprise.deployments.entities.validators import is_selector
 
 
 def get_input_parameters_selectors(deployment_spec: DeploymentSpecV1) -> Set[str]:

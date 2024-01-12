@@ -360,7 +360,6 @@ def take_static_crop(
         outputs_lookup=outputs_lookup,
     )
     x_center = resolve_parameter_closure(crop.x_center)
-    x_center = resolve_parameter_closure(crop.x_center)
     y_center = resolve_parameter_closure(crop.y_center)
     width = resolve_parameter_closure(crop.width)
     height = resolve_parameter_closure(crop.height)

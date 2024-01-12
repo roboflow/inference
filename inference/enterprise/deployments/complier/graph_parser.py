@@ -20,7 +20,7 @@ from inference.enterprise.deployments.constants import (
     STEP_NODE_KIND,
 )
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
-from inference.enterprise.deployments.entities.steps import is_selector
+from inference.enterprise.deployments.entities.validators import is_selector
 from inference.enterprise.deployments.errors import (
     AmbiguousPathDetected,
     NodesNotReachingOutputError,

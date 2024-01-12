@@ -4,8 +4,27 @@ from typing import Annotated, Any, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field, validator
 
-from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.enterprise.deployments.entities.base import GraphNone
+from inference.enterprise.deployments.entities.validators import (
+    get_last_selector_chunk,
+    is_selector,
+    validate_field_has_given_type,
+    validate_field_is_in_range_zero_one_or_selector,
+    validate_field_is_list_of_string,
+    validate_field_is_one_of_selected_values,
+    validate_field_is_selector_or_has_given_type,
+    validate_field_is_selector_or_list_of_string,
+    validate_field_is_selector_or_one_of_values,
+    validate_field_is_selector_or_string,
+    validate_image_biding,
+    validate_image_is_valid_selector,
+    validate_selector_holds_detections,
+    validate_selector_holds_image,
+    validate_selector_is_inference_parameter,
+    validate_value_is_number_in_range_zero_one,
+    validate_value_is_positive_number,
+    validate_value_is_selector_or_positive_number,
+)
 from inference.enterprise.deployments.errors import (
     ExecutionGraphError,
     InvalidStepInputDetected,
@@ -52,21 +71,14 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
     @validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+    def validate_image(cls, value: Any) -> Union[str, List[str]]:
+        validate_image_is_valid_selector(value=value)
         return value
 
     @validator("model_id")
     @classmethod
     def model_id_must_be_selector_or_str(cls, value: Any) -> str:
-        if is_selector(selector_or_value=value):
-            return value
-        if not issubclass(type(value), str):
-            raise ValueError("`model_id` field must be string")
+        validate_field_is_selector_or_string(value=value, field_name="model_id")
         return value
 
     @validator("disable_active_learning")
@@ -74,10 +86,11 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     def disable_active_learning_must_be_selector_or_bool(
         cls, value: Any
     ) -> Union[Optional[bool], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), bool):
-            raise ValueError("`disable_active_learning` field must be bool")
+        validate_field_is_selector_or_has_given_type(
+            field_name="disable_active_learning",
+            allowed_types=[type(None), bool],
+            value=value,
+        )
         return value
 
     def get_type(self) -> str:
@@ -94,43 +107,35 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "AbsoluteStaticCrop",
-                "RelativeStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`"
-                )
-        if field_name in {"model_id", "disable_active_learning"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"model_id", "disable_active_learning"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
-        if field_name == "model_id":
-            if not issubclass(type(value), str):
-                raise VariableTypeError("Parameter `model_id` must be string")
-        if field_name == "disable_active_learning":
-            if not issubclass(type(value), bool):
-                raise VariableTypeError(
-                    "Parameter `disable_active_learning` must be bool"
-                )
+            validate_image_biding(value=value)
+        elif field_name == "model_id":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "disable_active_learning":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
 
 
 class ClassificationModel(RoboflowModel):
@@ -142,12 +147,7 @@ class ClassificationModel(RoboflowModel):
     def confidence_must_be_selector_or_number(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("`confidence` field must be number")
-        if not 0 <= value <= 1:
-            raise ValueError("Parameter `confidence` must be in range [0.0, 1.0]")
+        validate_field_is_in_range_zero_one_or_selector(value=value)
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -162,22 +162,21 @@ class ClassificationModel(RoboflowModel):
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
-        if field_name in {"confidence"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"confidence"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
         if field_name == "confidence":
-            if not issubclass(type(value), float) and not issubclass(type(value), int):
-                raise VariableTypeError("Parameter `confidence` must be a number")
-            if not 0 <= value <= 1:
-                raise VariableTypeError(
-                    "Parameter `confidence` must be in range [0.0, 1.0]"
-                )
+            if value is None:
+                raise VariableTypeError("Parameter `confidence` cannot be None")
+            validate_value_is_number_in_range_zero_one(
+                value=value, error=VariableTypeError
+            )
 
 
 class MultiLabelClassificationModel(RoboflowModel):
@@ -189,12 +188,7 @@ class MultiLabelClassificationModel(RoboflowModel):
     def confidence_must_be_selector_or_number(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("`confidence` field must be number")
-        if not 0 <= value <= 1:
-            raise ValueError("Parameter `confidence` must be in range [0.0, 1.0]")
+        validate_field_is_in_range_zero_one_or_selector(value=value)
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -209,22 +203,21 @@ class MultiLabelClassificationModel(RoboflowModel):
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
-        if field_name in {"confidence"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"confidence"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
         if field_name == "confidence":
-            if not issubclass(type(value), float) and not issubclass(type(value), int):
-                raise VariableTypeError("Parameter `confidence` must be a number")
-            if not 0 <= value <= 1:
-                raise VariableTypeError(
-                    "Parameter `confidence` must be in range [0.0, 1.0]"
-                )
+            if value is None:
+                raise VariableTypeError("Parameter `confidence` cannot be None")
+            validate_value_is_number_in_range_zero_one(
+                value=value, error=VariableTypeError
+            )
 
 
 class ObjectDetectionModel(RoboflowModel):
@@ -241,10 +234,11 @@ class ObjectDetectionModel(RoboflowModel):
     def class_agnostic_nms_must_be_selector_or_bool(
         cls, value: Any
     ) -> Union[Optional[bool], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), bool):
-            raise ValueError("`class_agnostic_nms` field must be bool")
+        validate_field_is_selector_or_has_given_type(
+            field_name="class_agnostic_nms",
+            allowed_types=[type(None), bool],
+            value=value,
+        )
         return value
 
     @validator("class_filter")
@@ -252,12 +246,9 @@ class ObjectDetectionModel(RoboflowModel):
     def class_filter_must_be_selector_or_list_of_string(
         cls, value: Any
     ) -> Union[Optional[List[str]], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), list):
-            raise ValueError("`class_filter` field must be list")
-        if any(not issubclass(type(e), str) for e in value):
-            raise ValueError("Parameter `class_filter` must be a list of string")
+        validate_field_is_selector_or_list_of_string(
+            value=value, field_name="class_filter"
+        )
         return value
 
     @validator("confidence", "iou_threshold")
@@ -265,12 +256,9 @@ class ObjectDetectionModel(RoboflowModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("field must be number")
-        if not 0 <= value <= 1:
-            raise ValueError("Parameter must be in range [0.0, 1.0]")
+        validate_field_is_in_range_zero_one_or_selector(
+            value=value, field_name="confidence | iou_threshold"
+        )
         return value
 
     @validator("max_detections", "max_candidates")
@@ -278,12 +266,10 @@ class ObjectDetectionModel(RoboflowModel):
     def field_must_be_selector_or_positive_number(
         cls, value: Any
     ) -> Union[Optional[int], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("field must be number")
-        if value <= 0:
-            raise ValueError("Parameter must be positive")
+        validate_value_is_selector_or_positive_number(
+            value=value,
+            field_name="max_detections | max_candidates",
+        )
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -307,46 +293,47 @@ class ObjectDetectionModel(RoboflowModel):
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
-        if field_name in {
-            "class_agnostic_nms",
-            "class_filter",
-            "confidence",
-            "iou_threshold",
-            "max_detections",
-            "max_candidates",
-        }:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "class_agnostic_nms",
+                "class_filter",
+                "confidence",
+                "iou_threshold",
+                "max_detections",
+                "max_candidates",
+            },
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
+        if value is None:
+            raise VariableTypeError(f"Parameter `{field_name}` cannot be None")
         if field_name == "class_agnostic_nms":
-            if not issubclass(type(value), bool):
-                raise VariableTypeError("Parameter `class_agnostic_nms` must be a bool")
-        if field_name == "class_filter":
-            if not issubclass(type(value), list):
-                raise VariableTypeError("Parameter `class_filter` must be a list")
-            if any(not issubclass(type(e), str) for e in value):
-                raise VariableTypeError(
-                    "Parameter `class_filter` must be a list of string"
-                )
-        if field_name == "confidence" or field_name == "iou_threshold":
-            if not issubclass(type(value), float) and not issubclass(type(value), int):
-                raise VariableTypeError(f"Parameter `{field_name}` must be a number")
-            if not 0 <= value <= 1:
-                raise VariableTypeError(
-                    f"Parameter `{field_name}` must be in range [0.0, 1.0]"
-                )
-        if field_name == "max_detections" or field_name == "max_candidates":
-            if not issubclass(type(value), int):
-                raise VariableTypeError(f"Parameter `{field_name}` must be a integer")
-            if value <= 0:
-                raise VariableTypeError(
-                    f"Parameter `{field_name}` must be greater than zero"
-                )
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "class_filter":
+            validate_field_is_list_of_string(
+                value=value, field_name=field_name, error=VariableTypeError
+            )
+        elif field_name == "confidence" or field_name == "iou_threshold":
+            validate_value_is_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        elif field_name == "max_detections" or field_name == "max_candidates":
+            validate_value_is_positive_number(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
 
 
 class KeypointsDetectionModel(ObjectDetectionModel):
@@ -358,12 +345,9 @@ class KeypointsDetectionModel(ObjectDetectionModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("field must be number")
-        if not 0 <= value <= 1:
-            raise ValueError("Parameter must be in range [0.0, 1.0]")
+        validate_field_is_in_range_zero_one_or_selector(
+            value=value, field_name="keypoint_confidence"
+        )
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -373,22 +357,24 @@ class KeypointsDetectionModel(ObjectDetectionModel):
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
-        if field_name in {"keypoint_confidence"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"keypoint_confidence"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
         if field_name == "keypoint_confidence":
-            if not issubclass(type(value), float) and not issubclass(type(value), int):
-                raise VariableTypeError(f"Parameter `{field_name}` must be a number")
-            if not 0 <= value <= 1:
-                raise VariableTypeError(
-                    f"Parameter `{field_name}` must be in range [0.0, 1.0]"
-                )
+            validate_value_is_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+
+
+DECODE_MODES = {"accurate", "tradeoff", "fast"}
 
 
 class InstanceSegmentationModel(ObjectDetectionModel):
@@ -401,14 +387,11 @@ class InstanceSegmentationModel(ObjectDetectionModel):
     def mask_decode_mode_must_be_selector_or_one_of_allowed_values(
         cls, value: Any
     ) -> Optional[str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), str):
-            raise ValueError("Field `mask_decode_mode` must be string")
-        if value not in {"accurate", "tradeoff", "fast"}:
-            raise ValueError(
-                "Field `mask_decode_mode` must be in 'accurate', 'tradeoff', 'fast'"
-            )
+        validate_field_is_selector_or_one_of_values(
+            value=value,
+            field_name="mask_decode_mode",
+            selected_values=DECODE_MODES,
+        )
         return value
 
     @validator("tradeoff_factor")
@@ -416,12 +399,9 @@ class InstanceSegmentationModel(ObjectDetectionModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        if is_selector(selector_or_value=value) or value is None:
-            return value
-        if not issubclass(type(value), float) and not issubclass(type(value), int):
-            raise ValueError("field must be number")
-        if not 0 <= value <= 1:
-            raise ValueError("Parameter must be in range [0.0, 1.0]")
+        validate_field_is_in_range_zero_one_or_selector(
+            value=value, field_name="tradeoff_factor"
+        )
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -431,29 +411,28 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
-        if field_name in {"mask_decode_mode", "tradeoff_factor"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceParameter`"
-                )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"mask_decode_mode", "tradeoff_factor"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
         if field_name == "mask_decode_mode":
-            if not issubclass(type(value), str):
-                raise VariableTypeError(f"Parameter `{field_name}` must be a string")
-            if value not in {"accurate", "tradeoff", "fast"}:
-                raise VariableTypeError(
-                    f"Parameter `{field_name}` must be in 'accurate', 'tradeoff', 'fast'"
-                )
-        if field_name == "tradeoff_factor":
-            if not issubclass(type(value), float) and not issubclass(type(value), int):
-                raise VariableTypeError(f"Parameter `{field_name}` must be a number")
-            if not 0 <= value <= 1:
-                raise VariableTypeError(
-                    f"Parameter `{field_name}` must be in range [0.0, 1.0]"
-                )
+            validate_field_is_one_of_selected_values(
+                value=value,
+                field_name=field_name,
+                selected_values=DECODE_MODES,
+                error=VariableTypeError,
+            )
+        elif field_name == "tradeoff_factor":
+            validate_value_is_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
 
 
 class OCRModel(BaseModel, StepInterface):
@@ -464,11 +443,7 @@ class OCRModel(BaseModel, StepInterface):
     @validator("image")
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+        validate_image_is_valid_selector(value=value)
         return value
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
@@ -476,29 +451,15 @@ class OCRModel(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "RelativeStaticCrop",
-                "AbsoluteStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `RelativeStaticCrop`, `AbsoluteStaticCrop`"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
+            validate_image_biding(value=value)
 
     def get_type(self) -> str:
         return self.type
@@ -519,11 +480,7 @@ class Crop(BaseModel, StepInterface):
     @validator("image")
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+        validate_image_is_valid_selector(value=value)
         return value
 
     @validator("detections")
@@ -547,54 +504,22 @@ class Crop(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "RelativeStaticCrop",
-                "AbsoluteStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `RelativeStaticCrop`, `AbsoluteStaticCrop`"
-                )
-        if field_name == "detections":
-            if input_step.get_type() not in {
-                "ObjectDetectionModel",
-                "KeypointsDetectionModel",
-                "InstanceSegmentationModel",
-                "DetectionFilter",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Crop step with name {self.name} cannot take as an input predictions from {input_step.get_type()}. "
-                    f"Cropping requires detection-based output."
-                )
-            crop_step_image_reference = self.image
-            if input_step.get_type() == "DetectionFilter":
-                # Here, filter do not hold the reference to image, we skip the check in this case
-                return None
-            input_step_image_reference = input_step.image
-            if crop_step_image_reference != input_step_image_reference:
-                raise InvalidStepInputDetected(
-                    f"Crop step with name {self.name} was given detections reference that is bound to different image: "
-                    f"crop.image: {crop_step_image_reference}, detections step image: {input_step_image_reference}"
-                )
-            if get_last_selector_chunk(self.detections) != "predictions":
-                raise InvalidStepInputDetected(
-                    f"Crop step with name {self.name} must take as input step output of name `predictions`"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_holds_detections(
+            step_name=self.name,
+            image_selector=self.image,
+            detections_selector=self.detections,
+            field_name=field_name,
+            input_step=input_step,
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
+            validate_image_biding(value=value)
 
 
 class Operator(Enum):
@@ -681,20 +606,14 @@ class DetectionFilter(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "predictions":
-            if input_step.get_type() not in {
-                "ObjectDetectionModel",
-                "KeypointsDetectionModel",
-                "InstanceSegmentationModel",
-            }:
-                raise InvalidStepInputDetected(
-                    f"DetectionFilter step with name {self.name} cannot take as an input predictions from {input_step.get_type()}. "
-                    f"Cropping requires detection-based output."
-                )
-            if get_last_selector_chunk(self.predictions) != "predictions":
-                raise InvalidStepInputDetected(
-                    f"DetectionFilter step with name {self.name} must take as input step output of name `predictions`"
-                )
+        validate_selector_holds_detections(
+            step_name=self.name,
+            image_selector=None,
+            detections_selector=self.predictions,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"predictions"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         pass
@@ -721,31 +640,29 @@ class DetectionOffset(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "predictions":
-            if input_step.get_type() not in {
-                "ObjectDetectionModel",
-                "KeypointsDetectionModel",
-                "InstanceSegmentationModel",
-            }:
-                raise InvalidStepInputDetected(
-                    f"DetectionOffset step with name {self.name} cannot take as an input predictions from {input_step.get_type()}. "
-                    f"Cropping requires detection-based output."
-                )
-            if get_last_selector_chunk(self.predictions) != "predictions":
-                raise InvalidStepInputDetected(
-                    f"DetectionOffset step with name {self.name} must take as input step output of name `predictions`"
-                )
-        if field_name in {"offset_x", "offset_y"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"DetectionOffset step with name {self.name} must take `InferenceParameter` node as "
-                    f"{field_name} selector"
-                )
+        validate_selector_holds_detections(
+            step_name=self.name,
+            image_selector=None,
+            detections_selector=self.predictions,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"predictions"},
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"offset_x", "offset_y"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name in {"offset_x", "offset_y"}:
-            if not issubclass(type(value), int):
-                raise VariableTypeError(f"Parameter `{field_name}` must be integer'")
+            validate_field_has_given_type(
+                field_name=field_name,
+                value=value,
+                allowed_types=[int],
+                error=VariableTypeError,
+            )
 
     def get_type(self) -> str:
         return self.type
@@ -763,21 +680,15 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
     @validator("image")
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+        validate_image_is_valid_selector(value=value)
         return value
 
     @validator("x_center", "y_center", "width", "height")
     @classmethod
-    def detections_must_hold_selector(cls, value: Any) -> str:
-        if issubclass(type(value), str):
-            if not is_selector(selector_or_value=value):
-                raise ValueError("Field must be either integer of valid selector")
-        elif not issubclass(type(value), int):
-            raise ValueError("Field must be either integer of valid selector")
+    def validate_crops_coordinates(cls, value: Any) -> str:
+        validate_value_is_selector_or_positive_number(
+            value=value, field_name="x_center | y_center | width | height"
+        )
         return value
 
     def get_type(self) -> str:
@@ -794,35 +705,21 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "RelativeStaticCrop",
-                "AbsoluteStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `RelativeStaticCrop`, `AbsoluteStaticCrop`"
-                )
-        if field_name in {"x_center", "y_center", "width", "height"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"DetectionOffset step with name {self.name} must take `InferenceParameter` node as "
-                    f"{field_name} selector"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"x_center", "y_center", "width", "height"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
+            validate_image_biding(value=value)
         if field_name in {"x_center", "y_center", "width", "height"}:
             if (
                 not issubclass(type(value), int) and not issubclass(type(value), float)
@@ -844,11 +741,7 @@ class RelativeStaticCrop(BaseModel, StepInterface):
     @validator("image")
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+        validate_image_is_valid_selector(value=value)
         return value
 
     @validator("x_center", "y_center", "width", "height")
@@ -875,40 +768,28 @@ class RelativeStaticCrop(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "RelativeStaticCrop",
-                "AbsoluteStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `RelativeStaticCrop`, `AbsoluteStaticCrop`"
-                )
-        if field_name in {"x_center", "y_center", "width", "height"}:
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"DetectionOffset step with name {self.name} must take `InferenceParameter` node as "
-                    f"{field_name} selector"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"x_center", "y_center", "width", "height"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
+            validate_image_biding(value=value)
         if field_name in {"x_center", "y_center", "width", "height"}:
-            if not issubclass(type(value), float):
-                raise VariableTypeError(
-                    f"Field {field_name} of step {self.type} must be float"
-                )
+            validate_field_has_given_type(
+                field_name=field_name,
+                value=value,
+                allowed_types=[float],
+                error=VariableTypeError,
+            )
 
 
 class ClipComparison(BaseModel, StepInterface):
@@ -920,21 +801,16 @@ class ClipComparison(BaseModel, StepInterface):
     @validator("image")
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        if issubclass(type(value), list):
-            if any(not is_selector(selector_or_value=e) for e in value):
-                raise ValueError("`image` field can only contain selector values")
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+        validate_image_is_valid_selector(value=value)
         return value
 
     @validator("text")
     @classmethod
     def text_must_be_valid(cls, value: Any) -> Union[str, List[str]]:
+        if is_selector(selector_or_value=value):
+            return value
         if issubclass(type(value), list):
-            if any(not issubclass(type(e), str) for e in value):
-                raise ValueError(
-                    "`text` field given as list must only contain string elements"
-                )
+            validate_field_is_list_of_string(value=value, field_name="text")
         elif not issubclass(type(value), str):
             raise ValueError("`text` field given must be string or list of strings")
         return value
@@ -944,43 +820,32 @@ class ClipComparison(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        if field_name == "image":
-            if input_step.get_type() not in {
-                "InferenceImage",
-                "Crop",
-                "RelativeStaticCrop",
-                "AbsoluteStaticCrop",
-            }:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} comes from invalid input type: {input_step.get_type()}. "
-                    f"Expected: `InferenceImage`, `Crop`, `RelativeStaticCrop`, `AbsoluteStaticCrop`"
-                )
-        if field_name == "text":
-            if input_step.get_type() not in {"InferenceParameter"}:
-                raise InvalidStepInputDetected(
-                    f"Field {field_name} of step {self.type} must be 'InferenceParameter'"
-                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"text"},
+        )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
-            try:
-                if not issubclass(type(value), list):
-                    value = [value]
-                for e in value:
-                    InferenceRequestImage.validate(e)
-            except ValueError as error:
-                raise VariableTypeError(
-                    "Parameter `image` must be compatible with `InferenceRequestImage`"
-                ) from error
+            validate_image_biding(value=value)
         if field_name == "text":
             if issubclass(type(value), list):
-                if any(not issubclass(type(e), str) for e in value):
-                    raise VariableTypeError(
-                        "`text` field given as list must only contain string elements"
-                    )
+                validate_field_is_list_of_string(
+                    value=value, field_name=field_name, error=VariableTypeError
+                )
             elif not issubclass(type(value), str):
-                raise VariableTypeError(
-                    "`text` field given must be string or list of strings"
+                validate_field_has_given_type(
+                    value=value,
+                    field_name=field_name,
+                    allowed_types=[str],
+                    error=VariableTypeError,
                 )
 
     def get_type(self) -> str:
@@ -991,13 +856,3 @@ class ClipComparison(BaseModel, StepInterface):
 
     def get_output_names(self) -> Set[str]:
         return {"similarity", "parent_id"}
-
-
-def is_selector(selector_or_value: Any) -> bool:
-    if not issubclass(type(selector_or_value), str):
-        return False
-    return selector_or_value.startswith("$")
-
-
-def get_last_selector_chunk(selector: str) -> str:
-    return selector.split(".")[-1]

@@ -27,7 +27,7 @@ from inference.enterprise.deployments.complier.utils import (
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.deployments.entities.outputs import CoordinatesSystem
-from inference.enterprise.deployments.entities.steps import get_last_selector_chunk
+from inference.enterprise.deployments.entities.validators import get_last_selector_chunk
 
 STEP_TYPE2EXECUTOR_MAPPING = {
     "ClassificationModel": run_roboflow_model_step,

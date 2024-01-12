@@ -15,6 +15,8 @@ from inference.enterprise.deployments.entities.steps import (
     OCRModel,
     RelativeStaticCrop,
     RoboflowModel,
+)
+from inference.enterprise.deployments.entities.validators import (
     get_last_selector_chunk,
     is_selector,
 )
