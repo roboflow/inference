@@ -16,7 +16,10 @@ from inference.enterprise.deployments.complier.steps_executors.utils import (
     get_image,
     resolve_parameter,
 )
-from inference.enterprise.deployments.complier.utils import construct_step_selector
+from inference.enterprise.deployments.complier.utils import (
+    construct_selector_to_step_output,
+    construct_step_selector,
+)
 from inference.enterprise.deployments.entities.steps import (
     AbsoluteStaticCrop,
     BinaryOperator,
@@ -64,35 +67,23 @@ async def run_crop_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    if issubclass(type(image), list):
-        decoded_image = [load_image(e) for e in image]
-        origin_image_shape = [
-            meta["origin_coordinates"]["size"]
-            if issubclass(type(meta), dict) and "origin_coordinates" in meta
-            else {"height": decoded[0].shape[0], "width": decoded[0].shape[1]}
-            for meta, decoded in zip(image, decoded_image)
-        ]
-        decoded_image = [
-            i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_image
-        ]
-        crops = list(
-            itertools.chain.from_iterable(
-                crop_image(image=i, detections=d, origin_size=o)
-                for i, d, o in zip(decoded_image, detections, origin_image_shape)
-            )
+    if not issubclass(type(image), list):
+        image = [image]
+        detections = [detections]
+    decoded_images = [load_image(e) for e in image]
+    decoded_images = [
+        i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
+    ]
+    origin_image_shape = extract_origin_size_from_images(
+        input_images=image,
+        decoded_images=decoded_images,
+    )
+    crops = list(
+        itertools.chain.from_iterable(
+            crop_image(image=i, detections=d, origin_size=o)
+            for i, d, o in zip(decoded_images, detections, origin_image_shape)
         )
-    else:
-        decoded_image, is_bgr = load_image(image)
-        origin_image_shape = (
-            image["origin_coordinates"]["size"]
-            if issubclass(type(image), dict) and "origin_coordinates" in image
-            else {"height": decoded_image.shape[0], "width": decoded_image.shape[1]}
-        )
-        if not is_bgr:
-            decoded_image = decoded_image[:, :, ::-1]
-        crops = crop_image(
-            image=decoded_image, detections=detections, origin_size=origin_image_shape
-        )
+    )
     parent_ids = [c["parent_id"] for c in crops]
     outputs_lookup[construct_step_selector(step_name=step.name)] = {
         "crops": crops,
@@ -162,9 +153,10 @@ async def run_detection_filter(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    chunks = step.predictions.split(".")[:2]
-    chunks.append("image")
-    images_meta_selector = ".".join(chunks)
+    images_meta_selector = construct_selector_to_step_output(
+        selector=step.predictions,
+        new_output="image",
+    )
     images_meta = resolve_parameter(
         selector_or_value=images_meta_selector,
         runtime_parameters=runtime_parameters,
@@ -227,9 +219,10 @@ async def run_detection_offset_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    chunks = step.predictions.split(".")[:2]
-    chunks.append("image")
-    images_meta_selector = ".".join(chunks)
+    images_meta_selector = construct_selector_to_step_output(
+        selector=step.predictions,
+        new_output="image",
+    )
     images_meta = resolve_parameter(
         selector_or_value=images_meta_selector,
         runtime_parameters=runtime_parameters,
@@ -302,49 +295,47 @@ async def run_static_crop_step(
         outputs_lookup=outputs_lookup,
     )
 
-    if issubclass(type(image), list):
-        decoded_image = [load_image(e) for e in image]
-        decoded_image = [
-            i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_image
-        ]
-        origin_image_shape = [
-            meta["origin_coordinates"]["size"]
-            if issubclass(type(meta), dict) and "origin_coordinates" in meta
-            else {"height": decoded[0].shape[0], "width": decoded[0].shape[1]}
-            for meta, decoded in zip(image, decoded_image)
-        ]
-        crops = [
-            take_static_crop(
-                image=i,
-                crop=step,
-                runtime_parameters=runtime_parameters,
-                outputs_lookup=outputs_lookup,
-                origin_size=size,
-            )
-            for i, size in zip(decoded_image, origin_image_shape)
-        ]
-    else:
-        decoded_image, is_bgr = load_image(image)
-        if not is_bgr:
-            decoded_image = decoded_image[:, :, ::-1]
-        origin_image_shape = (
-            image["origin_coordinates"]["size"]
-            if issubclass(type(image), dict) and "origin_coordinates" in image
-            else {"height": decoded_image.shape[0], "width": decoded_image.shape[1]}
-        )
-        crops = take_static_crop(
-            image=decoded_image,
+    if not issubclass(type(image), list):
+        image = [image]
+    decoded_images = [load_image(e) for e in image]
+    decoded_images = [
+        i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
+    ]
+    origin_image_shape = extract_origin_size_from_images(
+        input_images=image,
+        decoded_images=decoded_images,
+    )
+    crops = [
+        take_static_crop(
+            image=i,
             crop=step,
             runtime_parameters=runtime_parameters,
             outputs_lookup=outputs_lookup,
-            origin_size=origin_image_shape,
+            origin_size=size,
         )
+        for i, size in zip(decoded_images, origin_image_shape)
+    ]
     parent_ids = [c["parent_id"] for c in crops]
     outputs_lookup[construct_step_selector(step_name=step.name)] = {
         "crops": crops,
         "parent_id": parent_ids,
     }
     return None, outputs_lookup
+
+
+def extract_origin_size_from_images(
+    input_images: List[Union[dict, np.ndarray]],
+    decoded_images: List[np.ndarray],
+) -> List[Dict[str, int]]:
+    result = []
+    for input_image, decoded_image in zip(input_images, decoded_images):
+        if issubclass(type(input_image), dict) and "origin_coordinates" in input_image:
+            result.append(input_image["origin_coordinates"]["size"])
+        else:
+            result.append(
+                {"height": decoded_image.shape[0], "width": decoded_image.shape[1]}
+            )
+    return result
 
 
 def take_static_crop(

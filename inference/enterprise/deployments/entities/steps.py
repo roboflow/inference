@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, validator
 
 from inference.enterprise.deployments.entities.base import GraphNone
 from inference.enterprise.deployments.entities.validators import (
-    get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
     validate_field_is_in_range_zero_one_or_selector,

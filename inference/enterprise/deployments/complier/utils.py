@@ -73,6 +73,12 @@ def is_input_selector(selector_or_value: Any) -> bool:
     return selector_or_value.startswith("$inputs")
 
 
+def construct_selector_to_step_output(selector: str, new_output: str) -> str:
+    if is_step_output_selector(selector_or_value=selector):
+        selector = get_step_selector_from_its_output(step_output_selector=selector)
+    return f"{selector}.{new_output}"
+
+
 def is_step_output_selector(selector_or_value: Any) -> bool:
     if not is_selector(selector_or_value=selector_or_value):
         return False
