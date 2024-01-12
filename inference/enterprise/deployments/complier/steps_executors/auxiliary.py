@@ -2,6 +2,7 @@ import itertools
 from copy import deepcopy
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 import numpy as np
 
@@ -65,20 +66,33 @@ async def run_crop_step(
     )
     if issubclass(type(image), list):
         decoded_image = [load_image(e) for e in image]
+        origin_image_shape = [
+            meta["origin_coordinates"]["size"]
+            if issubclass(type(meta), dict) and "origin_coordinates" in meta
+            else {"height": decoded[0].shape[0], "width": decoded[0].shape[1]}
+            for meta, decoded in zip(image, decoded_image)
+        ]
         decoded_image = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_image
         ]
         crops = list(
             itertools.chain.from_iterable(
-                crop_image(image=i, detections=d)
-                for i, d in zip(decoded_image, detections)
+                crop_image(image=i, detections=d, origin_size=o)
+                for i, d, o in zip(decoded_image, detections, origin_image_shape)
             )
         )
     else:
         decoded_image, is_bgr = load_image(image)
+        origin_image_shape = (
+            image["origin_coordinates"]["size"]
+            if issubclass(type(image), dict) and "origin_coordinates" in image
+            else {"height": decoded_image.shape[0], "width": decoded_image.shape[1]}
+        )
         if not is_bgr:
             decoded_image = decoded_image[:, :, ::-1]
-        crops = crop_image(image=decoded_image, detections=detections)
+        crops = crop_image(
+            image=decoded_image, detections=detections, origin_size=origin_image_shape
+        )
     parent_ids = [c["parent_id"] for c in crops]
     outputs_lookup[construct_step_selector(step_name=step.name)] = {
         "crops": crops,
@@ -90,6 +104,7 @@ async def run_crop_step(
 def crop_image(
     image: np.ndarray,
     detections: List[dict],
+    origin_size: dict,
 ) -> List[Dict[str, Union[str, np.ndarray]]]:
     crops = []
     for detection in detections:
@@ -103,6 +118,11 @@ def crop_image(
                 "type": ImageType.NUMPY_OBJECT.value,
                 "value": cropped_image,
                 "parent_id": detection["detection_id"],
+                "origin_coordinates": {
+                    "center_x": detection["x"],
+                    "center_y": detection["y"],
+                    "size": origin_size,
+                },
             }
         )
     return crops
@@ -142,6 +162,14 @@ async def run_detection_filter(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    chunks = step.predictions.split(".")[:2]
+    chunks.append("image")
+    images_meta_selector = ".".join(chunks)
+    images_meta = resolve_parameter(
+        selector_or_value=images_meta_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     filter_callable = build_filter_callable(definition=step.filter_definition)
     result_detections, result_parent_id = [], []
     nested = False
@@ -159,13 +187,14 @@ async def run_detection_filter(
     step_selector = construct_step_selector(step_name=step.name)
     if nested:
         outputs_lookup[step_selector] = [
-            {"predictions": d, "parent_id": p}
-            for d, p in zip(result_detections, result_parent_id)
+            {"predictions": d, "parent_id": p, "image": i}
+            for d, p, i in zip(result_detections, result_parent_id, images_meta)
         ]
     else:
         outputs_lookup[step_selector] = {
             "predictions": result_detections,
             "parent_id": result_parent_id,
+            "image": images_meta,
         }
     return None, outputs_lookup
 
@@ -195,6 +224,14 @@ async def run_detection_offset_step(
 ) -> Tuple[NextStepReference, OutputsLookup]:
     detections = resolve_parameter(
         selector_or_value=step.predictions,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    chunks = step.predictions.split(".")[:2]
+    chunks.append("image")
+    images_meta_selector = ".".join(chunks)
+    images_meta = resolve_parameter(
+        selector_or_value=images_meta_selector,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
@@ -229,13 +266,14 @@ async def run_detection_offset_step(
     step_selector = construct_step_selector(step_name=step.name)
     if nested:
         outputs_lookup[step_selector] = [
-            {"predictions": d, "parent_id": p}
-            for d, p in zip(result_detections, result_parent_id)
+            {"predictions": d, "parent_id": p, "image": i}
+            for d, p, i in zip(result_detections, result_parent_id, images_meta)
         ]
     else:
         outputs_lookup[step_selector] = {
             "predictions": result_detections,
             "parent_id": result_parent_id,
+            "image": images_meta,
         }
     return None, outputs_lookup
 
@@ -246,6 +284,8 @@ def offset_detection(
     detection_copy = deepcopy(detection)
     detection_copy["width"] += round(offset_x)
     detection_copy["height"] += round(offset_y)
+    detection_copy["parent_id"] = detection_copy["detection_id"]
+    detection_copy["detection_id"] = str(uuid4())
     return detection_copy
 
 
@@ -267,24 +307,37 @@ async def run_static_crop_step(
         decoded_image = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_image
         ]
+        origin_image_shape = [
+            meta["origin_coordinates"]["size"]
+            if issubclass(type(meta), dict) and "origin_coordinates" in meta
+            else {"height": decoded[0].shape[0], "width": decoded[0].shape[1]}
+            for meta, decoded in zip(image, decoded_image)
+        ]
         crops = [
             take_static_crop(
                 image=i,
                 crop=step,
                 runtime_parameters=runtime_parameters,
                 outputs_lookup=outputs_lookup,
+                origin_size=size,
             )
-            for i in decoded_image
+            for i, size in zip(decoded_image, origin_image_shape)
         ]
     else:
         decoded_image, is_bgr = load_image(image)
         if not is_bgr:
             decoded_image = decoded_image[:, :, ::-1]
+        origin_image_shape = (
+            image["origin_coordinates"]["size"]
+            if issubclass(type(image), dict) and "origin_coordinates" in image
+            else {"height": decoded_image.shape[0], "width": decoded_image.shape[1]}
+        )
         crops = take_static_crop(
             image=decoded_image,
             crop=step,
             runtime_parameters=runtime_parameters,
             outputs_lookup=outputs_lookup,
+            origin_size=origin_image_shape,
         )
     parent_ids = [c["parent_id"] for c in crops]
     outputs_lookup[construct_step_selector(step_name=step.name)] = {
@@ -299,12 +352,14 @@ def take_static_crop(
     crop: Union[AbsoluteStaticCrop, RelativeStaticCrop],
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
+    origin_size: dict,
 ) -> Dict[str, Union[str, np.ndarray]]:
     resolve_parameter_closure = partial(
         resolve_parameter,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    x_center = resolve_parameter_closure(crop.x_center)
     x_center = resolve_parameter_closure(crop.x_center)
     y_center = resolve_parameter_closure(crop.y_center)
     width = resolve_parameter_closure(crop.width)
@@ -323,4 +378,9 @@ def take_static_crop(
         "type": ImageType.NUMPY_OBJECT.value,
         "value": cropped_image,
         "parent_id": f"$steps.{crop.name}",
+        "origin_coordinates": {
+            "center_x": x_center,
+            "center_y": y_center,
+            "size": origin_size,
+        },
     }

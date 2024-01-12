@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -67,12 +68,18 @@ async def run_roboflow_model_step(
         serialised_result = result.dict()
     if issubclass(type(serialised_result), list) and len(serialised_result) == 1:
         serialised_result = serialised_result[0]
+    if issubclass(type(image), list) and len(image) == 1:
+        image = image[0]
     if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
         serialised_result = attach_parent_info(
             image=image, results=serialised_result, nested_key=None
         )
     else:
         serialised_result = attach_parent_info(image=image, results=serialised_result)
+        serialised_result = anchor_detections_in_parent_coordinates(
+            image=image,
+            serialised_result=serialised_result,
+        )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -313,3 +320,54 @@ def attach_parent_info_to_image_detections(
     for prediction in predictions[nested_key]:
         prediction["parent_id"] = image["parent_id"]
     return predictions
+
+
+def anchor_detections_in_parent_coordinates(
+    image: Union[Dict[str, Any], List[Dict[str, Any]]],
+    serialised_result: Union[Dict[str, Any], List[Dict[str, Any]]],
+    image_metadata_key: str = "image",
+    detections_key: str = "predictions",
+) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    if issubclass(type(image), dict):
+        return anchor_image_detections_in_parent_coordinates(
+            image=image,
+            serialised_result=serialised_result,
+            image_metadata_key=image_metadata_key,
+            detections_key=detections_key,
+        )
+    return [
+        anchor_image_detections_in_parent_coordinates(
+            image=i,
+            serialised_result=d,
+            image_metadata_key=image_metadata_key,
+            detections_key=detections_key,
+        )
+        for i, d in zip(image, serialised_result)
+    ]
+
+
+def anchor_image_detections_in_parent_coordinates(
+    image: Dict[str, Any],
+    serialised_result: Dict[str, Any],
+    image_metadata_key: str = "image",
+    detections_key: str = "predictions",
+) -> Dict[str, Any]:
+    serialised_result[f"{detections_key}_parent_coordinates"] = deepcopy(
+        serialised_result[detections_key]
+    )
+    serialised_result[f"{image_metadata_key}_parent_coordinates"] = deepcopy(
+        serialised_result[image_metadata_key]
+    )
+    if "origin_coordinates" not in image:
+        return serialised_result
+    shift_x, shift_y = (
+        image["origin_coordinates"]["center_x"],
+        image["origin_coordinates"]["center_y"],
+    )
+    for detection in serialised_result[f"{detections_key}_parent_coordinates"]:
+        detection["x"] += shift_x
+        detection["y"] += shift_y
+    serialised_result[f"{image_metadata_key}_parent_coordinates"] = image[
+        "origin_coordinates"
+    ]["size"]
+    return serialised_result

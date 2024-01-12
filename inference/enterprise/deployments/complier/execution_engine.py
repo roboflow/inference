@@ -26,6 +26,7 @@ from inference.enterprise.deployments.complier.utils import (
     is_step_output_selector,
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.deployments.entities.outputs import CoordinatesSystem
 from inference.enterprise.deployments.entities.steps import get_last_selector_chunk
 
 STEP_TYPE2EXECUTOR_MAPPING = {
@@ -92,19 +93,37 @@ async def execute_graph(
     )
     result = {}
     for node in output_nodes:
-        node_selector = execution_graph.nodes[node]["definition"].selector
+        node_definition = execution_graph.nodes[node]["definition"]
+        fallback_selector = None
+        node_selector = node_definition.selector
+        if node_definition.coordinates_system is CoordinatesSystem.PARENT:
+            fallback_selector = node_selector
+            node_selector = f"{node_selector}_parent_coordinates"
         if not is_step_output_selector(selector_or_value=node_selector):
             raise RuntimeError("TODO CHECK IF OUTPUTS ARE DEFINED ONLY AMONG STEPS!")
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node_selector
         )
         step_field = get_last_selector_chunk(selector=node_selector)
+        fallback_step_field = (
+            None
+            if fallback_selector is None
+            else get_last_selector_chunk(selector=fallback_selector)
+        )
         step_result = outputs_lookup.get(step_selector)
         if step_result is not None:
             if issubclass(type(step_result), list):
-                step_result = [e[step_field] for e in step_result]
+                step_result = [
+                    e.get(step_field, e.get(fallback_step_field)) for e in step_result
+                ]
+                if any(e is None for e in step_result):
+                    raise RuntimeError("TODO")
             else:
-                step_result = step_result[step_field]
+                step_result = step_result.get(
+                    step_field, step_result.get(fallback_step_field)
+                )
+                if step_result is None:
+                    raise RuntimeError("TODO")
         result[execution_graph.nodes[node]["definition"].name] = step_result
     return result
 

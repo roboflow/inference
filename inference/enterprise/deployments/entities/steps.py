@@ -302,7 +302,7 @@ class ObjectDetectionModel(RoboflowModel):
 
     def get_output_names(self) -> Set[str]:
         outputs = super().get_output_names()
-        outputs.update(["predictions", "parent_id"])
+        outputs.update(["predictions", "parent_id", "image"])
         return outputs
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
@@ -674,7 +674,7 @@ class DetectionFilter(BaseModel, StepInterface):
         return {"predictions"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id"}
+        return {"predictions", "parent_id", "image"}
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
@@ -714,7 +714,7 @@ class DetectionOffset(BaseModel, StepInterface):
         return {"predictions", "offset_x", "offset_y"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id"}
+        return {"predictions", "parent_id", "image"}
 
     def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
