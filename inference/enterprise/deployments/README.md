@@ -312,3 +312,79 @@ This step represents inference from OCR model.
 * `result` - details of predictions
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+
+#### `Crop`
+This step produces **dynamic** crops based on detections from detections-based model.
+
+##### Step parameters
+* `type`: must be `Crop` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `detections`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+
+##### Step outputs:
+* `crops` - `image` cropped based on `detections`
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+
+
+#### `Condition`
+This step is responsible for flow-control in execution graph based on the condition defined in its body.
+As for now, only capable to make conditions based on output of binary operators that takes two operands.
+
+##### Step parameters
+* `type`: must be `Condition` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `left`: left operand of `operator`, can be actual value, reference to input or step output (required)
+* `right`: left operand of `operator`, can be actual value, reference to input or step output (required)
+* `operator`: one of `equal`, `not_equal`, `lower_than`, `greater_than`, `lower_or_equal_than`, `greater_or_equal_than`
+or `in` (required)
+* `step_if_true`: reference to the step that will be executed if condition is true (required)
+* `step_if_false`: reference to the step that will be executed if condition is false (required)
+
+
+#### `DetectionFilter`
+This step is responsible for filtering detections based predictions based on conditions defined.
+
+##### Step parameters
+* `type`: must be `Condition` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+* `filter_definition`: definition of the filter (required)
+
+Filter definition can be either `DetectionFilterDefinition`
+```json
+{
+  "type": "DetectionFilterDefinition",
+  "field_name": "confidence",
+  "operator": "greater_or_equal_than",
+  "reference_value": 0.2
+}
+```
+or `CompoundDetectionFilterDefinition`
+```json
+{
+    "type": "CompoundDetectionFilterDefinition",
+    "left": {
+        "type": "DetectionFilterDefinition",
+        "field_name": "class_name",
+        "operator": "equal",
+        "reference_value": "car"
+    },
+    "operator": "and",
+    "right": {
+        "type": "DetectionFilterDefinition",
+        "field_name": "confidence",
+        "operator": "greater_or_equal_than",
+        "reference_value": 0.2
+    }
+}
+```
+
+where `DetectionFilterDefinition` uses binary operator and the left operand is detection field pointed by `field_name`
+and right operand is `reference_value`.
+In case if `CompoundDetectionFilterDefinition`, logical operators `or`, `and` can be used to combine simple filters.
+This let user define recursive structure of filters.
