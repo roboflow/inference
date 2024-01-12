@@ -11,6 +11,13 @@ from inference.core.entities.requests.inference import (
     ObjectDetectionInferenceRequest,
 )
 from inference.core.managers.base import ModelManager
+from inference.enterprise.deployments.complier.steps_executors.constants import (
+    CENTER_X_KEY,
+    CENTER_Y_KEY,
+    ORIGIN_COORDINATES_KEY,
+    PARENT_COORDINATES_SUFFIX,
+    SIZE_KEY,
+)
 from inference.enterprise.deployments.complier.steps_executors.types import (
     NextStepReference,
     OutputsLookup,
@@ -352,22 +359,22 @@ def anchor_image_detections_in_parent_coordinates(
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
 ) -> Dict[str, Any]:
-    serialised_result[f"{detections_key}_parent_coordinates"] = deepcopy(
+    serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
         serialised_result[detections_key]
     )
-    serialised_result[f"{image_metadata_key}_parent_coordinates"] = deepcopy(
+    serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
         serialised_result[image_metadata_key]
     )
-    if "origin_coordinates" not in image:
+    if ORIGIN_COORDINATES_KEY not in image:
         return serialised_result
     shift_x, shift_y = (
-        image["origin_coordinates"]["center_x"],
-        image["origin_coordinates"]["center_y"],
+        image[ORIGIN_COORDINATES_KEY][CENTER_X_KEY],
+        image[ORIGIN_COORDINATES_KEY][CENTER_Y_KEY],
     )
-    for detection in serialised_result[f"{detections_key}_parent_coordinates"]:
+    for detection in serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
         detection["x"] += shift_x
         detection["y"] += shift_y
-    serialised_result[f"{image_metadata_key}_parent_coordinates"] = image[
-        "origin_coordinates"
-    ]["size"]
+    serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
+        ORIGIN_COORDINATES_KEY
+    ][SIZE_KEY]
     return serialised_result

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import networkx as nx
 from networkx import DiGraph
@@ -14,6 +14,9 @@ from inference.enterprise.deployments.complier.steps_executors.auxiliary import 
     run_detection_offset_step,
     run_static_crop_step,
 )
+from inference.enterprise.deployments.complier.steps_executors.constants import (
+    PARENT_COORDINATES_SUFFIX,
+)
 from inference.enterprise.deployments.complier.steps_executors.models import (
     run_clip_comparison_step,
     run_ocr_model_step,
@@ -23,11 +26,11 @@ from inference.enterprise.deployments.complier.utils import (
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
     is_condition_step,
-    is_step_output_selector,
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.deployments.entities.outputs import CoordinatesSystem
 from inference.enterprise.deployments.entities.validators import get_last_selector_chunk
+from inference.enterprise.deployments.errors import DeploymentCompilerRuntimeError
 
 STEP_TYPE2EXECUTOR_MAPPING = {
     "ClassificationModel": run_roboflow_model_step,
@@ -88,6 +91,24 @@ async def execute_graph(
                     source=execution_graph.nodes[step]["definition"].step_if_true,
                 )
             nodes_excluded_by_conditional_execution.update(nodes_to_discard)
+    return construct_response(
+        execution_graph=execution_graph, outputs_lookup=outputs_lookup
+    )
+
+
+def get_all_nodes_in_execution_path(
+    execution_graph: DiGraph,
+    source: str,
+) -> Set[str]:
+    nodes = set(execution_graph.successors(source))
+    nodes.add(source)
+    return nodes
+
+
+def construct_response(
+    execution_graph: nx.DiGraph,
+    outputs_lookup: Dict[str, Any],
+) -> Dict[str, Any]:
     output_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
     )
@@ -98,9 +119,7 @@ async def execute_graph(
         node_selector = node_definition.selector
         if node_definition.coordinates_system is CoordinatesSystem.PARENT:
             fallback_selector = node_selector
-            node_selector = f"{node_selector}_parent_coordinates"
-        if not is_step_output_selector(selector_or_value=node_selector):
-            raise RuntimeError("TODO CHECK IF OUTPUTS ARE DEFINED ONLY AMONG STEPS!")
+            node_selector = f"{node_selector}{PARENT_COORDINATES_SUFFIX}"
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node_selector
         )
@@ -113,25 +132,49 @@ async def execute_graph(
         step_result = outputs_lookup.get(step_selector)
         if step_result is not None:
             if issubclass(type(step_result), list):
-                step_result = [
-                    e.get(step_field, e.get(fallback_step_field)) for e in step_result
-                ]
-                if any(e is None for e in step_result):
-                    raise RuntimeError("TODO")
-            else:
-                step_result = step_result.get(
-                    step_field, step_result.get(fallback_step_field)
+                step_result = extract_step_result_from_list(
+                    result=step_result,
+                    step_field=step_field,
+                    fallback_step_field=fallback_step_field,
+                    step_selector=step_selector,
                 )
-                if step_result is None:
-                    raise RuntimeError("TODO")
+            else:
+                step_result = extract_step_result_from_dict(
+                    result=step_result,
+                    step_field=step_field,
+                    fallback_step_field=fallback_step_field,
+                    step_selector=step_selector,
+                )
         result[execution_graph.nodes[node]["definition"].name] = step_result
     return result
 
 
-def get_all_nodes_in_execution_path(
-    execution_graph: DiGraph,
-    source: str,
-) -> Set[str]:
-    nodes = set(execution_graph.successors(source))
-    nodes.add(source)
-    return nodes
+def extract_step_result_from_list(
+    result: List[Dict[str, Any]],
+    step_field: str,
+    fallback_step_field: Optional[str],
+    step_selector: str,
+) -> List[Any]:
+    return [
+        extract_step_result_from_dict(
+            result=element,
+            step_field=step_field,
+            fallback_step_field=fallback_step_field,
+            step_selector=step_selector,
+        )
+        for element in result
+    ]
+
+
+def extract_step_result_from_dict(
+    result: Dict[str, Any],
+    step_field: str,
+    fallback_step_field: Optional[str],
+    step_selector: str,
+) -> Any:
+    step_result = result.get(step_field, result.get(fallback_step_field))
+    if step_result is None:
+        raise DeploymentCompilerRuntimeError(
+            f"Cannot find neither field {step_field} nor {fallback_step_field} in result of step {step_selector}"
+        )
+    return step_result

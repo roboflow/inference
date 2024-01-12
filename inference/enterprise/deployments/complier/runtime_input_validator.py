@@ -3,6 +3,12 @@ from typing import Any, Dict, Optional, Set, Union
 import numpy as np
 from networkx import DiGraph
 
+from inference.core.utils.image_utils import ImageType
+from inference.enterprise.deployments.complier.steps_executors.constants import (
+    IMAGE_TYPE_KEY,
+    IMAGE_VALUE_KEY,
+    PARENT_ID_KEY,
+)
 from inference.enterprise.deployments.complier.utils import (
     get_nodes_of_specific_kind,
     is_input_selector,
@@ -138,9 +144,9 @@ def assembly_input_image(
         return image
     if issubclass(type(image), np.ndarray):
         return {
-            "type": "numpy_object",
-            "value": image,
-            "parent_id": parent,
+            IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
+            IMAGE_VALUE_KEY: image,
+            PARENT_ID_KEY: parent,
         }
     raise InvalidStepInputDetected(
         f"Detected runtime parameter `{parameter}` defined as `InferenceImage` with type {type(image)} that is invalid."
