@@ -116,6 +116,7 @@ In the following example, we create a pipeline that at first makes classificatio
 `step_4` will be used otherwise).
 Result is build from the outputs of all models. Always one of field `step_3_predictions` and `step_4_predictions` will
 be empty due to conditional execution.
+![example pipeline](./assets/example_pipeline.jpg)
 ```json
 {
     "specification": {
