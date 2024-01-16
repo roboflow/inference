@@ -25,19 +25,19 @@ from inference import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
 
 pipeline = InferencePipeline.init(
-    model_id="rock-paper-scissors-sxsw/11",
-    video_reference=0,
-    on_prediction=render_boxes,
+    model_id="rock-paper-scissors-sxsw/11", # Roboflow model to use
+    video_reference=0, # Path to video, Webcam stream id (int), or RTSP stream url
+    on_prediction=render_boxes, # Function to run on each frame/prediction pair
 )
 pipeline.start()
 pipeline.join()
 ```
 
-This code will run a model on frames from a webcam stream. To use RTSP, set the `source` value to an RTSP stream URL. To use video, set the `source` value to a video file path.
+This code will run a model on frames from a webcam stream. To use RTSP, set the `video_reference` value to an RTSP stream URL. To use video, set the `video_reference` value to a video file path.
 
 Predictions are annotated using the `render_boxes` helper function. You can specify any function to process each prediction in the `on_prediction` parameter.
 
-Replace `rock-paper-scissors-sxsw/11` with the model ID associated with the mode you want to run.
+Replace `rock-paper-scissors-sxsw/11` with the model ID associated with the model you want to run.
 
 Then, run the Python script:
 
@@ -63,9 +63,9 @@ This function provides two parameters:
 
 - `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
 - `video_frame`: A dataclass that contains:
-  - `image`: The video frame as a NumPy array,
-  - `frame_id`: The frame ID, and;
-  - `frame_timestamp`: The timestamp of the frame.
+    - `image`: The video frame as a NumPy array,
+    - `frame_id`: The frame ID, and;
+    - `frame_timestamp`: The timestamp of the frame.
 
 For example, you can use the following code to print the predictions to the console:
 
