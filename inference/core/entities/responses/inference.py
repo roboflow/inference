@@ -1,6 +1,5 @@
 import base64
 from typing import Any, Dict, List, Optional, Union
-from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -39,10 +38,6 @@ class ObjectDetectionPrediction(BaseModel):
     tracker_id: Optional[int] = Field(
         description="The tracker id of the prediction if tracking is enabled",
         default=None,
-    )
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
     )
 
 
@@ -103,10 +98,6 @@ class InstanceSegmentationPrediction(BaseModel):
         description="The list of points that make up the instance polygon"
     )
     class_id: int = Field(description="The class id of the prediction")
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
-    )
 
 
 class ClassificationPrediction(BaseModel):
