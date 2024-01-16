@@ -93,6 +93,7 @@ def _random_char(y):
     return ''.join(random.choice(string.ascii_lowercase) for x in range(y))
 
 def undeploy(cluster_name):
+    print(f"Undeploying Roboflow Inference from {cluster_name}, this may take a few minutes.")
     sky.down(cluster_name)
     print(f"Undeployed Roboflow Inference from {cluster_name}")
 
@@ -161,17 +162,13 @@ def deploy(provider, compute_type, dry_run, custom, help):
     print("Please be patient, this process can take up to 20 minutes.")
     sky.launch(task, cluster_name=cluster_name)
     
-    print(f"Deployed Roboflow Inference to {provider} on {compute_type} ") 
-    print(f"Your cluster name is {cluster_name}")
+    print(f"Deployed Roboflow Inference to {provider} on {compute_type}, deployment name is {cluster_name} ") 
     cluster_ip = sky.status(cluster_name)[0]['handle'].head_ip
-    print(f"To control your Roboflow Inference Service, use the following sky commands:")
-    print ("To get details about your cluster")
-    print(f"sky status {cluster_name}")
-    print ("To ssh into the cluster")
-    print(f"ssh {cluster_name}")
-    print ("To delete your cluster")
-    print (f"sky down {cluster_name}")
-    print ("To get more information about sky cli options, visit https://skypilot.readthedocs.io/en/latest/reference/cli.html")
-    print ("!!!") 
+    
+    print(f"To control your deployment, use the following sky commands:")
+    print(f"To get details about your deployment: sky status {cluster_name}")
+    print(f"To ssh into the deployment server: ssh {cluster_name}")
+    print("To get more information about sky cli options, visit https://skypilot.readthedocs.io/en/latest/reference/cli.html")
+    print (f"To delete your deplyment: inference undeploy {cluster_name}")
     print(f"The Roboflow Inference Server is running at http://{cluster_ip}:9001")
     
