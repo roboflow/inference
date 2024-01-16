@@ -19,21 +19,26 @@ from inference.enterprise.deployments.constants import (
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1, InputType, StepType
+from inference.enterprise.deployments.entities.deployment_specs import (
+    DeploymentSpecV1,
+    InputType,
+    StepType,
+)
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.validators import is_selector
 from inference.enterprise.deployments.errors import (
     AmbiguousPathDetected,
     NodesNotReachingOutputError,
     NotAcyclicGraphError,
+    SelectorToUndefinedNodeError,
 )
 
 
-def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
+def prepare_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
     execution_graph = construct_graph(deployment_spec=deployment_spec)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
-    verify_each_node_reachable_from_at_least_one_output(execution_graph=execution_graph)
+    verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
     verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     verify_that_steps_are_connected_with_compatible_inputs(
         execution_graph=execution_graph
@@ -114,7 +119,17 @@ def add_steps_edges(
             step_selector=step_selector,
         )
         if step.type == "Condition":
+            verify_edge_is_created_between_existing_nodes(
+                execution_graph=execution_graph,
+                start=step_selector,
+                end=step.step_if_true,
+            )
             execution_graph.add_edge(step_selector, step.step_if_true)
+            verify_edge_is_created_between_existing_nodes(
+                execution_graph=execution_graph,
+                start=step_selector,
+                end=step.step_if_false,
+            )
             execution_graph.add_edge(step_selector, step.step_if_false)
     return execution_graph
 
@@ -129,6 +144,11 @@ def add_edges_for_step_inputs(
             input_selector = get_step_selector_from_its_output(
                 step_output_selector=input_selector
             )
+        verify_edge_is_created_between_existing_nodes(
+            execution_graph=execution_graph,
+            start=input_selector,
+            end=step_selector,
+        )
         execution_graph.add_edge(input_selector, step_selector)
     return execution_graph
 
@@ -143,22 +163,43 @@ def add_edges_for_outputs(
             output_selector = get_step_selector_from_its_output(
                 step_output_selector=output_selector
             )
-        execution_graph.add_edge(
-            output_selector, construct_output_name(name=output.name)
+        output_name = construct_output_name(name=output.name)
+        verify_edge_is_created_between_existing_nodes(
+            execution_graph=execution_graph,
+            start=output_selector,
+            end=output_name,
         )
+        execution_graph.add_edge(output_selector, output_name)
     return execution_graph
 
 
-def verify_each_node_reachable_from_at_least_one_output(
+def verify_edge_is_created_between_existing_nodes(
+    execution_graph: DiGraph,
+    start: str,
+    end: str,
+) -> None:
+    if not execution_graph.has_node(start):
+        raise SelectorToUndefinedNodeError(
+            f"Graph definition contains selector {start} that points to not defined element."
+        )
+    if not execution_graph.has_node(end):
+        raise SelectorToUndefinedNodeError(
+            f"Graph definition contains selector {end} that points to not defined element."
+        )
+
+
+def verify_each_node_reach_at_least_one_output(
     execution_graph: DiGraph,
 ) -> None:
     all_nodes = set(execution_graph.nodes())
     output_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
     )
-    nodes_reaching_output = get_nodes_that_reach_pointed_ones(
-        execution_graph=execution_graph,
-        pointed_nodes=output_nodes,
+    nodes_reaching_output = (
+        get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
+            execution_graph=execution_graph,
+            pointed_nodes=output_nodes,
+        )
     )
     nodes_not_reaching_output = all_nodes.difference(nodes_reaching_output)
     if len(nodes_not_reaching_output) > 0:
@@ -168,12 +209,12 @@ def verify_each_node_reachable_from_at_least_one_output(
         )
 
 
-def get_nodes_that_reach_pointed_ones(
+def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
     execution_graph: DiGraph,
     pointed_nodes: Set[str],
 ) -> Set[str]:
     result = set()
-    reversed_graph = execution_graph.reverse()
+    reversed_graph = execution_graph.reverse(copy=True)
     for pointed_node in pointed_nodes:
         nodes_reaching_pointed_one = list(
             nx.dfs_postorder_nodes(reversed_graph, pointed_node)

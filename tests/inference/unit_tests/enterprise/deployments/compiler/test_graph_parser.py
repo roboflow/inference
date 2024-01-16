@@ -1,10 +1,14 @@
 import networkx as nx
+import pytest
 
 from inference.enterprise.deployments.complier.graph_parser import (
     add_input_nodes_for_graph,
     add_output_nodes_for_graph,
     add_steps_nodes_for_graph,
     construct_graph,
+    get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph,
+    prepare_execution_graph,
+    verify_each_node_reach_at_least_one_output,
 )
 from inference.enterprise.deployments.constants import (
     INPUT_NODE_KIND,
@@ -18,6 +22,11 @@ from inference.enterprise.deployments.entities.inputs import (
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
+from inference.enterprise.deployments.errors import (
+    NodesNotReachingOutputError,
+    NotAcyclicGraphError,
+    SelectorToUndefinedNodeError,
+)
 
 
 def test_add_input_nodes_for_graph() -> None:
@@ -224,3 +233,182 @@ def test_construct_graph() -> None:
         "$steps.step_4", "$outputs.step_4_predictions"
     ), "Step 4 must be connected to step_4_predictions output"
     assert len(result.edges) == 10, "10 edges in total should be created"
+
+
+def test_verify_each_node_reach_at_least_one_output_when_graph_is_valid() -> None:
+    # given
+    execution_graph = nx.DiGraph()
+    execution_graph.add_node("a", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("b", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("c", kind=STEP_NODE_KIND)
+    execution_graph.add_node("d", kind=STEP_NODE_KIND)
+    execution_graph.add_node("e", kind=OUTPUT_NODE_KIND)
+    execution_graph.add_node("f", kind=OUTPUT_NODE_KIND)
+    execution_graph.add_edge("a", "c")
+    execution_graph.add_edge("b", "d")
+    execution_graph.add_edge("c", "e")
+    execution_graph.add_edge("d", "f")
+
+    # when
+    verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
+
+    # then - no error raised
+
+
+def test_verify_each_node_reach_at_least_one_output_when_graph_is_invalid() -> None:
+    # given
+    execution_graph = nx.DiGraph()
+    execution_graph.add_node("a", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("b", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("c", kind=STEP_NODE_KIND)
+    execution_graph.add_node("d", kind=STEP_NODE_KIND)
+    execution_graph.add_node("e", kind=OUTPUT_NODE_KIND)
+    execution_graph.add_edge("a", "c")
+    execution_graph.add_edge("b", "d")
+    execution_graph.add_edge("c", "e")
+
+    # when
+    with pytest.raises(NodesNotReachingOutputError):
+        verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
+
+
+def test_get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph() -> None:
+    # given
+    execution_graph = nx.DiGraph()
+    execution_graph.add_node("a", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("b", kind=INPUT_NODE_KIND)
+    execution_graph.add_node("c", kind=STEP_NODE_KIND)
+    execution_graph.add_node("d", kind=STEP_NODE_KIND)
+    execution_graph.add_node("e", kind=OUTPUT_NODE_KIND)
+    execution_graph.add_node("f", kind=OUTPUT_NODE_KIND)
+    execution_graph.add_edge("a", "c")
+    execution_graph.add_edge("b", "d")
+    execution_graph.add_edge("c", "e")
+    execution_graph.add_edge("d", "f")
+
+    # when
+    reachable_from_e = get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
+        execution_graph=execution_graph, pointed_nodes={"e"}
+    )
+    reachable_from_f = get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
+        execution_graph=execution_graph, pointed_nodes={"f"}
+    )
+
+    # then
+    assert reachable_from_e == {
+        "e",
+        "c",
+        "a",
+    }, "Nodes a, c, e are reachable in reversed graph from e"
+    assert reachable_from_f == {
+        "f",
+        "d",
+        "b",
+    }, "Nodes b, d, f are reachable in reversed graph from f"
+
+
+def test_prepare_execution_graph_when_step_parameter_contains_undefined_reference() -> None:
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+            ],
+            "steps": [
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_1",
+                    "image": "$steps.step_2.crops",
+                    "model_id": "vehicle-classification-eapcd/2",
+                    "confidence": "$inputs.confidence"
+                },
+
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "predictions",
+                    "selector": "$steps.step_1.predictions",
+                },
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(SelectorToUndefinedNodeError):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+
+
+def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+            ],
+            "steps": [
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_1",
+                    "image": "$steps.step_2.crops",
+                    "model_id": "vehicle-classification-eapcd/2",
+                },
+                {
+                    "type": "Crop",
+                    "name": "step_2",
+                    "image": "$inputs.image",
+                    "detections": "$steps.step_1.predictions"
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "crops",
+                    "selector": "$steps.step_2.crops",
+                },
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(NotAcyclicGraphError):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+
+
+def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None:
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+            ],
+            "steps": [
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "vehicle-classification-eapcd/2",
+                },
+                {
+                    "type": "Crop",
+                    "name": "step_2",
+                    "image": "$inputs.image",
+                    "detections": "$steps.step_1.predictions"
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "predictions",
+                    "selector": "$steps.step_1.predictions",
+                },
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(NodesNotReachingOutputError):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)

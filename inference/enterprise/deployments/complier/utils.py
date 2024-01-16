@@ -4,7 +4,8 @@ from networkx import DiGraph
 
 from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecV1,
-    StepType, InputType,
+    StepType,
+    InputType,
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.validators import is_selector
@@ -22,9 +23,7 @@ def construct_input_selector(input_name: str) -> str:
 
 
 def get_steps_selectors(steps: List[StepType]) -> Set[str]:
-    return {
-        construct_step_selector(step_name=step.name) for step in steps
-    }
+    return {construct_step_selector(step_name=step.name) for step in steps}
 
 
 def construct_step_selector(step_name: str) -> str:
@@ -55,9 +54,7 @@ def get_steps_output_selectors(steps: List[StepType]) -> Set[str]:
 
 
 def get_output_names(outputs: List[JsonField]) -> Set[str]:
-    return {
-        construct_output_name(name=output.name) for output in outputs
-    }
+    return {construct_output_name(name=output.name) for output in outputs}
 
 
 def construct_output_name(name: str) -> str:

@@ -22,6 +22,10 @@ class ExecutionGraphError(DeploymentCompilerError):
     pass
 
 
+class SelectorToUndefinedNodeError(ExecutionGraphError):
+    pass
+
+
 class NotAcyclicGraphError(ExecutionGraphError):
     pass
 
