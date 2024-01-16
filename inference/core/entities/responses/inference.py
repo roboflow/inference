@@ -44,10 +44,6 @@ class ObjectDetectionPrediction(BaseModel):
         description="Unique identifier of detection",
         default_factory=lambda: str(uuid4()),
     )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
-        default=None,
-    )
 
 
 class Point(BaseModel):
@@ -110,10 +106,6 @@ class InstanceSegmentationPrediction(BaseModel):
     detection_id: str = Field(
         description="Unique identifier of detection",
         default_factory=lambda: str(uuid4()),
-    )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
-        default=None,
     )
 
 
@@ -258,10 +250,6 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     confidence: float = Field(
         description="The confidence of the top predicted class label"
     )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
-        default=None,
-    )
 
 
 class MultiLabelClassificationInferenceResponse(
@@ -276,10 +264,6 @@ class MultiLabelClassificationInferenceResponse(
 
     predictions: Dict[str, MultiLabelClassificationPrediction]
     predicted_classes: List[str] = Field(description="The list of predicted classes")
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
-        default=None,
-    )
 
 
 class FaceDetectionPrediction(ObjectDetectionPrediction):
