@@ -19,7 +19,8 @@ from inference.enterprise.deployments.constants import (
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
+from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1, InputType, StepType
+from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.validators import is_selector
 from inference.enterprise.deployments.errors import (
     AmbiguousPathDetected,
@@ -29,22 +30,7 @@ from inference.enterprise.deployments.errors import (
 
 
 def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
-    execution_graph = nx.DiGraph()
-    execution_graph = add_input_nodes_for_graph(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
-    )
-    execution_graph = add_steps_nodes_for_graph(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
-    )
-    execution_graph = add_output_nodes_for_graph(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
-    )
-    execution_graph = add_steps_edges(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
-    )
-    execution_graph = add_edges_for_outputs(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
-    )
+    execution_graph = construct_graph(deployment_spec=deployment_spec)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reachable_from_at_least_one_output(execution_graph=execution_graph)
@@ -55,11 +41,30 @@ def construct_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
     return execution_graph
 
 
+def construct_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
+    execution_graph = nx.DiGraph()
+    execution_graph = add_input_nodes_for_graph(
+        inputs=deployment_spec.inputs, execution_graph=execution_graph
+    )
+    execution_graph = add_steps_nodes_for_graph(
+        steps=deployment_spec.steps, execution_graph=execution_graph
+    )
+    execution_graph = add_output_nodes_for_graph(
+        outputs=deployment_spec.outputs, execution_graph=execution_graph
+    )
+    execution_graph = add_steps_edges(
+        deployment_spec=deployment_spec, execution_graph=execution_graph
+    )
+    return add_edges_for_outputs(
+        deployment_spec=deployment_spec, execution_graph=execution_graph
+    )
+
+
 def add_input_nodes_for_graph(
-    deployment_spec: DeploymentSpecV1,
+    inputs: List[InputType],
     execution_graph: DiGraph,
 ) -> DiGraph:
-    for input_spec in deployment_spec.inputs:
+    for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
         execution_graph.add_node(
             input_selector,
@@ -70,10 +75,10 @@ def add_input_nodes_for_graph(
 
 
 def add_steps_nodes_for_graph(
-    deployment_spec: DeploymentSpecV1,
+    steps: List[StepType],
     execution_graph: DiGraph,
 ) -> DiGraph:
-    for step in deployment_spec.steps:
+    for step in steps:
         step_selector = construct_step_selector(step_name=step.name)
         execution_graph.add_node(
             step_selector,
@@ -84,10 +89,10 @@ def add_steps_nodes_for_graph(
 
 
 def add_output_nodes_for_graph(
-    deployment_spec: DeploymentSpecV1,
+    outputs: List[JsonField],
     execution_graph: DiGraph,
 ) -> DiGraph:
-    for output_spec in deployment_spec.outputs:
+    for output_spec in outputs:
         execution_graph.add_node(
             construct_output_name(name=output_spec.name),
             kind=OUTPUT_NODE_KIND,
