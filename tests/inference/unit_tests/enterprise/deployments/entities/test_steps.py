@@ -15,7 +15,7 @@ from inference.enterprise.deployments.entities.steps import (
     InstanceSegmentationModel,
     OCRModel,
     Crop,
-    Condition,
+    Condition, DetectionFilter, DetectionFilterDefinition, Operator, DetectionOffset,
 )
 from inference.enterprise.deployments.errors import (
     InvalidStepInputDetected,
@@ -1461,4 +1461,80 @@ def test_condition_selector_validation_when_invalid_value_is_provided() -> None:
         condition.validate_field_selector(
             field_name="left",
             input_step=InferenceImage(type="InferenceImage", name="detections"),
+        )
+
+
+def test_detection_filter_selector_validation_when_invalid_predictions_are_given() -> None:
+    # given
+    detections_filter = DetectionFilter(
+        type="DetectionFilter",
+        name="some",
+        predictions="$steps.step_a.predictions",
+        filter_definition=DetectionFilterDefinition(
+            type="DetectionFilterDefinition",
+            field_name="confidence",
+            operator=Operator.GREATER_THAN,
+            reference_value=0.3,
+        )
+    )
+
+    # when
+    with pytest.raises(InvalidStepInputDetected):
+        detections_filter.validate_field_selector(
+            field_name="predictions",
+            input_step=InferenceImage(type="InferenceImage", name="detections"),
+        )
+
+
+def test_detections_offset_selector_validation_when_invalid_predictions_are_given() -> None:
+    # given
+    detections_offset = DetectionOffset(
+        type="DetectionOffset",
+        name="some",
+        predictions="$steps.step_a.predictions",
+        offset_x=30,
+        offset_y=40,
+    )
+
+    # when
+    with pytest.raises(InvalidStepInputDetected):
+        detections_offset.validate_field_selector(
+            field_name="predictions",
+            input_step=InferenceImage(type="InferenceImage", name="detections"),
+        )
+
+
+def test_detections_offset_selector_validation_when_invalid_offset_is_given() -> None:
+    # given
+    detections_offset = DetectionOffset(
+        type="DetectionOffset",
+        name="some",
+        predictions="$steps.step_a.predictions",
+        offset_x="$inputs.offset_x",
+        offset_y=40,
+    )
+
+    # when
+    with pytest.raises(InvalidStepInputDetected):
+        detections_offset.validate_field_selector(
+            field_name="offset_x",
+            input_step=InferenceImage(type="InferenceImage", name="detections"),
+        )
+
+
+def test_detections_offset_binding_validation_when_invalid_offset_is_given() -> None:
+    # given
+    detections_offset = DetectionOffset(
+        type="DetectionOffset",
+        name="some",
+        predictions="$steps.step_a.predictions",
+        offset_x="$inputs.offset_x",
+        offset_y=40,
+    )
+
+    # when
+    with pytest.raises(VariableTypeError):
+        detections_offset.validate_field_binding(
+            field_name="offset_x",
+            value="invalid",
         )
