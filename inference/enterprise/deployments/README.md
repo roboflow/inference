@@ -167,6 +167,23 @@ be empty due to conditional execution.
 }
 ```
 
+### The notion of parents in `depoyments`
+Let's imagine a scenario when we have a graph definition that requires inference from object detection model on input 
+image. For each image that we have as an input - there will be most likely several detections. There is nothing that
+prevents us to do something with those detections. For instance, we can crop original image to extract RoIs with objects
+that the model detected. For each crop, we may then apply yet another, specialised object detection model to 
+detect lower resolution details. As you probably know, when `inference` makes prediction, it outputs the coordinates
+of detections scaled to the size of input image. But in this example, the input image is unknown when we start the 
+process - those will be inferred by first model. To make it possible to combine predictions, we introduced `parent_id`
+identifier of prediction. It will be randomly generated string or name of input element that is responsible for 
+certain prediction. 
+
+In our example, each detection from first model will be assigned unique identifier (`detection_id`). This identifier 
+will be a `parent_id` for each prediction that is made based on the crop originated in detection. What is more,
+each output can be `coordinates_system` parameter deciding how to present the result. If `parent` coordinates 
+mode is selected - detections made against crop will be translated to the coordinates of original image that was
+submitted. Thanks to that, results can be easily overlay on the input image (for instance using `supervision` library). 
+
 ### What kind of steps are available?
 
 #### `ClassificationModel`
@@ -349,7 +366,7 @@ or `in` (required)
 This step is responsible for filtering detections based predictions based on conditions defined.
 
 ##### Step parameters
-* `type`: must be `Condition` (required)
+* `type`: must be `DetectionFilter` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
 `KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
@@ -388,3 +405,66 @@ where `DetectionFilterDefinition` uses binary operator and the left operand is d
 and right operand is `reference_value`.
 In case if `CompoundDetectionFilterDefinition`, logical operators `or`, `and` can be used to combine simple filters.
 This let user define recursive structure of filters.
+
+##### Step outputs:
+* `predictions` - details of predictions
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+
+#### `DetectionOffset`
+This step is responsible for applying fixed offset on width and height of detections.
+
+
+##### Step parameters
+* `type`: must be `DetectionOffset` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+* `offset_x`: reference to input parameter of integer value for detection width offset (required)
+* `offset_y`: reference to input parameter of integer value for detection height offset (required)
+
+##### Step outputs:
+* `predictions` - details of predictions
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+
+
+#### `AbsoluteStaticCrop` and `RelativeStaticCrop`
+Responsible for cropping RoIs from images - using absolute coordinates (integer pixel values) or relative coordinates
+(fraction of width and height in range [0.0, 1.0]) respectively.
+
+##### Step parameters
+* `type`: must be `AbsoluteStaticCrop` / `RelativeStaticCrop` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `x_center`: OX center coordinate of crop or reference to `InputParameter` - must be integer for `AbsoluteStaticCrop`
+or float in range [0.0, 1.0] in case of `RelativeStaticCrop`
+* `y_center`: OY center coordinate of crop or reference to `InputParameter` - must be integer for `AbsoluteStaticCrop`
+or float in range [0.0, 1.0] in case of `RelativeStaticCrop`
+* `width`: width of crop or reference to `InputParameter` - must be integer for `AbsoluteStaticCrop`
+or float in range [0.0, 1.0] in case of `RelativeStaticCrop`
+* `height`: height of crop or reference to `InputParameter` - must be integer for `AbsoluteStaticCrop`
+or float in range [0.0, 1.0] in case of `RelativeStaticCrop`
+
+##### Step outputs:
+* `crops` - `image` cropped based on step parameters
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+
+#### `ClipComparison`
+Step to execute comparison of Clip embeddings between image and text.
+
+##### Step parameters
+* `type`: must be `ClipComparison` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `text`: reference to `InputParameter` of list of texts to compare against `image` using Clip model
+
+##### Step outputs:
+* `similarity` - for each element of `image` - list of float values representing similarity to each element of `text`
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
