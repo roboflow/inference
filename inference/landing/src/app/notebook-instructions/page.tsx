@@ -61,7 +61,7 @@ export default function Home() {
                 </div>
           
           <a
-            href="http://localhost:9001/notebook/start"
+            href="notebook/start"
             className="mt-6 w-max flex flex-row text-white items-center justify-center text-sm lg:text-base rounded py-3 px-8 hover:bg-purple-600 transition duration-400  bg-purple-500 "
             target="_blank"
         >Launch Notebook <div className="pl-2 font-bold">→</div>
