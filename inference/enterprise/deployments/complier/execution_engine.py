@@ -100,7 +100,7 @@ def get_all_nodes_in_execution_path(
     execution_graph: DiGraph,
     source: str,
 ) -> Set[str]:
-    nodes = set(execution_graph.successors(source))
+    nodes = set(nx.descendants(execution_graph, source))
     nodes.add(source)
     return nodes
 

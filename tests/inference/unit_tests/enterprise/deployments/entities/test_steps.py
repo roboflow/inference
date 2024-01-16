@@ -15,7 +15,11 @@ from inference.enterprise.deployments.entities.steps import (
     InstanceSegmentationModel,
     OCRModel,
     Crop,
-    Condition, DetectionFilter, DetectionFilterDefinition, Operator, DetectionOffset,
+    Condition,
+    DetectionFilter,
+    DetectionFilterDefinition,
+    Operator,
+    DetectionOffset,
 )
 from inference.enterprise.deployments.errors import (
     InvalidStepInputDetected,
@@ -1464,7 +1468,9 @@ def test_condition_selector_validation_when_invalid_value_is_provided() -> None:
         )
 
 
-def test_detection_filter_selector_validation_when_invalid_predictions_are_given() -> None:
+def test_detection_filter_selector_validation_when_invalid_predictions_are_given() -> (
+    None
+):
     # given
     detections_filter = DetectionFilter(
         type="DetectionFilter",
@@ -1475,7 +1481,7 @@ def test_detection_filter_selector_validation_when_invalid_predictions_are_given
             field_name="confidence",
             operator=Operator.GREATER_THAN,
             reference_value=0.3,
-        )
+        ),
     )
 
     # when
@@ -1486,7 +1492,9 @@ def test_detection_filter_selector_validation_when_invalid_predictions_are_given
         )
 
 
-def test_detections_offset_selector_validation_when_invalid_predictions_are_given() -> None:
+def test_detections_offset_selector_validation_when_invalid_predictions_are_given() -> (
+    None
+):
     # given
     detections_offset = DetectionOffset(
         type="DetectionOffset",

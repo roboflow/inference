@@ -1,12 +1,22 @@
 import pytest
 
-from inference.enterprise.deployments.complier.validator import validate_inputs_names_are_unique, \
-    validate_steps_names_are_unique, validate_outputs_names_are_unique, validate_deployment_spec
+from inference.enterprise.deployments.complier.validator import (
+    validate_inputs_names_are_unique,
+    validate_steps_names_are_unique,
+    validate_outputs_names_are_unique,
+    validate_deployment_spec,
+)
 from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
-from inference.enterprise.deployments.entities.inputs import InferenceImage, InferenceParameter
+from inference.enterprise.deployments.entities.inputs import (
+    InferenceImage,
+    InferenceParameter,
+)
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
-from inference.enterprise.deployments.errors import DuplicatedSymbolError, InvalidReferenceError
+from inference.enterprise.deployments.errors import (
+    DuplicatedSymbolError,
+    InvalidReferenceError,
+)
 
 
 def test_validate_inputs_names_are_unique_when_input_is_valid() -> None:
