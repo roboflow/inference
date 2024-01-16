@@ -7,11 +7,19 @@ from inference.enterprise.deployments.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.steps import ClassificationModel, MultiLabelClassificationModel, \
-    ObjectDetectionModel, KeypointsDetectionModel, InstanceSegmentationModel
+from inference.enterprise.deployments.entities.steps import (
+    ClassificationModel,
+    MultiLabelClassificationModel,
+    ObjectDetectionModel,
+    KeypointsDetectionModel,
+    InstanceSegmentationModel,
+    OCRModel,
+    Crop,
+)
 from inference.enterprise.deployments.errors import (
     InvalidStepInputDetected,
-    ExecutionGraphError, VariableTypeError,
+    ExecutionGraphError,
+    VariableTypeError,
 )
 
 
@@ -201,8 +209,8 @@ def test_classification_model_selector_when_referring_to_field_that_does_not_hol
         ("confidence", 1.1),
         ("image", "some"),
         ("model_id", 38),
-        ("disable_active_learning", "some")
-    ]
+        ("disable_active_learning", "some"),
+    ],
 )
 def test_classification_model_binding_when_parameter_is_invalid(
     field_name: str,
@@ -225,7 +233,9 @@ def test_classification_model_binding_when_parameter_is_invalid(
         )
 
 
-def test_multi_label_classification_model_validation_when_minimalistic_config_is_provided() -> None:
+def test_multi_label_classification_model_validation_when_minimalistic_config_is_provided() -> (
+    None
+):
     # given
     data = {
         "type": "MultiLabelClassificationModel",
@@ -264,7 +274,9 @@ def test_multi_label_classification_model_validation_when_required_field_is_not_
         _ = MultiLabelClassificationModel.parse_obj(data)
 
 
-def test_multi_label_classification_model_validation_when_invalid_type_provided() -> None:
+def test_multi_label_classification_model_validation_when_invalid_type_provided() -> (
+    None
+):
     # given
     data = {
         "type": "invalid",
@@ -278,7 +290,9 @@ def test_multi_label_classification_model_validation_when_invalid_type_provided(
         _ = MultiLabelClassificationModel.parse_obj(data)
 
 
-def test_multi_label_classification_model_validation_when_model_id_has_invalid_type() -> None:
+def test_multi_label_classification_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
         "type": "MultiLabelClassificationModel",
@@ -309,7 +323,9 @@ def test_multi_label_classification_model_validation_when_active_learning_flag_h
         _ = MultiLabelClassificationModel.parse_obj(data)
 
 
-def test_multi_label_classification_model_image_selector_when_selector_is_valid() -> None:
+def test_multi_label_classification_model_image_selector_when_selector_is_valid() -> (
+    None
+):
     # given
     data = {
         "type": "MultiLabelClassificationModel",
@@ -328,7 +344,9 @@ def test_multi_label_classification_model_image_selector_when_selector_is_valid(
     # then - no error is raised
 
 
-def test_multi_label_classification_model_image_selector_when_selector_is_invalid() -> None:
+def test_multi_label_classification_model_image_selector_when_selector_is_invalid() -> (
+    None
+):
     # given
     data = {
         "type": "MultiLabelClassificationModel",
@@ -411,8 +429,8 @@ def test_multi_label_classification_model_selector_when_referring_to_field_that_
         ("confidence", 1.1),
         ("image", "some"),
         ("model_id", 38),
-        ("disable_active_learning", "some")
-    ]
+        ("disable_active_learning", "some"),
+    ],
 )
 def test_multi_label_classification_model_binding_when_parameter_is_invalid(
     field_name: str,
@@ -435,7 +453,9 @@ def test_multi_label_classification_model_binding_when_parameter_is_invalid(
         )
 
 
-def test_object_detection_model_validation_when_minimalistic_config_is_provided() -> None:
+def test_object_detection_model_validation_when_minimalistic_config_is_provided() -> (
+    None
+):
     # given
     data = {
         "type": "ObjectDetectionModel",
@@ -629,16 +649,18 @@ def test_object_detection_model_selector_when_referring_to_field_that_does_not_h
         ("iou_threshold", 1.1),
         ("max_detections", 0),
         ("max_candidates", 0),
-    ]
+    ],
 )
-def test_object_detection_model_when_parameters_have_invalid_type(parameter: str, value: Any) -> None:
+def test_object_detection_model_when_parameters_have_invalid_type(
+    parameter: str, value: Any
+) -> None:
     # given
     data = {
         "type": "ObjectDetectionModel",
         "name": "some",
         "image": "$inputs.image",
         "model_id": "some/1",
-        parameter: value
+        parameter: value,
     }
 
     # when
@@ -661,7 +683,7 @@ def test_object_detection_model_when_parameters_have_invalid_type(parameter: str
         ("iou_threshold", 1.1),
         ("max_detections", 0),
         ("max_candidates", 0),
-    ]
+    ],
 )
 def test_object_detection_model_binding_when_parameter_is_invalid(
     field_name: str,
@@ -693,7 +715,7 @@ def test_object_detection_model_binding_when_parameter_is_invalid(
         "iou_threshold",
         "max_detections",
         "max_candidates",
-    ]
+    ],
 )
 def test_object_detection_model_parameters_selector_validation_when_input_is_not_inference_parameter(
     field_name: str,
@@ -704,7 +726,7 @@ def test_object_detection_model_parameters_selector_validation_when_input_is_not
         "name": "some",
         "image": "$inputs.image",
         "model_id": "$inputs.model",
-        field_name: "$inputs.some"
+        field_name: "$inputs.some",
     }
 
     # when
@@ -716,7 +738,9 @@ def test_object_detection_model_parameters_selector_validation_when_input_is_not
         )
 
 
-def test_keypoints_detection_model_validation_when_minimalistic_config_is_provided() -> None:
+def test_keypoints_detection_model_validation_when_minimalistic_config_is_provided() -> (
+    None
+):
     # given
     data = {
         "type": "KeypointsDetectionModel",
@@ -755,7 +779,9 @@ def test_keypoints_detection_model_validation_when_required_field_is_not_given(
         _ = KeypointsDetectionModel.parse_obj(data)
 
 
-def test_keypoints_object_detection_model_validation_when_invalid_type_provided() -> None:
+def test_keypoints_object_detection_model_validation_when_invalid_type_provided() -> (
+    None
+):
     # given
     data = {
         "type": "invalid",
@@ -912,16 +938,18 @@ def test_keypoints_detection_model_selector_when_referring_to_field_that_does_no
         ("max_candidates", 0),
         ("keypoint_confidence", "some"),
         ("keypoint_confidence", 1.1),
-    ]
+    ],
 )
-def test_keypoints_detection_model_when_parameters_have_invalid_type(parameter: str, value: Any) -> None:
+def test_keypoints_detection_model_when_parameters_have_invalid_type(
+    parameter: str, value: Any
+) -> None:
     # given
     data = {
         "type": "KeypointsDetectionModel",
         "name": "some",
         "image": "$inputs.image",
         "model_id": "some/1",
-        parameter: value
+        parameter: value,
     }
 
     # when
@@ -946,7 +974,7 @@ def test_keypoints_detection_model_when_parameters_have_invalid_type(parameter: 
         ("max_candidates", 0),
         ("keypoint_confidence", "some"),
         ("keypoint_confidence", 1.1),
-    ]
+    ],
 )
 def test_keypoints_detection_model_binding_when_parameter_is_invalid(
     field_name: str,
@@ -979,7 +1007,7 @@ def test_keypoints_detection_model_binding_when_parameter_is_invalid(
         "max_detections",
         "max_candidates",
         "keypoint_confidence",
-    ]
+    ],
 )
 def test_keypoints_detection_model_parameters_selector_validation_when_input_is_not_inference_parameter(
     field_name: str,
@@ -990,7 +1018,7 @@ def test_keypoints_detection_model_parameters_selector_validation_when_input_is_
         "name": "some",
         "image": "$inputs.image",
         "model_id": "$inputs.model",
-        field_name: "$inputs.some"
+        field_name: "$inputs.some",
     }
 
     # when
@@ -1002,7 +1030,9 @@ def test_keypoints_detection_model_parameters_selector_validation_when_input_is_
         )
 
 
-def test_instance_segmentation_model_validation_when_minimalistic_config_is_provided() -> None:
+def test_instance_segmentation_model_validation_when_minimalistic_config_is_provided() -> (
+    None
+):
     # given
     data = {
         "type": "InstanceSegmentationModel",
@@ -1055,7 +1085,9 @@ def test_instance_segmentation_model_validation_when_invalid_type_provided() -> 
         _ = InstanceSegmentationModel.parse_obj(data)
 
 
-def test_instance_segmentation_model_validation_when_model_id_has_invalid_type() -> None:
+def test_instance_segmentation_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
         "type": "InstanceSegmentationModel",
@@ -1198,16 +1230,18 @@ def test_instance_segmentation_model_selector_when_referring_to_field_that_does_
         ("max_candidates", 0),
         ("mask_decode_mode", "some"),
         ("tradeoff_factor", 1.1),
-    ]
+    ],
 )
-def test_instance_segmentation_model_when_parameters_have_invalid_type(parameter: str, value: Any) -> None:
+def test_instance_segmentation_model_when_parameters_have_invalid_type(
+    parameter: str, value: Any
+) -> None:
     # given
     data = {
         "type": "KeypointsDetectionModel",
         "name": "some",
         "image": "$inputs.image",
         "model_id": "some/1",
-        parameter: value
+        parameter: value,
     }
 
     # when
@@ -1232,7 +1266,7 @@ def test_instance_segmentation_model_when_parameters_have_invalid_type(parameter
         ("max_candidates", 0),
         ("mask_decode_mode", "some"),
         ("tradeoff_factor", 1.1),
-    ]
+    ],
 )
 def test_instance_segmentation_model_binding_when_parameter_is_invalid(
     field_name: str,
@@ -1266,7 +1300,7 @@ def test_instance_segmentation_model_binding_when_parameter_is_invalid(
         "max_candidates",
         "mask_decode_mode",
         "tradeoff_factor",
-    ]
+    ],
 )
 def test_instance_segmentation_model_parameters_selector_validation_when_input_is_not_inference_parameter(
     field_name: str,
@@ -1277,7 +1311,7 @@ def test_instance_segmentation_model_parameters_selector_validation_when_input_i
         "name": "some",
         "image": "$inputs.image",
         "model_id": "$inputs.model",
-        field_name: "$inputs.some"
+        field_name: "$inputs.some",
     }
 
     # when
@@ -1286,4 +1320,123 @@ def test_instance_segmentation_model_parameters_selector_validation_when_input_i
         result.validate_field_selector(
             field_name=field_name,
             input_step=InferenceImage(type="InferenceImage", name="some"),
+        )
+
+
+def test_ocr_model_validation_when_invalid_image_is_given() -> None:
+    # given
+    data = {
+        "type": "OCRModel",
+        "name": "some",
+        "image": "invalid",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = OCRModel.parse_obj(data)
+
+
+def test_ocr_model_selector_validation_when_invalid_image_input_selector_is_given() -> (
+    None
+):
+    # given
+    data = {
+        "type": "OCRModel",
+        "name": "some",
+        "image": "$inputs.image",
+    }
+
+    # when
+    ocr_model = OCRModel.parse_obj(data)
+    with pytest.raises(InvalidStepInputDetected):
+        ocr_model.validate_field_selector(
+            field_name="image",
+            input_step=InferenceParameter(type="InferenceParameter", name="some"),
+        )
+
+
+def test_ocr_model_biding_validation_when_invalid_image_input_is_given() -> None:
+    # given
+    data = {
+        "type": "OCRModel",
+        "name": "some",
+        "image": "$inputs.image",
+    }
+
+    # when
+    ocr_model = OCRModel.parse_obj(data)
+    with pytest.raises(VariableTypeError):
+        ocr_model.validate_field_binding(
+            field_name="image",
+            value="invalid",
+        )
+
+
+def test_crop_validation_when_invalid_image_is_given() -> None:
+    # given
+    data = {
+        "type": "Crop",
+        "name": "some",
+        "image": "invalid",
+        "detections": "$steps.detection.predictions",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = Crop.parse_obj(data)
+
+
+def test_crop_selector_validation_when_invalid_image_input_is_given() -> None:
+    # given
+    data = {
+        "type": "Crop",
+        "name": "some",
+        "image": "$inputs.image",
+        "detections": "$steps.detection.predictions",
+    }
+
+    # when
+    ocr_model = Crop.parse_obj(data)
+    with pytest.raises(InvalidStepInputDetected):
+        ocr_model.validate_field_selector(
+            field_name="image",
+            input_step=InferenceParameter(type="InferenceParameter", name="some"),
+        )
+
+
+def test_crop_selector_validation_when_invalid_detections_input_selector_is_given() -> (
+    None
+):
+    # given
+    data = {
+        "type": "Crop",
+        "name": "some",
+        "image": "$inputs.image",
+        "detections": "$steps.detection.predictions",
+    }
+
+    # when
+    ocr_model = Crop.parse_obj(data)
+    with pytest.raises(InvalidStepInputDetected):
+        ocr_model.validate_field_selector(
+            field_name="detections",
+            input_step=InferenceParameter(type="InferenceParameter", name="detections"),
+        )
+
+
+def test_crop_biding_validation_when_invalid_image_input_is_given() -> None:
+    # given
+    data = {
+        "type": "Crop",
+        "name": "some",
+        "image": "$inputs.image",
+        "detections": "$steps.detection.predictions",
+    }
+
+    # when
+    ocr_model = Crop.parse_obj(data)
+    with pytest.raises(VariableTypeError):
+        ocr_model.validate_field_binding(
+            field_name="image",
+            value="invalid",
         )
