@@ -82,9 +82,7 @@ def assert_yolov8_classification_prediction_matches_reference(
     assert (
         len(prediction.predictions) == 1000
     ), "Example model is expected to predict across 1000 classes"
-    assert (
-        prediction.top == "Egyptian_cat"
-    ), "Egyptian_cat class was predicted by exported model, but here there is probably bug in model post-processing code, see https://github.com/roboflow/inference/issues/201"
+    assert prediction.top == "golden_retriever", "Golden retriever should be predicted"
     assert (
         abs(prediction.confidence - 0.0018) < 1e-5
     ), "Confidence while test creation was 0.0018"

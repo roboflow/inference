@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
+from inference.core import logger
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -402,6 +403,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     ModelsDescriptions: The object containing models descriptions
                 """
+                logger.debug(f"Reached /model/registry")
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -423,7 +425,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     ModelsDescriptions: The object containing models descriptions
                 """
-
+                logger.debug(f"Reached /model/add")
                 self.model_manager.add_model(request.model_id, request.api_key)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
@@ -446,7 +448,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     ModelsDescriptions: The object containing models descriptions
                 """
-
+                logger.debug(f"Reached /model/remove")
                 self.model_manager.remove(request.model_id)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
@@ -466,7 +468,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     ModelsDescriptions: The object containing models descriptions
                 """
-
+                logger.debug(f"Reached /model/clear")
                 self.model_manager.clear()
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
@@ -498,6 +500,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
+                logger.debug(f"Reached /infer/object_detection")
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -526,7 +529,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
-
+                logger.debug(f"Reached /infer/instance_segmentation")
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -557,7 +560,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
-
+                logger.debug(f"Reached /infer/classification")
                 return await process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
@@ -582,6 +585,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
+                logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
         if CORE_MODELS_ENABLED:
@@ -613,6 +617,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ClipEmbeddingResponse: The response containing the embedded image.
                     """
+                    logger.debug(f"Reached /clip/embed_image")
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
@@ -650,6 +655,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ClipEmbeddingResponse: The response containing the embedded text.
                     """
+                    logger.debug(f"Reached /clip/embed_text")
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
@@ -687,6 +693,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ClipCompareResponse: The response containing the similarity scores.
                     """
+                    logger.debug(f"Reached /clip/compare")
                     clip_model_id = load_clip_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
@@ -726,14 +733,13 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
+                    logger.debug(f"Reached /grounding_dino/infer")
                     grounding_dino_model_id = load_grounding_dino_model(
                         inference_request, api_key=api_key
                     )
-                    print("INFER REQUEST", inference_request.dict())
                     response = await self.model_manager.infer_from_request(
                         grounding_dino_model_id, inference_request
                     )
-                    print("RESPONSE", response)
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -769,6 +775,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.DoctrOCRInferenceResponse: The response containing the embedded image.
                     """
+                    logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
                         inference_request, api_key=api_key
                     )
@@ -810,6 +817,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.SamEmbeddingResponse or Response: The response containing the embedded image.
                     """
+                    logger.debug(f"Reached /sam/embed_image")
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
@@ -852,6 +860,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
+                    logger.debug(f"Reached /sam/segment_image")
                     sam_model_id = load_sam_model(inference_request, api_key=api_key)
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
@@ -896,6 +905,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
                     """
+                    logger.debug(f"Reached /gaze/gaze_detection")
                     gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         gaze_model_id, inference_request
@@ -935,6 +945,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         M.CogVLMResponse: The model's text response
                     """
+                    logger.debug(f"Reached /llm/cogvlm")
                     cog_model_id = load_cogvlm_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         cog_model_id, inference_request
@@ -1060,6 +1071,9 @@ class HttpInterface(BaseInterface):
                 Returns:
                     Union[InstanceSegmentationInferenceResponse, KeypointsDetectionInferenceRequest, ObjectDetectionInferenceResponse, ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse, Any]: The response containing the inference results.
                 """
+                logger.debug(
+                    f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
+                )
                 model_id = f"{dataset_id}/{version_id}"
 
                 if confidence >= 1:
@@ -1161,6 +1175,7 @@ class HttpInterface(BaseInterface):
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
                 )
+                logger.debug("Response ready.")
                 if format == "image":
                     return Response(
                         content=inference_response.visualization,
@@ -1181,6 +1196,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     str: A string indicating that the cache has been cleared.
                 """
+                logger.debug(f"Reached /clear_cache")
                 await model_clear()
                 return "Cache Cleared"
 
@@ -1200,6 +1216,9 @@ class HttpInterface(BaseInterface):
                 Returns:
                     JSONResponse: A response object containing the status and a success message.
                 """
+                logger.debug(
+                    f"Reached /start/{dataset_id}/{version_id} with {dataset_id}/{version_id}"
+                )
                 model_id = f"{dataset_id}/{version_id}"
                 self.model_manager.add_model(model_id, api_key)
 
@@ -1228,6 +1247,7 @@ class HttpInterface(BaseInterface):
                 Returns:
                     NotebookStartResponse: The response containing the URL of the jupyter lab server.
                 """
+                logger.debug(f"Reached /notebook/start")
                 if NOTEBOOK_ENABLED:
                     start_notebook()
                     if browserless:

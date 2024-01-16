@@ -91,12 +91,12 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
-| extra   | description                                                                          |
-| :------ | :----------------------------------------------------------------------------------- |
-| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                     |
-| `gaze`  | Ability to use the core `Gaze` model                                                 |
-| `http`  | Ability to run the http interface                                                    |
-| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                        |
+| extra | description |
+|:-------|:-------------------------------------------------|
+| `clip` | Ability to use the core `CLIP` model (by OpenAI) |
+| `gaze` | Ability to use the core `Gaze` model |
+| `http` | Ability to run the http interface |
+| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
 | `doctr` | Ability to use the core `doctr` model (by [Mindee](https://github.com/mindee/doctr)) |
 
 **_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the [official PyTorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
@@ -165,14 +165,13 @@ inference server start
 ```
 
 CLI supports also stopping the server via:
-
 ```bash
 inference server stop
 ```
 
 To use the CLI to make inferences, first [find your project ID and model version number in Roboflow](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 
-See more detailed documentation on [HTTP Inference quickstart via CLI](./using_inference/http_api.md).
+See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
 
 ```bash
 inference infer {image_path} \
@@ -180,7 +179,6 @@ inference infer {image_path} \
     --model-version {model_version} \
     --api-key {api_key}
 ```
-
 ## Enterprise License
 
 With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
@@ -194,10 +192,10 @@ To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 
 ## More Roboflow Open Source Projects
 
-| Project                                                           | Description                                                                                                                                            |
-| :---------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [supervision](https://roboflow.com/supervision)                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
-| [Autodistill](https://github.com/autodistill/autodistill)         | Automatically label images for use in training computer vision models.                                                                                 |
-| [Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
-| [Notebooks](https://roboflow.com/notebooks)                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
-| [Collect](https://github.com/roboflow/roboflow-collect)           | Automated, intelligent data collection powered by CLIP.                                                                                                |
+|Project | Description|
+|:---|:---|
+|[supervision](https://roboflow.com/supervision) | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.
+|[Autodistill](https://github.com/autodistill/autodistill) | Automatically label images for use in training computer vision models. |
+|[Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models.
+|[Notebooks](https://roboflow.com/notebooks) | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.
+|[Collect](https://github.com/roboflow/roboflow-collect) | Automated, intelligent data collection powered by CLIP.

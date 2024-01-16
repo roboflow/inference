@@ -91,6 +91,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_wi
         {"status": OperationStatus.SUCCESS},
     ), "Termination operation must succeed"
 
+
 @pytest.mark.timeout(30)
 @mock.patch.object(inference_pipeline_manager.InferencePipeline, "init")
 def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_but_invalid_payload_sent(

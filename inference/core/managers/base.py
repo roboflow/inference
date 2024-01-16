@@ -46,14 +46,22 @@ class ModelManager:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        logger.debug(
+            f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
+        )
         if model_id in self._models:
+            logger.debug(
+                f"ModelManager - model with model_id={model_id} is already loaded."
+            )
             return
+        logger.debug("ModelManager - model initialisation...")
         model = self.model_registry.get_model(
             model_id if model_id_alias is None else model_id_alias, api_key
         )(
             model_id=model_id,
             api_key=api_key,
         )
+        logger.debug("ModelManager - model successfully loaded.")
         self._models[model_id if model_id_alias is None else model_id_alias] = model
 
     def check_for_model(self, model_id: str) -> None:
@@ -80,12 +88,21 @@ class ModelManager:
         Returns:
             InferenceResponse: The response from the inference.
         """
+        logger.debug(
+            f"ModelManager - inference from request started for model_id={model_id}."
+        )
         try:
             rtn_val = await self.model_infer(
                 model_id=model_id, request=request, **kwargs
             )
+            logger.debug(
+                f"ModelManager - inference from request finished for model_id={model_id}."
+            )
             finish_time = time.time()
             if not DISABLE_INFERENCE_CACHE:
+                logger.debug(
+                    f"ModelManager - caching inference request started for model_id={model_id}"
+                )
                 cache.zadd(
                     f"models",
                     value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
@@ -108,6 +125,9 @@ class ModelManager:
                     },
                     score=finish_time,
                     expire=METRICS_INTERVAL * 2,
+                )
+                logger.debug(
+                    f"ModelManager - caching inference request finished for model_id={model_id}"
                 )
             return rtn_val
         except Exception as e:
