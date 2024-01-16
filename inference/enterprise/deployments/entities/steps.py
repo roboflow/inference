@@ -8,21 +8,20 @@ from inference.enterprise.deployments.entities.base import GraphNone
 from inference.enterprise.deployments.entities.validators import (
     is_selector,
     validate_field_has_given_type,
-    validate_field_is_in_range_zero_one_or_selector,
+    validate_field_is_empty_or_selector_or_list_of_string,
+    validate_field_is_in_range_zero_one_or_empty_or_selector,
     validate_field_is_list_of_string,
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
-    validate_field_is_selector_or_list_of_string,
     validate_field_is_selector_or_one_of_values,
-    validate_field_is_selector_or_string,
     validate_image_biding,
     validate_image_is_valid_selector,
     validate_selector_holds_detections,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
-    validate_value_is_number_in_range_zero_one,
-    validate_value_is_positive_number,
-    validate_value_is_selector_or_positive_number,
+    validate_value_is_empty_or_number_in_range_zero_one,
+    validate_value_is_empty_or_positive_number,
+    validate_value_is_empty_or_selector_or_positive_number,
 )
 from inference.enterprise.deployments.errors import (
     ExecutionGraphError,
@@ -77,7 +76,9 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     @validator("model_id")
     @classmethod
     def model_id_must_be_selector_or_str(cls, value: Any) -> str:
-        validate_field_is_selector_or_string(value=value, field_name="model_id")
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="model_id", allowed_types=[str]
+        )
         return value
 
     @validator("disable_active_learning")
@@ -146,7 +147,7 @@ class ClassificationModel(RoboflowModel):
     def confidence_must_be_selector_or_number(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_selector(value=value)
+        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -173,7 +174,7 @@ class ClassificationModel(RoboflowModel):
         if field_name == "confidence":
             if value is None:
                 raise VariableTypeError("Parameter `confidence` cannot be None")
-            validate_value_is_number_in_range_zero_one(
+            validate_value_is_empty_or_number_in_range_zero_one(
                 value=value, error=VariableTypeError
             )
 
@@ -187,7 +188,7 @@ class MultiLabelClassificationModel(RoboflowModel):
     def confidence_must_be_selector_or_number(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_selector(value=value)
+        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -214,7 +215,7 @@ class MultiLabelClassificationModel(RoboflowModel):
         if field_name == "confidence":
             if value is None:
                 raise VariableTypeError("Parameter `confidence` cannot be None")
-            validate_value_is_number_in_range_zero_one(
+            validate_value_is_empty_or_number_in_range_zero_one(
                 value=value, error=VariableTypeError
             )
 
@@ -245,7 +246,7 @@ class ObjectDetectionModel(RoboflowModel):
     def class_filter_must_be_selector_or_list_of_string(
         cls, value: Any
     ) -> Union[Optional[List[str]], str]:
-        validate_field_is_selector_or_list_of_string(
+        validate_field_is_empty_or_selector_or_list_of_string(
             value=value, field_name="class_filter"
         )
         return value
@@ -255,7 +256,7 @@ class ObjectDetectionModel(RoboflowModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_selector(
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
             value=value, field_name="confidence | iou_threshold"
         )
         return value
@@ -265,7 +266,7 @@ class ObjectDetectionModel(RoboflowModel):
     def field_must_be_selector_or_positive_number(
         cls, value: Any
     ) -> Union[Optional[int], str]:
-        validate_value_is_selector_or_positive_number(
+        validate_value_is_empty_or_selector_or_positive_number(
             value=value,
             field_name="max_detections | max_candidates",
         )
@@ -322,13 +323,13 @@ class ObjectDetectionModel(RoboflowModel):
                 value=value, field_name=field_name, error=VariableTypeError
             )
         elif field_name == "confidence" or field_name == "iou_threshold":
-            validate_value_is_number_in_range_zero_one(
+            validate_value_is_empty_or_number_in_range_zero_one(
                 value=value,
                 field_name=field_name,
                 error=VariableTypeError,
             )
         elif field_name == "max_detections" or field_name == "max_candidates":
-            validate_value_is_positive_number(
+            validate_value_is_empty_or_positive_number(
                 value=value,
                 field_name=field_name,
                 error=VariableTypeError,
@@ -344,7 +345,7 @@ class KeypointsDetectionModel(ObjectDetectionModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_selector(
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
             value=value, field_name="keypoint_confidence"
         )
         return value
@@ -366,7 +367,7 @@ class KeypointsDetectionModel(ObjectDetectionModel):
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         super().validate_field_binding(field_name=field_name, value=value)
         if field_name == "keypoint_confidence":
-            validate_value_is_number_in_range_zero_one(
+            validate_value_is_empty_or_number_in_range_zero_one(
                 value=value,
                 field_name=field_name,
                 error=VariableTypeError,
@@ -398,7 +399,7 @@ class InstanceSegmentationModel(ObjectDetectionModel):
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_selector(
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
             value=value, field_name="tradeoff_factor"
         )
         return value
@@ -427,7 +428,7 @@ class InstanceSegmentationModel(ObjectDetectionModel):
                 error=VariableTypeError,
             )
         elif field_name == "tradeoff_factor":
-            validate_value_is_number_in_range_zero_one(
+            validate_value_is_empty_or_number_in_range_zero_one(
                 value=value,
                 field_name=field_name,
                 error=VariableTypeError,
@@ -685,7 +686,7 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
     @validator("x_center", "y_center", "width", "height")
     @classmethod
     def validate_crops_coordinates(cls, value: Any) -> str:
-        validate_value_is_selector_or_positive_number(
+        validate_value_is_empty_or_selector_or_positive_number(
             value=value, field_name="x_center | y_center | width | height"
         )
         return value

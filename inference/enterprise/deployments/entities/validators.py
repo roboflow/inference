@@ -1,5 +1,7 @@
 from typing import Any, List, Optional, Set, Type
 
+from pydantic import PydanticTypeError
+
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.enterprise.deployments.entities.base import GraphNone
 from inference.enterprise.deployments.errors import (
@@ -19,19 +21,21 @@ def validate_image_is_valid_selector(value: Any, field_name: str = "image") -> N
     if issubclass(type(value), list):
         if any(not is_selector(selector_or_value=e) for e in value):
             raise ValueError(f"`{field_name}` field can only contain selector values")
-    if not is_selector(selector_or_value=value):
+    elif not is_selector(selector_or_value=value):
         raise ValueError(f"`{field_name}` field can only contain selector values")
 
 
-def validate_field_is_in_range_zero_one_or_selector(
+def validate_field_is_in_range_zero_one_or_empty_or_selector(
     value: Any, field_name: str = "confidence"
 ) -> None:
     if is_selector(selector_or_value=value) or value is None:
         return None
-    validate_value_is_number_in_range_zero_one(value=value, field_name=field_name)
+    validate_value_is_empty_or_number_in_range_zero_one(
+        value=value, field_name=field_name
+    )
 
 
-def validate_value_is_number_in_range_zero_one(
+def validate_value_is_empty_or_number_in_range_zero_one(
     value: Any, field_name: str = "confidence", error: Type[Exception] = ValueError
 ) -> None:
     validate_field_has_given_type(
@@ -46,13 +50,15 @@ def validate_value_is_number_in_range_zero_one(
         raise error(f"Parameter `{field_name}` must be in range [0.0, 1.0]")
 
 
-def validate_value_is_selector_or_positive_number(value: Any, field_name: str) -> None:
+def validate_value_is_empty_or_selector_or_positive_number(
+    value: Any, field_name: str
+) -> None:
     if is_selector(selector_or_value=value):
         return None
-    validate_value_is_positive_number(value=value, field_name=field_name)
+    validate_value_is_empty_or_positive_number(value=value, field_name=field_name)
 
 
-def validate_value_is_positive_number(
+def validate_value_is_empty_or_positive_number(
     value: Any, field_name: str, error: Type[Exception] = ValueError
 ) -> None:
     validate_field_has_given_type(
@@ -67,7 +73,9 @@ def validate_value_is_positive_number(
         raise error(f"Parameter `{field_name}` must be positive (> 0)")
 
 
-def validate_field_is_selector_or_list_of_string(value: Any, field_name: str) -> None:
+def validate_field_is_empty_or_selector_or_list_of_string(
+    value: Any, field_name: str
+) -> None:
     if is_selector(selector_or_value=value) or value is None:
         return value
     validate_field_is_list_of_string(value=value, field_name=field_name)
@@ -93,7 +101,7 @@ def validate_field_is_selector_or_one_of_values(
 
 
 def validate_field_is_one_of_selected_values(
-    value: str,
+    value: Any,
     field_name: str,
     selected_values: set,
     error: Type[Exception] = ValueError,
@@ -105,7 +113,7 @@ def validate_field_is_one_of_selected_values(
 
 
 def validate_field_is_selector_or_has_given_type(
-    field_name: str, allowed_types: List[type], value: Any
+    value: Any, field_name: str, allowed_types: List[type]
 ) -> None:
     if is_selector(selector_or_value=value):
         return None
@@ -116,20 +124,13 @@ def validate_field_is_selector_or_has_given_type(
 
 
 def validate_field_has_given_type(
+    value: Any,
     field_name: str,
     allowed_types: List[type],
-    value: Any,
     error: Type[Exception] = ValueError,
 ) -> None:
     if all(not issubclass(type(value), allowed_type) for allowed_type in allowed_types):
         raise error(f"`{field_name}` field type must be one of {allowed_types}")
-
-
-def validate_field_is_selector_or_string(value: Any, field_name: str) -> None:
-    if is_selector(selector_or_value=value):
-        return None
-    if not issubclass(type(value), str):
-        raise ValueError(f"`{field_name}` field must be string")
 
 
 def validate_image_biding(value: Any, field_name: str = "image") -> None:
@@ -138,7 +139,7 @@ def validate_image_biding(value: Any, field_name: str = "image") -> None:
             value = [value]
         for e in value:
             InferenceRequestImage.validate(e)
-    except ValueError as error:
+    except (ValueError, PydanticTypeError) as error:
         raise VariableTypeError(
             f"Parameter `{field_name}` must be compatible with `InferenceRequestImage`"
         ) from error
