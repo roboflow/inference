@@ -1,9 +1,8 @@
-from typing import Any, List, Set, Tuple
+from typing import Any, List, Set
 
 from networkx import DiGraph
 
 from inference.enterprise.deployments.entities.deployment_specs import (
-    DeploymentSpecV1,
     InputType,
     StepType,
 )

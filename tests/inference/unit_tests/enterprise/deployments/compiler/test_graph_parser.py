@@ -561,7 +561,7 @@ def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph
                 {
                     "type": "Crop",
                     "name": "step_2",
-                    "image": "$steps.step_1.predictions",  # should be image here
+                    "image": "$steps.step_1.predictions",  # should be an image here
                     "detections": "$inputs.image",  # should be predictions here
                 },
             ],
