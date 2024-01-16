@@ -15,6 +15,7 @@ from inference.enterprise.deployments.entities.steps import (
     InstanceSegmentationModel,
     OCRModel,
     Crop,
+    Condition,
 )
 from inference.enterprise.deployments.errors import (
     InvalidStepInputDetected,
@@ -1396,9 +1397,9 @@ def test_crop_selector_validation_when_invalid_image_input_is_given() -> None:
     }
 
     # when
-    ocr_model = Crop.parse_obj(data)
+    crop = Crop.parse_obj(data)
     with pytest.raises(InvalidStepInputDetected):
-        ocr_model.validate_field_selector(
+        crop.validate_field_selector(
             field_name="image",
             input_step=InferenceParameter(type="InferenceParameter", name="some"),
         )
@@ -1416,9 +1417,9 @@ def test_crop_selector_validation_when_invalid_detections_input_selector_is_give
     }
 
     # when
-    ocr_model = Crop.parse_obj(data)
+    crop = Crop.parse_obj(data)
     with pytest.raises(InvalidStepInputDetected):
-        ocr_model.validate_field_selector(
+        crop.validate_field_selector(
             field_name="detections",
             input_step=InferenceParameter(type="InferenceParameter", name="detections"),
         )
@@ -1434,9 +1435,30 @@ def test_crop_biding_validation_when_invalid_image_input_is_given() -> None:
     }
 
     # when
-    ocr_model = Crop.parse_obj(data)
+    crop = Crop.parse_obj(data)
     with pytest.raises(VariableTypeError):
-        ocr_model.validate_field_binding(
+        crop.validate_field_binding(
             field_name="image",
             value="invalid",
+        )
+
+
+def test_condition_selector_validation_when_invalid_value_is_provided() -> None:
+    # given
+    data = {
+        "type": "Condition",
+        "name": "some",
+        "left": "$inputs.left",
+        "right": "$inputs.right",
+        "operator": "equal",
+        "step_if_true": "$steps.a",
+        "step_if_false": "$steps.b",
+    }
+
+    # when
+    condition = Condition.parse_obj(data)
+    with pytest.raises(InvalidStepInputDetected):
+        condition.validate_field_selector(
+            field_name="left",
+            input_step=InferenceImage(type="InferenceImage", name="detections"),
         )

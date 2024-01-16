@@ -1,5 +1,6 @@
 import base64
 from typing import Any, Dict, List, Optional, Union
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -37,6 +38,14 @@ class ObjectDetectionPrediction(BaseModel):
     class_id: int = Field(description="The class id of the prediction")
     tracker_id: Optional[int] = Field(
         description="The tracker id of the prediction if tracking is enabled",
+        default=None,
+    )
+    detection_id: str = Field(
+        description="Unique identifier of detection",
+        default_factory=lambda: str(uuid4()),
+    )
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
         default=None,
     )
 
@@ -98,6 +107,14 @@ class InstanceSegmentationPrediction(BaseModel):
         description="The list of points that make up the instance polygon"
     )
     class_id: int = Field(description="The class id of the prediction")
+    detection_id: str = Field(
+        description="Unique identifier of detection",
+        default_factory=lambda: str(uuid4()),
+    )
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
+        default=None,
+    )
 
 
 class ClassificationPrediction(BaseModel):
@@ -241,6 +258,10 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     confidence: float = Field(
         description="The confidence of the top predicted class label"
     )
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
+        default=None,
+    )
 
 
 class MultiLabelClassificationInferenceResponse(
@@ -255,6 +276,10 @@ class MultiLabelClassificationInferenceResponse(
 
     predictions: Dict[str, MultiLabelClassificationPrediction]
     predicted_classes: List[str] = Field(description="The list of predicted classes")
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
+        default=None,
+    )
 
 
 class FaceDetectionPrediction(ObjectDetectionPrediction):
