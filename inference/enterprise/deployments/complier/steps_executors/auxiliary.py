@@ -29,7 +29,7 @@ from inference.enterprise.deployments.complier.steps_executors.utils import (
     resolve_parameter,
 )
 from inference.enterprise.deployments.complier.utils import (
-    construct_selector_to_step_output,
+    construct_selector_pointing_step_output,
     construct_step_selector,
 )
 from inference.enterprise.deployments.entities.steps import (
@@ -165,7 +165,7 @@ async def run_detection_filter(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    images_meta_selector = construct_selector_to_step_output(
+    images_meta_selector = construct_selector_pointing_step_output(
         selector=step.predictions,
         new_output="image",
     )
@@ -231,7 +231,7 @@ async def run_detection_offset_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    images_meta_selector = construct_selector_to_step_output(
+    images_meta_selector = construct_selector_pointing_step_output(
         selector=step.predictions,
         new_output="image",
     )
