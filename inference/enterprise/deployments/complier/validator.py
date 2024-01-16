@@ -1,3 +1,5 @@
+from typing import List
+
 from inference.enterprise.deployments.complier.utils import (
     get_input_parameters_selectors,
     get_output_names,
@@ -6,7 +8,12 @@ from inference.enterprise.deployments.complier.utils import (
     get_steps_output_selectors,
     get_steps_selectors,
 )
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
+from inference.enterprise.deployments.entities.deployment_specs import (
+    DeploymentSpecV1,
+    InputType,
+    StepType,
+)
+from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.errors import (
     DuplicatedSymbolError,
     InvalidReferenceError,
@@ -14,29 +21,27 @@ from inference.enterprise.deployments.errors import (
 
 
 def validate_deployment_spec(deployment_spec: DeploymentSpecV1) -> None:
-    validate_inputs_names_are_unique(deployment_spec=deployment_spec)
-    validate_steps_names_are_unique(deployment_spec=deployment_spec)
-    validate_outputs_names_are_unique(deployment_spec=deployment_spec)
+    validate_inputs_names_are_unique(inputs=deployment_spec.inputs)
+    validate_steps_names_are_unique(steps=deployment_spec.steps)
+    validate_outputs_names_are_unique(outputs=deployment_spec.outputs)
     validate_selectors_references_correctness(deployment_spec=deployment_spec)
 
 
-def validate_inputs_names_are_unique(deployment_spec: DeploymentSpecV1) -> None:
-    input_parameters_selectors = get_input_parameters_selectors(
-        inputs=deployment_spec.inputs
-    )
-    if len(input_parameters_selectors) != len(deployment_spec.inputs):
+def validate_inputs_names_are_unique(inputs: List[InputType]) -> None:
+    input_parameters_selectors = get_input_parameters_selectors(inputs=inputs)
+    if len(input_parameters_selectors) != len(inputs):
         raise DuplicatedSymbolError("Found duplicated input parameter names")
 
 
-def validate_steps_names_are_unique(deployment_spec: DeploymentSpecV1) -> None:
-    steps_selectors = get_steps_selectors(steps=deployment_spec.steps)
-    if len(steps_selectors) != len(deployment_spec.steps):
+def validate_steps_names_are_unique(steps: List[StepType]) -> None:
+    steps_selectors = get_steps_selectors(steps=steps)
+    if len(steps_selectors) != len(steps):
         raise DuplicatedSymbolError("Found duplicated steps names")
 
 
-def validate_outputs_names_are_unique(deployment_spec: DeploymentSpecV1) -> None:
-    output_names = get_output_names(outputs=deployment_spec.outputs)
-    if len(output_names) != len(deployment_spec.outputs):
+def validate_outputs_names_are_unique(outputs: List[JsonField]) -> None:
+    output_names = get_output_names(outputs=outputs)
+    if len(output_names) != len(outputs):
         raise DuplicatedSymbolError("Found duplicated outputs names")
 
 
