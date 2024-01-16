@@ -23,6 +23,8 @@ from inference.enterprise.deployments.entities.inputs import (
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
 from inference.enterprise.deployments.errors import (
+    AmbiguousPathDetected,
+    InvalidStepInputDetected,
     NodesNotReachingOutputError,
     NotAcyclicGraphError,
     SelectorToUndefinedNodeError,
@@ -307,7 +309,9 @@ def test_get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph() -> N
     }, "Nodes b, d, f are reachable in reversed graph from f"
 
 
-def test_prepare_execution_graph_when_step_parameter_contains_undefined_reference() -> None:
+def test_prepare_execution_graph_when_step_parameter_contains_undefined_reference() -> (
+    None
+):
     # given
     deployment_specs = DeploymentSpecV1.parse_obj(
         {
@@ -321,9 +325,8 @@ def test_prepare_execution_graph_when_step_parameter_contains_undefined_referenc
                     "name": "step_1",
                     "image": "$steps.step_2.crops",
                     "model_id": "vehicle-classification-eapcd/2",
-                    "confidence": "$inputs.confidence"
+                    "confidence": "$inputs.confidence",
                 },
-
             ],
             "outputs": [
                 {
@@ -359,7 +362,7 @@ def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
                     "type": "Crop",
                     "name": "step_2",
                     "image": "$inputs.image",
-                    "detections": "$steps.step_1.predictions"
+                    "detections": "$steps.step_1.predictions",
                 },
             ],
             "outputs": [
@@ -396,7 +399,7 @@ def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None
                     "type": "Crop",
                     "name": "step_2",
                     "image": "$inputs.image",
-                    "detections": "$steps.step_1.predictions"
+                    "detections": "$steps.step_1.predictions",
                 },
             ],
             "outputs": [
@@ -411,4 +414,167 @@ def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None
 
     # when
     with pytest.raises(NodesNotReachingOutputError):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+
+
+def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branch() -> (
+    None
+):
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+                {"type": "InferenceParameter", "name": "confidence"},
+            ],
+            "steps": [
+                {
+                    "type": "ClassificationModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "vehicle-classification-eapcd/2",
+                    "confidence": "$inputs.confidence",
+                },
+                {
+                    "type": "Condition",
+                    "name": "step_2",
+                    "left": "$steps.step_1.top",
+                    "operator": "equal",
+                    "right": "Car",
+                    "step_if_true": "$steps.step_3",
+                    "step_if_false": "$steps.step_4",
+                },
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_3",
+                    "image": "$inputs.image",
+                    "model_id": "yolov8n-640",
+                    "confidence": 0.5,
+                    "iou_threshold": 0.4,
+                },
+                {
+                    "type": "Crop",
+                    "name": "step_4",
+                    "image": "$inputs.image",
+                    "detections": "$steps.step_3.predictions",
+                },  # this step requires input from step_3 that will be executed conditionally in different branch
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "step_3_predictions",
+                    "selector": "$steps.step_3.predictions",
+                },
+                {
+                    "type": "JsonField",
+                    "name": "step_4_crops",
+                    "selector": "$steps.step_4.crops",
+                },
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(AmbiguousPathDetected):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+
+
+def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branches() -> (
+    None
+):
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+                {"type": "InferenceParameter", "name": "confidence"},
+            ],
+            "steps": [
+                {
+                    "type": "ClassificationModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "vehicle-classification-eapcd/2",
+                    "confidence": "$inputs.confidence",
+                },
+                {
+                    "type": "Condition",
+                    "name": "step_2",
+                    "left": "$steps.step_1.top",
+                    "operator": "equal",
+                    "right": "Car",
+                    "step_if_true": "$steps.step_4",
+                    "step_if_false": "$steps.step_4",
+                },
+                {
+                    "type": "Condition",
+                    "name": "step_3",
+                    "left": "$steps.step_1.top",
+                    "operator": "equal",
+                    "right": "Car",
+                    "step_if_true": "$steps.step_4",
+                    "step_if_false": "$steps.step_4",
+                },
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_4",
+                    "image": "$inputs.image",
+                    "model_id": "yolov8n-640",
+                    "confidence": 0.5,
+                    "iou_threshold": 0.4,
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "step_4_predictions",
+                    "selector": "$steps.step_4.predictions",
+                }
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(AmbiguousPathDetected):
+        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+
+
+def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph_edge_incompatible_by_type() -> (
+    None
+):
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+            ],
+            "steps": [
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "vehicle-classification-eapcd/2",
+                },
+                {
+                    "type": "Crop",
+                    "name": "step_2",
+                    "image": "$steps.step_1.predictions",  # should be image here
+                    "detections": "$inputs.image",  # should be predictions here
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "crops",
+                    "selector": "$steps.step_2.crops",
+                },
+            ],
+        }
+    )
+
+    # when
+    with pytest.raises(InvalidStepInputDetected):
         _ = prepare_execution_graph(deployment_spec=deployment_specs)

@@ -1,11 +1,11 @@
-from typing import Any, Set, Tuple, List
+from typing import Any, List, Set, Tuple
 
 from networkx import DiGraph
 
 from inference.enterprise.deployments.entities.deployment_specs import (
     DeploymentSpecV1,
-    StepType,
     InputType,
+    StepType,
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.validators import is_selector
