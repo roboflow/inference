@@ -63,6 +63,15 @@ def deploy(
             help="Print out help text.",
         ),
     ] = False,
+    # For later, when notebook becomes secure
+    # notebook: Annotated[
+    #     bool,
+    #     typer.Option(
+    #         "--notebook",
+    #         "-n",
+    #         help="Expose the notebook instance at port 9002 (caution - can be insecure).",
+    #     ),
+    # ] = False,
 ):
     cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key)
 

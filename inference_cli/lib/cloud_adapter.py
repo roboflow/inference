@@ -104,9 +104,9 @@ def cloud_start(cluster_name):
     print(sky.start(cluster_name))
 
 def cloud_undeploy(cluster_name):
-    print(f"Undeploying Roboflow Inference from {cluster_name}, this may take a few minutes.")
+    print(f"Undeploying Roboflow Inference and deleting {cluster_name}, this may take a few minutes.")
     sky.down(cluster_name)
-    print(f"Undeployed Roboflow Inference from {cluster_name}")
+    print(f"Undeployed Roboflow Inference complete: deleted {cluster_name}")
 
 def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
     if help:
@@ -122,9 +122,19 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
 
                 Usage examples:
                 # Deploy to GCP with CPU
-                inference deploy --provider gcp --compute-type cpu
+                inference cloud deploy --provider gcp --compute-type cpu
                 # Deploy to AWS with GPU
-                inference deploy --provider aws --compute-type gpu
+                inference cloud deploy --provider aws --compute-type gpu
+                # Stop a deployment (without deleting it, you only pay for storage)
+                inference cloud stop <deployment-name>
+                # Start a deployment
+                inference cloud start <deployment-name>
+                # Get status of all deployments
+                inference cloud status
+                # Undeploy a deployment (delete it)
+                inference cloud undeploy <deployment-name>
+                # SSH into a deployment
+                inference cloud ssh <deployment-name>
             
               Roboflow inference deploy uses sky (https://github.com/skypilot-org/skypilot) 
               to launch a new virtual machine in the cloud provider you specify,
@@ -132,7 +142,7 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
               to customize the deployment with a custom sky configuration, 
               you can pass a custom config file with the --custom flag, like so:
 
-                inference deploy --custom ./custom.yaml
+                inference cloud deploy --custom ./custom.yaml
               
               To see a full list of sky configuration options, visit
               https://skypilot.readthedocs.io/en/latest/reference/yaml-spec.html
@@ -162,8 +172,14 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
         return
     
     placeholder_string = f" --env ROBOFLOW_API_KEY={roboflow_api_key} " if roboflow_api_key is not None else ""
-    yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)
+
+    # For later - when notebook becomes secure
+    # if notebook:
+    #     yaml_string.replace("9001", "[9001, 9002]")
+    #     placeholder_string += " -e NOTEBOOK_ENABLED=true"
     
+    yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)
+
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
         file_path = f.name
         f.write(yaml_string)
