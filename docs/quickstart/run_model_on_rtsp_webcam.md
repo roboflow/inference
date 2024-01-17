@@ -12,6 +12,7 @@ You can run both fine-tuned models and foundation models on the above three inpu
 
 ## Quickstart
 
+### Installation
 To use fine-tuned with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
@@ -24,6 +25,7 @@ Then, install Inference:
 pip install inference
 ```
 
+### Inference on Video/Webcam/RTSP
 Next, create an Inference Pipeline. Once you have selected a model to run, create a new Python file and add the following code:
 
 ```python
@@ -61,7 +63,7 @@ Your webcam will open and you can see the model running:
 
     When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
 
-## Define Custom Prediction Handlers
+### Define Custom Prediction Logic
 
 The `on_prediction` parameter in the `InferencePipeline` constructor allows you to define custom prediction handlers. You can use this to define custom logic for how predictions are processed.
 
@@ -94,7 +96,7 @@ pipeline.join()
 
 See the reference docs for the [full list of Inference Pipeline parameters](../../docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
 
-## Built in sinks
+### Built in prediction sinks
 
 Inference has [several sinks built in](../../docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
 
