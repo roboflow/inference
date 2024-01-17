@@ -33,10 +33,9 @@ setuptools.setup(
     install_requires=read_requirements(
         [
             "requirements/_requirements.txt",
-            "requirements/requirements.cli.txt",
             "requirements/requirements.gpu.txt",
         ]
-    ),
+    ).extend([f'inference-cli=={__version__}']),
     packages=find_packages(
         where=root,
         exclude=(
