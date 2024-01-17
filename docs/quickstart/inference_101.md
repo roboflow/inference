@@ -32,14 +32,14 @@ Running Inference this way can have several advantages:
 
 The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. It is an asynchronous interface that can consume many different video sources including local devices (like webcams), RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks. Sinks are methods that operate on the results of inferring on a single frame. The Inference package has several built in sinks but also gives you the ability to write custom sinks for integrating with the rest of your software.
 
-[See Docs and Examples](/using_inference/inference_pipeline/)
+[See Docs and Examples](/quickstart/run_model_on_rtsp_webcam/)
 
 ## Advanced Usage & Interfaces
 
 There are several advanced interfaces that enhance the capabilities of the base Inference package.
 
-- Active Learning: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](/advanced/active_learning.md)
-- Parallel HTTP API\*: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/advanced/parallel_http_api.md)
-- Stream Manager API\*: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](/advanced/stream_management_api.md)
+- Active Learning: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](/enterprise/active-learning/active_learning/)
+- Parallel HTTP API\*: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/enterprise/parallel_processing/)
+- Stream Manager API\*: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](/enterprise/stream_management_api/)
 
 \*For Roboflow enterprise users only. Contact sales@roboflow.com to learn more.

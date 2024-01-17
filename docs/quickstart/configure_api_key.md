@@ -46,8 +46,8 @@ response = requests.post(url,...)
 
 url = "http://localhost:9001/infer/object_detection"
 payload = {
-  api_key: my_api_key,
-  model_id: "soccer-players-5fuqs/1",
+  "api_key": my_api_key,
+  "model_id": "soccer-players-5fuqs/1",
   ...
 }
 response = requests.post(url,json=payload)
