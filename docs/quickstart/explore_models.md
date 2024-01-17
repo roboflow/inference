@@ -19,9 +19,10 @@ Roboflow Universe exposes pre-trained YOLOv8 models.
 
 In the first example, we showed how to run a rock paper scissors model. This model was hosted on Universe. Let's find another model to try.
 
-!!! info
+!!! Info
 
-If you haven't already, follow our Run Your First Model guide to install and set up Inference.
+    If you haven't already, follow our Run Your First Model guide to install and set up Inference.
+
 
 Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use the search bar to find a model.
 
@@ -29,7 +30,7 @@ Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use th
 
 !!! info
 
-Add "model" to your search query to only find models.
+    Add "model" to your search query to only find models.
 
 Browse the search page to find a model.
 

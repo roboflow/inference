@@ -38,15 +38,14 @@ nav:
       - Quickstart Tutorials:
         - Native Python API: using_inference/native_python_api.md
         - HTTP API: using_inference/http_api.md
-        - Inference Pipeline: using_inference/inference_pipeline.md
         - Run Your First Model: quickstart/run_a_model.md
         - Run a Fine-Tuned Model: quickstart/explore_models.md
         - Inference Notebook: inference_helpers/inference_landing_page/#inference-notebook
-        - On an Image: quickstart/run_model_on_image.md
-        - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-        - Over UDP: quickstart/run_model_over_udp.md
+        - Predict on an Image: quickstart/run_model_on_image.md
+        - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+        - Predict Over UDP: quickstart/run_model_over_udp.md
         - Collect Data Without a Model: quickstart/stubs.md
-    - Docs:
+    - Documentation:
       - Advanced Usage:
         - Active Learning: enterprise/active-learning/
         - Parallel HTTP API: enterprise/parallel_processing.md
