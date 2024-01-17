@@ -15,8 +15,8 @@ from inference.enterprise.deployments.complier.steps_executors.constants import 
     CENTER_X_KEY,
     CENTER_Y_KEY,
     ORIGIN_COORDINATES_KEY,
+    ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
-    SIZE_KEY,
 )
 from inference.enterprise.deployments.complier.steps_executors.types import (
     NextStepReference,
@@ -376,5 +376,5 @@ def anchor_image_detections_in_parent_coordinates(
         detection["y"] += shift_y
     serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
-    ][SIZE_KEY]
+    ][ORIGIN_SIZE_KEY]
     return serialised_result

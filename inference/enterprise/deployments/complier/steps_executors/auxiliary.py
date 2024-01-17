@@ -16,8 +16,8 @@ from inference.enterprise.deployments.complier.steps_executors.constants import 
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
     ORIGIN_COORDINATES_KEY,
+    ORIGIN_SIZE_KEY,
     PARENT_ID_KEY,
-    SIZE_KEY,
     WIDTH_KEY,
 )
 from inference.enterprise.deployments.complier.steps_executors.types import (
@@ -124,7 +124,7 @@ def crop_image(
                 ORIGIN_COORDINATES_KEY: {
                     CENTER_X_KEY: detection["x"],
                     CENTER_Y_KEY: detection["y"],
-                    SIZE_KEY: origin_size,
+                    ORIGIN_SIZE_KEY: origin_size,
                 },
             }
         )
@@ -345,7 +345,7 @@ def extract_origin_size_from_images(
             issubclass(type(input_image), dict)
             and ORIGIN_COORDINATES_KEY in input_image
         ):
-            result.append(input_image[ORIGIN_COORDINATES_KEY][SIZE_KEY])
+            result.append(input_image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY])
         else:
             result.append(
                 {HEIGHT_KEY: decoded_image.shape[0], WIDTH_KEY: decoded_image.shape[1]}
@@ -386,6 +386,6 @@ def take_static_crop(
         ORIGIN_COORDINATES_KEY: {
             CENTER_X_KEY: x_center,
             CENTER_Y_KEY: y_center,
-            SIZE_KEY: origin_size,
+            ORIGIN_SIZE_KEY: origin_size,
         },
     }
