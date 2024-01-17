@@ -263,6 +263,7 @@ Message must be a valid JSON after decoding and represent valid command.
   }
 }
 ```
+{% include 'model_id.md' %}
 
 #### `terminate` command
 

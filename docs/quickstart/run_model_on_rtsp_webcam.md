@@ -39,6 +39,8 @@ pipeline.start()
 pipeline.join()
 ```
 
+{% include 'model_id.md' %}
+
 This code will run a model on frames from a webcam stream. To use RTSP, set the `video_reference` value to an RTSP stream URL. To use video, set the `video_reference` value to a video file path.
 
 Predictions are annotated using the `render_boxes` helper function. You can specify any function to process each prediction in the `on_prediction` parameter.

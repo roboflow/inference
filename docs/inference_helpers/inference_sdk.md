@@ -143,6 +143,7 @@ _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
 ```
 
 As you can see - `model_id` is required to be given for prediction method only when default model is not configured.
+{% include 'model_id.md' %}
 
 ### Setting the configuration once and using till next change
 

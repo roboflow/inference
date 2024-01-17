@@ -27,6 +27,7 @@ from inference.models.utils import get_roboflow_model
 
 model = get_roboflow_model(model_id="...", api_key="YOUR ROBOFLOW API KEY")
 ```
+{% include 'model_id.md' %}
 
 !!! Hint
 

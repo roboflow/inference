@@ -38,7 +38,7 @@ client = InferenceHTTPClient(
 
 results = client.infer(image_url, model_id=model_id)
 ```
-
+{% include 'model_id.md' %}
 !!! Hint
 
     See [full docs for the Inference SDK](../../inference_helpers/inference_sdk).
