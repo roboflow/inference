@@ -5,7 +5,7 @@ import numpy as np
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.cache import cache
-from inference.core.cache.transforms import to_cachable_inference_item
+from inference.core.cache.serializers import to_cachable_inference_item
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
