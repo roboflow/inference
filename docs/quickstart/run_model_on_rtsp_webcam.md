@@ -13,7 +13,7 @@ You can run both fine-tuned models and foundation models on the above three inpu
 ## Quickstart
 
 ### Installation
-To use fine-tuned with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
+To use fine-tuned with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>

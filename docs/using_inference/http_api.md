@@ -6,7 +6,7 @@ The HTTP Inference API provides a standard API through which to run inference on
 
 _You can skip this step if you already have Inference installed and running._
 
-The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.
 
 Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 

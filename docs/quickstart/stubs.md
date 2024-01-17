@@ -4,7 +4,7 @@ We call model endpoints without a trained model "stubs".
 
 ## Create a Stub
 
-To create a stub, first create workspace and project on the [Roboflow platform](https://app.roboflow.com). Then, use the Inference
+To create a stub, first create workspace and project on the <a href="https://app.roboflow.com" target="_blank">Roboflow platform</a>. Then, use the Inference
 client to send request to your Inference HTTP API:
 
 ```python

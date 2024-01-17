@@ -34,14 +34,14 @@ First, we import a utility function which will help us load a computer vision mo
 
 #### `model = get_roboflow_model(model_id="yolov8x-1280")`
 
-Next, we load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`. You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](../../reference_pages/model_aliases).
+Next, we load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`. You can find your models project name and version number <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">in the Roboflow App</a>. You can also browse public models that are ready to use on <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. In this example, we are using a special model ID that is an alias of <a href="https://universe.roboflow.com/microsoft/coco/model/13" target="_blank">a COCO pretrained model on Roboflow Universe</a>. You can see the list of model aliases [here](../../reference_pages/model_aliases).
 
 #### `results = model.infer("people-walking.jpg")`
 
-Finally, we run inference on a local image file ([hosted here](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg)). We used [Supervision](https://supervision.roboflow.com/how_to/detect_and_annotate/) to visualize the results.
+Finally, we run inference on a local image file (<a href="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg" target="_blank">hosted here</a>). We used <a href="https://supervision.roboflow.com/how_to/detect_and_annotate/" target="_blank">Supervision</a> to visualize the results.
 
 ## Why Inference?
 
-With a single pip install you can start using Inference to run a fine-tuned model on any image or video stream. Inference supports running object detection, classification, instance segmentation, keypoint detection, and even foundation models (like CLIP and SAM). You can train and deploy your own custom model or use one of the [50,000+ fine-tuned models shared by the community](https://universe.roboflow.com).
+With a single pip install you can start using Inference to run a fine-tuned model on any image or video stream. Inference supports running object detection, classification, instance segmentation, keypoint detection, and even foundation models (like CLIP and SAM). You can train and deploy your own custom model or use one of the <a href="https://universe.roboflow.com" target="_blank">50,000+ fine-tuned models shared by the community</a>.
 
 With Inference, you spend more time building and less time integrating.
