@@ -70,7 +70,7 @@ The `on_prediction` parameter in the `InferencePipeline` constructor allows you 
 This function provides two parameters:
 
 - `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
-- `video_frame`: A [dataclass]](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) that contains:
+- `video_frame`: A [dataclass](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) that contains:
     - `image`: The video frame as a NumPy array,
     - `frame_id`: The frame ID, and;
     - `frame_timestamp`: The timestamp of the frame.
