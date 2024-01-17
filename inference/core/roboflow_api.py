@@ -326,6 +326,19 @@ def get_roboflow_labeling_jobs(
 
 
 @wrap_roboflow_api_errors()
+def get_deployment_specification(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    deployment_name: str,
+) -> dict:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/deployments/{deployment_name}",
+        params=[("api_key", api_key)],
+    )
+    return _get_from_url(url=api_url)
+
+
+@wrap_roboflow_api_errors()
 def get_from_url(
     url: str,
     json_response: bool = True,

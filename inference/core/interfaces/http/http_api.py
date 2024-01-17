@@ -19,6 +19,7 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
+from inference.core.entities.requests.deployments import DeploymentsInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -43,6 +44,7 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
+from inference.core.entities.responses.deployments import DeploymentsInferenceResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -107,7 +109,12 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import (
+    get_deployment_specification,
+    get_roboflow_workspace,
+)
 from inference.core.utils.notebooks import start_notebook
+from inference.enterprise.deployments.complier.core import compile_and_execute_async
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -587,6 +594,31 @@ class HttpInterface(BaseInterface):
                 """
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
+
+            @app.post(
+                "/infer/deployments/{deployment_name}",
+                response_model=DeploymentsInferenceResponse,
+                summary="Endpoint to trigger inference from predefined deployment",
+                description="Check Roboflow API for deployment definition, once acquired - parse and execute injecting runtime parameters from request body",
+            )
+            async def infer_from_deployment(
+                deployment_name: str,
+                deployment_request: DeploymentsInferenceRequest,
+            ) -> DeploymentsInferenceResponse:
+                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
+                deployment_specification = get_deployment_specification(
+                    api_key=deployment_request.api_key,
+                    workspace_id=workspace,
+                    deployment_name=deployment_name,
+                )
+                result = await compile_and_execute_async(
+                    deployment_spec=deployment_specification,
+                    runtime_parameters=deployment_request.runtime_parameters,
+                    model_manager=model_manager,
+                    api_key=deployment_request.api_key,
+                )
+                response = DeploymentsInferenceResponse(deployment_outputs=result)
+                return orjson_response(response=response)
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

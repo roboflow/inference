@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Union
 
 import orjson
 from fastapi.responses import ORJSONResponse
+from pydantic import BaseModel
 
 from inference.core.entities.responses.inference import InferenceResponse
 
@@ -26,7 +27,7 @@ def default(obj: Any) -> JSON:
 
 
 def orjson_response(
-    response: Union[List[InferenceResponse], InferenceResponse]
+    response: Union[List[InferenceResponse], InferenceResponse, BaseModel]
 ) -> ORJSONResponseBytes:
     if isinstance(response, list):
         content = [r.dict(by_alias=True, exclude_none=True) for r in response]
