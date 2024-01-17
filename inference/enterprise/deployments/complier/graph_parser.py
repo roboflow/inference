@@ -237,7 +237,7 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     words - the problem emerges if a node of kind STEP has a parent (node from which
     it can be achieved) of kind STEP and this parent is in a different branch (point out that
     we allow for a single step to have multiple steps as input, but they must be at the same
-    execution path - for instance if D requires an output from C and D - this is allowed).
+    execution path - for instance if D requires an output from C and B - this is allowed).
     Additionally, we must prevent situation when outcomes of branches started by two or more
     condition steps merge with each other, as condition eval may result in contradictory
     execution (2).

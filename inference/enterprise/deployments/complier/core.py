@@ -2,7 +2,7 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, Optional
 
-from inference.core.env import MAX_ACTIVE_MODELS
+from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
@@ -40,6 +40,8 @@ async def compile_and_execute_async(
     runtime_parameters: Dict[str, Any],
     api_key: Optional[str] = None,
 ) -> dict:
+    if api_key is None:
+        api_key = API_KEY
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
     model_manager = ModelManager(model_registry=model_registry)
     model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)

@@ -20,6 +20,7 @@ from inference.enterprise.deployments.entities.validators import (
     get_last_selector_chunk,
     is_selector,
 )
+from inference.enterprise.deployments.errors import ExecutionGraphError
 
 
 def get_image(
@@ -35,16 +36,14 @@ def get_image(
     outputs_lookup: OutputsLookup,
 ) -> Any:
     if is_input_selector(selector_or_value=step.image):
-        image = runtime_parameters[get_last_selector_chunk(selector=step.image)]
-    elif is_step_output_selector(selector_or_value=step.image):
+        return runtime_parameters[get_last_selector_chunk(selector=step.image)]
+    if is_step_output_selector(selector_or_value=step.image):
         step_selector = get_step_selector_from_its_output(
             step_output_selector=step.image
         )
         step_output = outputs_lookup[step_selector]
-        image = step_output[get_last_selector_chunk(selector=step.image)]
-    else:
-        raise RuntimeError("Cannot find image")
-    return image
+        return step_output[get_last_selector_chunk(selector=step.image)]
+    raise ExecutionGraphError("Cannot find image")
 
 
 def resolve_parameter(

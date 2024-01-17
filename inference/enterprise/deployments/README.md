@@ -9,7 +9,7 @@ We are under development of new feature that would allow clients to define the M
 (JSON configuration or WYSIWYG UI) and let the `inference` care about all required computations. That goal can be
 achieved thanks to the compilation and runtime engine that is created here.
 
-The `deopoyment` module contains components capable to:
+The `deployment` module contains components capable to:
 * parse the deployment specification (see: [schemas of configuration entities](./entities))
 * validate the correctness of deployment specification (see: [validator module](./complier/validator.py))
 * construct computational graph and validate its consistency prior to any computations (see: [graph parser](./complier/graph_parser.py))

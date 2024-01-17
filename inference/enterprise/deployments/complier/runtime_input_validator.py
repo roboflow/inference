@@ -25,7 +25,7 @@ def prepare_runtime_parameters(
     execution_graph: DiGraph,
     runtime_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
-    validate_runtime_input(
+    ensure_all_parameters_filled(
         execution_graph=execution_graph,
         runtime_parameters=runtime_parameters,
     )
@@ -44,7 +44,7 @@ def prepare_runtime_parameters(
     return runtime_parameters
 
 
-def validate_runtime_input(
+def ensure_all_parameters_filled(
     execution_graph: DiGraph,
     runtime_parameters: Dict[str, Any],
 ) -> None:
@@ -106,8 +106,8 @@ def get_input_parameters_default_values(execution_graph: DiGraph) -> Dict[str, A
 
 
 def assembly_input_images(
-    runtime_parameters: Dict[str, Any],
     execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
 ) -> Dict[str, Any]:
     input_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph,
@@ -120,7 +120,7 @@ def assembly_input_images(
         if issubclass(type(runtime_parameters[definition.name]), list):
             runtime_parameters[definition.name] = [
                 assembly_input_image(
-                    parameter=definition.name,
+                    parameter=input_node,
                     image=image,
                     identifier=i,
                 )
@@ -128,7 +128,7 @@ def assembly_input_images(
             ]
         else:
             runtime_parameters[definition.name] = assembly_input_image(
-                parameter=definition.name, image=runtime_parameters[definition.name]
+                parameter=input_node, image=runtime_parameters[definition.name]
             )
     return runtime_parameters
 
@@ -140,7 +140,7 @@ def assembly_input_image(
     if identifier is not None:
         parent = f"{parent}.[{identifier}]"
     if issubclass(type(image), dict):
-        image["parent_id"] = parent
+        image[PARENT_ID_KEY] = parent
         return image
     if issubclass(type(image), np.ndarray):
         return {
@@ -180,12 +180,7 @@ def validate_step_input_bindings(
         if not is_input_selector(selector_or_value=selector_or_value):
             continue
         input_parameter_name = get_last_selector_chunk(selector=selector_or_value)
-        if input_parameter_name in runtime_parameters:
-            parameter_value = runtime_parameters[input_parameter_name]
-        else:
-            parameter_value = execution_graph.nodes[selector_or_value][
-                "definition"
-            ].default_value
+        parameter_value = runtime_parameters[input_parameter_name]
         step_definition.validate_field_binding(
             field_name=input_name, value=parameter_value
         )
