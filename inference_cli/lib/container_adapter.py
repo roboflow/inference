@@ -1,12 +1,12 @@
 import subprocess
 from typing import Dict, List, Optional, Union
-from inference_cli.lib.exceptions import DockerConnectionErrorException
 
 import typer
 from docker.models.containers import Container
 from rich.progress import Progress, TaskID
 
 import docker
+from inference_cli.lib.exceptions import DockerConnectionErrorException
 from inference_cli.lib.utils import read_env_file
 
 try:

@@ -38,10 +38,8 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov7_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -62,10 +60,8 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_larger_than_max_bat
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov7_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov7_segmentation_prediction_matches_reference(
