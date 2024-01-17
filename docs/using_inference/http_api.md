@@ -25,7 +25,9 @@ Next, instantiate a client and use the `infer(...)` method:
 ```python
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
-project_id = "soccer-players-5fuqs/1"
+project_id = "soccer-players-5fuqs"
+model_version = "1"
+model_id = project_id + "/" + model_version
 image_url = "https://media.roboflow.com/inference/soccer.jpg"
 
 client = InferenceHTTPClient(
@@ -33,9 +35,8 @@ client = InferenceHTTPClient(
     api_key=os.environ["ROBOFLOW_API_KEY"],
 )
 
-client.select_api(model_version)
 
-results = client.infer(image_url, model_id=f"{model_id}")
+results = client.infer(image_url, model_id=model_id)
 ```
 
 !!! Hint
@@ -54,10 +55,9 @@ image = cv2.imread(image_file)
 
 #Configure client
 client = InferenceHTTPClient(
-    api_url="http://localhost:9001",
-    api_key=os.environ["ROBOFLOW_API_KEY"],
+    api_url="http://localhost:9001", # route for local inference server
+    api_key=os.environ["ROBOFLOW_API_KEY"], # api key for your workspace
 )
-client.select_api(model_version)
 
 #Run inference
 results = client.infer(image, model_id=model_id)
@@ -98,8 +98,6 @@ client = InferenceHTTPClient(
     api_url="https://detect.roboflow.com",
     api_key=os.environ["ROBOFLOW_API_KEY"],
 )
-
-client.select_api(model_version)
 
 results = client.infer(image_url, model_id=f"{model_id}")
 ```

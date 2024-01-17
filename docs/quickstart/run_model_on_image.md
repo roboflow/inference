@@ -52,8 +52,6 @@ There are two generations of routes in a Roboflow inference server To see what r
             api_key=os.environ["API_KEY"],
         )
 
-        client.select_api(model_version)
-
         results = client.infer(image_url, model_id=f"{project_id}/{model_version}")
 
         print(predictions)
@@ -90,8 +88,6 @@ There are two generations of routes in a Roboflow inference server To see what r
             api_url="http://localhost:9001",
             api_key=os.environ["API_KEY"],
         )
-
-        client.select_api(model_version)
 
         results = client.infer(Image.open(filename), model_id=f"{project_id}/{model_version}")
 
@@ -130,7 +126,6 @@ There are two generations of routes in a Roboflow inference server To see what r
             api_key=os.environ["API_KEY"],
         )
 
-        client.select_api(model_version)
 
         results = client.infer(cv2.imread(filename), model_id=f"{project_id}/{model_version}")
 

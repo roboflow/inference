@@ -33,7 +33,7 @@ from inference import get_roboflow_model
 
 model = get_roboflow_model(model_id="yolov8x-1280")
 
-results = model.infer("people-walking.jpg")
+results = model.infer("people-walking.jpg") # replace with path to your image
 ```
 
 The results object is an [inference response object](../../docs/reference/inference/core/entities/responses/inference/#inference.core.entities.responses.inference.ObjectDetectionInferenceResponse). It contains some meta data (e.g. processing time) as well as an array of the predictions. The type of response and its attributes will depend on the type of model. [See all of the Inference Response objects](../../docs/reference/inference/core/entities/responses/inference/).
