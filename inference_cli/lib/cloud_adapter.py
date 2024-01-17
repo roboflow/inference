@@ -24,9 +24,9 @@ setup: |
   systemctl --user start docker.service
   docker pull roboflow/roboflow-inference-server-cpu
   export PATH=/home/gcpuser/bin:$PATH
+  echo
 run: |
-  export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 roboflow/roboflow-inference-server-cpu
-
+  export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-cpu
 """,
 
 "gcp_gpu": """
@@ -44,7 +44,7 @@ resources:
 setup: |
   docker pull roboflow/roboflow-inference-server-gpu
 run: |
-  docker run -d --gpus all -p 9001:9001 roboflow/roboflow-inference-server-gpu
+  docker run -d --gpus all -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-gpu
 """,
 
 "aws_cpu": """
@@ -62,9 +62,9 @@ setup: |
   sudo apt-get update
   docker pull roboflow/roboflow-inference-server-cpu
   export PATH=/home/gcpuser/bin:$PATH
+  echo
 run: |
-  export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 roboflow/roboflow-inference-server-cpu
-
+  export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-cpu
 """,
 
 "aws_gpu": """
@@ -83,8 +83,7 @@ resources:
 setup: |
   docker pull roboflow/roboflow-inference-server-gpu
 run: |
-  docker run -d --gpus all -p 9001:9001 roboflow/roboflow-inference-server-gpu
-
+  docker run -d --gpus all -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-gpu
 """
 }
 
@@ -92,12 +91,24 @@ run: |
 def _random_char(y):
     return ''.join(random.choice(string.ascii_lowercase) for x in range(y))
 
-def undeploy(cluster_name):
+def cloud_status():
+    print("Getting status from skypilot...")
+    print(sky.status())
+
+def cloud_stop(cluster_name):
+    print(f"Stopping skypilot deployment {cluster_name}...")
+    print(sky.stop(cluster_name))
+
+def cloud_start(cluster_name):
+    print(f"Starting skypilot deployment {cluster_name}")
+    print(sky.start(cluster_name))
+
+def cloud_undeploy(cluster_name):
     print(f"Undeploying Roboflow Inference from {cluster_name}, this may take a few minutes.")
     sky.down(cluster_name)
     print(f"Undeployed Roboflow Inference from {cluster_name}")
 
-def deploy(provider, compute_type, dry_run, custom, help):
+def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
     if help:
         print('''
               Deploy Roboflow Inference to a cloud provider.
@@ -150,6 +161,9 @@ def deploy(provider, compute_type, dry_run, custom, help):
         print(yaml_string)
         return
     
+    placeholder_string = f" --env ROBOFLOW_API_KEY={roboflow_api_key} " if roboflow_api_key is not None else ""
+    yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)
+    
     with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
         file_path = f.name
         f.write(yaml_string)
@@ -165,10 +179,8 @@ def deploy(provider, compute_type, dry_run, custom, help):
     print(f"Deployed Roboflow Inference to {provider} on {compute_type}, deployment name is {cluster_name} ") 
     cluster_ip = sky.status(cluster_name)[0]['handle'].head_ip
     
-    print(f"To control your deployment, use the following sky commands:")
-    print(f"To get details about your deployment: sky status {cluster_name}")
-    print(f"To ssh into the deployment server: ssh {cluster_name}")
-    print("To get more information about sky cli options, visit https://skypilot.readthedocs.io/en/latest/reference/cli.html")
-    print (f"To delete your deplyment: inference undeploy {cluster_name}")
+    print(f"To get a list of your deployments: inference status")
+    print (f"To delete your deployment: inference undeploy {cluster_name}")
+    print(f"To ssh into the deployed server: ssh {cluster_name}")
     print(f"The Roboflow Inference Server is running at http://{cluster_ip}:9001")
     
