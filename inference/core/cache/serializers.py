@@ -5,7 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import CONDENSED_CACHED
+from inference.core.env import VERBOSE_CACHE
 from inference.core.version import __version__
 
 
@@ -13,7 +13,7 @@ def to_cachable_inference_item(
     infer_request: InferenceRequest,
     infer_response: Union[InferenceResponse, list[InferenceResponse]],
 ) -> dict:
-    if not CONDENSED_CACHED:
+    if VERBOSE_CACHE:
         return {
             "inference_server_version": __version__,
             "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,

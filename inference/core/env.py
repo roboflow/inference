@@ -56,10 +56,8 @@ GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 
-# If true, this will store smaller representations of the inference in the cache
-# This is useful for reducing the size of the cache, but will not allow for the
-# retrieval of the original inference
-CONDENSED_CACHED = str2bool(os.getenv("CONDENSED_CACHED", False))
+# If true, this will store the full inference request and repsonse in the cache
+VERBOSE_CACHE = str2bool(os.getenv("VERBOSE_CACHE", False))
 
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
