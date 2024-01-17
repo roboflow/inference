@@ -10,7 +10,7 @@ You can run both fine-tuned models and foundation models on the above three inpu
 
 !!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image) guide to learn how to find a model to run."
 
-## Run a Vision Model on Video Frames
+## Quickstart
 
 To use fine-tuned with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
@@ -18,7 +18,13 @@ To use fine-tuned with Inference, you will need a Roboflow API key. If you don't
 export ROBOFLOW_API_KEY=<your api key>
 ```
 
-Once you have selected a model to run, create a new Python file and add the following code:
+Then, install Inference:
+
+```bash
+pip install inference
+```
+
+Next, create an Inference Pipeline. Once you have selected a model to run, create a new Python file and add the following code:
 
 ```python
 from inference import InferencePipeline
@@ -62,7 +68,7 @@ The `on_prediction` parameter in the `InferencePipeline` constructor allows you 
 This function provides two parameters:
 
 - `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
-- `video_frame`: A dataclass that contains:
+- `video_frame`: A [dataclass]](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) that contains:
     - `image`: The video frame as a NumPy array,
     - `frame_id`: The frame ID, and;
     - `frame_timestamp`: The timestamp of the frame.
@@ -85,6 +91,24 @@ pipeline = InferencePipeline.init(
 pipeline.start()
 pipeline.join()
 ```
+
+See the reference docs for the [full list of Inference Pipeline parameters](../../docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
+
+## Built in sinks
+
+Inference has [several sinks built in](../../docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
+
+#### `render_boxes(...)`
+
+The [render boxes sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
+
+#### `UDPSink(...)`
+
+The [UDP sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
+
+#### `multi_sink(...)`
+
+The [Multi-Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
 
 ## Performance
 
