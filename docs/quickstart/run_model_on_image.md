@@ -219,7 +219,7 @@ There are two generations of routes in a Roboflow inference server To see what r
 ### Run Inference on a v1 Route
 
 !!! Run Inference
-=== "URL"
+    === "URL"
 
         The Roboflow hosted API uses the V1 route and requests take a slightly different form:
 
@@ -353,7 +353,7 @@ There are two generations of routes in a Roboflow inference server To see what r
 
     === "Batch Inference"
 
-       Batch inference is not currently supported by V1 routes.
+        Batch inference is not currently supported by V1 routes.
 
 The code snippets above will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.
 

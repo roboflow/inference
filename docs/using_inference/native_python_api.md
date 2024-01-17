@@ -6,11 +6,7 @@ Using the native python API centers on loading models, then calling their `infer
 
 This example shows how to load a model, run inference, then display the results.
 
-First, install inference:
-
-```bash
-pip install inference
-```
+{% include 'install.md' %}
 
 Next, import a model:
 

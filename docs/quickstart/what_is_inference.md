@@ -12,11 +12,7 @@ Inference handles all of this, out of the box.
 
 ## Hello Inference
 
-First, install Inference via pip:
-
-```bash
-pip install inference
-```
+{% include 'install.md' %}
 
 Then, use it to infer on an image with a public computer vision model:
 

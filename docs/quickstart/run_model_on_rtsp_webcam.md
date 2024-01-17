@@ -21,9 +21,7 @@ export ROBOFLOW_API_KEY=<your api key>
 
 Then, install Inference:
 
-```bash
-pip install inference
-```
+{% include 'install.md' %}
 
 ### Inference on Video/Webcam/RTSP
 Next, create an Inference Pipeline. Once you have selected a model to run, create a new Python file and add the following code:

@@ -117,6 +117,8 @@ plugins:
       - docs/scripts/gen_ref_pages.py
   - literate-nav:
       nav_file: nav.md
+  - macros:
+      include_dir: docs/include
 
 markdown_extensions:
   - admonition

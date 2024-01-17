@@ -4,10 +4,7 @@ The Inference Server runs in Docker. Before we begin, make sure you have install
 
 Next, we need to install Inference:
 
-```
-pip install inference
-```
-
+{% include 'install.md' %}
 To help us visualize our results in the example below, we will install Supervision:
 
 ```
