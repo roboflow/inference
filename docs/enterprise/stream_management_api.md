@@ -143,7 +143,7 @@ After running `roboflow-inference-stream-management-api` container, HTTP API wil
 `http://127.0.0.1:8080` (given that default configuration is used).
 
 One can call `wget http://127.0.0.1:8080/openapi.json` to get OpenApi specification of API that can be rendered
-[here](https://editor.swagger.io/)
+<a href="https://editor.swagger.io/" target="_blank">here</a>
 
 Example Python client is provided below:
 

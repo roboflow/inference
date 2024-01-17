@@ -24,7 +24,7 @@ In the first example, we showed how to run a rock paper scissors model. This mod
     If you haven't already, follow our Run Your First Model guide to install and set up Inference.
 
 
-Go to the [Roboflow Universe](https://universe.roboflow.com) homepage and use the search bar to find a model.
+Go to the <a href="https://universe.roboflow.com" target="_blank">Roboflow Universe</a> homepage and use the search bar to find a model.
 
 ![Roboflow Universe search bar](https://media.roboflow.com/universe-search.png)
 
@@ -91,7 +91,7 @@ _Note: This model was tested on a Mac, but will achieve better performance on a 
 
 ## Run a Private, Fine-Tuned Model
 
-You can run models you have trained privately on Roboflow with Inference. To do so, first go to your [Roboflow dashboard](https://app.roboflow.com). Then, choose the model you want to run.
+You can run models you have trained privately on Roboflow with Inference. To do so, first go to your <a href="https://app.roboflow.com" target="_blank">Roboflow dashboard</a>. Then, choose the model you want to run.
 
 ![Roboflow dashboard](https://media.roboflow.com/docs-models.png)
 

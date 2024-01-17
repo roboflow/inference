@@ -14,7 +14,7 @@ Now run the `inference sever start` command.
 inference server start
 ```
 
-Now visit [localhost:9001](http://localhost:9001) in your browser to see the `inference` landing page. This page contains links to resources and examples related to `inference`.
+Now visit <a href="http://localhost:9001" target="_blank">localhost:9001</a> in your browser to see the `inference` landing page. This page contains links to resources and examples related to `inference`.
 
 <div style="text-align: center;">
 <img src="https://storage.googleapis.com/com-roboflow-marketing/inference/inference_landing_page.png" alt="Inference Landing Page" width="400"/>
@@ -28,7 +28,7 @@ Roboflow Inference Servers come equipped with a built in Jupyterlab environment.
 inference server start --dev
 ```
 
-Now visit [localhost:9001](http://localhost:9001) in your browser to see the `inference` landing page. From the landing page, select the button labeled "Jump Into an Inference Enabled Notebook" to open a new tab for the Jupyterlab environment.
+Now visit <a href="http://localhost:9001" target="_blank">localhost:9001</a> in your browser to see the `inference` landing page. From the landing page, select the button labeled "Jump Into an Inference Enabled Notebook" to open a new tab for the Jupyterlab environment.
 
 <div style="text-align: center;">
 <img src="https://storage.googleapis.com/com-roboflow-marketing/inference/inference_jupyterlab_link.png" alt="Inference Jupyterlab Link" width="400"/>

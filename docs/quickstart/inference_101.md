@@ -24,7 +24,7 @@ Running Inference this way can have several advantages:
 
 !!! Hint
 
-    Checkout the [Inference SDK](https://inference.roboflow.com/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
+    Checkout the [Inference SDK](/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
 
 [See Docs and Examples](/using_inference/http_api/)
 

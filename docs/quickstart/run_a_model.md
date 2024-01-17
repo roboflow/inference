@@ -1,6 +1,6 @@
 Let's run a fine-tuned computer vision model to play rock paper scissors.
 
-The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.
 
 Next, we need to install Inference:
 
@@ -42,7 +42,7 @@ inference.Stream(
 )
 ```
 
-Next, sign up for a [free Roboflow account](https://app.roboflow.com). Retrieve your API key from the Roboflow dashboard, then run the following command:
+Next, sign up for a <a href="https://app.roboflow.com" target="_blank">free Roboflow account</a>. Retrieve your API key from the Roboflow dashboard, then run the following command:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>

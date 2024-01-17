@@ -4,7 +4,7 @@ Throughout these docs you will see references to your Roboflow API key. Using yo
 
 ## Access Your Roboflow API Key
 
-For some examples in the documentation you will need to provide your Roboflow API key. To access your Roboflow API key, you will need to [create a free Roboflow account](https://app.roboflow.com), then [follow the docs](https://docs.roboflow.com/api-reference/authentication) to retrieve your key.
+For some examples in the documentation you will need to provide your Roboflow API key. To access your Roboflow API key, you will need to <a href="https://app.roboflow.com" target="_blank">create a free Roboflow account</a>, then <a href="https://docs.roboflow.com/api-reference/authentication" target="_blank">follow the docs</a> to retrieve your key.
 
 ## Use Your Roboflow API Key
 

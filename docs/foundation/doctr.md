@@ -1,10 +1,10 @@
-[DocTR](https://github.com/mindee/doctr) is an Optical Character Recognition (OCR) model.
+<a href="https://github.com/mindee/doctr" target="_blank">DocTR</a> is an Optical Character Recognition (OCR) model.
 
 You can use DocTR to read the text in an image.
 
-To use DocTR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
+To use DocTR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. 
 
-Then, retrieve your API key from the Roboflow dashboard. [Learn how to retrieve your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+Then, retrieve your API key from the Roboflow dashboard. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your API key</a>.
 
 Run the following command to set your API key in your coding environment:
 
@@ -41,4 +41,4 @@ The results of DocTR will appear in your terminal:
 
 ## See Also
 
-- [How to detect text in images with OCR](https://blog.roboflow.com/ocr-api/)
+- <a href="https://blog.roboflow.com/ocr-api/" target="_blank">How to detect text in images with OCR</a>
