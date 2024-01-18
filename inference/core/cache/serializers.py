@@ -1,6 +1,6 @@
+import uuid
 from typing import Union
 
-import uuid
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
