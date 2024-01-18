@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import VERBOSE_CACHE
+from inference.core.env import TINY_CACHE
 from inference.core.version import __version__
 
 
@@ -15,7 +15,7 @@ def to_cachable_inference_item(
     infer_response: Union[InferenceResponse, list[InferenceResponse]],
 ) -> dict:
     inference_id = str(uuid.uuid4())
-    if VERBOSE_CACHE:
+    if not TINY_CACHE:
         return {
             "inference_id": inference_id,
             "inference_server_version": __version__,
