@@ -20,6 +20,8 @@ The Inference Server runs in Docker. Before we begin, make sure you have install
 
 Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 
+{% include 'install.md' %}
+
 Start the server using `inference server start`. After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
 
 ## Step #2: Run Inference
@@ -140,7 +142,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Batch Inference"
 
         Roboflow object detection models support batching. Utilize batch inference by passing a list of image objects in a request payload:
@@ -211,7 +213,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Numpy Array"
 
         Create a new Python file and add the following code:
@@ -272,7 +274,7 @@ There are two generations of routes in a Roboflow inference server To see what r
 ### Run Inference on a v1 Route
 
 !!! Run Inference
-    === "URL"
+=== "URL"
 
         The Roboflow hosted API uses the V1 route and requests take a slightly different form:
 
@@ -403,9 +405,9 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Batch Inference"
-       
+
        Batch inference is not currently supported by V1 routes.
 
 The code snippets above will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.

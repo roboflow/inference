@@ -2,6 +2,8 @@ The Roboflow Inference server hosts a landing page. This page contains links to 
 
 ## Visit the Inference Landing Page
 
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.
+
 The easiest way to start an inference server is with the inference CLI. Install it via pip:
 
 ```bash

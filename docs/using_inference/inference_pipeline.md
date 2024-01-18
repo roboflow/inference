@@ -4,9 +4,7 @@ The Inference Pipeline interface is made for streaming and is likely the best ro
 
 First, install Inference:
 
-```bash
-pip install inference
-```
+{% include 'install.md' %}
 
 Next, create an Inference Pipeline:
 
