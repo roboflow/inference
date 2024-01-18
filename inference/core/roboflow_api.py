@@ -1,3 +1,4 @@
+import json
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -16,7 +17,7 @@ from inference.core.entities.types import (
     VersionID,
     WorkspaceID,
 )
-from inference.core.env import API_BASE_URL
+from inference.core.env import API_BASE_URL, MOCK_DEPLOYMENTS
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MissingDefaultModelError,
@@ -331,11 +332,134 @@ def get_deployment_specification(
     workspace_id: WorkspaceID,
     deployment_name: str,
 ) -> dict:
+    if MOCK_DEPLOYMENTS:
+        return {
+            "specification": {
+                "version": "1.0",
+                "inputs": [
+                    {"type": "InferenceImage", "name": "image"},
+                    {
+                        "type": "InferenceParameter",
+                        "name": "model_id",
+                        "default_value": "yolov8n-640",
+                    },
+                    {
+                        "type": "InferenceParameter",
+                        "name": "class_filter",
+                        "default_value": ["car"],
+                    },
+                ],
+                "steps": [
+                    {
+                        "type": "ObjectDetectionModel",
+                        "name": "step_1",
+                        "image": "$inputs.image",
+                        "model_id": "$inputs.model_id",
+                        "confidence": 0.5,
+                        "iou_threshold": 0.4,
+                        "class_filter": "$inputs.class_filter",
+                    },
+                    {
+                        "type": "Crop",
+                        "name": "step_2",
+                        "image": "$inputs.image",
+                        "detections": "$steps.step_1.predictions",
+                    },
+                    {
+                        "type": "ObjectDetectionModel",
+                        "name": "step_3",
+                        "image": "$steps.step_2.crops",
+                        "model_id": "$inputs.model_id",
+                        "confidence": 0.2,
+                        "iou_threshold": 0.2,
+                        "class_filter": "$inputs.class_filter",
+                    },
+                    {
+                        "type": "Crop",
+                        "name": "step_4",
+                        "image": "$steps.step_2.crops",
+                        "detections": "$steps.step_3.predictions",
+                    },
+                    {
+                        "type": "ClassificationModel",
+                        "name": "step_5",
+                        "image": "$steps.step_4.crops",
+                        "model_id": "vehicle-classification-eapcd/2",
+                        "confidence": 0.4,
+                    },
+                    {
+                        "type": "DetectionOffset",
+                        "name": "step_6",
+                        "predictions": "$steps.step_3.predictions",
+                        "offset_x": 50,
+                        "offset_y": 70,
+                    },
+                ],
+                "outputs": [
+                    {
+                        "type": "JsonField",
+                        "name": "predictions",
+                        "selector": "$steps.step_1.predictions",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "crops",
+                        "selector": "$steps.step_2.crops",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "predictions_2",
+                        "selector": "$steps.step_3.predictions",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "crops_2",
+                        "selector": "$steps.step_4.crops",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "crops_predictions",
+                        "selector": "$steps.step_5.predictions",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "crops_parents",
+                        "selector": "$steps.step_2.parent_id",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "cls_parents",
+                        "selector": "$steps.step_3.parent_id",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "crops_parents_2",
+                        "selector": "$steps.step_4.parent_id",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "cls_parents_2",
+                        "selector": "$steps.step_5.parent_id",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "offset_predictions",
+                        "selector": "$steps.step_6.predictions",
+                    },
+                    {
+                        "type": "JsonField",
+                        "name": "image_meta",
+                        "selector": "$steps.step_3.image",
+                    },
+                ],
+            }
+        }
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/deployments/{deployment_name}",
         params=[("api_key", api_key)],
     )
-    return _get_from_url(url=api_url)
+    response = _get_from_url(url=api_url)
+    return json.loads(response["config"])
 
 
 @wrap_roboflow_api_errors()
