@@ -7,7 +7,7 @@ Inference is designed to fit every computer vision use case. Within Inference, t
 
 ## Native Python API
 
-The native python API is the most simple and involves accessing the base package APIs directly. Going this route, you will import Inference modules directly into your python code. You will load models, run inference, and handle the results all within your own logic. You will also need to manage the dependencies within your python environment. If you are creating a simple app or just testing, the native Python API is a great place to start.
+The native python API is the most simple interface and involves accessing the base package APIs directly. Going this route, you will import Inference modules directly into your python code. You will load models, run inference, and handle the results all within your own logic. You will also need to manage the dependencies within your python environment. If you are creating a simple app or just testing, the native Python API is a great place to start.
 
 [See Docs and Examples](/using_inference/native_python_api/)
 
@@ -17,22 +17,22 @@ The HTTP API is a helpful way to treat your machine learning models as their own
 
 Running Inference this way can have several advantages:
 
-- No Dependency Management: When running Inference within one of Roboflow's published Inference Server containers, all the dependencies are built and isolated so they wont interfere with other dependencies in your code.
-- Microservice Architecture: Running Inference as a separate service allows you to operate and maintain your computer vision models separate from other logic within your software, including scaling up and down to meet dynamic loads.
-- Roboflow Hosted API: Roboflow hosts a powerful and infinitely scalable version of the Roboflow Inference Server. This makes it even easier to integrate computer vision models into your software without adding any maintenance burden. And, since the Roboflow hosted APIs are running using the Inference package, it's easy to switch between using a hosted server and an on prem server without having to reinvent your client code.
-- Non-Python Clients: Running Inference within and HTTP server allows you to interact with it from any language you prefer.
+- **No Dependency Management:** When running Inference within one of Roboflow's published Inference Server containers, all the dependencies are built and isolated so they wont interfere with other dependencies in your code.
+- **Microservice Architecture:** Running Inference as a separate service allows you to operate and maintain your computer vision models separate from other logic within your software, including scaling up and down to meet dynamic loads.
+- **Roboflow Hosted API:** Roboflow hosts a powerful and infinitely scalable version of the Roboflow Inference Server. This makes it even easier to integrate computer vision models into your software without adding any maintenance burden. And, since the Roboflow hosted APIs are running using the Inference package, it's easy to switch between using a hosted server and an on prem server without having to reinvent your client code.
+- **Non-Python Clients:** Running Inference within an HTTP server allows you to interact with it from any language you prefer.
+
+[See Docs and Examples](/using_inference/http_api/)
 
 !!! Hint
 
-    Checkout the [Inference SDK](/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
-
-[See Docs and Examples](/using_inference/http_api/)
+    Checkout the [Inference SDK](/inference_helpers/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
 
 ## Inference Pipeline
 
 The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. It is an asynchronous interface that can consume many different video sources including local devices (like webcams), RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks. Sinks are methods that operate on the results of inferring on a single frame. The Inference package has several built in sinks but also gives you the ability to write custom sinks for integrating with the rest of your software.
 
-[See Docs and Examples](/quickstart/run_model_on_rtsp_webcam/)
+[See Docs and Examples](/using_inference/inference_pipeline/)
 
 ## Advanced Usage & Interfaces
 

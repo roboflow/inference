@@ -1,6 +1,9 @@
 :root {
-    --md-primary-fg-color: #8315F9;
+  --md-primary-fg-color: #8315f9;
 }
 .md-typeset h1 {
-    margin-bottom: 0;
+  margin-bottom: 0;
+}
+.md-tabs__link {
+  font-size: 1rem;
 }

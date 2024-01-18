@@ -18,16 +18,17 @@ The recommended way is to set your Roboflow API key within your environment via 
 export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 ```
 
+Then, any command you run within that same terminal session will have access to the environment variable `ROBOFLOW_API_KEY`.
+
 ### Python
 
-When using Inference Within python, your Roboflow API key can be set via keyword arguments
+When using Inference within python, your Roboflow API key can be set via keyword arguments
 
 ```python
 from inference.models.utils import get_roboflow_model
 
 model = get_roboflow_model(model_id="...", api_key="YOUR ROBOFLOW API KEY")
 ```
-{% include 'model_id.md' %}
 
 !!! Hint
 
@@ -56,8 +57,10 @@ response = requests.post(url,json=payload)
 
 ### Docker Configuration
 
-If you are running the Roboflow Inference Server in a docker container, you can provide your Roboflow API key within the `docker run` command.
+If you are running the Roboflow Inference Server locally in a docker container, you can provide your Roboflow API key within the `docker run` command.
 
 ```bash
 docker run -it --rm --network=host -e ROBOFLOW_API_KEY=YOUR_ROBOFLOW_API_KEY roboflow/roboflow-inference-server-cpu:latest
 ```
+
+Requests sent to this server can now omit `api_key` from the request payload.

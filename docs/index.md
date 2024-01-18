@@ -1,3 +1,15 @@
+---
+hide:
+  - navigation
+---
+
+<style>
+  .md-typeset h1,
+  .md-content__button {
+    display: none;
+  }
+</style>
+
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
 <a href="https://roboflow.com" target="_blank">Roboflow</a> Inference enables you to deploy computer vision models faster than ever.
@@ -11,7 +23,7 @@ You can <a href="https://github.com/roboflow/notebooks" target="_blank">train an
 
 You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
 
-<a href="https://inference.roboflow.com/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
+<a href="/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
 
 <style>
   .button {
@@ -91,12 +103,12 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
-| extra   | description                                                                          |
-| :------ | :----------------------------------------------------------------------------------- |
-| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                     |
-| `gaze`  | Ability to use the core `Gaze` model                                                 |
-| `http`  | Ability to run the http interface                                                    |
-| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                        |
+| extra   | description                                                                                                     |
+| :------ | :-------------------------------------------------------------------------------------------------------------- |
+| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                                                |
+| `gaze`  | Ability to use the core `Gaze` model                                                                            |
+| `http`  | Ability to run the http interface                                                                               |
+| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                                                   |
 | `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>) |
 
 **_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
@@ -194,8 +206,8 @@ To learn more, <a href="https://roboflow.com/sales" target="_blank">contact the 
 
 ## More Roboflow Open Source Projects
 
-| Project                                                           | Description                                                                                                                                            |
-| :---------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project                                                                                      | Description                                                                                                                                            |
+| :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a href="https://roboflow.com/supervision" target="_blank">supervision</a>                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
 | <a href="https://github.com/autodistill/autodistill" target="_blank">Autodistill</a>         | Automatically label images for use in training computer vision models.                                                                                 |
 | <a href="https://github.com/roboflow/inference" target="_blank">Inference</a> (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
