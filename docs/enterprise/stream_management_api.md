@@ -1,5 +1,9 @@
 # Stream Management
 
+> [!IMPORTANT] 
+> We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
+
+
 ## Overview
 
 This feature is designed to cater to users requiring the execution of inference to generate predictions using

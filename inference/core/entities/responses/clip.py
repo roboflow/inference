@@ -34,3 +34,7 @@ class ClipCompareResponse(InferenceResponse):
     time: Optional[float] = Field(
         description="The time in seconds it took to produce the similarity scores including preprocessing"
     )
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
+        default=None,
+    )
