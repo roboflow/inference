@@ -5,8 +5,12 @@ import cv2
 import numpy as np
 import pytest
 
-from inference.core.interfaces.http.orjson_utils import serialise_image, contains_image, serialise_list, \
-    serialise_deployment_workflow_result
+from inference.core.interfaces.http.orjson_utils import (
+    contains_image,
+    serialise_deployment_workflow_result,
+    serialise_image,
+    serialise_list,
+)
 
 
 def test_serialise_image() -> None:
@@ -27,7 +31,9 @@ def test_serialise_image() -> None:
         np.fromstring(decoded, dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
-    assert (recovered_image == np_image).all(), "Recovered image should be equal to input image"
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
 
 
 def test_contains_image_when_element_contains_image() -> None:
@@ -54,7 +60,7 @@ def test_contains_image_when_element_contains_image() -> None:
         [],
         3,
         "some",
-    ]
+    ],
 )
 def test_contains_image_when_element_does_not_contain_image(image: Any) -> None:
     # when
@@ -77,7 +83,7 @@ def test_serialise_list() -> None:
         {
             "type": "numpy_object",
             "value": np_image,
-        }
+        },
     ]
 
     # when
@@ -91,13 +97,17 @@ def test_serialise_list() -> None:
         "type": "url",
         "value": "https://some.com/image.jpg",
     }, "Third element of list must be untouched"
-    assert result[3]["type"] == "base64", "Type of forth element must be changed into base64"
+    assert (
+        result[3]["type"] == "base64"
+    ), "Type of forth element must be changed into base64"
     decoded = base64.b64decode(result[3]["value"])
     recovered_image = cv2.imdecode(
         np.fromstring(decoded, dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
-    assert (recovered_image == np_image).all(), "Recovered image should be equal to input image"
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
 
 
 def test_serialise_deployment_workflow_result() -> None:
@@ -114,8 +124,8 @@ def test_serialise_deployment_workflow_result() -> None:
             {
                 "type": "numpy_object",
                 "value": np_image,
-            }
-        ]
+            },
+        ],
     }
 
     # when
@@ -124,6 +134,12 @@ def test_serialise_deployment_workflow_result() -> None:
     # then
     assert len(result) == 3, "Size of dictionary must not change"
     assert result["some"] == [{"detection": 1}], "Element must not change"
-    assert result["other"]["type"] == "base64", "Type of this element must change due to serialisation"
-    assert result["third"][0] == "some", "This element must not be touched by serialistaion"
-    assert result["third"][1]["type"] == "base64", "Type of this element must change due to serialisation"
+    assert (
+        result["other"]["type"] == "base64"
+    ), "Type of this element must change due to serialisation"
+    assert (
+        result["third"][0] == "some"
+    ), "This element must not be touched by serialistaion"
+    assert (
+        result["third"][1]["type"] == "base64"
+    ), "Type of this element must change due to serialisation"

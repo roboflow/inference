@@ -20,6 +20,7 @@ from inference.core.entities.types import (
 from inference.core.env import API_BASE_URL, MOCK_DEPLOYMENTS
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -459,7 +460,16 @@ def get_deployment_specification(
         params=[("api_key", api_key)],
     )
     response = _get_from_url(url=api_url)
-    return json.loads(response["config"])
+    if "deployment" not in response or "config" not in response["deployment"]:
+        raise MalformedWorkflowResponseError(
+            f"Could not found deployment specification in API response"
+        )
+    try:
+        return json.loads(response["deployment"]["config"])
+    except (ValueError, TypeError) as error:
+        raise MalformedWorkflowResponseError(
+            "Could not decode deployment specification in Roboflow API response"
+        ) from error
 
 
 @wrap_roboflow_api_errors()

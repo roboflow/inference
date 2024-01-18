@@ -93,6 +93,7 @@ from inference.core.exceptions import (
     InvalidMaskDecodeArgument,
     InvalidModelIDError,
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelArtefactError,
@@ -172,6 +173,7 @@ def with_route_exceptions(route):
             PostProcessingError,
             ServiceConfigurationError,
             ModelArtefactError,
+            MalformedWorkflowResponseError,
             DeploymentCompilerError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
