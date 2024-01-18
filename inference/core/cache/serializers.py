@@ -1,5 +1,6 @@
 from typing import Union
 
+import uuid
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
@@ -13,8 +14,10 @@ def to_cachable_inference_item(
     infer_request: InferenceRequest,
     infer_response: Union[InferenceResponse, list[InferenceResponse]],
 ) -> dict:
+    inference_id = str(uuid.uuid4())
     if VERBOSE_CACHE:
         return {
+            "inference_id": inference_id,
             "inference_server_version": __version__,
             "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
             "request": jsonable_encoder(infer_request),
@@ -26,6 +29,7 @@ def to_cachable_inference_item(
     response = build_condensed_response(infer_response)
 
     return {
+        "inference_id": inference_id,
         "inference_server_version": __version__,
         "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
         "request": jsonable_encoder(request),
