@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.6.0-cudnn8-runtime-ubuntu20.04 as base
+FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04 as base
 
 WORKDIR /app
 

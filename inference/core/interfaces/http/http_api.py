@@ -5,7 +5,7 @@ from time import sleep
 from typing import Any, List, Optional, Union
 
 import uvicorn
-from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -107,7 +107,10 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.http.orjson_utils import orjson_response
+from inference.core.interfaces.http.orjson_utils import (
+    orjson_response,
+    serialise_deployment_workflow_result,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
     get_deployment_specification,
@@ -115,6 +118,10 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.deployments.complier.core import compile_and_execute_async
+from inference.enterprise.deployments.errors import (
+    DeploymentCompilerError,
+    RuntimePayloadError,
+)
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -147,6 +154,7 @@ def with_route_exceptions(route):
             InvalidModelIDError,
             InvalidMaskDecodeArgument,
             MissingApiKeyError,
+            RuntimePayloadError,
         ) as e:
             resp = JSONResponse(status_code=400, content={"message": str(e)})
             traceback.print_exc()
@@ -164,6 +172,7 @@ def with_route_exceptions(route):
             PostProcessingError,
             ServiceConfigurationError,
             ModelArtefactError,
+            DeploymentCompilerError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
@@ -601,6 +610,7 @@ class HttpInterface(BaseInterface):
                 summary="Endpoint to trigger inference from predefined deployment",
                 description="Check Roboflow API for deployment definition, once acquired - parse and execute injecting runtime parameters from request body",
             )
+            @with_route_exceptions
             async def infer_from_deployment(
                 deployment_name: str,
                 deployment_request: DeploymentsInferenceRequest,
@@ -611,14 +621,18 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace,
                     deployment_name=deployment_name,
                 )
-                print("deployment_specification", deployment_specification, flush=True)
                 result = await compile_and_execute_async(
                     deployment_spec=deployment_specification,
                     runtime_parameters=deployment_request.runtime_parameters,
                     model_manager=model_manager,
                     api_key=deployment_request.api_key,
                 )
-                response = DeploymentsInferenceResponse(deployment_outputs=result)
+                deployment_outputs = serialise_deployment_workflow_result(
+                    result=result,
+                )
+                response = DeploymentsInferenceResponse(
+                    deployment_outputs=deployment_outputs
+                )
                 return orjson_response(response=response)
 
         if CORE_MODELS_ENABLED:
