@@ -611,6 +611,7 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace,
                     deployment_name=deployment_name,
                 )
+                print("deployment_specification", deployment_specification)
                 result = await compile_and_execute_async(
                     deployment_spec=deployment_specification,
                     runtime_parameters=deployment_request.runtime_parameters,
