@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
@@ -34,6 +34,7 @@ from inference_sdk.http.utils.loaders import (
 )
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
+    decode_deployment_outputs,
     response_contains_jpeg_image,
     transform_base64_visualisation,
     transform_visualisation_bytes,
@@ -504,6 +505,43 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
+
+    @wrap_errors
+    def infer_from_deployment(
+        self,
+        deployment_name: str,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
+        if images is None:
+            images = {}
+        if parameters is None:
+            parameters = {}
+        payload = self.__initialise_payload()
+        runtime_parameters = {}
+        for image_name, image in images.items():
+            loaded_image = load_static_inference_input(
+                inference_input=image,
+            )
+            inject_images_into_payload(
+                payload=runtime_parameters,
+                encoded_images=loaded_image,
+                key=image_name,
+            )
+        runtime_parameters.update(parameters)
+        payload["runtime_parameters"] = runtime_parameters
+        response = requests.post(
+            f"{self.__api_url}/infer/deployments/{deployment_name}",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        deployment_outputs = response.json()["deployment_outputs"]
+        return decode_deployment_outputs(
+            deployment_outputs=deployment_outputs,
+            expected_format=self.__inference_configuration.output_visualisation_format,
+        )
 
     def _post_images(
         self,
