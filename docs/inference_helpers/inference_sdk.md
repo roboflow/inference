@@ -343,6 +343,37 @@ CLIENT = InferenceHTTPClient(
 CLIENT.unload_all_models()
 ```
 
+## Inference `deployments`
+
+!!! tip
+
+    This feature is in `alpha` preview. We encourage to experiment and reach us out with issues spotted.
+    Check out [documentation of deployment specs, create one and run](https://github.com/roboflow/inference/tree/main/inference/enterprise/deployments)
+
+!!! tip
+
+    This feature only works with locally hosted inference container. Use inefernce-cli to run:
+    ```
+    inference server start
+    ```
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    "http://127.0.0.1:9001", 
+    "XXX",
+)
+
+CLIENT.infer_from_deployment(
+    deployment_specification={...},
+    images={
+        "image": "url or your np.array",
+    },
+    parameters={...},
+)
+```
+
 ## Details about client configuration
 
 `inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
