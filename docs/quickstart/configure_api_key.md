@@ -4,7 +4,7 @@ Throughout these docs you will see references to your Roboflow API key. Using yo
 
 ## Access Your Roboflow API Key
 
-For some examples in the documentation you will need to provide your Roboflow API key. To access your Roboflow API key, you will need to [create a free Roboflow account](https://app.roboflow.com), then [follow the docs](https://docs.roboflow.com/api-reference/authentication) to retrieve your key.
+For some examples in the documentation you will need to provide your Roboflow API key. To access your Roboflow API key, you will need to <a href="https://app.roboflow.com" target="_blank">create a free Roboflow account</a>, then <a href="https://docs.roboflow.com/api-reference/authentication" target="_blank">follow the docs</a> to retrieve your key.
 
 ## Use Your Roboflow API Key
 
@@ -18,9 +18,11 @@ The recommended way is to set your Roboflow API key within your environment via 
 export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 ```
 
+Then, any command you run within that same terminal session will have access to the environment variable `ROBOFLOW_API_KEY`.
+
 ### Python
 
-When using Inference Within python, your Roboflow API key can be set via keyword arguments
+When using Inference within python, your Roboflow API key can be set via keyword arguments
 
 ```python
 from inference.models.utils import get_roboflow_model
@@ -46,8 +48,8 @@ response = requests.post(url,...)
 
 url = "http://localhost:9001/infer/object_detection"
 payload = {
-  api_key: my_api_key,
-  model_id: "soccer-players-5fuqs/1",
+  "api_key": my_api_key,
+  "model_id": "soccer-players-5fuqs/1",
   ...
 }
 response = requests.post(url,json=payload)
@@ -55,8 +57,10 @@ response = requests.post(url,json=payload)
 
 ### Docker Configuration
 
-If you are running the Roboflow Inference Server in a docker container, you can provide your Roboflow API key within the `docker run` command.
+If you are running the Roboflow Inference Server locally in a docker container, you can provide your Roboflow API key within the `docker run` command.
 
 ```bash
 docker run -it --rm --network=host -e ROBOFLOW_API_KEY=YOUR_ROBOFLOW_API_KEY roboflow/roboflow-inference-server-cpu:latest
 ```
+
+Requests sent to this server can now omit `api_key` from the request payload.

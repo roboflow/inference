@@ -12,7 +12,7 @@ Now run the `inference sever start` command. Be sure to specify the `--dev` flag
 inference server start --dev
 ```
 
-Now visit [localhost:9001](http://localhost:9001) in your browser to see the `inference` landing page. This page contains links to resources and examples related to `inference`. It also contains a link to the built in Jupyterlab environment.
+Now visit <a href="http://localhost:9001" target="_blank">localhost:9001</a> in your browser to see the `inference` landing page. This page contains links to resources and examples related to `inference`. It also contains a link to the built in Jupyterlab environment.
 
 <div style="text-align: center;">
 <img src="https://storage.googleapis.com/com-roboflow-marketing/inference/inference_landing_page.png" alt="Inference Landing Page" width="400"/>

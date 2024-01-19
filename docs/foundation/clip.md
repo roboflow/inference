@@ -1,4 +1,4 @@
-[CLIP](https://github.com/openai/CLIP) is a computer vision model that can measure the similarlity between text and images.
+<a href="https://github.com/openai/CLIP" target="_blank">CLIP</a> is a computer vision model that can measure the similarity between text and images.
 
 CLIP can be used for, among other things:
 
@@ -16,10 +16,11 @@ In this guide, we will show:
 2. How to calculate CLIP image and text embeddings for use in clustering and comparison.
 
 ## How can I use CLIP model in `inference`?
-* directly from `inference[clip]` package, integrating the model directly into your code
-* using `inference` HTTP API (hosted locally, or at Roboflow platform), integrating via HTTP protocol
-  * using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
-  * creating custom code to make HTTP requests (see [API Reference](https://inference.roboflow.com/api/))
+
+- directly from `inference[clip]` package, integrating the model directly into your code
+- using `inference` HTTP API (hosted locally, or at Roboflow platform), integrating via HTTP protocol
+  - using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
+  - creating custom code to make HTTP requests (see [API Reference](/api/))
 
 ## Classify Video Frames
 
@@ -105,7 +106,7 @@ Below we show how to calculate, then compare, both types of embeddings.
 ### Image Embedding
 
 !!! tip
-    
+
     In this example, we assume `inference-sdk` package installed
     ```
     pip install inference-sdk
@@ -132,7 +133,7 @@ print(embeddings)
 In the code below, we calculate a text embedding.
 
 !!! tip
-    
+
     In this example, we assume `inference-sdk` package installed
     ```
     pip install inference-sdk
@@ -158,7 +159,7 @@ To compare embeddings for similarity, you can use cosine similarity.
 The code you need to compare image and text embeddings is the same.
 
 !!! tip
-    
+
     In this example, we assume `inference-sdk` package installed
     ```
     pip install inference-sdk
@@ -175,7 +176,7 @@ CLIENT = InferenceHTTPClient(
 
 result = CLIENT.clip_compare(
   subject="./image.jpg",
-  prompt=["dog", "cat"] 
+  prompt=["dog", "cat"]
 )
 print(result)
 ```
@@ -184,7 +185,7 @@ The resulting number will be between 0 and 1. The higher the number, the more si
 
 ## See Also
 
-- [What is CLIP?](https://blog.roboflow.com/openai-clip/)
-- [Build an Image Search Engine with CLIP and Faiss](https://blog.roboflow.com/clip-image-search-faiss/)
-- [Build a Photo Memories App with CLIP](https://blog.roboflow.com/build-a-photo-memories-app-with-clip/)
-- [Analyze and Classify Video with CLIP](https://blog.roboflow.com/how-to-analyze-and-classify-video-with-clip/)
+- <a href="https://blog.roboflow.com/openai-clip/" target="_blank">What is CLIP?</a>
+- <a href="https://blog.roboflow.com/clip-image-search-faiss/" target="_blank">Build an Image Search Engine with CLIP and Faiss</a>
+- <a href="https://blog.roboflow.com/build-a-photo-memories-app-with-clip/" target="_blank">Build a Photo Memories App with CLIP</a>
+- <a href="https://blog.roboflow.com/how-to-analyze-and-classify-video-with-clip/" target="_blank">Analyze and Classify Video with CLIP</a>

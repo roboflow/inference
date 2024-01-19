@@ -6,11 +6,7 @@ Using the native python API centers on loading models, then calling their `infer
 
 This example shows how to load a model, run inference, then display the results.
 
-First, install inference:
-
-```bash
-pip install inference
-```
+{% include 'install.md' %}
 
 Next, import a model:
 
@@ -24,7 +20,7 @@ The `get_roboflow_model` method is a utility function which will help us load a 
 
 !!! Hint
 
-    You can find your models project name and version number [in the Roboflow App](https://docs.roboflow.com/api-reference/workspace-and-project-ids). You can also browse public models that are ready to use on [Roboflow Universe](https://universe.roboflow.com/). In this example, we are using a special model ID that is an alias of [a COCO pretrained model on Roboflow Universe](https://universe.roboflow.com/microsoft/coco/model/13). You can see the list of model aliases [here](../../reference_pages/model_aliases).
+    You can find your models project name and version number <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">in the Roboflow App</a>. You can also browse public models that are ready to use on <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. In this example, we are using a special model ID that is an alias of <a href="https://universe.roboflow.com/microsoft/coco/model/13" target="_blank">a COCO pretrained model on Roboflow Universe</a>. You can see the list of model aliases [here](../../reference_pages/model_aliases).
 
 Next, we can run inference with our model by providing an input image:
 
@@ -33,12 +29,12 @@ from inference import get_roboflow_model
 
 model = get_roboflow_model(model_id="yolov8x-1280")
 
-results = model.infer("people-walking.jpg")
+results = model.infer("people-walking.jpg") # replace with path to your image
 ```
 
 The results object is an [inference response object](../../docs/reference/inference/core/entities/responses/inference/#inference.core.entities.responses.inference.ObjectDetectionInferenceResponse). It contains some meta data (e.g. processing time) as well as an array of the predictions. The type of response and its attributes will depend on the type of model. [See all of the Inference Response objects](../../docs/reference/inference/core/entities/responses/inference/).
 
-Now, lets visualize the results using [Supervision](https://supervision.roboflow.com):
+Now, lets visualize the results using <a href="https://supervision.roboflow.com" target="_blank">Supervision</a>:
 
 ```python
 from inference import get_roboflow_model

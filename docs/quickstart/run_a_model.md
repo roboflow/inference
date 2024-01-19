@@ -1,12 +1,10 @@
-Let's run a fine-tuned computer vision model to play rock paper scissors.
+Let's run a computer vision model with Inference. The quickest way to get started with Inference is to simply load a model, and then call the model's `infer(...)` method.
 
-The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+## Install Inference
 
-Next, we need to install Inference:
+First, we need to install Inference:
 
-```
-pip install inference
-```
+{% include 'install.md' %}
 
 To help us visualize our results in the example below, we will install Supervision:
 
@@ -16,54 +14,71 @@ pip install supervision
 
 Create a new Python file called `app.py` and add the following code:
 
+## Load a Model and Run Inference
+
 ```python
-import cv2
-import inference
-import supervision as sv
+# import a utility function for loading Roboflow models
+from inference import get_roboflow_model
 
-annotator = sv.BoxAnnotator()
+# define the image url to use for inference
+image = "https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg"
 
-def on_prediction(predictions, image):
-    labels = [p["class"] for p in predictions["predictions"]]
-    detections = sv.Detections.from_roboflow(predictions)
-    cv2.imshow(
-        "Prediction",
-        annotator.annotate(
-            scene=image,
-            detections=detections,
-            labels=labels
-        )
-    ),
-    cv2.waitKey(1)
+# load a pre-trained yolov8n model
+model = get_roboflow_model(model_id="yolov8n-640")
 
-inference.Stream(
-    source="webcam", # or rtsp stream or camera id
-    model="rock-paper-scissors-sxsw/11", # from Universe
-    output_channel_order="BGR",
-    use_main_thread=True, # for opencv display
-    on_prediction=on_prediction,
-)
+# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
+results = model.infer(image)
 ```
 
-Next, sign up for a [free Roboflow account](https://app.roboflow.com). Retrieve your API key from the Roboflow dashboard, then run the following command:
-
-```
-export ROBOFLOW_API_KEY=<your api key>
-```
-
-Then, run the Python script:
-
-```
-python app.py
-```
-
-Your webcam will open and you can play rock paper scissors:
-
-<video width="100%" autoplay loop muted>
-  <source src="https://media.roboflow.com/rock-paper-scissors.mp4" type="video/mp4">
-</video>
-
+In the code above, we loaded a model and then we used that model's `infer(...)` method to run an image through our computer vision model.
 
 !!! tip
 
     When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
+
+## Visualize Results
+
+Running inference is fun but it's not much to look at. Let's add some code to visualize our results.
+
+```python
+# import a utility function for loading Roboflow models
+from inference import get_roboflow_model
+# import supervision to visualize our results
+import supervision as sv
+# import cv2 to helo load our image
+import cv2
+
+# define the image url to use for inference
+image_file = "people-walking.jpg"
+image = cv2.imread(image_file)
+
+# load a pre-trained yolov8n model
+model = get_roboflow_model(model_id="yolov8n-640")
+
+# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
+results = model.infer(image)
+
+# load the results into the supervision Detections api
+detections = sv.Detections.from_roboflow(results[0].dict(by_alias=True, exclude_none=True))
+
+# create supervision annotators
+bounding_box_annotator = sv.BoundingBoxAnnotator()
+label_annotator = sv.LabelAnnotator()
+
+# annotate the image with our inference results
+annotated_image = bounding_box_annotator.annotate(
+    scene=image, detections=detections)
+annotated_image = label_annotator.annotate(
+    scene=annotated_image, detections=detections)
+
+# display the image
+sv.plot_image(annotated_image)
+```
+
+The `people-walking.jpg` file is hosted <a href="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg" target="_blank">here</a>.
+
+![People Walking Annotated](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.jpg)
+
+## Summary
+
+Huzzah! We used Inference to load a computer vision model, run inference on an image, then visualize the results! But this is just the start. There are many different ways to use Inference and how you use it is likely to depend on your specific use case and deployment environment. [Learn more about how to use inference here](/quickstart/inference_101/).

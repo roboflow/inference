@@ -34,40 +34,40 @@ import socket
 import json
 import time
 
-    fps_array = []
+fps_array = []
 
-    # Create a datagram (UDP) socket
-    UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+# Create a datagram (UDP) socket
+UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
 
-    # Bind to the given IP address and port
-    UDPClientSocket.bind((ip, port))
+# Bind to the given IP address and port
+UDPClientSocket.bind((ip, port))
 
-    print(f"UDP server up and listening on http://{ip}:{port}")
+print(f"UDP server up and listening on http://{ip}:{port}")
 
-    # Listen for incoming datagrams
-    while True:
-        t0 = time.time()
+# Listen for incoming datagrams
+while True:
+    t0 = time.time()
 
-        bytesAddressPair = UDPClientSocket.recvfrom(1024)
-        message = bytesAddressPair[0]
-        address = bytesAddressPair[1]
+    bytesAddressPair = UDPClientSocket.recvfrom(1024)
+    message = bytesAddressPair[0]
+    address = bytesAddressPair[1]
 
-        clientMsg = json.loads(message)
-        clientIP = "Client IP Address:{}".format(address)
+    clientMsg = json.loads(message)
+    clientIP = "Client IP Address:{}".format(address)
 
-        print(clientMsg)
-        print(clientIP)
+    print(clientMsg)
+    print(clientIP)
 
-        t = time.time() - t0
-        fps_array.append(1 / t)
-        fps_array[-150:]
-        fps_average = sum(fps_array) / len(fps_array)
-        print("AVERAGE FPS: " + str(fps_average))
+    t = time.time() - t0
+    fps_array.append(1 / t)
+    fps_array[-150:]
+    fps_average = sum(fps_array) / len(fps_array)
+    print("AVERAGE FPS: " + str(fps_average))
 
 start_udp_server("localhost", arguments.port)
 ```
 
-Above, replace `PORT` with the port on which you want to run your server.
+Above, replace `port` with the port on which you want to run your server.
 
 ### Run a Broadcasting Server
 

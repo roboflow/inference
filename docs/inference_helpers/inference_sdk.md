@@ -24,6 +24,118 @@ The client returns a dictionary of predictions for each image or frame.
 
     Read our [Run Model on an Image](/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
 
+## Configuration options (used for models trained at Roboflow platform)
+
+### configuring with context managers
+
+Methods `use_configuration(...)`, `use_api_v0(...)`, `use_api_v1(...)`, `use_model(...)` are designed to
+work in context managers. **Once context manager is left - old config values are restored.**
+
+```python
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+
+custom_configuration = InferenceConfiguration(confidence_threshold=0.8)
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+with CLIENT.use_api_v0():
+    _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+
+with CLIENT.use_configuration(custom_configuration):
+    _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+
+with CLIENT.use_model("soccer-players-5fuqs/1"):
+    _ = CLIENT.infer(image_url)
+
+# after leaving context manager - changes are reverted and `model_id` is still required
+_ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+```
+
+As you can see - `model_id` is required to be given for prediction method only when default model is not configured.
+{% include 'model_id.md' %}
+
+### Setting the configuration once and using till next change
+
+Methods `configure(...)`, `select_api_v0(...)`, `select_api_v1(...)`, `select_model(...)` are designed alter the client
+state and will be preserved until next change.
+
+```python
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+
+custom_configuration = InferenceConfiguration(confidence_threshold=0.8)
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+CLIENT.select_api_v0()
+_ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+
+# API v0 still holds
+CLIENT.configure(custom_configuration)
+CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+
+# API v0 and custom configuration still holds
+CLIENT.select_model(model_id="soccer-players-5fuqs/1")
+_ = CLIENT.infer(image_url)
+
+# API v0, custom configuration and selected model - still holds
+_ = CLIENT.infer(image_url)
+```
+
+One may also initialise in `chain` mode:
+
+```python
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
+    .select_api_v0() \
+    .select_model("soccer-players-5fuqs/1")
+```
+
+### Overriding `model_id` for specific call
+
+`model_id` can be overriden for specific call
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
+    .select_model("soccer-players-5fuqs/1")
+
+_ = CLIENT.infer(image_url, model_id="another-model/1")
+```
+
+## Batch inference
+
+You may want to predict against multiple images at single call. It is possible, but so far - client-side
+batching is implemented in naive way (sequential requests to API) - stay tuned for future improvements.
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+predictions = CLIENT.infer([image_url] * 5, model_id="soccer-players-5fuqs/1")
+
+print(predictions)
+```
+
 ## Client for core models
 
 `InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used at Roboflow hosted
@@ -109,117 +221,6 @@ CLIENT = InferenceHTTPClient(
 
 CLIENT.detect_gazes(inference_input="./my_image.jpg")  # single image request
 CLIENT.detect_gazes(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
-```
-
-## Configuration options (used for models trained at Roboflow platform)
-
-### configuring with context managers
-
-Methods `use_configuration(...)`, `use_api_v0(...)`, `use_api_v1(...)`, `use_model(...)` are designed to
-work in context managers. **Once context manager is left - old config values are restored.**
-
-```python
-from inference_sdk import InferenceHTTPClient, InferenceConfiguration
-
-image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-
-custom_configuration = InferenceConfiguration(confidence_threshold=0.8)
-# Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",
-    api_key="ROBOFLOW_API_KEY"
-)
-with CLIENT.use_api_v0():
-    _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
-
-with CLIENT.use_configuration(custom_configuration):
-    _ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
-
-with CLIENT.use_model("soccer-players-5fuqs/1"):
-    _ = CLIENT.infer(image_url)
-
-# after leaving context manager - changes are reverted and `model_id` is still required
-_ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
-```
-
-As you can see - `model_id` is required to be given for prediction method only when default model is not configured.
-
-### Setting the configuration once and using till next change
-
-Methods `configure(...)`, `select_api_v0(...)`, `select_api_v1(...)`, `select_model(...)` are designed alter the client
-state and will be preserved until next change.
-
-```python
-from inference_sdk import InferenceHTTPClient, InferenceConfiguration
-
-image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-
-custom_configuration = InferenceConfiguration(confidence_threshold=0.8)
-# Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",
-    api_key="ROBOFLOW_API_KEY"
-)
-CLIENT.select_api_v0()
-_ = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
-
-# API v0 still holds
-CLIENT.configure(custom_configuration)
-CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
-
-# API v0 and custom configuration still holds
-CLIENT.select_model(model_id="soccer-players-5fuqs/1")
-_ = CLIENT.infer(image_url)
-
-# API v0, custom configuration and selected model - still holds
-_ = CLIENT.infer(image_url)
-```
-
-One may also initialise in `chain` mode:
-
-```python
-from inference_sdk import InferenceHTTPClient, InferenceConfiguration
-
-# Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
-    .select_api_v0() \
-    .select_model("soccer-players-5fuqs/1")
-```
-
-### Overriding `model_id` for specific call
-
-`model_id` can be overriden for specific call
-
-```python
-from inference_sdk import InferenceHTTPClient
-
-image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-
-# Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_API_KEY") \
-    .select_model("soccer-players-5fuqs/1")
-
-_ = CLIENT.infer(image_url, model_id="another-model/1")
-```
-
-## Batch inference
-
-You may want to predict against multiple images at single call. It is possible, but so far - client-side
-batching is implemented in naive way (sequential requests to API) - stay tuned for future improvements.
-
-```python
-from inference_sdk import InferenceHTTPClient
-
-image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
-
-# Replace ROBOFLOW_API_KEY with your Roboflow API Key
-CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",
-    api_key="ROBOFLOW_API_KEY"
-)
-predictions = CLIENT.infer([image_url] * 5, model_id="soccer-players-5fuqs/1")
-
-print(predictions)
 ```
 
 ## Inference against stream

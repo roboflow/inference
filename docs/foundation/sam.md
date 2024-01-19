@@ -1,4 +1,4 @@
-[Segment Anything](https://github.com/facebookresearch/segment-anything) is an open source image segmentation model.
+<a href="https://github.com/facebookresearch/segment-anything" target="_blank">Segment Anything</a> is an open source image segmentation model.
 
 You can use Segment Anything to identify the precise location of objects in an image.
 
@@ -9,7 +9,7 @@ To use Segment Anything, you need to:
 
 ## How to Use Segment Anything
 
-To use Segment Anything with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
+To use Segment Anything with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>
@@ -53,7 +53,7 @@ The `example_image_id` is used to cache the embeddings for later use so you don'
 
 To segment an object, you need to know at least one point in the image that represents the object that you want to use.
 
-!!! tip "For testing with a single image, you can upload an image to the [Polygon Zone web interface](https://roboflow.github.io/polygonzone/) and hover over a point in the image to see the coordinates of that point."
+!!! tip "For testing with a single image, you can upload an image to the <a href="https://roboflow.github.io/polygonzone/" target="_blank">Polygon Zone web interface</a> and hover over a point in the image to see the coordinates of that point."
 
 You may also opt to use an object detection model to identify an object, then use the center point of the bounding box as a prompt for segmentation.
 
@@ -83,4 +83,4 @@ This request returns segmentation masks that represent the object of interest.
 
 ## See Also
 
-- [What is Segment Anything Model (SAM)?](https://blog.roboflow.com/segment-anything-breakdown/)
+- <a href="https://blog.roboflow.com/segment-anything-breakdown/" target="_blank">What is Segment Anything Model (SAM)?</a>
