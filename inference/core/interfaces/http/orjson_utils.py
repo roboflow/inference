@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import orjson
 from fastapi.responses import ORJSONResponse
