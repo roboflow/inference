@@ -1686,7 +1686,6 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 @mock.patch.object(roboflow_api.requests, "get")
 def test_get_deployment_specification_when_connection_error_occurs(
     get_mock: MagicMock,
@@ -1703,7 +1702,6 @@ def test_get_deployment_specification_when_connection_error_occurs(
         )
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_wrong_api_key_used(
     requests_mock: Mocker,
 ) -> None:
@@ -1727,7 +1725,6 @@ def test_get_deployment_specification_when_wrong_api_key_used(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_not_found_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -1751,7 +1748,6 @@ def test_get_deployment_specification_when_not_found_returned(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_internal_error_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -1775,7 +1771,6 @@ def test_get_deployment_specification_when_internal_error_returned(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_malformed_response_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -1799,7 +1794,6 @@ def test_get_deployment_specification_when_malformed_response_returned(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_config_not_provided(
     requests_mock: Mocker,
 ) -> None:
@@ -1823,7 +1817,6 @@ def test_get_deployment_specification_when_config_not_provided(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_config_not_parsable(
     requests_mock: Mocker,
 ) -> None:
@@ -1847,7 +1840,6 @@ def test_get_deployment_specification_when_config_not_parsable(
     ), "API key must be given in query"
 
 
-@mock.patch.object(roboflow_api, "MOCK_DEPLOYMENTS", False)
 def test_get_deployment_specification_when_valid_response_given(
     requests_mock: Mocker,
 ) -> None:

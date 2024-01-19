@@ -19,7 +19,10 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.entities.requests.deployments import DeploymentsInferenceRequest
+from inference.core.entities.requests.deployments import (
+    DeploymentsInferenceRequest,
+    DeploymentSpecificationInferenceRequest,
+)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -305,6 +308,25 @@ class HttpInterface(BaseInterface):
                 inference_request.model_id, inference_request, **kwargs
             )
             return orjson_response(resp)
+
+        async def process_deployment_inference_request(
+            deployment_request: DeploymentsInferenceRequest,
+            deployment_specification: dict,
+        ) -> DeploymentsInferenceResponse:
+            result = await compile_and_execute_async(
+                deployment_spec=deployment_specification,
+                runtime_parameters=deployment_request.runtime_parameters,
+                model_manager=model_manager,
+                api_key=deployment_request.api_key,
+            )
+            deployment_outputs = serialise_deployment_workflow_result(
+                result=result,
+                excluded_fields=deployment_request.excluded_fields,
+            )
+            response = DeploymentsInferenceResponse(
+                deployment_outputs=deployment_outputs
+            )
+            return orjson_response(response=response)
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -607,13 +629,31 @@ class HttpInterface(BaseInterface):
                 return await process_inference_request(inference_request)
 
             @app.post(
+                "/infer/deployments",
+                response_model=DeploymentsInferenceResponse,
+                summary="Endpoint to trigger inference from deployment specification provided in payload",
+                description="Parses and executes deployment specification, injecting runtime parameters from request body",
+            )
+            @with_route_exceptions
+            async def infer_from_specific_deployment(
+                deployment_request: DeploymentSpecificationInferenceRequest,
+            ) -> DeploymentsInferenceResponse:
+                deployment_specification = {
+                    "specification": deployment_request.specification
+                }
+                return await process_deployment_inference_request(
+                    deployment_request=deployment_request,
+                    deployment_specification=deployment_specification,
+                )
+
+            @app.post(
                 "/infer/deployments/{deployment_name}",
                 response_model=DeploymentsInferenceResponse,
                 summary="Endpoint to trigger inference from predefined deployment",
-                description="Check Roboflow API for deployment definition, once acquired - parse and execute injecting runtime parameters from request body",
+                description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @with_route_exceptions
-            async def infer_from_deployment(
+            async def infer_from_specific_deployment(
                 deployment_name: str,
                 deployment_request: DeploymentsInferenceRequest,
             ) -> DeploymentsInferenceResponse:
@@ -623,19 +663,10 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace,
                     deployment_name=deployment_name,
                 )
-                result = await compile_and_execute_async(
-                    deployment_spec=deployment_specification,
-                    runtime_parameters=deployment_request.runtime_parameters,
-                    model_manager=model_manager,
-                    api_key=deployment_request.api_key,
+                return await process_deployment_inference_request(
+                    deployment_request=deployment_request,
+                    deployment_specification=deployment_specification,
                 )
-                deployment_outputs = serialise_deployment_workflow_result(
-                    result=result,
-                )
-                response = DeploymentsInferenceResponse(
-                    deployment_outputs=deployment_outputs
-                )
-                return orjson_response(response=response)
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
 import orjson
 from fastapi.responses import ORJSONResponse
@@ -37,9 +37,17 @@ def orjson_response(
     return ORJSONResponseBytes(content=content)
 
 
-def serialise_deployment_workflow_result(result: Dict[str, Any]) -> Dict[str, Any]:
+def serialise_deployment_workflow_result(
+    result: Dict[str, Any],
+    excluded_fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    if excluded_fields is None:
+        excluded_fields = []
+    excluded_fields = set(excluded_fields)
     serialised_result = {}
     for key, value in result.items():
+        if key in excluded_fields:
+            continue
         if contains_image(element=value):
             value = serialise_image(image=value)
         elif issubclass(type(value), list):

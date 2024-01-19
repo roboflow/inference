@@ -167,8 +167,6 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 # Maximum number of active models, default is 8
 MAX_ACTIVE_MODELS = int(os.getenv("MAX_ACTIVE_MODELS", 8))
 
-MOCK_DEPLOYMENTS = str2bool(os.getenv("MOCK_DEPLOYMENTS", "True"))
-
 # Maximum batch size, default is infinite
 MAX_BATCH_SIZE = os.getenv("MAX_BATCH_SIZE", None)
 if MAX_BATCH_SIZE is not None:
