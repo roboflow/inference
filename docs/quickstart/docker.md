@@ -2,7 +2,7 @@
 
 Before you begin, ensure that you have Docker installed on your machine. Docker provides a containerized environment,
 allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If
-you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
+you haven't installed Docker yet, you can get it from <a href="https://www.docker.com/get-started" target="_blank">Docker's official website</a>.
 
 ## Set up a Docker Inference Server via `inference server start``
 
@@ -129,9 +129,9 @@ Server in a container.
 
     **_Note:_** The Jetson images come with TensorRT dependencies. To use TensorRT acceleration with your model, pass an additional environment variable at runtime `-e ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider`. This can improve inference speed, however, this also incurs a costly startup expense when the model is loaded.
 
-You may add the flag `-e ROBOFLOW_API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your [Roboflow API key here](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+You may add the flag `-e ROBOFLOW_API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Roboflow API key here</a>.
 
-You may add the flag `-v $(pwd)/cache:/tmp/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a [docker volume](https://docs.docker.com/storage/volumes/) named `inference-cache` by adding the flag `-v inference-cache:/tmp/cache`.
+You may add the flag `-v $(pwd)/cache:/tmp/cache` to create a cache folder on your home device so that you do not need to redownload or recompile model artifacts upon inference container reboot. You can also (preferably) store artificats in a <a href="https://docs.docker.com/storage/volumes/" target="_blank">docker volume</a> named `inference-cache` by adding the flag `-v inference-cache:/tmp/cache`.
 
 ### Advanced: Build a Docker Container from Scratch
 

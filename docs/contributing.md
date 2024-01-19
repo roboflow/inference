@@ -6,7 +6,7 @@ We welcome any contributions to help us improve the quality of Inference.
 
 !!! note
 
-    Interested in seeing a new model in Inference? [File a Feature Request on GitHub](https://github.com/roboflow/inference/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.yml).
+    Interested in seeing a new model in Inference? <a href="https://github.com/roboflow/inference/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.yml" target="_blank">File a Feature Request on GitHub</a>.
 
 ## Contribution Guidelines
 
@@ -21,7 +21,7 @@ We welcome contributions to:
 
 The Inference Server provides a standard interface through which you can work with computer vision models. With Inference Server, you can use state-of-the-art models with your own weights without having to spend time installing dependencies, configuring environments, and writing inference code.
 
-We welcome contributions that add support for new models to the project. Before you begin, please make sure that another contributor has not already begun work on the model you want to add. You can check the [project README](https://github.com/roboflow/inference-server/blob/main/README.md) for our roadmap on adding more models.
+We welcome contributions that add support for new models to the project. Before you begin, please make sure that another contributor has not already begun work on the model you want to add. You can check the <a href="https://github.com/roboflow/inference-server/blob/main/README.md" target="_blank">project README</a> for our roadmap on adding more models.
 
 You will need to add documentation for your model and link to it from the `inference-server` README. You can add a new page to the `docs/models` directory that describes your model and how to use it. You can use the existing model documentation as a guide for how to structure your documentation.
 
@@ -48,4 +48,4 @@ We provide two handy commands inside the `Makefile`, namely:
 
 ## 🧪 Tests 
 
-[`pytests`](https://docs.pytest.org/en/7.1.x/) is used to run our tests.
+<a href="https://docs.pytest.org/en/7.1.x/" target="_blank">`pytests`</a> is used to run our tests.

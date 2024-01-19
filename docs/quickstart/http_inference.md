@@ -16,9 +16,11 @@ To run inference with the server, we will:
 
 _You can skip this step if you already have Inference installed and running._
 
-The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.
 
 Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
+
+{% include 'install.md' %}
 
 Start the server using `inference server start`. After you have installed the Inference Server, the Docker container will start running the server at `localhost:9001`.
 
@@ -68,10 +70,10 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `image_url`: The URL of the image you want to run inference on.
         3. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        4. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        4. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         5. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
 
         Then, run the Python script:
@@ -129,9 +131,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -140,7 +142,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Batch Inference"
 
         Roboflow object detection models support batching. Utilize batch inference by passing a list of image objects in a request payload:
@@ -200,9 +202,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -211,7 +213,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Numpy Array"
 
         Create a new Python file and add the following code:
@@ -257,9 +259,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -272,7 +274,7 @@ There are two generations of routes in a Roboflow inference server To see what r
 ### Run Inference on a v1 Route
 
 !!! Run Inference
-    === "URL"
+=== "URL"
 
         The Roboflow hosted API uses the V1 route and requests take a slightly different form:
 
@@ -300,9 +302,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -350,9 +352,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -392,9 +394,9 @@ There are two generations of routes in a Roboflow inference server To see what r
 
         Above, specify:
 
-        1. `project_id`, `model_version`: Your project ID and model version number. [Learn how to retrieve your project ID and model version number](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+        1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
-        3. `api_key`: Your Roboflow API key. [Learn how to retrieve your Roboflow API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+        3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
         4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
@@ -403,9 +405,9 @@ There are two generations of routes in a Roboflow inference server To see what r
         ```
         python app.py
         ```
-    
+
     === "Batch Inference"
-       
+
        Batch inference is not currently supported by V1 routes.
 
 The code snippets above will run inference on a computer vision model. On the first request, the model weights will be downloaded and set up with your local inference server. This request may take some time depending on your network connection and the size of the model. Once your model has downloaded, subsequent requests will be much faster.
