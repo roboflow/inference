@@ -107,7 +107,7 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         description="If provided, only predictions for the listed classes will be returned",
     )
     confidence: Optional[float] = Field(
-        default=0.0,
+        default=0.4,
         example=0.5,
         description="The confidence threshold used to filter out predictions",
     )
@@ -117,7 +117,7 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         description="If true, the batch size will be fixed to the maximum batch size configured for this server",
     )
     iou_threshold: Optional[float] = Field(
-        default=1.0,
+        default=0.3,
         example=0.5,
         description="The IoU threhsold that must be met for a box pair to be considered duplicate during NMS",
     )
@@ -190,7 +190,7 @@ class ClassificationInferenceRequest(CVInferenceRequest):
     """
 
     confidence: Optional[float] = Field(
-        default=0.0,
+        default=0.4,
         example=0.5,
         description="The confidence threshold used to filter out predictions",
     )
