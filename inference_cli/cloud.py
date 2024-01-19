@@ -3,16 +3,24 @@ from typing import Optional
 import typer
 from typing_extensions import Annotated
 
-from inference_cli.lib import cloud_deploy, cloud_undeploy, cloud_status, cloud_stop, cloud_start
+from inference_cli.lib import (
+    cloud_deploy,
+    cloud_undeploy,
+    cloud_status,
+    cloud_stop,
+    cloud_start,
+)
 
 cloud_app = typer.Typer(
     help="""Commands for running the inference in cloud with skypilot . \n 
     Supported devices targets are x86 CPU and NVIDIA GPU VMs."""
 )
 
+
 @cloud_app.command()
 def status():
     cloud_status()
+
 
 @cloud_app.command()
 def deploy(
@@ -54,7 +62,8 @@ def deploy(
             "--roboflow-api-key",
             "-r",
             help="Roboflow API key for your workspace.",
-        )] = None,
+        ),
+    ] = None,
     help: Annotated[
         bool,
         typer.Option(
@@ -75,8 +84,11 @@ def deploy(
 ):
     cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key)
 
+
 @cloud_app.command()
-def undeploy(cluster_name: Annotated[str, typer.Argument(help="Name of cluster to undeploy.")]):
+def undeploy(
+    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to undeploy.")]
+):
     cloud_undeploy(cluster_name)
 
 
@@ -84,6 +96,9 @@ def undeploy(cluster_name: Annotated[str, typer.Argument(help="Name of cluster t
 def stop(cluster_name: Annotated[str, typer.Argument(help="Name of cluster to stop.")]):
     cloud_stop(cluster_name)
 
+
 @cloud_app.command()
-def start(cluster_name: Annotated[str, typer.Argument(help="Name of cluster to start.")]):
+def start(
+    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to start.")]
+):
     cloud_start(cluster_name)

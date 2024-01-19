@@ -4,10 +4,12 @@ from typing_extensions import Annotated
 import inference_cli.lib
 from inference_cli.server import server_app
 from inference_cli.cloud import cloud_app
+
 app = typer.Typer()
 
 app.add_typer(server_app, name="server")
 app.add_typer(cloud_app, name="cloud")
+
 
 @app.command()
 def infer(

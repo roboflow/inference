@@ -4,7 +4,7 @@ import string
 import tempfile
 
 YAML_DEFS = {
-"gcp_cpu": """
+    "gcp_cpu": """
 name: roboflow-gcp-inference-cpu
 num_nodes: 1
 resources:
@@ -28,8 +28,7 @@ setup: |
 run: |
   export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-cpu
 """,
-
-"gcp_gpu": """
+    "gcp_gpu": """
 name: roboflow-gcp-inference-gpu
 num_nodes: 1
 resources:
@@ -46,8 +45,7 @@ setup: |
 run: |
   docker run -d --gpus all -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-gpu
 """,
-
-"aws_cpu": """
+    "aws_cpu": """
 name: roboflow-aws-inference-cpu
 num_nodes: 1
 resources:
@@ -66,8 +64,7 @@ setup: |
 run: |
   export PATH=/home/gcpuser/bin:$PATH; docker run -d -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-cpu
 """,
-
-"aws_gpu": """
+    "aws_gpu": """
 name: roboflow-aws-inference-gpu
 num_nodes: 1
 resources:
@@ -84,33 +81,41 @@ setup: |
   docker pull roboflow/roboflow-inference-server-gpu
 run: |
   docker run -d --gpus all -p 9001:9001 PLACEHOLDER roboflow/roboflow-inference-server-gpu
-"""
+""",
 }
 
 
 def _random_char(y):
-    return ''.join(random.choice(string.ascii_lowercase) for x in range(y))
+    return "".join(random.choice(string.ascii_lowercase) for x in range(y))
+
 
 def cloud_status():
     print("Getting status from skypilot...")
     print(sky.status())
 
+
 def cloud_stop(cluster_name):
     print(f"Stopping skypilot deployment {cluster_name}...")
     print(sky.stop(cluster_name))
+
 
 def cloud_start(cluster_name):
     print(f"Starting skypilot deployment {cluster_name}")
     print(sky.start(cluster_name))
 
+
 def cloud_undeploy(cluster_name):
-    print(f"Undeploying Roboflow Inference and deleting {cluster_name}, this may take a few minutes.")
+    print(
+        f"Undeploying Roboflow Inference and deleting {cluster_name}, this may take a few minutes."
+    )
     sky.down(cluster_name)
     print(f"Undeployed Roboflow Inference complete: deleted {cluster_name}")
 
+
 def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
     if help:
-        print('''
+        print(
+            """
               Deploy Roboflow Inference to a cloud provider.
               If your chosen cloud provider is configured on your terminal, inference 
               deploy will automatically use your default credentials. If you have not 
@@ -154,10 +159,11 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
               open an issue at https://github.com/roboflow/inference/issues if 
               you would like to see other cloud providers supported.
 
-        ''')
+        """
+        )
         return
-    
-    if custom is None: 
+
+    if custom is None:
         try:
             yaml_string = YAML_DEFS[f"{provider}_{compute_type}"]
         except KeyError:
@@ -166,37 +172,44 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
             return
     else:
         yaml_string = open(custom, "r").read()
-        
+
     if dry_run == True:
         print(yaml_string)
         return
-    
-    placeholder_string = f" --env ROBOFLOW_API_KEY={roboflow_api_key} " if roboflow_api_key is not None else ""
+
+    placeholder_string = (
+        f" --env ROBOFLOW_API_KEY={roboflow_api_key} "
+        if roboflow_api_key is not None
+        else ""
+    )
 
     # For later - when notebook becomes secure
     # if notebook:
     #     yaml_string.replace("9001", "[9001, 9002]")
     #     placeholder_string += " -e NOTEBOOK_ENABLED=true"
-    
+
     yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         file_path = f.name
         f.write(yaml_string)
         f.close()
         task = sky.Task.from_yaml(file_path)
-    
-    cluster_name = f'roboflow-inference-{provider}-{compute_type}-{_random_char(5)}'
-    
-    print(f"Deploying Roboflow Inference to {provider} on {compute_type} using sky (https://github.com/skypilot-org/skypilot) ")
+
+    cluster_name = f"roboflow-inference-{provider}-{compute_type}-{_random_char(5)}"
+
+    print(
+        f"Deploying Roboflow Inference to {provider} on {compute_type} using sky (https://github.com/skypilot-org/skypilot) "
+    )
     print("Please be patient, this process can take up to 20 minutes.")
     sky.launch(task, cluster_name=cluster_name)
-    
-    print(f"Deployed Roboflow Inference to {provider} on {compute_type}, deployment name is {cluster_name} ") 
-    cluster_ip = sky.status(cluster_name)[0]['handle'].head_ip
-    
+
+    print(
+        f"Deployed Roboflow Inference to {provider} on {compute_type}, deployment name is {cluster_name} "
+    )
+    cluster_ip = sky.status(cluster_name)[0]["handle"].head_ip
+
     print(f"To get a list of your deployments: inference status")
-    print (f"To delete your deployment: inference undeploy {cluster_name}")
+    print(f"To delete your deployment: inference undeploy {cluster_name}")
     print(f"To ssh into the deployed server: ssh {cluster_name}")
     print(f"The Roboflow Inference Server is running at http://{cluster_ip}:9001")
-    
