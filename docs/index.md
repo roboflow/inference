@@ -9,6 +9,10 @@ hide:
   .md-content__button {
     display: none;
   }
+  .md-content {
+    padding-left: 10%;
+    padding-right: 10%;
+  }
 </style>
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
