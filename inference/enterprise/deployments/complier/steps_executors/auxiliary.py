@@ -518,7 +518,7 @@ def resolve_batch_consensus(
             for matched_value in detections_with_max_overlap.values():
                 detections_already_considered.add(matched_value[0][DETECTION_ID_KEY])
     if required_objects is None:
-        return parent_id, consensus_detections, None
+        return parent_id, consensus_detections, "undefined"
     if issubclass(type(required_objects), int):
         return (
             parent_id,
