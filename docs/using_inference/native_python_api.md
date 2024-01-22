@@ -90,7 +90,7 @@ from PIL import Image
 
 model = get_roboflow_model(model_id="yolov8x-1280")
 
-image_url = "https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg"
+image_url = "https://media.roboflow.com/inference/people-walking.jpg"
 local_image_file = "people-walking.jpg"
 pil_image = Image.open(local_image_file)
 numpy_image = cv2.imread(local_image_file)
