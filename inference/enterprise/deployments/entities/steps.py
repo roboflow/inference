@@ -895,12 +895,12 @@ class DetectionsConsensus(BaseModel, StepInterface):
     type: Literal["DetectionsConsensus"]
     name: str
     predictions: List[str]
-    required_votes: Union[str, int]
-    class_aware: Union[str, bool] = Field(default=True)
-    iou_threshold: Union[str, float] = Field(default=0.3)
-    confidence: Union[str, float] = Field(default=0.4)
-    classes_to_consider: Optional[Union[str, List[str]]] = Field(default=None)
-    required_objects: Optional[Union[str, int, Dict[str, int]]] = Field(default=None)
+    required_votes: Union[int, str]
+    class_aware: Union[bool, str] = Field(default=True)
+    iou_threshold: Union[float, str] = Field(default=0.3)
+    confidence: Union[float, str] = Field(default=0.4)
+    classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
+    required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
 
     @validator("predictions")
     @classmethod
@@ -969,12 +969,13 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 value=value, field_name="required_objects"
             )
             return value
-        for k, v in value.items():
-            if v is None:
-                raise ValueError(f"Field `required_objects[{k}]` must not be None.")
-            validate_value_is_empty_or_positive_number(
-                value=v, field_name=f"required_objects[{k}]"
-            )
+        elif issubclass(type(value), dict):
+            for k, v in value.items():
+                if v is None:
+                    raise ValueError(f"Field `required_objects[{k}]` must not be None.")
+                validate_value_is_empty_or_positive_number(
+                    value=v, field_name=f"required_objects[{k}]"
+                )
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -994,7 +995,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
     ) -> None:
-        if field_name != "predictions" or not is_selector(
+        if field_name != "predictions" and not is_selector(
             selector_or_value=getattr(self, field_name)
         ):
             raise ExecutionGraphError(

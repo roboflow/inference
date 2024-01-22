@@ -139,7 +139,9 @@ def validate_field_has_given_type(
     error: Type[Exception] = ValueError,
 ) -> None:
     if all(not issubclass(type(value), allowed_type) for allowed_type in allowed_types):
-        raise error(f"`{field_name}` field type must be one of {allowed_types}")
+        raise error(
+            f"`{field_name}` field type must be one of {allowed_types}. Detected: {value}"
+        )
 
 
 def validate_image_biding(value: Any, field_name: str = "image") -> None:
@@ -204,6 +206,7 @@ def validate_selector_holds_detections(
         "KeypointsDetectionModel",
         "InstanceSegmentationModel",
         "DetectionFilter",
+        "DetectionsConsensus",
     }:
         raise InvalidStepInputDetected(
             f"Step step with name {step_name} cannot take as an input predictions from {input_step.get_type()}. "

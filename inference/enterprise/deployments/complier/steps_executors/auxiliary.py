@@ -423,16 +423,16 @@ async def run_detections_consensus_step(
         all_predictions = [[e] for e in all_predictions]
         images_meta = [images_meta]
     results = []
-    for batch_index in range(len(all_predictions)):
+    for batch_index in range(batch_size):
         batch_predictions = [e[batch_index] for e in all_predictions]
         parent_id, consensus_detections, consensus_reached = resolve_batch_consensus(
             predictions=batch_predictions,
-            required_votes=step.required_votes,
-            class_aware=step.class_aware,
-            iou_threshold=step.iou_threshold,
-            confidence=step.confidence,
-            classes_to_consider=step.classes_to_consider,
-            required_objects=step.required_objects,
+            required_votes=resolve_parameter_closure(step.required_votes),
+            class_aware=resolve_parameter_closure(step.class_aware),
+            iou_threshold=resolve_parameter_closure(step.iou_threshold),
+            confidence=resolve_parameter_closure(step.confidence),
+            classes_to_consider=resolve_parameter_closure(step.classes_to_consider),
+            required_objects=resolve_parameter_closure(step.required_objects),
         )
         results.append(
             {
@@ -505,7 +505,7 @@ def resolve_batch_consensus(
                 detections_already_considered=detections_already_considered,
             )
         )
-        if len(detections_with_max_overlap) >= required_votes:
+        if len(detections_with_max_overlap) >= (required_votes - 1):
             merged_detection = merge_detections(
                 detections=[detection]
                 + [
@@ -525,7 +525,7 @@ def resolve_batch_consensus(
             consensus_detections,
             len(consensus_detections) > required_objects,
         )
-    consensus_classes = Counter([d["class_name"] for d in consensus_detections])
+    consensus_classes = Counter([d["class"] for d in consensus_detections])
     consensus_reached = all(
         consensus_classes[class_name] >= consensus_value
         for class_name, consensus_value in required_objects.items()
@@ -564,7 +564,7 @@ def confidence_and_class_match(
         confidence_matches(
             detection=detection, confidence_threshold=confidence_threshold
         )
-        and detection["class_name"] in classes
+        and detection["class"] in classes
     )
 
 
@@ -587,7 +587,7 @@ def get_detections_from_different_sources_with_max_overlap(
     ):
         if other_detection[DETECTION_ID_KEY] in detections_already_considered:
             continue
-        if class_aware and detection["class_name"] != other_detection["class_name"]:
+        if class_aware and detection["class"] != other_detection["class"]:
             continue
         iou_value = calculate_iou(
             detection_a=detection,
@@ -639,7 +639,7 @@ def merge_detections(detections: List[dict]) -> dict:
     return {
         PARENT_ID_KEY: detections[0][PARENT_ID_KEY],
         DETECTION_ID_KEY: f"{uuid4()}",
-        "class_name": class_name,
+        "class": class_name,
         "class_id": class_id,
         "confidence": average_field_values(detections=detections, field="confidence"),
         "x": round(average_field_values(detections=detections, field="x")),
@@ -650,10 +650,10 @@ def merge_detections(detections: List[dict]) -> dict:
 
 
 def get_majority_class(detections: List[dict]) -> Tuple[str, int]:
-    class_counts = Counter(d["class_name"] for d in detections)
-    most_common_class_name = class_counts.most_common(1)[0]
+    class_counts = Counter(d["class"] for d in detections)
+    most_common_class_name = class_counts.most_common(1)[0][0]
     class_id = [
-        d["class_id"] for d in detections if d["class_name"] == most_common_class_name
+        d["class_id"] for d in detections if d["class"] == most_common_class_name
     ][0]
     return most_common_class_name, class_id
 

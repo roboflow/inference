@@ -15,6 +15,7 @@ from inference.enterprise.deployments.entities.steps import (
     Crop,
     DetectionFilter,
     DetectionOffset,
+    DetectionsConsensus,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
@@ -41,6 +42,7 @@ StepType = Annotated[
         ClipComparison,
         RelativeStaticCrop,
         AbsoluteStaticCrop,
+        DetectionsConsensus,
     ],
     Field(discriminator="type"),
 ]
