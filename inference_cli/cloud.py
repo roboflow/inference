@@ -5,10 +5,10 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import (
     cloud_deploy,
-    cloud_undeploy,
+    cloud_start,
     cloud_status,
     cloud_stop,
-    cloud_start,
+    cloud_undeploy,
 )
 
 cloud_app = typer.Typer(

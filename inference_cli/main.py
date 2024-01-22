@@ -1,9 +1,11 @@
+from typing import Optional
+
 import typer
 from typing_extensions import Annotated
 
 import inference_cli.lib
-from inference_cli.server import server_app
 from inference_cli.cloud import cloud_app
+from inference_cli.server import server_app
 
 app = typer.Typer()
 
@@ -13,36 +15,87 @@ app.add_typer(cloud_app, name="cloud")
 
 @app.command()
 def infer(
-    image: Annotated[
-        str, typer.Argument(help="URL or local path of image to run inference on.")
-    ],
-    project_id: Annotated[
+    input_reference: Annotated[
         str,
         typer.Option(
-            "--project-id", "-p", help="Roboflow project to run inference with."
+            "--input",
+            "-i",
+            help="URL or local path of image / directory with images or video to run inference on.",
         ),
     ],
-    model_version: Annotated[
+    model_id: Annotated[
         str,
         typer.Option(
-            "--model-version",
-            "-v",
-            help="Version of model to run inference with.",
+            "--model_id",
+            "-m",
+            help="Model ID in format project/version.",
         ),
     ],
     api_key: Annotated[
-        str,
-        typer.Option("--api-key", "-a", help="Roboflow API key for your workspace."),
-    ],
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
     host: Annotated[
         str,
         typer.Option("--host", "-h", help="Host to run inference on."),
     ] = "http://localhost:9001",
+    output_location: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output_location",
+            "-o",
+            help="Location where to save the result (path to directory)",
+        ),
+    ] = None,
+    display: Annotated[
+        bool,
+        typer.Option(
+            "--display",
+            "-d",
+            help="Boolean flag to decide if visualisations should be displayed on the screen",
+        ),
+    ] = True,
+    visualise: Annotated[
+        bool,
+        typer.Option(
+            "--visualise",
+            "-v",
+            help="Boolean flag to decide if visualisations should be preserved",
+        ),
+    ] = True,
+    visualisation_config: Annotated[
+        Optional[str],
+        typer.Option(
+            "--visualisation_config",
+            "-c",
+            help="Location of yaml file with visualisation config",
+        ),
+    ] = None,
+    model_config: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_config", "-mc", help="Location of yaml file with model config"
+        ),
+    ] = None,
 ):
     typer.echo(
-        f"Running inference on image {image}, using model ({project_id}/{model_version}), and host ({host})"
+        f"Running inference on {input_reference}, using model: {model_id}, and host: {host}"
     )
-    inference_cli.lib.infer(image, project_id, model_version, api_key, host)
+    inference_cli.lib.infer(
+        input_reference=input_reference,
+        model_id=model_id,
+        api_key=api_key,
+        host=host,
+        output_location=output_location,
+        display=display,
+        visualise=visualise,
+        visualisation_config=visualisation_config,
+        model_configuration=model_config,
+    )
 
 
 if __name__ == "__main__":
