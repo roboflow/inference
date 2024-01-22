@@ -158,3 +158,4 @@ inference_sdk/version.py
 !tests/inference/models_predictions_tests/assets/*.jpg
 tests/inference/models_predictions_tests/assets/*.zip
 !inference/enterprise/deployments/assets/*.jpg
+dev.py
