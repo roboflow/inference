@@ -245,7 +245,7 @@ input parameter
 * `class_filter`: optional list of classes using as filter - can be selector to 
 input parameter 
 * `iou_threshold`: optional float value in range [0, 1] with NMS IoU threshold - can be selector to 
-input parameter 
+input parameter. Default: `0.3`.
 * `max_detections`: optional integer parameter of NMS - can be selector to input parameter 
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 
@@ -273,7 +273,7 @@ input parameter
 * `class_filter`: optional list of classes using as filter - can be selector to 
 input parameter 
 * `iou_threshold`: optional float value in range [0, 1] with NMS IoU threshold - can be selector to 
-input parameter 
+input parameter. Default: `0.3`.
 * `max_detections`: optional integer parameter of NMS - can be selector to input parameter 
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 * `keypoint_confidence`: optional float value in range [0, 1] with keypoints confidence threshold - can be selector to 
@@ -303,7 +303,7 @@ input parameter
 * `class_filter`: optional list of classes using as filter - can be selector to 
 input parameter 
 * `iou_threshold`: optional float value in range [0, 1] with NMS IoU threshold - can be selector to 
-input parameter 
+input parameter. Default: `0.3`.
 * `max_detections`: optional integer parameter of NMS - can be selector to input parameter 
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 * `mask_decode_mode`: optional parameter of post-processing - can be selector to input parameter 
@@ -339,7 +339,7 @@ This step produces **dynamic** crops based on detections from detections-based m
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
 * `detections`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
 
 ##### Step outputs:
 * `crops` - `image` cropped based on `detections`
@@ -420,7 +420,7 @@ This step is responsible for applying fixed offset on width and height of detect
 * `type`: must be `DetectionOffset` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
 * `offset_x`: reference to input parameter of integer value for detection width offset (required)
 * `offset_y`: reference to input parameter of integer value for detection height offset (required)
 
@@ -466,5 +466,46 @@ Step to execute comparison of Clip embeddings between image and text.
 
 ##### Step outputs:
 * `similarity` - for each element of `image` - list of float values representing similarity to each element of `text`
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+
+
+#### `DetectionsConsensus`
+Step that is meant to combine predictions from multiple detections models (works for 
+`object-detection`, `instance-segmentation` and `keypoint-detection` models, but consensus output is only
+applied at detections level). 
+
+Step executes following operations:
+* look for detections matching confidence classes and IoU preconditions
+* once overlapping predictions are found - those are merged, making average (classes are assigned based on majority vote) of overlapping detections
+* after merge - consensus criteria are checked - and consensus flag is returned, such
+that result can be interpreted directly, without additional logic (flag `consensus=True` means that
+there are detections that multiple models agree on in a number above the threshold defined).
+
+##### Step parameters
+* `type`: must be `DetectionsConsensus` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `predictions`: list of selectors pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required, must contain at least 2 elements)
+* `required_votes`: number of models that must agree on the detection - integer or selector pointing at
+`InferenceParameter` (required)
+* `class_aware`: flag deciding if class names are taken into account when finding overlapping bounding boxes
+from multiple models. Can be `bool` or selector to `InferenceParameter`. Default: `True`
+* `iou_threshold`: optional float value in range [0, 1] with IoU threshold that must be meet to consider
+two bounding boxes overlapping. Can be float or selector to `InferenceParameter`. Default: `0.3`.
+* `confidence`: optional float value in range [0, 1] minimal confidence of detection that must be met to 
+be taken into account in consensus procedure. Default: `0.4`.
+* `classes_to_consider`: Optional list of classes to consider in consensus procedure.
+Can be list of `str` or selector to `InferenceParameter`. Default: `None` - in this case 
+classes filtering of predictions will not be enabled.
+* `required_objects` - value influencing `consensus` output. If given, it holds
+the number of objects that must be present in merged results, to assume that consensus is reached.
+Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into
+minimal number of merged detections of given class to assume consensus.
+
+##### Step outputs:
+* `consensus` - for each input image, boolean flag with consensus status, built based on merged detections and `required_objects`
+* `predictions` - details of predictions
+* `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines

@@ -523,7 +523,7 @@ def resolve_batch_consensus(
         return (
             parent_id,
             consensus_detections,
-            len(consensus_detections) > required_objects,
+            len(consensus_detections) >= required_objects,
         )
     consensus_classes = Counter([d["class"] for d in consensus_detections])
     consensus_reached = all(
