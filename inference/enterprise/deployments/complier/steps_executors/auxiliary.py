@@ -1,7 +1,9 @@
 import itertools
+import statistics
+from collections import Counter
 from copy import deepcopy
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 import numpy as np
@@ -41,6 +43,7 @@ from inference.enterprise.deployments.entities.steps import (
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
+    DetectionsConsensus,
     Operator,
     RelativeStaticCrop,
 )
@@ -111,10 +114,7 @@ def crop_image(
 ) -> List[Dict[str, Union[str, np.ndarray]]]:
     crops = []
     for detection in detections:
-        x_min = round(detection["x"] - detection[WIDTH_KEY] / 2)
-        y_min = round(detection["y"] - detection[HEIGHT_KEY] / 2)
-        x_max = round(x_min + detection[WIDTH_KEY])
-        y_max = round(y_min + detection[HEIGHT_KEY])
+        x_min, y_min, x_max, y_max = detection_to_xyxy(detection=detection)
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(
             {
@@ -389,3 +389,274 @@ def take_static_crop(
             ORIGIN_SIZE_KEY: origin_size,
         },
     }
+
+
+async def run_detections_consensus_step(
+    step: DetectionsConsensus,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> Tuple[NextStepReference, OutputsLookup]:
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
+    if len(all_predictions) < 2:
+        raise ExecutionGraphError(
+            f"Consensus step requires at least two sources of predictions."
+        )
+    batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
+    if not all_batch_sizes_equal(batch_sizes=batch_sizes):
+        raise ExecutionGraphError(
+            f"Detected missmatch of input dimensions in step: {step.name}"
+        )
+    images_meta_selector = construct_selector_pointing_step_output(
+        selector=step.predictions[0],
+        new_output="image",
+    )
+    images_meta = resolve_parameter_closure(images_meta_selector)
+    batch_size = batch_sizes[0]
+    if batch_size == 1:
+        all_predictions = [[e] for e in all_predictions]
+        images_meta = [images_meta]
+    results = []
+    for batch_index in range(len(all_predictions)):
+        batch_predictions = [e[batch_index] for e in all_predictions]
+        parent_id, consensus_detections, consensus_reached = resolve_batch_consensus(
+            predictions=batch_predictions,
+            required_votes=step.required_votes,
+            class_aware=step.class_aware,
+            iou_threshold=step.iou_threshold,
+            confidence=step.confidence,
+            classes_to_consider=step.classes_to_consider,
+            required_objects=step.required_objects,
+        )
+        results.append(
+            {
+                "predictions": consensus_detections,
+                "parent_id": parent_id,
+                "consensus": consensus_reached,
+                "image": images_meta[batch_index],
+            }
+        )
+    if batch_size == 1:
+        results = results[0]
+    outputs_lookup[construct_step_selector(step_name=step.name)] = results
+    return None, outputs_lookup
+
+
+def get_predictions_batch_sizes(
+    all_predictions: List[Union[List[dict], List[List[dict]]]]
+) -> List[int]:
+    return [get_batch_size(predictions=predictions) for predictions in all_predictions]
+
+
+def get_batch_size(predictions: Union[List[dict], List[List[dict]]]) -> int:
+    if len(predictions) == 0 or issubclass(type(predictions[0]), dict):
+        return 1
+    return len(predictions)
+
+
+def all_batch_sizes_equal(batch_sizes: List[int]) -> bool:
+    if len(batch_sizes) == 0:
+        return True
+    reference = batch_sizes[0]
+    return all(e == reference for e in batch_sizes)
+
+
+def resolve_batch_consensus(
+    predictions: List[List[dict]],
+    required_votes: int,
+    class_aware: bool,
+    iou_threshold: float,
+    confidence: float,
+    classes_to_consider: Optional[List[str]],
+    required_objects: Optional[Union[int, Dict[str, int]]],
+) -> Tuple[str, List[dict], Optional[bool]]:
+    encountered_parent_ids = {
+        p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
+    }
+    if len(encountered_parent_ids) > 1:
+        raise ExecutionGraphError(
+            f"Missmatch in predictions - while executing consensus step, "
+            f"in equivalent batches, detections are assigned different parent "
+            f"identifiers, whereas consensus can only be applied for predictions "
+            f"made against the same input."
+        )
+    parent_id = list(encountered_parent_ids)[0]
+    predictions = filter_predictions(
+        predictions=predictions,
+        confidence=confidence,
+        classes_to_consider=classes_to_consider,
+    )
+    detections_already_considered = set()
+    consensus_detections = []
+    for source_id, detection in enumerate_detections(predictions=predictions):
+        detections_with_max_overlap = (
+            get_detections_from_different_sources_with_max_overlap(
+                detection=detection,
+                source=source_id,
+                predictions=predictions,
+                iou_threshold=iou_threshold,
+                class_aware=class_aware,
+                detections_already_considered=detections_already_considered,
+            )
+        )
+        if len(detections_with_max_overlap) >= required_votes:
+            merged_detection = merge_detections(
+                detections=[detection]
+                + [
+                    matched_value[0]
+                    for matched_value in detections_with_max_overlap.values()
+                ]
+            )
+            consensus_detections.append(merged_detection)
+            detections_already_considered.add(detection[DETECTION_ID_KEY])
+            for matched_value in detections_with_max_overlap.values():
+                detections_already_considered.add(matched_value[0][DETECTION_ID_KEY])
+    if required_objects is None:
+        return parent_id, consensus_detections, None
+    if issubclass(type(required_objects), int):
+        return (
+            parent_id,
+            consensus_detections,
+            len(consensus_detections) > required_objects,
+        )
+    consensus_classes = Counter([d["class_name"] for d in consensus_detections])
+    consensus_reached = all(
+        consensus_classes[class_name] >= consensus_value
+        for class_name, consensus_value in required_objects.items()
+    )
+    return parent_id, consensus_detections, consensus_reached
+
+
+def filter_predictions(
+    predictions: List[List[dict]],
+    confidence: float,
+    classes_to_consider: Optional[List[str]],
+) -> List[List[dict]]:
+    if classes_to_consider is not None:
+        detection_matches = partial(
+            confidence_and_class_match,
+            confidence_threshold=confidence,
+            classes=set(classes_to_consider),
+        )
+    else:
+        detection_matches = partial(
+            confidence_matches,
+            confidence_threshold=confidence,
+        )
+    return [
+        [detection for detection in detections if detection_matches(detection)]
+        for detections in predictions
+    ]
+
+
+def confidence_and_class_match(
+    detection: dict,
+    confidence_threshold: float,
+    classes: Set[str],
+) -> bool:
+    return (
+        confidence_matches(
+            detection=detection, confidence_threshold=confidence_threshold
+        )
+        and detection["class_name"] in classes
+    )
+
+
+def confidence_matches(detection: dict, confidence_threshold: float) -> bool:
+    return detection["confidence"] > confidence_threshold
+
+
+def get_detections_from_different_sources_with_max_overlap(
+    detection: dict,
+    source: int,
+    predictions: List[List[dict]],
+    iou_threshold: float,
+    class_aware: bool,
+    detections_already_considered: Set[str],
+) -> Dict[int, Tuple[dict, float]]:
+    current_max_overlap = {}
+    for other_source, other_detection in enumerate_detections(
+        predictions=predictions,
+        excluded_source=source,
+    ):
+        if other_detection[DETECTION_ID_KEY] in detections_already_considered:
+            continue
+        if class_aware and detection["class_name"] != other_detection["class_name"]:
+            continue
+        iou_value = calculate_iou(
+            detection_a=detection,
+            detection_b=other_detection,
+        )
+        if iou_value <= iou_threshold:
+            continue
+        if current_max_overlap.get(other_source) is None:
+            current_max_overlap[other_source] = (other_detection, iou_value)
+        if current_max_overlap[other_source][1] < iou_value:
+            current_max_overlap[other_source] = (other_detection, iou_value)
+    return current_max_overlap
+
+
+def enumerate_detections(
+    predictions: List[List[dict]],
+    excluded_source: Optional[int] = None,
+) -> Generator[Tuple[int, dict], None, None]:
+    for source_id, detections in enumerate(predictions):
+        if excluded_source is not None and excluded_source == source_id:
+            continue
+        for detection in detections:
+            yield source_id, detection
+
+
+def calculate_iou(detection_a: dict, detection_b: dict) -> float:
+    box_a = detection_to_xyxy(detection=detection_a)
+    box_b = detection_to_xyxy(detection=detection_b)
+    x_a = max(box_a[0], box_b[0])
+    y_a = max(box_a[1], box_b[1])
+    x_b = min(box_a[2], box_b[2])
+    y_b = min(box_a[3], box_b[3])
+    intersection = max(0, x_b - x_a + 1) * max(0, y_b - y_a + 1)
+    bbox_a_area = (box_a[2] - box_a[0] + 1) * (box_a[3] - box_a[1] + 1)
+    bbox_b_area = (box_b[2] - box_b[0] + 1) * (box_b[3] - box_b[1] + 1)
+    return intersection / float(bbox_a_area + bbox_b_area - intersection)
+
+
+def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
+    x_min = round(detection["x"] - detection[WIDTH_KEY] / 2)
+    y_min = round(detection["y"] - detection[HEIGHT_KEY] / 2)
+    x_max = round(x_min + detection[WIDTH_KEY])
+    y_max = round(y_min + detection[HEIGHT_KEY])
+    return x_min, y_min, x_max, y_max
+
+
+def merge_detections(detections: List[dict]) -> dict:
+    class_name, class_id = get_majority_class(detections=detections)
+    return {
+        PARENT_ID_KEY: detections[0][PARENT_ID_KEY],
+        DETECTION_ID_KEY: f"{uuid4()}",
+        "class_name": class_name,
+        "class_id": class_id,
+        "confidence": average_field_values(detections=detections, field="confidence"),
+        "x": round(average_field_values(detections=detections, field="x")),
+        "y": round(average_field_values(detections=detections, field="y")),
+        "width": round(average_field_values(detections=detections, field="width")),
+        "height": round(average_field_values(detections=detections, field="height")),
+    }
+
+
+def get_majority_class(detections: List[dict]) -> Tuple[str, int]:
+    class_counts = Counter(d["class_name"] for d in detections)
+    most_common_class_name = class_counts.most_common(1)[0]
+    class_id = [
+        d["class_id"] for d in detections if d["class_name"] == most_common_class_name
+    ][0]
+    return most_common_class_name, class_id
+
+
+def average_field_values(detections: List[dict], field: str) -> float:
+    return statistics.mean([d[field] for d in detections])

@@ -73,6 +73,15 @@ def validate_value_is_empty_or_positive_number(
         raise error(f"Parameter `{field_name}` must be positive (> 0)")
 
 
+def validate_field_is_list_of_selectors(
+    value: Any, field_name: str, error: Type[Exception] = ValueError
+) -> None:
+    if not issubclass(type(value), list):
+        raise error(f"`{field_name}` field must be list")
+    if any(not is_selector(selector_or_value=e) for e in value):
+        raise error(f"Parameter `{field_name}` must be a list of selectors")
+
+
 def validate_field_is_empty_or_selector_or_list_of_string(
     value: Any, field_name: str
 ) -> None:
