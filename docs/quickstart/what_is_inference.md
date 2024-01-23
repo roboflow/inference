@@ -41,7 +41,7 @@ Next, we load a model by referencing its `model_id`. For Roboflow models, the mo
 
 **`results = model.infer("people-walking.jpg")`**
 
-Finally, we run inference on a local image file (<a href="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg" target="_blank">hosted here</a>). We used <a href="https://supervision.roboflow.com/how_to/detect_and_annotate/" target="_blank">Supervision</a> to visualize the results.
+Finally, we run inference on a local image file (<a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">hosted here</a>). We used <a href="https://supervision.roboflow.com/how_to/detect_and_annotate/" target="_blank">Supervision</a> to visualize the results.
 
 ## Why Inference?
 
