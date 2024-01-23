@@ -526,3 +526,8 @@ largest box.
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `object_present` - for each input image, boolean flag with information whether or not
+objects specified in config are present
+* `presence_confidence` - for each input image, for each present class - aggregated confidence indicating presence
+of objects
+
