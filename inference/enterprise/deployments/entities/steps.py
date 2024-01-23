@@ -907,10 +907,13 @@ class DetectionsConsensus(BaseModel, StepInterface):
     confidence: Union[float, str] = Field(default=0.0)
     classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
     required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
-    confidence_aggregation_mode: AggregationMode = Field(
+    presence_confidence_aggregation: AggregationMode = Field(
+        default=AggregationMode.MAX
+    )
+    box_confidence_aggregation: AggregationMode = Field(default=AggregationMode.AVERAGE)
+    box_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE
     )
-    boxes_aggregation_mode: AggregationMode = Field(default=AggregationMode.AVERAGE)
 
     @validator("predictions")
     @classmethod

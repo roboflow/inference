@@ -479,11 +479,11 @@ applied at detections level.
 
 Step executes following operations:
 * checks if at least `required_votes` models produced detections of given classes (or any if classes not specified)
-* aggregates predictions of detections at class level (according to `confidence_aggregation_mode` parameter), 
+* aggregates predictions of detections at class level (according to `presence_confidence_aggregation` parameter), 
 filters out the confidences below `confidence` and outputs `object_present` flag, along with `presence_confidence`
 * look for detections from different sources matching confidence classes and IoU preconditions
-* once overlapping predictions are found - those are merged (boxes based on `boxes_aggregation_mode` and 
-classes / confidences based on `confidence_aggregation_mode`) of overlapping detections. Beware that if `class_aware` 
+* once overlapping predictions are found - those are merged (boxes based on `box_coordinates_aggregation` and 
+classes / confidences based on `box_confidence_aggregation`) of overlapping detections. Beware that if `class_aware` 
 is set `False` and `classes_to_consider` enables multiple classes to be considered - the merged boxes classes may not 
 be interpretable
 * after merge - consensus criteria are checked (if `required_objects` are specified) - and consensus flag is returned, 
@@ -511,12 +511,14 @@ classes filtering of predictions will not be enabled.
 the number of objects that must be present in merged results, to assume that consensus is reached.
 Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into
 minimal number of merged detections of given class to assume consensus.
-* `confidence_aggregation_mode` - mode dictating aggregation of confidence scores
-and classes both in case of presence verification and boxes consensus procedure. 
+* `presence_confidence_aggregation` - mode dictating aggregation of confidence scores
+and classes both in case of object presence deduction procedure. One of `average`, `max`, `min`. Default: `max`.
+* `box_confidence_aggregation` - mode dictating aggregation of confidence scores
+and classes both in case of boxes consensus procedure. 
 One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, 
 against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence,
 `min` - for the class of detection with min confidence.
-* `boxes_aggregation_mode` - mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. 
+* `box_coordinates_aggregation` - mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. 
 Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking 
 largest box.
 

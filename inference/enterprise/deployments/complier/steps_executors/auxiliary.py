@@ -445,8 +445,9 @@ async def run_detections_consensus_step(
             confidence=resolve_parameter_closure(step.confidence),
             classes_to_consider=resolve_parameter_closure(step.classes_to_consider),
             required_objects=resolve_parameter_closure(step.required_objects),
-            confidence_aggregation_mode=step.confidence_aggregation_mode,
-            boxes_aggregation_mode=step.boxes_aggregation_mode,
+            presence_confidence_aggregation=step.presence_confidence_aggregation,
+            box_confidence_aggregation=step.box_confidence_aggregation,
+            box_coordinates_aggregation=step.box_coordinates_aggregation,
         )
         results.append(
             {
@@ -503,8 +504,9 @@ def resolve_batch_consensus(
     confidence: float,
     classes_to_consider: Optional[List[str]],
     required_objects: Optional[Union[int, Dict[str, int]]],
-    confidence_aggregation_mode: AggregationMode,
-    boxes_aggregation_mode: AggregationMode,
+    presence_confidence_aggregation: AggregationMode,
+    box_confidence_aggregation: AggregationMode,
+    box_coordinates_aggregation: AggregationMode,
 ) -> Tuple[str, bool, Dict[str, float], List[dict], bool]:
     parent_id = get_parent_id_of_predictions_from_different_sources(
         predictions=predictions,
@@ -517,7 +519,7 @@ def resolve_batch_consensus(
     object_present, presence_confidence = check_detections_presence_consensus(
         predictions=predictions,
         required_votes=required_votes,
-        aggregation_mode=confidence_aggregation_mode,
+        aggregation_mode=presence_confidence_aggregation,
         confidence=confidence,
     )
     detections_already_considered = set()
@@ -540,8 +542,8 @@ def resolve_batch_consensus(
                     matched_value[0]
                     for matched_value in detections_with_max_overlap.values()
                 ],
-                confidence_aggregation_mode=confidence_aggregation_mode,
-                boxes_aggregation_mode=boxes_aggregation_mode,
+                confidence_aggregation_mode=box_confidence_aggregation,
+                boxes_aggregation_mode=box_coordinates_aggregation,
             )
             if merged_detection["confidence"] >= confidence:
                 consensus_detections.append(merged_detection)
