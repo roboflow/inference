@@ -36,6 +36,7 @@ from inference.enterprise.deployments.complier.utils import (
 )
 from inference.enterprise.deployments.entities.steps import (
     AbsoluteStaticCrop,
+    AggregationMode,
     BinaryOperator,
     CompoundDetectionFilterDefinition,
     Condition,
@@ -43,6 +44,7 @@ from inference.enterprise.deployments.entities.steps import (
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
+    DetectionPresenceConsensus,
     DetectionsConsensus,
     Operator,
     RelativeStaticCrop,
@@ -62,6 +64,12 @@ OPERATORS = {
 BINARY_OPERATORS = {
     BinaryOperator.AND: lambda a, b: a and b,
     BinaryOperator.OR: lambda a, b: a or b,
+}
+
+AGGREGATION_MODE2FIELD_AGGREGATOR = {
+    AggregationMode.MAX: max,
+    AggregationMode.MIN: min,
+    AggregationMode.AVERAGE: statistics.mean,
 }
 
 
@@ -408,11 +416,7 @@ async def run_detections_consensus_step(
         raise ExecutionGraphError(
             f"Consensus step requires at least two sources of predictions."
         )
-    batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
-    if not all_batch_sizes_equal(batch_sizes=batch_sizes):
-        raise ExecutionGraphError(
-            f"Detected missmatch of input dimensions in step: {step.name}"
-        )
+    batch_sizes = get_and_validate_batch_sizes(all_predictions=all_predictions)
     images_meta_selector = construct_selector_pointing_step_output(
         selector=step.predictions[0],
         new_output="image",
@@ -433,6 +437,8 @@ async def run_detections_consensus_step(
             confidence=resolve_parameter_closure(step.confidence),
             classes_to_consider=resolve_parameter_closure(step.classes_to_consider),
             required_objects=resolve_parameter_closure(step.required_objects),
+            confidence_aggregation_mode=step.confidence_aggregation_mode,
+            boxes_aggregation_mode=step.boxes_aggregation_mode,
         )
         results.append(
             {
@@ -446,6 +452,61 @@ async def run_detections_consensus_step(
         results = results[0]
     outputs_lookup[construct_step_selector(step_name=step.name)] = results
     return None, outputs_lookup
+
+
+async def run_detections_presence_consensus_step(
+    step: DetectionPresenceConsensus,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> Tuple[NextStepReference, OutputsLookup]:
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
+    if len(all_predictions) < 1:
+        raise ExecutionGraphError(
+            f"Consensus step requires at least one source of predictions."
+        )
+    batch_sizes = get_and_validate_batch_sizes(all_predictions=all_predictions)
+    batch_size = batch_sizes[0]
+    if batch_size == 1:
+        all_predictions = [[e] for e in all_predictions]
+    results = []
+    for batch_index in range(batch_size):
+        batch_predictions = [e[batch_index] for e in all_predictions]
+        parent_id, object_present, confidence = check_detections_presence_consensus(
+            predictions=batch_predictions,
+            required_votes=resolve_parameter_closure(step.required_votes),
+            class_of_interest=resolve_parameter_closure(step.class_of_interest),
+            aggregation_mode=step.confidence_aggregation_mode,
+            confidence=resolve_parameter_closure(step.confidence),
+        )
+        results.append(
+            {
+                "parent_id": parent_id,
+                "object_present": object_present,
+                "confidence": confidence,
+            }
+        )
+    if batch_size == 1:
+        results = results[0]
+    outputs_lookup[construct_step_selector(step_name=step.name)] = results
+    return None, outputs_lookup
+
+
+def get_and_validate_batch_sizes(
+    all_predictions: List[Union[List[dict], List[List[dict]]]]
+) -> List[int]:
+    batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
+    if not all_batch_sizes_equal(batch_sizes=batch_sizes):
+        raise ExecutionGraphError(
+            f"Detected missmatch of input dimensions in step: {step.name}"
+        )
+    return batch_sizes
 
 
 def get_predictions_batch_sizes(
@@ -475,18 +536,12 @@ def resolve_batch_consensus(
     confidence: float,
     classes_to_consider: Optional[List[str]],
     required_objects: Optional[Union[int, Dict[str, int]]],
-) -> Tuple[str, List[dict], Optional[bool]]:
-    encountered_parent_ids = {
-        p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
-    }
-    if len(encountered_parent_ids) > 1:
-        raise ExecutionGraphError(
-            f"Missmatch in predictions - while executing consensus step, "
-            f"in equivalent batches, detections are assigned different parent "
-            f"identifiers, whereas consensus can only be applied for predictions "
-            f"made against the same input."
-        )
-    parent_id = list(encountered_parent_ids)[0]
+    confidence_aggregation_mode: AggregationMode,
+    boxes_aggregation_mode: AggregationMode,
+) -> Tuple[str, List[dict], Union[str, bool]]:
+    parent_id = get_parent_id_of_predictions_from_different_sources(
+        predictions=predictions,
+    )
     predictions = filter_predictions(
         predictions=predictions,
         confidence=confidence,
@@ -511,7 +566,9 @@ def resolve_batch_consensus(
                 + [
                     matched_value[0]
                     for matched_value in detections_with_max_overlap.values()
-                ]
+                ],
+                confidence_aggregation_mode=confidence_aggregation_mode,
+                boxes_aggregation_mode=boxes_aggregation_mode,
             )
             consensus_detections.append(merged_detection)
             detections_already_considered.add(detection[DETECTION_ID_KEY])
@@ -531,6 +588,55 @@ def resolve_batch_consensus(
         for class_name, consensus_value in required_objects.items()
     )
     return parent_id, consensus_detections, consensus_reached
+
+
+def check_detections_presence_consensus(
+    predictions: List[List[dict]],
+    required_votes: int,
+    class_of_interest: List[str],
+    aggregation_mode: AggregationMode,
+    confidence: Optional[float],
+) -> Tuple[str, bool, Union[str, float]]:
+    parent_id = get_parent_id_of_predictions_from_different_sources(
+        predictions=predictions,
+    )
+    predictions = filter_predictions(
+        predictions=predictions,
+        confidence=0.0,
+        classes_to_consider=class_of_interest,
+    )
+    predictions_with_at_least_one_detection = (
+        count_predictions_with_at_least_one_detection(
+            predictions=predictions,
+        )
+    )
+    if predictions_with_at_least_one_detection < required_votes:
+        return parent_id, False, "undefined"
+    flattened_detections = list(itertools.chain.from_iterable(predictions))
+    aggregated_confidence = aggregate_field_values(
+        detections=flattened_detections,
+        field="confidence",
+        aggregation_mode=aggregation_mode,
+    )
+    if confidence is not None and aggregated_confidence < confidence:
+        return parent_id, False, "undefined"
+    return parent_id, True, aggregated_confidence
+
+
+def get_parent_id_of_predictions_from_different_sources(
+    predictions: List[List[dict]],
+) -> str:
+    encountered_parent_ids = {
+        p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
+    }
+    if len(encountered_parent_ids) > 1:
+        raise ExecutionGraphError(
+            f"Missmatch in predictions - while executing consensus step, "
+            f"in equivalent batches, detections are assigned different parent "
+            f"identifiers, whereas consensus can only be applied for predictions "
+            f"made against the same input."
+        )
+    return list(encountered_parent_ids)[0]
 
 
 def filter_predictions(
@@ -634,18 +740,31 @@ def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
     return x_min, y_min, x_max, y_max
 
 
-def merge_detections(detections: List[dict]) -> dict:
-    class_name, class_id = get_majority_class(detections=detections)
+def merge_detections(
+    detections: List[dict],
+    confidence_aggregation_mode: AggregationMode,
+    boxes_aggregation_mode: AggregationMode,
+) -> dict:
+    class_name, class_id = AGGREGATION_MODE2CLASS_SELECTOR[confidence_aggregation_mode](
+        detections
+    )
+    x, y, width, height = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
+        detections
+    )
     return {
         PARENT_ID_KEY: detections[0][PARENT_ID_KEY],
         DETECTION_ID_KEY: f"{uuid4()}",
         "class": class_name,
         "class_id": class_id,
-        "confidence": average_field_values(detections=detections, field="confidence"),
-        "x": round(average_field_values(detections=detections, field="x")),
-        "y": round(average_field_values(detections=detections, field="y")),
-        "width": round(average_field_values(detections=detections, field="width")),
-        "height": round(average_field_values(detections=detections, field="height")),
+        "confidence": aggregate_field_values(
+            detections=detections,
+            field="confidence",
+            aggregation_mode=confidence_aggregation_mode,
+        ),
+        "x": x,
+        "y": y,
+        "width": width,
+        "height": height,
     }
 
 
@@ -656,6 +775,97 @@ def get_majority_class(detections: List[dict]) -> Tuple[str, int]:
         d["class_id"] for d in detections if d["class"] == most_common_class_name
     ][0]
     return most_common_class_name, class_id
+
+
+def get_class_of_most_confident_detection(detections: List[dict]) -> Tuple[str, int]:
+    max_confidence = aggregate_field_values(
+        detections=detections,
+        field="confidence",
+        aggregation_mode=AggregationMode.MAX,
+    )
+    most_confident_prediction = [
+        d for d in detections if d["confidence"] == max_confidence
+    ][0]
+    return most_confident_prediction["class"], most_confident_prediction["class_id"]
+
+
+def get_class_of_least_confident_detection(detections: List[dict]) -> Tuple[str, int]:
+    max_confidence = aggregate_field_values(
+        detections=detections,
+        field="confidence",
+        aggregation_mode=AggregationMode.MIN,
+    )
+    most_confident_prediction = [
+        d for d in detections if d["confidence"] == max_confidence
+    ][0]
+    return most_confident_prediction["class"], most_confident_prediction["class_id"]
+
+
+AGGREGATION_MODE2CLASS_SELECTOR = {
+    AggregationMode.MAX: get_class_of_most_confident_detection,
+    AggregationMode.MIN: get_class_of_least_confident_detection,
+    AggregationMode.AVERAGE: get_majority_class,
+}
+
+
+def get_average_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
+    x = round(average_field_values(detections=detections, field="x"))
+    y = round(average_field_values(detections=detections, field="y"))
+    width = round(average_field_values(detections=detections, field="width"))
+    height = round(average_field_values(detections=detections, field="height"))
+    return x, y, width, height
+
+
+def get_smallest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
+    detection_sizes = get_detection_sizes(detections=detections)
+    smallest_size = min(detection_sizes)
+    matching_detection_id = [
+        idx for idx, v in enumerate(detection_sizes) if v == smallest_size
+    ][0]
+    matching_detection = detections[matching_detection_id]
+    return (
+        matching_detection["x"],
+        matching_detection["y"],
+        matching_detection["width"],
+        matching_detection["height"],
+    )
+
+
+def get_largest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
+    detection_sizes = get_detection_sizes(detections=detections)
+    largest_size = max(detection_sizes)
+    matching_detection_id = [
+        idx for idx, v in enumerate(detection_sizes) if v == largest_size
+    ][0]
+    matching_detection = detections[matching_detection_id]
+    return (
+        matching_detection["x"],
+        matching_detection["y"],
+        matching_detection["width"],
+        matching_detection["height"],
+    )
+
+
+AGGREGATION_MODE2BOXES_AGGREGATOR = {
+    AggregationMode.MAX: get_largest_bounding_box,
+    AggregationMode.MIN: get_smallest_bounding_box,
+    AggregationMode.AVERAGE: get_average_bounding_box,
+}
+
+
+def get_detection_sizes(detections: List[dict]) -> List[float]:
+    return [d["height"] * d["width"] for d in detections]
+
+
+def count_predictions_with_at_least_one_detection(predictions: List[List[dict]]) -> int:
+    return len([e for e in predictions if len(e) > 0])
+
+
+def aggregate_field_values(
+    detections: List[dict], field: str, aggregation_mode: AggregationMode
+) -> float:
+    values = [d[field] for d in detections]
+    return AGGREGATION_MODE2FIELD_AGGREGATOR[aggregation_mode](values)
 
 
 def average_field_values(detections: List[dict], field: str) -> float:

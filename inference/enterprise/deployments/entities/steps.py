@@ -891,6 +891,12 @@ class ClipComparison(BaseModel, StepInterface):
         return {"similarity", "parent_id"}
 
 
+class AggregationMode(Enum):
+    AVERAGE = "average"
+    MAX = "max"
+    MIN = "min"
+
+
 class DetectionsConsensus(BaseModel, StepInterface):
     type: Literal["DetectionsConsensus"]
     name: str
@@ -901,6 +907,10 @@ class DetectionsConsensus(BaseModel, StepInterface):
     confidence: Union[float, str] = Field(default=0.4)
     classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
     required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
+    confidence_aggregation_mode: AggregationMode = Field(
+        default=AggregationMode.AVERAGE
+    )
+    boxes_aggregation_mode: AggregationMode = Field(default=AggregationMode.AVERAGE)
 
     @validator("predictions")
     @classmethod
@@ -1046,7 +1056,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
             )
         elif field_name in {"iou_threshold", "confidence"}:
             if value is None:
-                raise VariableTypeError("Field `iou_threshold` cannot be None.")
+                raise VariableTypeError(f"Fields `{field_name}` cannot be None.")
             validate_value_is_empty_or_number_in_range_zero_one(
                 value=value,
                 field_name=field_name,
@@ -1093,3 +1103,130 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 field_name=f"required_objects[{k}]",
                 error=VariableTypeError,
             )
+
+
+class DetectionPresenceConsensus(BaseModel, StepInterface):
+    type: Literal["DetectionPresenceConsensus"]
+    name: str
+    predictions: List[str]
+    required_votes: Union[int, str]
+    class_of_interest: Union[str, List[str]]
+    confidence: Optional[Union[float, str]] = Field(default=None)
+    confidence_aggregation_mode: AggregationMode = Field(
+        default=AggregationMode.AVERAGE
+    )
+
+    @validator("predictions")
+    @classmethod
+    def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
+        validate_field_is_list_of_selectors(value=value, field_name="predictions")
+        if len(value) < 1:
+            raise ValueError(
+                "There must be at least 1 `predictions` selectors in consensus step"
+            )
+        return value
+
+    @validator("required_votes")
+    @classmethod
+    def required_votes_must_be_selector_or_positive_integer(
+        cls, value: Any
+    ) -> Union[str, int]:
+        if value is None:
+            raise ValueError("Field `required_votes` is required.")
+        validate_value_is_empty_or_selector_or_positive_number(
+            value=value, field_name="required_votes"
+        )
+        return value
+
+    @validator("class_of_interest")
+    @classmethod
+    def class_of_interest_must_selector_or_list_of_strings(
+        cls, value: Any
+    ) -> Optional[Union[str, List[str]]]:
+        if value is None:
+            raise ValueError("Field `class_of_interest` is required.")
+        validate_field_is_empty_or_selector_or_list_of_string(
+            value=value, field_name="classes_to_consider"
+        )
+        return value
+
+    @validator("confidence")
+    @classmethod
+    def field_must_be_selector_or_number_from_zero_to_one(
+        cls, value: Any
+    ) -> Union[str, float]:
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
+            value=value, field_name="confidence"
+        )
+        return value
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "predictions",
+            "required_votes",
+            "class_of_interest",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return {"object_present", "confidence"}
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        if field_name != "predictions" and not is_selector(
+            selector_or_value=getattr(self, field_name)
+        ):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        if field_name == "predictions":
+            if index is None:
+                raise ExecutionGraphError(
+                    f"Attempted to validate selector value for field {field_name}, which requires multiple inputs, "
+                    f"but `index` not provided."
+                )
+            validate_selector_holds_detections(
+                step_name=self.name,
+                image_selector=None,
+                detections_selector=self.predictions[index],
+                field_name=field_name,
+                input_step=input_step,
+                applicable_fields={"predictions"},
+            )
+            return None
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "required_votes",
+                "class_of_interest",
+                "confidence",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "required_votes":
+            if value is None:
+                raise VariableTypeError("Field `required_votes` cannot be None.")
+            validate_value_is_empty_or_positive_number(
+                value=value, field_name="required_votes", error=VariableTypeError
+            )
+        elif field_name == "class_of_interest":
+            if value is None:
+                return None
+            validate_field_is_list_of_string(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        elif field_name == "confidence":
+            validate_value_is_empty_or_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        return None
+
+    def get_type(self) -> str:
+        return self.type

@@ -13,6 +13,7 @@ from inference.enterprise.deployments.complier.steps_executors.auxiliary import 
     run_detection_filter,
     run_detection_offset_step,
     run_detections_consensus_step,
+    run_detections_presence_consensus_step,
     run_static_crop_step,
 )
 from inference.enterprise.deployments.complier.steps_executors.constants import (
@@ -48,6 +49,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "RelativeStaticCrop": run_static_crop_step,
     "ClipComparison": run_clip_comparison_step,
     "DetectionsConsensus": run_detections_consensus_step,
+    "DetectionPresenceConsensus": run_detections_presence_consensus_step,
 }
 
 
