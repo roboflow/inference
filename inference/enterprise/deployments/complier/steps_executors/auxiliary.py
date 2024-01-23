@@ -521,6 +521,7 @@ def resolve_batch_consensus(
         required_votes=required_votes,
         aggregation_mode=presence_confidence_aggregation,
         confidence=confidence,
+        class_aware=class_aware,
     )
     detections_already_considered = set()
     consensus_detections = []
@@ -587,6 +588,7 @@ def check_detections_presence_consensus(
     required_votes: int,
     aggregation_mode: AggregationMode,
     confidence: float,
+    class_aware: bool,
 ) -> Tuple[bool, Dict[str, float]]:
     predictions_with_at_least_one_detection = (
         count_predictions_with_at_least_one_detection(
@@ -596,6 +598,17 @@ def check_detections_presence_consensus(
     if predictions_with_at_least_one_detection < required_votes:
         return False, {}
     flattened_detections = list(itertools.chain.from_iterable(predictions))
+    if not class_aware:
+        aggregated_confidence = aggregate_field_values(
+            detections=flattened_detections,
+            field="confidence",
+            aggregation_mode=aggregation_mode,
+        )
+        object_present = aggregated_confidence >= confidence
+        presence_confidence = {}
+        if object_present:
+            presence_confidence["any_object"] = aggregated_confidence
+        return object_present, presence_confidence
     class2flattened_detections = defaultdict(list)
     for detection in flattened_detections:
         class2flattened_detections[detection["class"]].append(detection)

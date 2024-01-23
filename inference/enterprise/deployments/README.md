@@ -498,7 +498,7 @@ there are detections that multiple models agree on in a number above the thresho
 * `required_votes`: number of models that must agree on the detection - integer or selector pointing at
 `InferenceParameter` (required)
 * `class_aware`: flag deciding if class names are taken into account when finding overlapping bounding boxes
-from multiple models and merging them. Can be `bool` or selector to `InferenceParameter`. Default: `True`
+from multiple models and object presence check. Can be `bool` or selector to `InferenceParameter`. Default: `True`
 * `iou_threshold`: optional float value in range [0, 1] with IoU threshold that must be meet to consider
 two bounding boxes overlapping. Can be float or selector to `InferenceParameter`. Default: `0.3`.
 * `confidence`: optional float value in range [0, 1] minimal confidence of **aggregated** detection that must be met to 
