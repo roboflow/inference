@@ -471,15 +471,23 @@ of multi-step pipelines
 
 
 #### `DetectionsConsensus`
-Step that is meant to combine predictions from multiple detections models (works for 
+Step that is meant to combine predictions from potentially multiple detections models. 
+Steps checks for object presence (according to configurable criteria), combines detections and
+decides on consensus (based on overlap of predictions from different models). It works for 
 `object-detection`, `instance-segmentation` and `keypoint-detection` models, but consensus output is only
-applied at detections level). 
+applied at detections level. 
 
 Step executes following operations:
-* look for detections matching confidence classes and IoU preconditions
-* once overlapping predictions are found - those are merged, making average (classes are assigned based on majority vote) of overlapping detections
-* after merge - consensus criteria are checked - and consensus flag is returned, such
-that result can be interpreted directly, without additional logic (flag `consensus=True` means that
+* checks if at least `required_votes` models produced detections of given classes (or any if classes not specified)
+* aggregates predictions of detections at class level (according to `confidence_aggregation_mode` parameter), 
+filters out the confidences below `confidence` and outputs `object_present` flag, along with `presence_confidence`
+* look for detections from different sources matching confidence classes and IoU preconditions
+* once overlapping predictions are found - those are merged (boxes based on `boxes_aggregation_mode` and 
+classes / confidences based on `confidence_aggregation_mode`) of overlapping detections. Beware that if `class_aware` 
+is set `False` and `classes_to_consider` enables multiple classes to be considered - the merged boxes classes may not 
+be interpretable
+* after merge - consensus criteria are checked (if `required_objects` are specified) - and consensus flag is returned, 
+such  that result can be interpreted directly, without additional logic (flag `consensus=True` means that
 there are detections that multiple models agree on in a number above the threshold defined).
 
 ##### Step parameters
@@ -490,11 +498,12 @@ there are detections that multiple models agree on in a number above the thresho
 * `required_votes`: number of models that must agree on the detection - integer or selector pointing at
 `InferenceParameter` (required)
 * `class_aware`: flag deciding if class names are taken into account when finding overlapping bounding boxes
-from multiple models. Can be `bool` or selector to `InferenceParameter`. Default: `True`
+from multiple models and merging them. Can be `bool` or selector to `InferenceParameter`. Default: `True`
 * `iou_threshold`: optional float value in range [0, 1] with IoU threshold that must be meet to consider
 two bounding boxes overlapping. Can be float or selector to `InferenceParameter`. Default: `0.3`.
-* `confidence`: optional float value in range [0, 1] minimal confidence of detection that must be met to 
-be taken into account in consensus procedure. Default: `0.4`.
+* `confidence`: optional float value in range [0, 1] minimal confidence of **aggregated** detection that must be met to 
+be taken into account in presence assessment and consensus procedure. For prior-consensus filtering - use
+confidence threshold at model level or `DetectionsFilter`. Default: `0.0`.
 * `classes_to_consider`: Optional list of classes to consider in consensus procedure.
 Can be list of `str` or selector to `InferenceParameter`. Default: `None` - in this case 
 classes filtering of predictions will not be enabled.
@@ -502,6 +511,14 @@ classes filtering of predictions will not be enabled.
 the number of objects that must be present in merged results, to assume that consensus is reached.
 Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into
 minimal number of merged detections of given class to assume consensus.
+* `confidence_aggregation_mode` - mode dictating aggregation of confidence scores
+and classes both in case of presence verification and boxes consensus procedure. 
+One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, 
+against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence,
+`min` - for the class of detection with min confidence.
+* `boxes_aggregation_mode` - mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. 
+Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking 
+largest box.
 
 ##### Step outputs:
 * `consensus` - for each input image, boolean flag with consensus status, built based on merged detections and `required_objects`

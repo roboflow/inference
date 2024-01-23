@@ -1,6 +1,6 @@
 import itertools
 import statistics
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from functools import partial
 from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, Union
@@ -44,7 +44,6 @@ from inference.enterprise.deployments.entities.steps import (
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
-    DetectionPresenceConsensus,
     DetectionsConsensus,
     Operator,
     RelativeStaticCrop,
@@ -412,11 +411,14 @@ async def run_detections_consensus_step(
         outputs_lookup=outputs_lookup,
     )
     all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
-    if len(all_predictions) < 2:
+    if len(all_predictions) < 1:
         raise ExecutionGraphError(
-            f"Consensus step requires at least two sources of predictions."
+            f"Consensus step requires at least one source of predictions."
         )
-    batch_sizes = get_and_validate_batch_sizes(all_predictions=all_predictions)
+    batch_sizes = get_and_validate_batch_sizes(
+        all_predictions=all_predictions,
+        step_name=step.name,
+    )
     images_meta_selector = construct_selector_pointing_step_output(
         selector=step.predictions[0],
         new_output="image",
@@ -429,7 +431,13 @@ async def run_detections_consensus_step(
     results = []
     for batch_index in range(batch_size):
         batch_predictions = [e[batch_index] for e in all_predictions]
-        parent_id, consensus_detections, consensus_reached = resolve_batch_consensus(
+        (
+            parent_id,
+            object_present,
+            presence_confidence,
+            consensus_detections,
+            consensus_reached,
+        ) = resolve_batch_consensus(
             predictions=batch_predictions,
             required_votes=resolve_parameter_closure(step.required_votes),
             class_aware=resolve_parameter_closure(step.class_aware),
@@ -444,6 +452,8 @@ async def run_detections_consensus_step(
             {
                 "predictions": consensus_detections,
                 "parent_id": parent_id,
+                "object_present": object_present,
+                "presence_confidence": presence_confidence,
                 "consensus": consensus_reached,
                 "image": images_meta[batch_index],
             }
@@ -454,57 +464,14 @@ async def run_detections_consensus_step(
     return None, outputs_lookup
 
 
-async def run_detections_presence_consensus_step(
-    step: DetectionPresenceConsensus,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-) -> Tuple[NextStepReference, OutputsLookup]:
-    resolve_parameter_closure = partial(
-        resolve_parameter,
-        runtime_parameters=runtime_parameters,
-        outputs_lookup=outputs_lookup,
-    )
-    all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
-    if len(all_predictions) < 1:
-        raise ExecutionGraphError(
-            f"Consensus step requires at least one source of predictions."
-        )
-    batch_sizes = get_and_validate_batch_sizes(all_predictions=all_predictions)
-    batch_size = batch_sizes[0]
-    if batch_size == 1:
-        all_predictions = [[e] for e in all_predictions]
-    results = []
-    for batch_index in range(batch_size):
-        batch_predictions = [e[batch_index] for e in all_predictions]
-        parent_id, object_present, confidence = check_detections_presence_consensus(
-            predictions=batch_predictions,
-            required_votes=resolve_parameter_closure(step.required_votes),
-            class_of_interest=resolve_parameter_closure(step.class_of_interest),
-            aggregation_mode=step.confidence_aggregation_mode,
-            confidence=resolve_parameter_closure(step.confidence),
-        )
-        results.append(
-            {
-                "parent_id": parent_id,
-                "object_present": object_present,
-                "confidence": confidence,
-            }
-        )
-    if batch_size == 1:
-        results = results[0]
-    outputs_lookup[construct_step_selector(step_name=step.name)] = results
-    return None, outputs_lookup
-
-
 def get_and_validate_batch_sizes(
-    all_predictions: List[Union[List[dict], List[List[dict]]]]
+    all_predictions: List[Union[List[dict], List[List[dict]]]],
+    step_name: str,
 ) -> List[int]:
     batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
     if not all_batch_sizes_equal(batch_sizes=batch_sizes):
         raise ExecutionGraphError(
-            f"Detected missmatch of input dimensions in step: {step.name}"
+            f"Detected missmatch of input dimensions in step: {step_name}"
         )
     return batch_sizes
 
@@ -538,14 +505,20 @@ def resolve_batch_consensus(
     required_objects: Optional[Union[int, Dict[str, int]]],
     confidence_aggregation_mode: AggregationMode,
     boxes_aggregation_mode: AggregationMode,
-) -> Tuple[str, List[dict], Union[str, bool]]:
+) -> Tuple[str, bool, Dict[str, float], List[dict], bool]:
     parent_id = get_parent_id_of_predictions_from_different_sources(
         predictions=predictions,
     )
     predictions = filter_predictions(
         predictions=predictions,
-        confidence=confidence,
+        confidence=0.0,
         classes_to_consider=classes_to_consider,
+    )
+    object_present, presence_confidence = check_detections_presence_consensus(
+        predictions=predictions,
+        required_votes=required_votes,
+        aggregation_mode=confidence_aggregation_mode,
+        confidence=confidence,
     )
     detections_already_considered = set()
     consensus_detections = []
@@ -570,15 +543,26 @@ def resolve_batch_consensus(
                 confidence_aggregation_mode=confidence_aggregation_mode,
                 boxes_aggregation_mode=boxes_aggregation_mode,
             )
-            consensus_detections.append(merged_detection)
-            detections_already_considered.add(detection[DETECTION_ID_KEY])
-            for matched_value in detections_with_max_overlap.values():
-                detections_already_considered.add(matched_value[0][DETECTION_ID_KEY])
+            if merged_detection["confidence"] >= confidence:
+                consensus_detections.append(merged_detection)
+                detections_already_considered.add(detection[DETECTION_ID_KEY])
+                for matched_value in detections_with_max_overlap.values():
+                    detections_already_considered.add(
+                        matched_value[0][DETECTION_ID_KEY]
+                    )
     if required_objects is None:
-        return parent_id, consensus_detections, "undefined"
+        return (
+            parent_id,
+            object_present,
+            presence_confidence,
+            consensus_detections,
+            False,
+        )
     if issubclass(type(required_objects), int):
         return (
             parent_id,
+            object_present,
+            presence_confidence,
             consensus_detections,
             len(consensus_detections) >= required_objects,
         )
@@ -587,40 +571,44 @@ def resolve_batch_consensus(
         consensus_classes[class_name] >= consensus_value
         for class_name, consensus_value in required_objects.items()
     )
-    return parent_id, consensus_detections, consensus_reached
+    return (
+        parent_id,
+        object_present,
+        presence_confidence,
+        consensus_detections,
+        consensus_reached,
+    )
 
 
 def check_detections_presence_consensus(
     predictions: List[List[dict]],
     required_votes: int,
-    class_of_interest: List[str],
     aggregation_mode: AggregationMode,
-    confidence: Optional[float],
-) -> Tuple[str, bool, Union[str, float]]:
-    parent_id = get_parent_id_of_predictions_from_different_sources(
-        predictions=predictions,
-    )
-    predictions = filter_predictions(
-        predictions=predictions,
-        confidence=0.0,
-        classes_to_consider=class_of_interest,
-    )
+    confidence: float,
+) -> Tuple[bool, Dict[str, float]]:
     predictions_with_at_least_one_detection = (
         count_predictions_with_at_least_one_detection(
             predictions=predictions,
         )
     )
     if predictions_with_at_least_one_detection < required_votes:
-        return parent_id, False, "undefined"
+        return False, {}
     flattened_detections = list(itertools.chain.from_iterable(predictions))
-    aggregated_confidence = aggregate_field_values(
-        detections=flattened_detections,
-        field="confidence",
-        aggregation_mode=aggregation_mode,
-    )
-    if confidence is not None and aggregated_confidence < confidence:
-        return parent_id, False, "undefined"
-    return parent_id, True, aggregated_confidence
+    class2flattened_detections = defaultdict(list)
+    for detection in flattened_detections:
+        class2flattened_detections[detection["class"]].append(detection)
+    class2confidence = {
+        class_name: aggregate_field_values(
+            detections=class_detections,
+            field="confidence",
+            aggregation_mode=aggregation_mode,
+        )
+        for class_name, class_detections in class2flattened_detections.items()
+    }
+    filtered_class2confidence = {
+        key: value for key, value in class2confidence.items() if value >= confidence
+    }
+    return len(filtered_class2confidence) > 0, filtered_class2confidence
 
 
 def get_parent_id_of_predictions_from_different_sources(
