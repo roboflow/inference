@@ -8,7 +8,6 @@ from inference_cli.cloud import cloud_app
 from inference_cli.server import server_app
 
 app = typer.Typer()
-
 app.add_typer(server_app, name="server")
 app.add_typer(cloud_app, name="cloud")
 
@@ -54,16 +53,16 @@ def infer(
     display: Annotated[
         bool,
         typer.Option(
-            "--display",
-            "-d",
+            "--display/--no-display",
+            "-D/-d",
             help="Boolean flag to decide if visualisations should be displayed on the screen",
         ),
-    ] = True,
+    ] = False,
     visualise: Annotated[
         bool,
         typer.Option(
-            "--visualise",
-            "-v",
+            "--visualise/--no-visualise",
+            "-V/-v",
             help="Boolean flag to decide if visualisations should be preserved",
         ),
     ] = True,

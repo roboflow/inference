@@ -1,6 +1,7 @@
 import base64
 import os.path
 from functools import partial
+from glob import glob
 from typing import Callable, List, Optional, Union
 
 import cv2
@@ -28,6 +29,7 @@ from supervision import (
 )
 from supervision.annotators.base import BaseAnnotator
 from supervision.utils.file import read_yaml_file
+from tqdm import tqdm
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.logger import CLI_LOGGER
@@ -35,6 +37,14 @@ from inference_cli.lib.utils import dump_json
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.encoding import bytes_to_opencv_image
 from inference_sdk.http.utils.loaders import load_image_from_uri
+
+CONFIGS_DIR_PATH = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "configs",
+    )
+)
 
 ANNOTATOR_TYPE2CLASS = {
     "bounding_box": BoundingBoxAnnotator,
@@ -80,6 +90,9 @@ def infer(
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
 ) -> None:
+    if display is False and output_location is None:
+        print("Both `display` parameter and `output_location` not set - nothing to do.")
+        return None
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if (
@@ -113,6 +126,17 @@ def infer(
         return None
 
 
+class NullVideoSink:
+    def write_frame(self, **kwargs) -> None:
+        pass
+
+    def __enter__(self) -> "NullVideoSink":
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
+        pass
+
+
 def infer_on_video(
     input_reference: Union[str, int],
     model_id: str,
@@ -135,18 +159,19 @@ def infer_on_video(
             visualisation_config=visualisation_config,
         )
     input_reference_extension = os.path.basename(input_reference).split(".")[-1]
-    video_sink = None
-    try:
-        if visualise and output_location is not None:
-            video_info = VideoInfo.from_video_path(video_path=input_reference)
-            video_sink = VideoSink(
-                target_path=os.path.join(
-                    output_location, f"visualisation.{input_reference_extension}"
-                ),
-                video_info=video_info,
-            )
-        for reference, frame, prediction in client.infer_on_stream(
-            input_uri=input_reference, model_id=model_id
+    video_sink = NullVideoSink()
+    if visualise and output_location is not None:
+        video_info = VideoInfo.from_video_path(video_path=input_reference)
+        video_sink = VideoSink(
+            target_path=os.path.join(
+                output_location, f"visualisation.{input_reference_extension}"
+            ),
+            video_info=video_info,
+        )
+    with video_sink:
+        for reference, frame, prediction in tqdm(
+            client.infer_on_stream(input_uri=input_reference, model_id=model_id),
+            desc=f"Inference on video: {input_reference}",
         ):
             visualised = None
             if visualise:
@@ -154,7 +179,7 @@ def infer_on_video(
             if display and visualised is not None:
                 cv2.imshow("Visualisation", visualised)
                 cv2.waitKey(1)
-            if video_sink is not None:
+            if visualised is not None:
                 video_sink.write_frame(frame=visualised)
             if output_location is not None:
                 save_prediction(
@@ -162,12 +187,8 @@ def infer_on_video(
                     prediction=prediction,
                     output_location=output_location,
                 )
-            print(prediction)
-    finally:
-        if video_sink is not None and video_sink.__writer is not None:
-            video_sink.__writer.release()
-        if display:
-            cv2.destroyAllWindows()
+    if display:
+        cv2.destroyAllWindows()
 
 
 def infer_on_directory(
@@ -191,8 +212,9 @@ def infer_on_directory(
         on_frame_visualise = build_visualisation_callback(
             visualisation_config=visualisation_config,
         )
-    for reference, frame, prediction in client.infer_on_stream(
-        input_uri=input_reference, model_id=model_id
+    for reference, frame, prediction in tqdm(
+        client.infer_on_stream(input_uri=input_reference, model_id=model_id),
+        desc=f"Inference from directory: {input_reference}",
     ):
         visualised = None
         if visualise:
@@ -212,7 +234,6 @@ def infer_on_directory(
                     visualisation=visualised,
                     output_location=output_location,
                 )
-        print(prediction)
 
 
 def infer_on_image(
@@ -258,7 +279,6 @@ def infer_on_image(
                 visualisation=visualised,
                 output_location=output_location,
             )
-    print(prediction)
 
 
 def initialise_client(
@@ -285,12 +305,24 @@ def build_visualisation_callback(
     annotators = [BoundingBoxAnnotator()]
     byte_tracker = None
     if visualisation_config is not None:
-        raw_configuration = read_yaml_file(file_path=visualisation_config)
+        raw_configuration = retrieve_visualisation_config(
+            visualisation_config=visualisation_config,
+        )
         annotators = initialise_annotators(
             annotators_config=raw_configuration["annotators"]
         )
         byte_tracker = initialise_byte_track(config=raw_configuration.get("tracking"))
     return partial(create_visualisation, annotators=annotators, tracker=byte_tracker)
+
+
+def retrieve_visualisation_config(visualisation_config: str) -> dict:
+    if os.path.isfile(visualisation_config):
+        return read_yaml_file(file_path=visualisation_config)
+    all_configs = glob(os.path.join(CONFIGS_DIR_PATH, "*.yml"))
+    config_name2path = {os.path.basename(path): path for path in all_configs}
+    if f"{visualisation_config}.yml" not in config_name2path:
+        raise ValueError(f"Could not find config with reference {visualisation_config}")
+    return read_yaml_file(file_path=config_name2path[f"{visualisation_config}.yml"])
 
 
 def initialise_annotators(
@@ -299,7 +331,7 @@ def initialise_annotators(
     annotators = []
     for annotator_config in annotators_config:
         annotator_type = annotator_config["type"]
-        annotator_parameters = annotator_type["params"]
+        annotator_parameters = annotator_config["params"]
         if annotator_type not in ANNOTATOR_TYPE2CLASS:
             raise ValueError(
                 f"Could not recognise annotator type: {annotator_type}. "
@@ -365,8 +397,9 @@ def prepare_target_path(
     extension: str,
 ) -> str:
     if issubclass(type(reference), int):
-        file_name = f"frame_{reference.zfill(6)}.{extension}"
+        reference_number = str(reference).zfill(6)
+        file_name = f"frame_{reference_number}.{extension}"
     else:
-        file_name = ".".join(os.path.basename(reference).split(".")[-1])
+        file_name = ".".join(os.path.basename(reference).split(".")[:-1])
         file_name = f"{file_name}_prediction.{extension}"
     return os.path.join(output_location, file_name)

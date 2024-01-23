@@ -1,0 +1,18 @@
+annotators:
+  - type: "bounding_box"
+    params:
+      thickness: 2
+  - type: "label"
+    params:
+      text_scale: 0.5
+      text_thickness: 2
+      text_padding: 5
+  - type: "trace"
+    params:
+      trace_length: 60
+      thickness: 2
+tracking:
+  track_thresh: 0.25
+  track_buffer: 30
+  match_thresh: 0.8
+  frame_rate: 30
