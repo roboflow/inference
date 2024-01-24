@@ -70,9 +70,9 @@ async def run_roboflow_model_step(
     )
     result = await model_manager.infer_from_request(model_id=model_id, request=request)
     if issubclass(type(result), list):
-        serialised_result = [e.dict() for e in result]
+        serialised_result = [e.dict(by_alias=True, exclude_none=True) for e in result]
     else:
-        serialised_result = result.dict()
+        serialised_result = result.dict(by_alias=True, exclude_none=True)
     if issubclass(type(serialised_result), list) and len(serialised_result) == 1:
         serialised_result = serialised_result[0]
     if issubclass(type(image), list) and len(image) == 1:

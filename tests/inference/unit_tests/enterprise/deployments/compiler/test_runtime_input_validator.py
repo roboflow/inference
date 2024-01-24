@@ -5,15 +5,15 @@ import numpy as np
 import pytest
 
 from inference.enterprise.deployments.complier.runtime_input_validator import (
+    assembly_input_images,
     ensure_all_parameters_filled,
     fill_runtime_parameters_with_defaults,
-    assembly_input_images,
     validate_inputs_binding,
 )
 from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.deployments.entities.inputs import (
-    InferenceParameter,
     InferenceImage,
+    InferenceParameter,
 )
 from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
 from inference.enterprise.deployments.errors import (

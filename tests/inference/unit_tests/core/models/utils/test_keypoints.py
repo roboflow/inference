@@ -1,10 +1,9 @@
 from typing import List
-from inference.core.entities.responses.inference import (
-    Keypoint,
-)
+
+from inference.core.entities.responses.inference import Keypoint
 from inference.core.models.utils.keypoints import (
-    superset_keypoints_count,
     model_keypoints_to_response,
+    superset_keypoints_count,
 )
 
 

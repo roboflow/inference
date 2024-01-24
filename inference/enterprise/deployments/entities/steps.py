@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-from typing import Annotated, Any, List, Literal, Optional, Set, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field, validator
 
@@ -10,6 +10,7 @@ from inference.enterprise.deployments.entities.validators import (
     validate_field_has_given_type,
     validate_field_is_empty_or_selector_or_list_of_string,
     validate_field_is_in_range_zero_one_or_empty_or_selector,
+    validate_field_is_list_of_selectors,
     validate_field_is_list_of_string,
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
@@ -45,7 +46,9 @@ class StepInterface(GraphNone, metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         """
         Supposed to validate the type of input is referred
         """
@@ -102,7 +105,9 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     def get_output_names(self) -> Set[str]:
         return set()
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -140,7 +145,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
 class ClassificationModel(RoboflowModel):
     type: Literal["ClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @validator("confidence")
     @classmethod
@@ -160,7 +165,9 @@ class ClassificationModel(RoboflowModel):
         outputs.update(["predictions", "top", "confidence", "parent_id"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
         validate_selector_is_inference_parameter(
             step_type=self.type,
@@ -181,7 +188,7 @@ class ClassificationModel(RoboflowModel):
 
 class MultiLabelClassificationModel(RoboflowModel):
     type: Literal["MultiLabelClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @validator("confidence")
     @classmethod
@@ -201,7 +208,9 @@ class MultiLabelClassificationModel(RoboflowModel):
         outputs.update(["predictions", "predicted_classes", "parent_id"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
         validate_selector_is_inference_parameter(
             step_type=self.type,
@@ -224,8 +233,8 @@ class ObjectDetectionModel(RoboflowModel):
     type: Literal["ObjectDetectionModel"]
     class_agnostic_nms: Union[Optional[bool], str] = Field(default=False)
     class_filter: Union[Optional[List[str]], str] = Field(default=None)
-    confidence: Union[Optional[float], str] = Field(default=0.0)
-    iou_threshold: Union[Optional[float], str] = Field(default=1.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
+    iou_threshold: Union[Optional[float], str] = Field(default=0.3)
     max_detections: Union[Optional[int], str] = Field(default=300)
     max_candidates: Union[Optional[int], str] = Field(default=3000)
 
@@ -291,7 +300,9 @@ class ObjectDetectionModel(RoboflowModel):
         outputs.update(["predictions", "parent_id", "image"])
         return outputs
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
         validate_selector_is_inference_parameter(
             step_type=self.type,
@@ -319,6 +330,8 @@ class ObjectDetectionModel(RoboflowModel):
                 error=VariableTypeError,
             )
         elif field_name == "class_filter":
+            if value is None:
+                return None
             validate_field_is_list_of_string(
                 value=value, field_name=field_name, error=VariableTypeError
             )
@@ -355,7 +368,9 @@ class KeypointsDetectionModel(ObjectDetectionModel):
         inputs.add("keypoint_confidence")
         return inputs
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
         validate_selector_is_inference_parameter(
             step_type=self.type,
@@ -409,7 +424,9 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         inputs.update(["mask_decode_mode", "tradeoff_factor"])
         return inputs
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         super().validate_field_selector(field_name=field_name, input_step=input_step)
         validate_selector_is_inference_parameter(
             step_type=self.type,
@@ -446,7 +463,9 @@ class OCRModel(BaseModel, StepInterface):
         validate_image_is_valid_selector(value=value)
         return value
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -487,7 +506,7 @@ class Crop(BaseModel, StepInterface):
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+            raise ValueError("`detections` field can only contain selector values")
         return value
 
     def get_type(self) -> str:
@@ -499,7 +518,9 @@ class Crop(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -550,7 +571,9 @@ class Condition(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return set()
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -601,7 +624,9 @@ class DetectionFilter(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return {"predictions", "parent_id", "image"}
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -635,7 +660,9 @@ class DetectionOffset(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return {"predictions", "parent_id", "image"}
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -700,7 +727,9 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -763,7 +792,9 @@ class RelativeStaticCrop(BaseModel, StepInterface):
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -815,7 +846,9 @@ class ClipComparison(BaseModel, StepInterface):
             raise ValueError("`text` field given must be string or list of strings")
         return value
 
-    def validate_field_selector(self, field_name: str, input_step: GraphNone) -> None:
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
@@ -856,3 +889,234 @@ class ClipComparison(BaseModel, StepInterface):
 
     def get_output_names(self) -> Set[str]:
         return {"similarity", "parent_id"}
+
+
+class AggregationMode(Enum):
+    AVERAGE = "average"
+    MAX = "max"
+    MIN = "min"
+
+
+class DetectionsConsensus(BaseModel, StepInterface):
+    type: Literal["DetectionsConsensus"]
+    name: str
+    predictions: List[str]
+    required_votes: Union[int, str]
+    class_aware: Union[bool, str] = Field(default=True)
+    iou_threshold: Union[float, str] = Field(default=0.3)
+    confidence: Union[float, str] = Field(default=0.0)
+    classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
+    required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
+    presence_confidence_aggregation: AggregationMode = Field(
+        default=AggregationMode.MAX
+    )
+    detections_merge_confidence_aggregation: AggregationMode = Field(
+        default=AggregationMode.AVERAGE
+    )
+    detections_merge_coordinates_aggregation: AggregationMode = Field(
+        default=AggregationMode.AVERAGE
+    )
+
+    @validator("predictions")
+    @classmethod
+    def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
+        validate_field_is_list_of_selectors(value=value, field_name="predictions")
+        if len(value) < 1:
+            raise ValueError(
+                "There must be at least 1 `predictions` selectors in consensus step"
+            )
+        return value
+
+    @validator("required_votes")
+    @classmethod
+    def required_votes_must_be_selector_or_positive_integer(
+        cls, value: Any
+    ) -> Union[str, int]:
+        if value is None:
+            raise ValueError("Field `required_votes` is required.")
+        validate_value_is_empty_or_selector_or_positive_number(
+            value=value, field_name="required_votes"
+        )
+        return value
+
+    @validator("class_aware")
+    @classmethod
+    def class_aware_must_be_selector_or_boolean(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="class_aware", allowed_types=[bool]
+        )
+        return value
+
+    @validator("iou_threshold", "confidence")
+    @classmethod
+    def field_must_be_selector_or_number_from_zero_to_one(
+        cls, value: Any
+    ) -> Union[str, float]:
+        if value is None:
+            raise ValueError("Fields `iou_threshold` and `confidence` cannot be None")
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
+            value=value, field_name="iou_threshold | confidence"
+        )
+        return value
+
+    @validator("classes_to_consider")
+    @classmethod
+    def classes_to_consider_must_be_empty_or_selector_or_list_of_strings(
+        cls, value: Any
+    ) -> Optional[Union[str, List[str]]]:
+        validate_field_is_empty_or_selector_or_list_of_string(
+            value=value, field_name="classes_to_consider"
+        )
+        return value
+
+    @validator("required_objects")
+    @classmethod
+    def required_objects_field_must_be_valid(
+        cls, value: Any
+    ) -> Optional[Union[str, int, Dict[str, int]]]:
+        if value is None:
+            return value
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="required_objects", allowed_types=[int, dict]
+        )
+        if issubclass(type(value), int):
+            validate_value_is_empty_or_positive_number(
+                value=value, field_name="required_objects"
+            )
+            return value
+        elif issubclass(type(value), dict):
+            for k, v in value.items():
+                if v is None:
+                    raise ValueError(f"Field `required_objects[{k}]` must not be None.")
+                validate_value_is_empty_or_positive_number(
+                    value=v, field_name=f"required_objects[{k}]"
+                )
+        return value
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "predictions",
+            "required_votes",
+            "class_aware",
+            "iou_threshold",
+            "confidence",
+            "classes_to_consider",
+            "required_objects",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return {
+            "parent_id",
+            "predictions",
+            "image",
+            "object_present",
+            "presence_confidence",
+        }
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        if field_name != "predictions" and not is_selector(
+            selector_or_value=getattr(self, field_name)
+        ):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        if field_name == "predictions":
+            if index is None or index > len(self.predictions):
+                raise ExecutionGraphError(
+                    f"Attempted to validate selector value for field {field_name}, which requires multiple inputs, "
+                    f"but `index` not provided."
+                )
+            if not is_selector(
+                selector_or_value=self.predictions[index],
+            ):
+                raise ExecutionGraphError(
+                    f"Attempted to validate selector value for field {field_name}[{index}], but field is not selector."
+                )
+            validate_selector_holds_detections(
+                step_name=self.name,
+                image_selector=None,
+                detections_selector=self.predictions[index],
+                field_name=field_name,
+                input_step=input_step,
+                applicable_fields={"predictions"},
+            )
+            return None
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "required_votes",
+                "class_aware",
+                "iou_threshold",
+                "confidence",
+                "classes_to_consider",
+                "required_objects",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "required_votes":
+            if value is None:
+                raise VariableTypeError("Field `required_votes` cannot be None.")
+            validate_value_is_empty_or_positive_number(
+                value=value, field_name="required_votes", error=VariableTypeError
+            )
+        elif field_name == "class_aware":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"iou_threshold", "confidence"}:
+            if value is None:
+                raise VariableTypeError(f"Fields `{field_name}` cannot be None.")
+            validate_value_is_empty_or_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        elif field_name == "classes_to_consider":
+            if value is None:
+                return None
+            validate_field_is_list_of_string(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        elif field_name == "required_objects":
+            self._validate_required_objects_binding(value=value)
+            return None
+
+    def get_type(self) -> str:
+        return self.type
+
+    def _validate_required_objects_binding(self, value: Any) -> None:
+        if value is None:
+            return value
+        validate_field_has_given_type(
+            value=value,
+            field_name="required_objects",
+            allowed_types=[int, dict],
+            error=VariableTypeError,
+        )
+        if issubclass(type(value), int):
+            validate_value_is_empty_or_positive_number(
+                value=value,
+                field_name="required_objects",
+                error=VariableTypeError,
+            )
+            return None
+        for k, v in value.items():
+            if v is None:
+                raise VariableTypeError(
+                    f"Field `required_objects[{k}]` must not be None."
+                )
+            validate_value_is_empty_or_positive_number(
+                value=v,
+                field_name=f"required_objects[{k}]",
+                error=VariableTypeError,
+            )

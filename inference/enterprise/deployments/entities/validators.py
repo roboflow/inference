@@ -73,6 +73,15 @@ def validate_value_is_empty_or_positive_number(
         raise error(f"Parameter `{field_name}` must be positive (> 0)")
 
 
+def validate_field_is_list_of_selectors(
+    value: Any, field_name: str, error: Type[Exception] = ValueError
+) -> None:
+    if not issubclass(type(value), list):
+        raise error(f"`{field_name}` field must be list")
+    if any(not is_selector(selector_or_value=e) for e in value):
+        raise error(f"Parameter `{field_name}` must be a list of selectors")
+
+
 def validate_field_is_empty_or_selector_or_list_of_string(
     value: Any, field_name: str
 ) -> None:
@@ -130,7 +139,9 @@ def validate_field_has_given_type(
     error: Type[Exception] = ValueError,
 ) -> None:
     if all(not issubclass(type(value), allowed_type) for allowed_type in allowed_types):
-        raise error(f"`{field_name}` field type must be one of {allowed_types}")
+        raise error(
+            f"`{field_name}` field type must be one of {allowed_types}. Detected: {value}"
+        )
 
 
 def validate_image_biding(value: Any, field_name: str = "image") -> None:
@@ -195,6 +206,7 @@ def validate_selector_holds_detections(
         "KeypointsDetectionModel",
         "InstanceSegmentationModel",
         "DetectionFilter",
+        "DetectionsConsensus",
     }:
         raise InvalidStepInputDetected(
             f"Step step with name {step_name} cannot take as an input predictions from {input_step.get_type()}. "
