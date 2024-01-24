@@ -573,7 +573,10 @@ def check_objects_presence_in_consensus_predictions(
         required_objects = 0
     if issubclass(type(required_objects), dict) and not class_aware:
         required_objects = sum(required_objects.values())
-    if not class_aware and len(consensus_detections) < required_objects:
+    if (
+        issubclass(type(required_objects), int)
+        and len(consensus_detections) < required_objects
+    ):
         return False, {}
     if not class_aware:
         aggregated_confidence = aggregate_field_values(
@@ -585,9 +588,10 @@ def check_objects_presence_in_consensus_predictions(
     class2detections = defaultdict(list)
     for detection in consensus_detections:
         class2detections[detection["class"]].append(detection)
-    for requested_class, required_objects_count in required_objects.items():
-        if len(class2detections[requested_class]) < required_objects_count:
-            return False, {}
+    if issubclass(type(required_objects), dict):
+        for requested_class, required_objects_count in required_objects.items():
+            if len(class2detections[requested_class]) < required_objects_count:
+                return False, {}
     class2confidence = {
         class_name: aggregate_field_values(
             detections=class_detections,
