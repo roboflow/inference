@@ -347,7 +347,7 @@ CLIENT.unload_all_models()
 
 !!! tip
 
-    This feature is in `alpha` preview. We encourage to experiment and reach us out with issues spotted.
+    This feature is in `alpha` preview. We encourage you to experiment and reach out to us with issues spotted.
     Check out [documentation of deployment specs, create one and run](https://github.com/roboflow/inference/tree/main/inference/enterprise/deployments)
 
 !!! tip
