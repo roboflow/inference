@@ -436,7 +436,6 @@ async def run_detections_consensus_step(
             object_present,
             presence_confidence,
             consensus_detections,
-            consensus_reached,
         ) = resolve_batch_consensus(
             predictions=batch_predictions,
             required_votes=resolve_parameter_closure(step.required_votes),
@@ -446,8 +445,8 @@ async def run_detections_consensus_step(
             classes_to_consider=resolve_parameter_closure(step.classes_to_consider),
             required_objects=resolve_parameter_closure(step.required_objects),
             presence_confidence_aggregation=step.presence_confidence_aggregation,
-            box_confidence_aggregation=step.box_confidence_aggregation,
-            box_coordinates_aggregation=step.box_coordinates_aggregation,
+            detections_merge_confidence_aggregation=step.detections_merge_confidence_aggregation,
+            detections_merge_coordinates_aggregation=step.detections_merge_coordinates_aggregation,
         )
         results.append(
             {
@@ -455,7 +454,6 @@ async def run_detections_consensus_step(
                 "parent_id": parent_id,
                 "object_present": object_present,
                 "presence_confidence": presence_confidence,
-                "consensus": consensus_reached,
                 "image": images_meta[batch_index],
             }
         )
@@ -505,9 +503,9 @@ def resolve_batch_consensus(
     classes_to_consider: Optional[List[str]],
     required_objects: Optional[Union[int, Dict[str, int]]],
     presence_confidence_aggregation: AggregationMode,
-    box_confidence_aggregation: AggregationMode,
-    box_coordinates_aggregation: AggregationMode,
-) -> Tuple[str, bool, Dict[str, float], List[dict], bool]:
+    detections_merge_confidence_aggregation: AggregationMode,
+    detections_merge_coordinates_aggregation: AggregationMode,
+) -> Tuple[str, bool, Dict[str, float], List[dict]]:
     parent_id = get_parent_id_of_predictions_from_different_sources(
         predictions=predictions,
     )
@@ -515,13 +513,6 @@ def resolve_batch_consensus(
         predictions=predictions,
         confidence=0.0,
         classes_to_consider=classes_to_consider,
-    )
-    object_present, presence_confidence = check_detections_presence_consensus(
-        predictions=predictions,
-        required_votes=required_votes,
-        aggregation_mode=presence_confidence_aggregation,
-        confidence=confidence,
-        class_aware=class_aware,
     )
     detections_already_considered = set()
     consensus_detections = []
@@ -543,8 +534,8 @@ def resolve_batch_consensus(
                     matched_value[0]
                     for matched_value in detections_with_max_overlap.values()
                 ],
-                confidence_aggregation_mode=box_confidence_aggregation,
-                boxes_aggregation_mode=box_coordinates_aggregation,
+                confidence_aggregation_mode=detections_merge_confidence_aggregation,
+                boxes_aggregation_mode=detections_merge_coordinates_aggregation,
             )
             if merged_detection["confidence"] >= confidence:
                 consensus_detections.append(merged_detection)
@@ -553,77 +544,59 @@ def resolve_batch_consensus(
                     detections_already_considered.add(
                         matched_value[0][DETECTION_ID_KEY]
                     )
-    if required_objects is None:
-        return (
-            parent_id,
-            object_present,
-            presence_confidence,
-            consensus_detections,
-            False,
-        )
-    if issubclass(type(required_objects), int):
-        return (
-            parent_id,
-            object_present,
-            presence_confidence,
-            consensus_detections,
-            len(consensus_detections) >= required_objects,
-        )
-    consensus_classes = Counter([d["class"] for d in consensus_detections])
-    consensus_reached = all(
-        consensus_classes[class_name] >= consensus_value
-        for class_name, consensus_value in required_objects.items()
+    (
+        object_present,
+        presence_confidence,
+    ) = check_objects_presence_in_consensus_predictions(
+        consensus_detections=consensus_detections,
+        aggregation_mode=presence_confidence_aggregation,
+        class_aware=class_aware,
+        required_objects=required_objects,
     )
     return (
         parent_id,
         object_present,
         presence_confidence,
         consensus_detections,
-        consensus_reached,
     )
 
 
-def check_detections_presence_consensus(
-    predictions: List[List[dict]],
-    required_votes: int,
-    aggregation_mode: AggregationMode,
-    confidence: float,
+def check_objects_presence_in_consensus_predictions(
+    consensus_detections: List[dict],
     class_aware: bool,
+    aggregation_mode: AggregationMode,
+    required_objects: Optional[Union[int, Dict[str, int]]],
 ) -> Tuple[bool, Dict[str, float]]:
-    predictions_with_at_least_one_detection = (
-        count_predictions_with_at_least_one_detection(
-            predictions=predictions,
-        )
-    )
-    if predictions_with_at_least_one_detection < required_votes:
+    if len(consensus_detections) == 0:
         return False, {}
-    flattened_detections = list(itertools.chain.from_iterable(predictions))
+    if required_objects is None:
+        required_objects = 0
+    if issubclass(type(required_objects), dict) and not class_aware:
+        required_objects = sum(required_objects.values())
+    if not class_aware and len(consensus_detections) < required_objects:
+        return False, {}
     if not class_aware:
         aggregated_confidence = aggregate_field_values(
-            detections=flattened_detections,
+            detections=consensus_detections,
             field="confidence",
             aggregation_mode=aggregation_mode,
         )
-        object_present = aggregated_confidence >= confidence
-        presence_confidence = {}
-        if object_present:
-            presence_confidence["any_object"] = aggregated_confidence
-        return object_present, presence_confidence
-    class2flattened_detections = defaultdict(list)
-    for detection in flattened_detections:
-        class2flattened_detections[detection["class"]].append(detection)
+        return True, {"any_object": aggregated_confidence}
+    class2detections = defaultdict(list)
+    for detection in consensus_detections:
+        class2detections[detection["class"]].append(detection)
+    for requested_class, required_objects_count in required_objects.items():
+        if len(class2detections[requested_class]) < required_objects_count:
+            return False, {}
     class2confidence = {
         class_name: aggregate_field_values(
             detections=class_detections,
             field="confidence",
             aggregation_mode=aggregation_mode,
         )
-        for class_name, class_detections in class2flattened_detections.items()
+        for class_name, class_detections in class2detections.items()
     }
-    filtered_class2confidence = {
-        key: value for key, value in class2confidence.items() if value >= confidence
-    }
-    return len(filtered_class2confidence) > 0, filtered_class2confidence
+    return True, class2confidence
 
 
 def get_parent_id_of_predictions_from_different_sources(
@@ -858,10 +831,6 @@ AGGREGATION_MODE2BOXES_AGGREGATOR = {
 
 def get_detection_sizes(detections: List[dict]) -> List[float]:
     return [d["height"] * d["width"] for d in detections]
-
-
-def count_predictions_with_at_least_one_detection(predictions: List[List[dict]]) -> int:
-    return len([e for e in predictions if len(e) > 0])
 
 
 def aggregate_field_values(

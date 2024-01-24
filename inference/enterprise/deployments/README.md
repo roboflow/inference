@@ -473,22 +473,32 @@ of multi-step pipelines
 #### `DetectionsConsensus`
 Step that is meant to combine predictions from potentially multiple detections models. 
 Steps checks for object presence (according to configurable criteria), combines detections and
-decides on consensus (based on overlap of predictions from different models). It works for 
+decides on requested objects presence (based on overlap of predictions from different models). It works for 
 `object-detection`, `instance-segmentation` and `keypoint-detection` models, but consensus output is only
 applied at detections level. 
 
-Step executes following operations:
-* checks if at least `required_votes` models produced detections of given classes (or any if classes not specified)
-* aggregates predictions of detections at class level (according to `presence_confidence_aggregation` parameter), 
-filters out the confidences below `confidence` and outputs `object_present` flag, along with `presence_confidence`
-* look for detections from different sources matching confidence classes and IoU preconditions
-* once overlapping predictions are found - those are merged (boxes based on `box_coordinates_aggregation` and 
-classes / confidences based on `box_confidence_aggregation`) of overlapping detections. Beware that if `class_aware` 
-is set `False` and `classes_to_consider` enables multiple classes to be considered - the merged boxes classes may not 
-be interpretable
-* after merge - consensus criteria are checked (if `required_objects` are specified) - and consensus flag is returned, 
-such  that result can be interpreted directly, without additional logic (flag `consensus=True` means that
-there are detections that multiple models agree on in a number above the threshold defined).
+Step executes following operations (in order):
+* get only the predictions from `classes_to_consider` (if specified)
+* for every prediction finds predictions with max overlap from all other sources (at most one per source) that reaches 
+`iou_threshold` 
+* for each group of overlapping predictions from different sources - if the size of group is at least
+`required_votes` and merged boxe meet `confidence` threshold - those are discarded from the pool of detections to be 
+picked up and are merged into element of `predictions` output that can be called consensus output. 
+`class_aware` parameter decides if class names matter while merging - should be `False` when different class names are 
+produced by different models  but the visual concept that models predict is the same.
+* merge is done based on `detections_merge_confidence_aggregation` and `detections_merge_coordinates_aggregation` 
+parameters that control how to pick the merged box class, confidence and box coordinates
+* once all elements of consensus outputs are ready, the step prepares `object_present` status
+and `presence_confidence` that form a summary of consensus output. One may state `required_objects`
+as integer or dict mapping class name to required instance of objects. In the final state, the step
+logic will check if required number of objects (possibly from different classes) are detected in consensus
+output. If that's the case - `object_present` field will be `True` and `presence_confidence` will be calculated
+(using `presence_confidence_aggregation` method). Otherwise - `presence_confidence` will be an empty dict.
+In the case of `class_aware=False`:
+  * when `required_objects` is dict with class to count mapping - effective `required_objects` will be sum of dictionary 
+  values
+  * the `presence_confidence` will hold `any_object` key with confidence aggregated among all merged detections. 
+
 
 ##### Step parameters
 * `type`: must be `DetectionsConsensus` (required)
@@ -507,23 +517,21 @@ confidence threshold at model level or `DetectionsFilter`. Default: `0.0`.
 * `classes_to_consider`: Optional list of classes to consider in consensus procedure.
 Can be list of `str` or selector to `InferenceParameter`. Default: `None` - in this case 
 classes filtering of predictions will not be enabled.
-* `required_objects` - value influencing `consensus` output. If given, it holds
-the number of objects that must be present in merged results, to assume that consensus is reached.
-Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into
+* `required_objects` - If given, it holds the number of objects that must be present in merged results, to assume that 
+object presence is reached. Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into
 minimal number of merged detections of given class to assume consensus.
 * `presence_confidence_aggregation` - mode dictating aggregation of confidence scores
 and classes both in case of object presence deduction procedure. One of `average`, `max`, `min`. Default: `max`.
-* `box_confidence_aggregation` - mode dictating aggregation of confidence scores
+* `detections_merge_confidence_aggregation` - mode dictating aggregation of confidence scores
 and classes both in case of boxes consensus procedure. 
 One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, 
 against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence,
 `min` - for the class of detection with min confidence.
-* `box_coordinates_aggregation` - mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. 
+* `detections_merge_coordinates_aggregation` - mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. 
 Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking 
 largest box.
 
 ##### Step outputs:
-* `consensus` - for each input image, boolean flag with consensus status, built based on merged detections and `required_objects`
 * `predictions` - details of predictions
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case

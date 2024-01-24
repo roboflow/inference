@@ -356,8 +356,6 @@ used in specific contexts. In particular:
 
 ### Inference in `v0` mode
 
-# <<<<<<< HEAD:docs/inference_helpers/inference_sdk.md
-
 The following fields are passed to API
 
 - `confidence_threshold` (as `confidence`) - to alter model thresholding

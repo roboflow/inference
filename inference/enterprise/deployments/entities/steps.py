@@ -910,8 +910,10 @@ class DetectionsConsensus(BaseModel, StepInterface):
     presence_confidence_aggregation: AggregationMode = Field(
         default=AggregationMode.MAX
     )
-    box_confidence_aggregation: AggregationMode = Field(default=AggregationMode.AVERAGE)
-    box_coordinates_aggregation: AggregationMode = Field(
+    detections_merge_confidence_aggregation: AggregationMode = Field(
+        default=AggregationMode.AVERAGE
+    )
+    detections_merge_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE
     )
 
@@ -1004,7 +1006,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
 
     def get_output_names(self) -> Set[str]:
         return {
-            "consensus",
             "parent_id",
             "predictions",
             "image",
