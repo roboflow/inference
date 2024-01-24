@@ -1,6 +1,7 @@
 ---
 hide:
   - navigation
+  - toc
 ---
 
 <style>
@@ -8,6 +9,10 @@ hide:
   .md-content__button {
     display: none;
   }
+  @media screen and (min-width: 800px) {.md-content {
+    padding-left: 10%;
+    padding-right: 10%;
+  }}
 </style>
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
@@ -24,6 +29,11 @@ You can <a href="https://github.com/roboflow/notebooks" target="_blank">train an
 You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
 
 <a href="/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
+
+<div class="button-holder">
+<a href="/quickstart/what_is_inference/" class="button half-button">Learn about the various ways you can use Inference</a>
+<a href="/foundation/about/" class="button half-button">See all of the models you can run with Inference</a>
+</div>
 
 <style>
   .button {

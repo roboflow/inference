@@ -74,7 +74,7 @@ annotated_image = label_annotator.annotate(
 sv.plot_image(annotated_image)
 ```
 
-The `people-walking.jpg` file is hosted <a href="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg" target="_blank">here</a>.
+The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 
 Replace `yolov8n-640` with the model ID you found on Universe, replace `image` with the image of your choosing, and be sure to export your API key:
 

@@ -36,7 +36,7 @@ jobs:
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
         run: |
-          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.hosted.txt
+          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.hosted.txt -r requirements/requirements.http.txt
           python -m pytest tests/inference/unit_tests
       - name: 🧪 E2E Tests of supported models predictions in different variants
         timeout-minutes: 45

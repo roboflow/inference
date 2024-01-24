@@ -7,3 +7,12 @@
 .md-tabs__link {
   font-size: 1rem;
 }
+
+.half-button {
+  width: 49%;
+}
+
+.button-holder {
+  display: flex;
+  justify-content: space-between;
+}

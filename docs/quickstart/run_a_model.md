@@ -21,7 +21,7 @@ Create a new Python file called `app.py` and add the following code:
 from inference import get_roboflow_model
 
 # define the image url to use for inference
-image = "https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg"
+image = "https://media.roboflow.com/inference/people-walking.jpg"
 
 # load a pre-trained yolov8n model
 model = get_roboflow_model(model_id="yolov8n-640")
@@ -75,7 +75,7 @@ annotated_image = label_annotator.annotate(
 sv.plot_image(annotated_image)
 ```
 
-The `people-walking.jpg` file is hosted <a href="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.jpg" target="_blank">here</a>.
+The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 
 ![People Walking Annotated](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.jpg)
 
