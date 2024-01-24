@@ -706,9 +706,13 @@ def calculate_iou(detection_a: dict, detection_b: dict) -> float:
     y_a = max(box_a[1], box_b[1])
     x_b = min(box_a[2], box_b[2])
     y_b = min(box_a[3], box_b[3])
-    intersection = max(0, x_b - x_a + 1) * max(0, y_b - y_a + 1)
-    bbox_a_area = (box_a[2] - box_a[0] + 1) * (box_a[3] - box_a[1] + 1)
-    bbox_b_area = (box_b[2] - box_b[0] + 1) * (box_b[3] - box_b[1] + 1)
+    intersection = max(0, x_b - x_a) * max(0, y_b - y_a)
+    bbox_a_area, bbox_b_area = get_detection_sizes(
+        detections=[detection_a, detection_b]
+    )
+    union = float(bbox_a_area + bbox_b_area - intersection)
+    if union == 0.0:
+        return 0.0
     return intersection / float(bbox_a_area + bbox_b_area - intersection)
 
 
@@ -789,10 +793,10 @@ AGGREGATION_MODE2CLASS_SELECTOR = {
 
 
 def get_average_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    x = round(average_field_values(detections=detections, field="x"))
-    y = round(average_field_values(detections=detections, field="y"))
-    width = round(average_field_values(detections=detections, field="width"))
-    height = round(average_field_values(detections=detections, field="height"))
+    x = round(aggregate_field_values(detections=detections, field="x"))
+    y = round(aggregate_field_values(detections=detections, field="y"))
+    width = round(aggregate_field_values(detections=detections, field="width"))
+    height = round(aggregate_field_values(detections=detections, field="height"))
     return x, y, width, height
 
 
@@ -821,8 +825,8 @@ def get_largest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int
     return (
         matching_detection["x"],
         matching_detection["y"],
-        matching_detection["width"],
-        matching_detection["height"],
+        matching_detection[WIDTH_KEY],
+        matching_detection[HEIGHT_KEY],
     )
 
 
@@ -834,15 +838,13 @@ AGGREGATION_MODE2BOXES_AGGREGATOR = {
 
 
 def get_detection_sizes(detections: List[dict]) -> List[float]:
-    return [d["height"] * d["width"] for d in detections]
+    return [d[HEIGHT_KEY] * d[WIDTH_KEY] for d in detections]
 
 
 def aggregate_field_values(
-    detections: List[dict], field: str, aggregation_mode: AggregationMode
+    detections: List[dict],
+    field: str,
+    aggregation_mode: AggregationMode = AggregationMode.AVERAGE,
 ) -> float:
     values = [d[field] for d in detections]
     return AGGREGATION_MODE2FIELD_AGGREGATOR[aggregation_mode](values)
-
-
-def average_field_values(detections: List[dict], field: str) -> float:
-    return statistics.mean([d[field] for d in detections])

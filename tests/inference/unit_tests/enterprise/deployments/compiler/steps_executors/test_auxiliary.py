@@ -1,22 +1,26 @@
+from unittest import mock
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
+from inference.enterprise.deployments.complier.steps_executors import auxiliary
 from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
     crop_image,
     extract_origin_size_from_images,
     offset_detection,
     run_condition_step,
     run_detection_filter,
-    take_static_crop,
+    take_static_crop, aggregate_field_values, get_detection_sizes, get_largest_bounding_box, get_smallest_bounding_box,
+    get_average_bounding_box, get_majority_class, get_class_of_most_confident_detection,
+    get_class_of_least_confident_detection, merge_detections, detection_to_xyxy, calculate_iou, enumerate_detections,
 )
 from inference.enterprise.deployments.entities.steps import (
     AbsoluteStaticCrop,
     Condition,
     DetectionFilter,
     Operator,
-    RelativeStaticCrop,
+    RelativeStaticCrop, AggregationMode,
 )
 
 
@@ -461,3 +465,363 @@ def test_take_absolute_static_crop() -> None:
         "center_y": 60,
         "origin_image_size": {"height": 100, "width": 100},
     }, "Origin coordinates of crop and image size metadata must be preserved through the operation"
+
+
+def test_aggregate_field_values_when_max_mode_is_chosen() -> None:
+    # given
+    detections = [{"a": 0.3}, {"a": 0.4}, {"a": 0.7}]
+
+    # when
+    result = aggregate_field_values(
+        detections=detections,
+        field="a",
+        aggregation_mode=AggregationMode.MAX,
+    )
+
+    # then
+    assert (result - 0.7) < 1e-5
+
+
+def test_aggregate_field_values_when_min_mode_is_chosen() -> None:
+    # given
+    detections = [{"a": 0.3}, {"a": 0.4}, {"a": 0.7}]
+
+    # when
+    result = aggregate_field_values(
+        detections=detections,
+        field="a",
+        aggregation_mode=AggregationMode.MIN,
+    )
+
+    # then
+    assert (result - 0.3) < 1e-5
+
+
+def test_aggregate_field_values_when_average_mode_is_chosen() -> None:
+    # given
+    detections = [{"a": 0.3}, {"a": 0.4}, {"a": 0.5}]
+
+    # when
+    result = aggregate_field_values(
+        detections=detections,
+        field="a",
+        aggregation_mode=AggregationMode.AVERAGE,
+    )
+
+    # then
+    assert (result - 0.4) < 1e-5
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [AggregationMode.MIN, AggregationMode.MAX, AggregationMode.AVERAGE]
+)
+def test_aggregate_field_values_when_empty_input_provided(
+    mode: AggregationMode,
+) -> None:
+    with pytest.raises(ValueError):
+        # when
+        _ = aggregate_field_values(
+            detections=[],
+            field="a",
+            aggregation_mode=mode,
+        )
+
+
+def test_get_detection_sizes_when_empty_input_provided() -> None:
+    # when
+    result = get_detection_sizes(detections=[])
+
+    # then
+    assert result == []
+
+
+def test_get_detection_sizes_when_non_empty_input_provided() -> None:
+    # given
+    detections = [
+        {"height": 30, "width": 40},
+        {"height": 40, "width": 40}
+    ]
+
+    # when
+    result = get_detection_sizes(detections=detections)
+
+    # then
+    assert result == [1200, 1600]
+
+
+def test_get_largest_bounding_box_when_single_element_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+    ]
+
+    # when
+    result = get_largest_bounding_box(detections=detections)
+
+    # then
+    assert result == (100, 200, 40, 30)
+
+
+def test_get_largest_bounding_box_when_multiple_elements_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+        {"x": 110, "y": 210, "height": 40, "width": 50},
+    ]
+
+    # when
+    result = get_largest_bounding_box(detections=detections)
+
+    # then
+    assert result == (110, 210, 50, 40)
+
+
+def test_get_smallest_bounding_box_when_single_element_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+    ]
+
+    # when
+    result = get_smallest_bounding_box(detections=detections)
+
+    # then
+    assert result == (100, 200, 40, 30)
+
+
+def test_get_smallest_bounding_box_when_multiple_elements_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+        {"x": 110, "y": 210, "height": 40, "width": 50},
+    ]
+
+    # when
+    result = get_smallest_bounding_box(detections=detections)
+
+    # then
+    assert result == (100, 200, 40, 30)
+
+
+def test_get_average_bounding_box_when_single_element_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+    ]
+
+    # when
+    result = get_average_bounding_box(detections=detections)
+
+    # then
+    assert result == (100, 200, 40, 30)
+
+
+def test_get_average_bounding_box_when_multiple_elements_provided() -> None:
+    # given
+    detections = [
+        {"x": 100, "y": 200, "height": 30, "width": 40},
+        {"x": 110, "y": 210, "height": 40, "width": 50},
+    ]
+
+    # when
+    result = get_average_bounding_box(detections=detections)
+
+    # then
+    assert result == (105, 205, 45, 35)
+
+
+def test_get_majority_class() -> None:
+    # given
+    detections = [
+        {"class": "a", "class_id": 0},
+        {"class": "b", "class_id": 1},
+        {"class": "a", "class_id": 0},
+    ]
+
+    # when
+    result = get_majority_class(detections=detections)
+
+    # then
+    assert result == ("a", 0)
+
+
+def test_get_class_of_most_confident_detection() -> None:
+    # given
+    detections = [
+        {"class": "a", "class_id": 0, "confidence": 0.1},
+        {"class": "b", "class_id": 1, "confidence": 0.3},
+        {"class": "a", "class_id": 0, "confidence": 0.2},
+    ]
+
+    # when
+    result = get_class_of_most_confident_detection(detections=detections)
+
+    # then
+    assert result == ("b", 1)
+
+
+def test_get_class_of_least_confident_detection() -> None:
+    # given
+    detections = [
+        {"class": "a", "class_id": 0, "confidence": 0.1},
+        {"class": "b", "class_id": 1, "confidence": 0.3},
+        {"class": "a", "class_id": 0, "confidence": 0.2},
+    ]
+
+    # when
+    result = get_class_of_least_confident_detection(detections=detections)
+
+    # then
+    assert result == ("a", 0)
+
+
+@mock.patch.object(auxiliary, "uuid4")
+def test_merge_detections(uuid4_mock: MagicMock) -> None:
+    # given
+    uuid4_mock.return_value = "some_uuid"
+    detections = [
+        {"parent_id": "x", "class": "a", "class_id": 0, "confidence": 1/10, "x": 100, "y": 200, "height": 30, "width": 40},
+        {"parent_id": "x", "class": "a", "class_id": 0, "confidence": 3/10, "x": 110, "y": 210, "height": 40, "width": 50},
+    ]
+
+    # when
+    result = merge_detections(
+        detections=detections,
+        confidence_aggregation_mode=AggregationMode.AVERAGE,
+        boxes_aggregation_mode=AggregationMode.MAX,
+    )
+
+    # then
+    assert result == {
+        "parent_id": "x",
+        "detection_id": "some_uuid",
+        "class": "a",
+        "class_id": 0,
+        "confidence": 2/10,
+        "x": 110,
+        "y": 210,
+        "height": 40,
+        "width": 50,
+    }
+
+
+def test_detection_to_xyxy() -> None:
+    # given
+    detection = {"x": 100, "y": 200, "height": 20, "width": 40}
+
+    # when
+    result = detection_to_xyxy(detection=detection)
+
+    # then
+    assert result == (80, 190, 120, 210)
+
+
+def test_calculate_iou_when_detections_are_zero_size() -> None:
+    # given
+    detection_a = {"x": 100, "y": 200, "height": 0, "width": 1}
+    detection_b = {"x": 100, "y": 220, "height": 1, "width": 0}
+
+    # when
+    result = calculate_iou(
+        detection_a=detection_a,
+        detection_b=detection_b,
+    )
+
+    # then
+    assert abs(result) < 1e-5
+
+
+def test_calculate_iou_when_detections_do_not_overlap() -> None:
+    # given
+    detection_a = {"x": 100, "y": 200, "height": 20, "width": 40}
+    detection_b = {"x": 100, "y": 220, "height": 20, "width": 40}
+
+    # when
+    result = calculate_iou(
+        detection_a=detection_a,
+        detection_b=detection_b,
+    )
+
+    # then
+    assert abs(result) < 1e-5
+
+
+def test_calculate_iou_when_detections_do_overlap_fully() -> None:
+    # given
+    detection_a = {"x": 100, "y": 200, "height": 20, "width": 40}
+
+    # when
+    result = calculate_iou(
+        detection_a=detection_a,
+        detection_b=detection_a,
+    )
+
+    # then
+    assert abs(result - 1.0) < 1e-5
+
+
+def test_calculate_iou_when_detections_do_overlap_partially() -> None:
+    # given
+    detection_a = {"x": 100, "y": 200, "height": 20, "width": 40}
+    detection_b = {"x": 120, "y": 210, "height": 20, "width": 40}
+
+    # box A size = box B size = 800
+    # intersection = (100, 200, 120, 210) -> size = 200
+    # expected result = 200 / 1400 = 100 / 700 = 1 / 7
+
+    # when
+    result = calculate_iou(
+        detection_a=detection_a,
+        detection_b=detection_b,
+    )
+
+    # then
+    assert abs(result - 1/7) < 1e-5
+
+
+def test_enumerate_detections_when_no_predictions_given() -> None:
+    # when
+    result = list(enumerate_detections(predictions=[]))
+
+    # then
+    assert result == []
+
+
+def test_enumerate_detections_when_source_with_no_predictions_given() -> None:
+    # given
+    source_a = []
+    source_b = [{"a": 1}, {"b": 1}]
+
+    # when
+    result = list(enumerate_detections(predictions=[source_a, source_b]))
+
+    # then
+    assert result == [(1, {"a": 1}), (1, {"b": 1})]
+
+
+def test_enumerate_detections_when_sources_with_predictions_given() -> None:
+    # given
+    source_a = [{"a": 1}, {"b": 1}]
+    source_b = [{"c": 1}, {"d": 1}]
+
+    # when
+    result = list(enumerate_detections(predictions=[source_a, source_b]))
+
+    # then
+    assert result == [(0, {"a": 1}), (0, {"b": 1}), (1, {"c": 1}), (1, {"d": 1})]
+
+
+def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_be_excluded() -> None:
+    # given
+    source_a = [{"a": 1}, {"b": 1}]
+    source_b = [{"c": 1}, {"d": 1}]
+
+    # when
+    result = list(enumerate_detections(
+        predictions=[source_a, source_b],
+        excluded_source=1,
+    ))
+
+    # then
+    assert result == [(0, {"a": 1}), (0, {"b": 1})]
