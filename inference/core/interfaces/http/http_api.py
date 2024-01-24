@@ -77,6 +77,7 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
+    DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
@@ -628,8 +629,10 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
+        if not DISABLE_WORKFLOW_ENDPOINTS:
+
             @app.post(
-                "/infer/deployments",
+                "/{workspace}/workflows",
                 response_model=DeploymentsInferenceResponse,
                 summary="Endpoint to trigger inference from deployment specification provided in payload",
                 description="Parses and executes deployment specification, injecting runtime parameters from request body",
@@ -647,21 +650,21 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
-                "/infer/deployments/{deployment_name}",
+                "/{workspace}/workflows/{workflow}",
                 response_model=DeploymentsInferenceResponse,
                 summary="Endpoint to trigger inference from predefined deployment",
                 description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @with_route_exceptions
             async def infer_from_specific_deployment(
-                deployment_name: str,
+                workflow: str,
                 deployment_request: DeploymentsInferenceRequest,
+                workspace: str,
             ) -> DeploymentsInferenceResponse:
-                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
                 deployment_specification = get_deployment_specification(
                     api_key=deployment_request.api_key,
                     workspace_id=workspace,
-                    deployment_name=deployment_name,
+                    deployment_name=workflow,
                 )
                 return await process_deployment_inference_request(
                     deployment_request=deployment_request,

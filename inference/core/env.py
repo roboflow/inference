@@ -115,6 +115,8 @@ DISABLE_PREPROC_STATIC_CROP = str2bool(os.getenv("DISABLE_PREPROC_STATIC_CROP", 
 # Flag to disable version check, default is False
 DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
 
+DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
+
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
     "ELASTICACHE_ENDPOINT",

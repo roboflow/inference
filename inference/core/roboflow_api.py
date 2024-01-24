@@ -333,16 +333,16 @@ def get_deployment_specification(
     deployment_name: str,
 ) -> dict:
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/deployments/{deployment_name}",
+        url=f"{API_BASE_URL}/{workspace_id}/workflows/{deployment_name}",
         params=[("api_key", api_key)],
     )
     response = _get_from_url(url=api_url)
-    if "deployment" not in response or "config" not in response["deployment"]:
+    if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
-            f"Could not found deployment specification in API response"
+            f"Could not find deployment specification in API response"
         )
     try:
-        return json.loads(response["deployment"]["config"])
+        return json.loads(response["workflow"]["config"])
     except (ValueError, TypeError) as error:
         raise MalformedWorkflowResponseError(
             "Could not decode deployment specification in Roboflow API response"
