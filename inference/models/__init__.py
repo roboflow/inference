@@ -38,3 +38,4 @@ from inference.models.yolov8 import (
     YOLOv8KeypointsDetection,
     YOLOv8ObjectDetection,
 )
+from inference.models.yolonas import YOLONASObjectDetection
