@@ -9,20 +9,18 @@ from inference.enterprise.deployments.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.deployments.entities.steps import (
-    AggregationMode,
     ClassificationModel,
     Condition,
     Crop,
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
-    DetectionsConsensus,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    Operator,
+    Operator, DetectionsConsensus, AggregationMode,
 )
 from inference.enterprise.deployments.errors import (
     ExecutionGraphError,
@@ -1556,10 +1554,7 @@ def test_detections_consensus_validation_when_valid_specification_given() -> Non
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
 
@@ -1583,10 +1578,11 @@ def test_detections_consensus_validation_when_valid_specification_given() -> Non
     )
 
 
-@pytest.mark.parametrize("value", [3, "3", True, 3.0, [], set(), {}, None])
-def test_detections_consensus_validation_when_predictions_of_invalid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [3, "3", True, 3.0, [], set(), {}, None]
+)
+def test_detections_consensus_validation_when_predictions_of_invalid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
@@ -1600,18 +1596,16 @@ def test_detections_consensus_validation_when_predictions_of_invalid_type_given(
         _ = DetectionsConsensus.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", [None, 0, -1, "some", []])
-def test_detections_consensus_validation_when_required_votes_of_invalid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, 0, -1, "some", []]
+)
+def test_detections_consensus_validation_when_required_votes_of_invalid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": value,
     }
 
@@ -1620,18 +1614,16 @@ def test_detections_consensus_validation_when_required_votes_of_invalid_type_giv
         _ = DetectionsConsensus.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", [3, "$inputs.some"])
-def test_detections_consensus_validation_when_required_votes_of_valid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [3, "$inputs.some"]
+)
+def test_detections_consensus_validation_when_required_votes_of_valid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": value,
     }
 
@@ -1642,18 +1634,16 @@ def test_detections_consensus_validation_when_required_votes_of_valid_type_given
     assert result.required_votes == value
 
 
-@pytest.mark.parametrize("value", [None, "some"])
-def test_detections_consensus_validation_when_class_aware_of_invalid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, "some"]
+)
+def test_detections_consensus_validation_when_class_aware_of_invalid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "class_aware": value,
     }
@@ -1663,18 +1653,16 @@ def test_detections_consensus_validation_when_class_aware_of_invalid_type_given(
         _ = DetectionsConsensus.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", [True, False])
-def test_detections_consensus_validation_when_class_aware_of_valid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [True, False]
+)
+def test_detections_consensus_validation_when_class_aware_of_valid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "class_aware": value,
     }
@@ -1696,8 +1684,8 @@ def test_detections_consensus_validation_when_class_aware_of_valid_type_given(
         ("confidence", None),
         ("confidence", -1),
         ("confidence", 2.0),
-        ("confidence", "some"),
-    ],
+        ("confidence", "some")
+    ]
 )
 def test_detections_consensus_validation_when_range_field_of_invalid_type_given(
     field: str,
@@ -1707,10 +1695,7 @@ def test_detections_consensus_validation_when_range_field_of_invalid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         field: value,
     }
@@ -1731,7 +1716,7 @@ def test_detections_consensus_validation_when_range_field_of_invalid_type_given(
         ("confidence", 1.0),
         ("confidence", 0.5),
         ("confidence", "$inputs.some"),
-    ],
+    ]
 )
 def test_detections_consensus_validation_when_range_field_of_valid_type_given(
     field: str,
@@ -1741,10 +1726,7 @@ def test_detections_consensus_validation_when_range_field_of_valid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         field: value,
     }
@@ -1756,18 +1738,16 @@ def test_detections_consensus_validation_when_range_field_of_valid_type_given(
     assert getattr(result, field) == value
 
 
-@pytest.mark.parametrize("value", ["some", 1, 2.0, True, {}])
-def test_detections_consensus_validation_when_classes_to_consider_of_invalid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    ["some", 1, 2.0, True, {}]
+)
+def test_detections_consensus_validation_when_classes_to_consider_of_invalid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "classes_to_consider": value,
     }
@@ -1777,18 +1757,16 @@ def test_detections_consensus_validation_when_classes_to_consider_of_invalid_typ
         _ = DetectionsConsensus.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", ["$inputs.some", [], ["1", "2", "3"]])
-def test_detections_consensus_validation_when_classes_to_consider_of_valid_type_given(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    ["$inputs.some", [], ["1", "2", "3"]]
+)
+def test_detections_consensus_validation_when_classes_to_consider_of_valid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "classes_to_consider": value,
     }
@@ -1801,19 +1779,15 @@ def test_detections_consensus_validation_when_classes_to_consider_of_valid_type_
 
 
 @pytest.mark.parametrize(
-    "value", ["some", -1, 0, {"some": None}, {"some": 1, "other": -1}]
+    "value",
+    ["some", -1, 0, {"some": None}, {"some": 1, "other": -1}]
 )
-def test_detections_consensus_validation_when_required_objects_of_invalid_type_given(
-    value: Any,
-) -> None:
+def test_detections_consensus_validation_when_required_objects_of_invalid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "required_objects": value,
     }
@@ -1824,19 +1798,15 @@ def test_detections_consensus_validation_when_required_objects_of_invalid_type_g
 
 
 @pytest.mark.parametrize(
-    "value", [None, "$inputs.some", 1, 10, {"some": 1, "other": 10}]
+    "value",
+    [None, "$inputs.some", 1, 10, {"some": 1, "other": 10}]
 )
-def test_detections_consensus_validation_when_required_objects_of_valid_type_given(
-    value: Any,
-) -> None:
+def test_detections_consensus_validation_when_required_objects_of_valid_type_given(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
         "required_objects": value,
     }
@@ -1848,17 +1818,12 @@ def test_detections_consensus_validation_when_required_objects_of_valid_type_giv
     assert result.required_objects == value
 
 
-def test_detections_consensus_validation_field_predictions_field_selector_when_index_is_not_given() -> (
-    None
-):
+def test_detections_consensus_validation_field_predictions_field_selector_when_index_is_not_given() -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -1866,21 +1831,18 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_i
     # when
     with pytest.raises(ExecutionGraphError):
         step.validate_field_selector(
-            field_name="predictions", input_step=MagicMock(), index=None
+            field_name="predictions",
+            input_step=MagicMock(),
+            index=None
         )
 
 
-def test_detections_consensus_validation_field_predictions_field_selector_when_index_is_out_of_range() -> (
-    None
-):
+def test_detections_consensus_validation_field_predictions_field_selector_when_index_is_out_of_range() -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -1894,9 +1856,7 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_i
         )
 
 
-def test_detections_consensus_validation_field_predictions_field_selector_when_selector_does_not_hold_detections() -> (
-    None
-):
+def test_detections_consensus_validation_field_predictions_field_selector_when_selector_does_not_hold_detections() -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
@@ -1914,23 +1874,18 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_s
                 type="ObjectDetectionModel",
                 name="detection_2",
                 image="$inputs.image",
-                model_id="some/1",
+                model_id="some/1"
             ),
             index=1,
         )
 
 
-def test_detections_consensus_validation_field_predictions_field_selector_when_selector_point_to_invalid_step() -> (
-    None
-):
+def test_detections_consensus_validation_field_predictions_field_selector_when_selector_point_to_invalid_step() -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -1943,23 +1898,18 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_s
                 type="Crop",
                 name="detection_2",
                 image="$inputs.image",
-                detections="$steps.step.predictions",
+                detections="$steps.step.predictions"
             ),
             index=1,
         )
 
 
-def test_detections_consensus_validation_field_predictions_field_selector_when_selector_point_to_valid_step() -> (
-    None
-):
+def test_detections_consensus_validation_field_predictions_field_selector_when_selector_point_to_valid_step() -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -1971,7 +1921,7 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_s
             type="ObjectDetectionModel",
             name="detection_2",
             image="$inputs.image",
-            model_id="some/1",
+            model_id="some/1"
         ),
         index=1,
     )
@@ -1981,26 +1931,14 @@ def test_detections_consensus_validation_field_predictions_field_selector_when_s
 
 @pytest.mark.parametrize(
     "field",
-    [
-        "required_votes",
-        "class_aware",
-        "iou_threshold",
-        "confidence",
-        "classes_to_consider",
-        "required_objects",
-    ],
+    ["required_votes", "class_aware", "iou_threshold", "confidence", "classes_to_consider", "required_objects"]
 )
-def test_detections_consensus_validation_field_that_is_supposed_to_be_selector_but_is_not(
-    field: str,
-) -> None:
+def test_detections_consensus_validation_field_that_is_supposed_to_be_selector_but_is_not(field: str) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 3,
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -2015,26 +1953,14 @@ def test_detections_consensus_validation_field_that_is_supposed_to_be_selector_b
 
 @pytest.mark.parametrize(
     "field",
-    [
-        "required_votes",
-        "class_aware",
-        "iou_threshold",
-        "confidence",
-        "classes_to_consider",
-        "required_objects",
-    ],
+    ["required_votes", "class_aware", "iou_threshold", "confidence", "classes_to_consider", "required_objects"]
 )
-def test_detections_consensus_validation_field_that_is_supposed_to_be_parameter_selector_but_is_not(
-    field: str,
-) -> None:
+def test_detections_consensus_validation_field_that_is_supposed_to_be_parameter_selector_but_is_not(field: str) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": "$inputs.some",
         "class_aware": "$inputs.some",
         "iou_threshold": "$inputs.some",
@@ -2052,23 +1978,21 @@ def test_detections_consensus_validation_field_that_is_supposed_to_be_parameter_
                 type="Crop",
                 name="detection_2",
                 image="$inputs.image",
-                detections="$steps.step.predictions",
+                detections="$steps.step.predictions"
             ),
         )
 
 
-@pytest.mark.parametrize("value", [None, -1, "some", [], 0])
-def test_detections_consensus_validate_field_binding_for_required_votes_when_value_is_invalid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, -1, "some", [], 0]
+)
+def test_detections_consensus_validate_field_binding_for_required_votes_when_value_is_invalid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": "$inputs.some",
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -2081,18 +2005,16 @@ def test_detections_consensus_validate_field_binding_for_required_votes_when_val
         )
 
 
-@pytest.mark.parametrize("value", [1, 10])
-def test_detections_consensus_validate_field_binding_for_required_votes_when_value_is_valid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [1, 10]
+)
+def test_detections_consensus_validate_field_binding_for_required_votes_when_value_is_valid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": "$inputs.some",
     }
     step = DetectionsConsensus.parse_obj(specification)
@@ -2106,18 +2028,16 @@ def test_detections_consensus_validate_field_binding_for_required_votes_when_val
     # then - no error
 
 
-@pytest.mark.parametrize("value", [None, "some", []])
-def test_detections_consensus_validate_field_binding_for_class_aware_when_value_is_invalid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, "some", []]
+)
+def test_detections_consensus_validate_field_binding_for_class_aware_when_value_is_invalid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "class_aware": "$inputs.some",
     }
@@ -2131,18 +2051,16 @@ def test_detections_consensus_validate_field_binding_for_class_aware_when_value_
         )
 
 
-@pytest.mark.parametrize("value", [True, False])
-def test_detections_consensus_validate_field_binding_for_class_aware_when_value_is_valid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [True, False]
+)
+def test_detections_consensus_validate_field_binding_for_class_aware_when_value_is_valid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "class_aware": "$inputs.some",
     }
@@ -2166,19 +2084,14 @@ def test_detections_consensus_validate_field_binding_for_class_aware_when_value_
         ("confidence", None),
         ("confidence", -1),
         ("confidence", "some"),
-    ],
+    ]
 )
-def test_detections_consensus_validate_field_binding_for_zero_one_range_field_when_value_is_invalid(
-    field: str, value: Any
-) -> None:
+def test_detections_consensus_validate_field_binding_for_zero_one_range_field_when_value_is_invalid(field: str, value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         field: "$inputs.some",
     }
@@ -2193,7 +2106,7 @@ def test_detections_consensus_validate_field_binding_for_zero_one_range_field_wh
 
 
 @pytest.mark.parametrize(
-    "field, value",
+     "field, value",
     [
         ("iou_threshold", 0.0),
         ("iou_threshold", 0.5),
@@ -2201,19 +2114,14 @@ def test_detections_consensus_validate_field_binding_for_zero_one_range_field_wh
         ("confidence", 0.0),
         ("confidence", 0.5),
         ("confidence", 1.0),
-    ],
+    ]
 )
-def test_detections_consensus_validate_field_binding_for_zero_one_range_field_when_value_is_valid(
-    field: str, value: Any
-) -> None:
+def test_detections_consensus_validate_field_binding_for_zero_one_range_field_when_value_is_valid(field: str, value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         field: "$inputs.some",
     }
@@ -2228,18 +2136,16 @@ def test_detections_consensus_validate_field_binding_for_zero_one_range_field_wh
     # then - no error
 
 
-@pytest.mark.parametrize("value", ["some", 1, 2.0, True, {}, ["some", 1]])
-def test_detections_consensus_validate_field_binding_for_classes_to_consider_when_value_is_invalid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    ["some", 1, 2.0, True, {}, ["some", 1]]
+)
+def test_detections_consensus_validate_field_binding_for_classes_to_consider_when_value_is_invalid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "classes_to_consider": "$inputs.some",
     }
@@ -2253,18 +2159,16 @@ def test_detections_consensus_validate_field_binding_for_classes_to_consider_whe
         )
 
 
-@pytest.mark.parametrize("value", [None, ["A", "B"]])
-def test_detections_consensus_validate_field_binding_for_classes_to_consider_when_value_is_valid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, ["A", "B"]]
+)
+def test_detections_consensus_validate_field_binding_for_classes_to_consider_when_value_is_valid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "classes_to_consider": "$inputs.some",
     }
@@ -2280,19 +2184,15 @@ def test_detections_consensus_validate_field_binding_for_classes_to_consider_whe
 
 
 @pytest.mark.parametrize(
-    "value", ["some", -1, 0, ["some"], {"some": None}, {"some": 1, "other": -1}]
+    "value",
+    ["some", -1, 0, ["some"], {"some": None}, {"some": 1, "other": -1}]
 )
-def test_detections_consensus_validate_field_binding_for_required_objects_when_value_is_invalid(
-    value: Any,
-) -> None:
+def test_detections_consensus_validate_field_binding_for_required_objects_when_value_is_invalid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "required_objects": "$inputs.some",
     }
@@ -2306,18 +2206,16 @@ def test_detections_consensus_validate_field_binding_for_required_objects_when_v
         )
 
 
-@pytest.mark.parametrize("value", [None, 1, 3, {"some": 1, "other": 2}])
-def test_detections_consensus_validate_field_binding_for_required_objects_when_value_is_valid(
-    value: Any,
-) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, 1, 3, {"some": 1, "other": 2}]
+)
+def test_detections_consensus_validate_field_binding_for_required_objects_when_value_is_valid(value: Any) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
-            "$steps.detection.predictions",
-            "$steps.detection_2.predictions",
-        ],
+        "predictions": ["$steps.detection.predictions", "$steps.detection_2.predictions"],
         "required_votes": 1,
         "required_objects": "$inputs.some",
     }
@@ -2330,6 +2228,3 @@ def test_detections_consensus_validate_field_binding_for_required_objects_when_v
     )
 
     # then - no error
-
-
-b
