@@ -95,10 +95,7 @@ def infer(
         return None
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
-    if (
-        issubclass(type(input_reference), int)
-        or input_reference.split(".")[-1] in VIDEO_EXTENSIONS
-    ):
+    if input_reference.split(".")[-1] in VIDEO_EXTENSIONS:
         infer_on_video(
             input_reference=input_reference,
             model_id=model_id,
