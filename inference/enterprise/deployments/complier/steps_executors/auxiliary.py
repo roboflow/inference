@@ -506,44 +506,34 @@ def resolve_batch_consensus(
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
 ) -> Tuple[str, bool, Dict[str, float], List[dict]]:
+    if does_not_detected_objects_in_any_source(predictions=predictions):
+        return "undefined", False, {}, []
     parent_id = get_parent_id_of_predictions_from_different_sources(
         predictions=predictions,
     )
     predictions = filter_predictions(
         predictions=predictions,
-        confidence=0.0,
         classes_to_consider=classes_to_consider,
     )
     detections_already_considered = set()
     consensus_detections = []
     for source_id, detection in enumerate_detections(predictions=predictions):
-        detections_with_max_overlap = (
-            get_detections_from_different_sources_with_max_overlap(
-                detection=detection,
-                source=source_id,
-                predictions=predictions,
-                iou_threshold=iou_threshold,
-                class_aware=class_aware,
-                detections_already_considered=detections_already_considered,
-            )
+        (
+            consensus_detections_update,
+            detections_already_considered,
+        ) = get_consensus_for_single_detection(
+            detection=detection,
+            source_id=source_id,
+            predictions=predictions,
+            iou_threshold=iou_threshold,
+            class_aware=class_aware,
+            required_votes=required_votes,
+            confidence=confidence,
+            detections_merge_confidence_aggregation=detections_merge_confidence_aggregation,
+            detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
+            detections_already_considered=detections_already_considered,
         )
-        if len(detections_with_max_overlap) >= (required_votes - 1):
-            merged_detection = merge_detections(
-                detections=[detection]
-                + [
-                    matched_value[0]
-                    for matched_value in detections_with_max_overlap.values()
-                ],
-                confidence_aggregation_mode=detections_merge_confidence_aggregation,
-                boxes_aggregation_mode=detections_merge_coordinates_aggregation,
-            )
-            if merged_detection["confidence"] >= confidence:
-                consensus_detections.append(merged_detection)
-                detections_already_considered.add(detection[DETECTION_ID_KEY])
-                for matched_value in detections_with_max_overlap.values():
-                    detections_already_considered.add(
-                        matched_value[0][DETECTION_ID_KEY]
-                    )
+        consensus_detections += consensus_detections_update
     (
         object_present,
         presence_confidence,
@@ -559,6 +549,50 @@ def resolve_batch_consensus(
         presence_confidence,
         consensus_detections,
     )
+
+
+def get_consensus_for_single_detection(
+    detection: dict,
+    source_id: int,
+    predictions: List[List[dict]],
+    iou_threshold: float,
+    class_aware: bool,
+    required_votes: int,
+    confidence: float,
+    detections_merge_confidence_aggregation: AggregationMode,
+    detections_merge_coordinates_aggregation: AggregationMode,
+    detections_already_considered: Set[str],
+) -> Tuple[List[dict], Set[str]]:
+    if detection["detection_id"] in detections_already_considered:
+        return ([], detections_already_considered)
+    consensus_detections = []
+    detections_with_max_overlap = (
+        get_detections_from_different_sources_with_max_overlap(
+            detection=detection,
+            source=source_id,
+            predictions=predictions,
+            iou_threshold=iou_threshold,
+            class_aware=class_aware,
+            detections_already_considered=detections_already_considered,
+        )
+    )
+    if len(detections_with_max_overlap) < (required_votes - 1):
+        return consensus_detections, detections_already_considered
+    detections_to_merge = [detection] + [
+        matched_value[0] for matched_value in detections_with_max_overlap.values()
+    ]
+    merged_detection = merge_detections(
+        detections=detections_to_merge,
+        confidence_aggregation_mode=detections_merge_confidence_aggregation,
+        boxes_aggregation_mode=detections_merge_coordinates_aggregation,
+    )
+    if merged_detection["confidence"] < confidence:
+        return consensus_detections, detections_already_considered
+    consensus_detections.append(merged_detection)
+    detections_already_considered.add(detection[DETECTION_ID_KEY])
+    for matched_value in detections_with_max_overlap.values():
+        detections_already_considered.add(matched_value[0][DETECTION_ID_KEY])
+    return consensus_detections, detections_already_considered
 
 
 def check_objects_presence_in_consensus_predictions(
@@ -603,6 +637,10 @@ def check_objects_presence_in_consensus_predictions(
     return True, class2confidence
 
 
+def does_not_detected_objects_in_any_source(predictions: List[List[dict]]) -> bool:
+    return all(len(p) == 0 for p in predictions)
+
+
 def get_parent_id_of_predictions_from_different_sources(
     predictions: List[List[dict]],
 ) -> str:
@@ -621,41 +659,19 @@ def get_parent_id_of_predictions_from_different_sources(
 
 def filter_predictions(
     predictions: List[List[dict]],
-    confidence: float,
     classes_to_consider: Optional[List[str]],
 ) -> List[List[dict]]:
-    if classes_to_consider is not None:
-        detection_matches = partial(
-            confidence_and_class_match,
-            confidence_threshold=confidence,
-            classes=set(classes_to_consider),
-        )
-    else:
-        detection_matches = partial(
-            confidence_matches,
-            confidence_threshold=confidence,
-        )
+    if classes_to_consider is None:
+        return predictions
+    classes_to_consider = set(classes_to_consider)
     return [
-        [detection for detection in detections if detection_matches(detection)]
+        [
+            detection
+            for detection in detections
+            if detection["class"] in classes_to_consider
+        ]
         for detections in predictions
     ]
-
-
-def confidence_and_class_match(
-    detection: dict,
-    confidence_threshold: float,
-    classes: Set[str],
-) -> bool:
-    return (
-        confidence_matches(
-            detection=detection, confidence_threshold=confidence_threshold
-        )
-        and detection["class"] in classes
-    )
-
-
-def confidence_matches(detection: dict, confidence_threshold: float) -> bool:
-    return detection["confidence"] > confidence_threshold
 
 
 def get_detections_from_different_sources_with_max_overlap(
