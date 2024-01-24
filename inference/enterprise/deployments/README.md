@@ -499,6 +499,7 @@ In the case of `class_aware=False`:
   values
   * the `presence_confidence` will hold `any_object` key with confidence aggregated among all merged detections. 
 
+![How consensus block works?](./assets/detection_consensus_step_diagram.jpg)
 
 ##### Step parameters
 * `type`: must be `DetectionsConsensus` (required)
