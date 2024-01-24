@@ -506,7 +506,7 @@ class Crop(BaseModel, StepInterface):
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if not is_selector(selector_or_value=value):
-            raise ValueError("`image` field can only contain selector values")
+            raise ValueError("`detections` field can only contain selector values")
         return value
 
     def get_type(self) -> str:
@@ -1023,10 +1023,16 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
         if field_name == "predictions":
-            if index is None:
+            if index is None or index > len(self.predictions):
                 raise ExecutionGraphError(
                     f"Attempted to validate selector value for field {field_name}, which requires multiple inputs, "
                     f"but `index` not provided."
+                )
+            if not is_selector(
+                selector_or_value=self.predictions[index],
+            ):
+                raise ExecutionGraphError(
+                    f"Attempted to validate selector value for field {field_name}[{index}], but field is not selector."
                 )
             validate_selector_holds_detections(
                 step_name=self.name,
