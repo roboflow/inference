@@ -24,7 +24,7 @@ from inference.enterprise.deployments.entities.steps import (
     Condition,
     Crop,
     ObjectDetectionModel,
-    Operator,
+    Operator, DetectionsConsensus,
 )
 
 
@@ -290,6 +290,28 @@ def test_get_steps_input_selectors() -> None:
         "$inputs.image",
         "$steps.detect_2.predictions",
     }, "image reference and predictions reference defined within steps and expected to be found"
+
+
+def test_get_steps_input_selectors_when_nested_selectors_are_detected() -> None:
+    # given
+    steps = [
+        DetectionsConsensus(
+            type="DetectionsConsensus",
+            name="some",
+            predictions=["$steps.detection.predictions", "$steps.other.predictions"],
+            required_votes="$inputs.required_votes",
+        )
+    ]
+
+    # when
+    result = get_steps_input_selectors(steps=steps)
+
+    # then
+    assert result == {
+        "$inputs.required_votes",
+        "$steps.detection.predictions",
+        "$steps.other.predictions",
+    }, "reference to input parameter with required predictions and 2 detection steps outputs' must be found"
 
 
 def test_get_steps_selectors() -> None:
