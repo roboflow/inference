@@ -268,10 +268,14 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
                     "required_votes": 1,
                     "required_objects": 2,
                     "iou_threshold": 0.5,
-                }
+                },
             ],
             "outputs": [
-                {"type": "JsonField", "name": "predictions", "selector": "$steps.step_3.predictions"},
+                {
+                    "type": "JsonField",
+                    "name": "predictions",
+                    "selector": "$steps.step_3.predictions",
+                },
             ],
         }
     )
@@ -287,13 +291,14 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
         result.nodes["$steps.step_1"]["definition"].name == "step_1"
     ), "Step 1 node must be named correctly"
     assert (
-            result.nodes["$steps.step_2"]["definition"].name == "step_2"
+        result.nodes["$steps.step_2"]["definition"].name == "step_2"
     ), "Step 2 node must be named correctly"
     assert (
-            result.nodes["$steps.step_3"]["definition"].name == "step_3"
+        result.nodes["$steps.step_3"]["definition"].name == "step_3"
     ), "Step 3 node must be named correctly"
     assert (
-            result.nodes["$outputs.predictions"]["definition"].selector == "$steps.step_3.predictions"
+        result.nodes["$outputs.predictions"]["definition"].selector
+        == "$steps.step_3.predictions"
     ), "Output must be installed correctly"
     assert result.has_edge(
         "$inputs.image", "$steps.step_1"

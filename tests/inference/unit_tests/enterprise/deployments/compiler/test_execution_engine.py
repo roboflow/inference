@@ -2,13 +2,13 @@ import networkx as nx
 import pytest
 
 from inference.enterprise.deployments.complier.execution_engine import (
-    get_all_nodes_in_execution_path,
     construct_response,
+    get_all_nodes_in_execution_path,
 )
 from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND
 from inference.enterprise.deployments.entities.outputs import (
-    JsonField,
     CoordinatesSystem,
+    JsonField,
 )
 from inference.enterprise.deployments.errors import DeploymentCompilerRuntimeError
 

@@ -9,21 +9,21 @@ from inference.enterprise.deployments.entities.inputs import (
 )
 from inference.enterprise.deployments.entities.steps import (
     ClassificationModel,
-    MultiLabelClassificationModel,
-    ObjectDetectionModel,
-    KeypointsDetectionModel,
-    InstanceSegmentationModel,
-    OCRModel,
-    Crop,
     Condition,
+    Crop,
     DetectionFilter,
     DetectionFilterDefinition,
-    Operator,
     DetectionOffset,
+    InstanceSegmentationModel,
+    KeypointsDetectionModel,
+    MultiLabelClassificationModel,
+    ObjectDetectionModel,
+    OCRModel,
+    Operator,
 )
 from inference.enterprise.deployments.errors import (
-    InvalidStepInputDetected,
     ExecutionGraphError,
+    InvalidStepInputDetected,
     VariableTypeError,
 )
 

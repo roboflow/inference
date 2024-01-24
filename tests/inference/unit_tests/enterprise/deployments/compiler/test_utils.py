@@ -23,8 +23,9 @@ from inference.enterprise.deployments.entities.outputs import JsonField
 from inference.enterprise.deployments.entities.steps import (
     Condition,
     Crop,
+    DetectionsConsensus,
     ObjectDetectionModel,
-    Operator, DetectionsConsensus,
+    Operator,
 )
 
 

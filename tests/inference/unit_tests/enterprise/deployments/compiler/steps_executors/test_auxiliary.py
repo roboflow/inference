@@ -5,18 +5,18 @@ import pytest
 
 from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
     crop_image,
+    extract_origin_size_from_images,
+    offset_detection,
     run_condition_step,
     run_detection_filter,
-    offset_detection,
-    extract_origin_size_from_images,
     take_static_crop,
 )
 from inference.enterprise.deployments.entities.steps import (
-    Condition,
-    Operator,
-    DetectionFilter,
-    RelativeStaticCrop,
     AbsoluteStaticCrop,
+    Condition,
+    DetectionFilter,
+    Operator,
+    RelativeStaticCrop,
 )
 
 
