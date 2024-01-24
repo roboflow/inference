@@ -2,8 +2,8 @@ import typer
 from typing_extensions import Annotated
 
 import inference_cli.lib
-from inference_cli.server import server_app
 from inference_cli.cloud import cloud_app
+from inference_cli.server import server_app
 
 app = typer.Typer()
 
