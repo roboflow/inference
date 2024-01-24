@@ -9,9 +9,9 @@
 
 Roboflow Inference CLI offers a lightweight interface for running the Roboflow inference server locally or the Roboflow Hosted API.
 
-To create custom inference server Docker images, go to the parent package, [Roboflow Inference](https://pypi.org/project/inference/).
+To create custom inference server Docker images, go to the parent package, <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a>.
 
-[Roboflow](https://roboflow.com) has everything you need to deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
+<a href="https://roboflow.com" target="_blank">Roboflow</a> has everything you need to deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
 
 ## Examples
 
@@ -21,7 +21,7 @@ Starts a local inference server. It optionally takes a port number (default is 9
 
 Before you begin, ensure that you have Docker installed on your machine. Docker provides a containerized environment,
 allowing the Roboflow Inference Server to run in a consistent and isolated manner, regardless of the host system. If
-you haven't installed Docker yet, you can get it from [Docker's official website](https://www.docker.com/get-started).
+you haven't installed Docker yet, you can get it from <a href="https://www.docker.com/get-started" target="_blank">Docker's official website</a>.
 
 The CLI will automatically detect the device you are running on and pull the appropriate Docker image.
 
@@ -83,4 +83,4 @@ Roboflow Inference CLI currently supports the following device targets:
 - ARM64 CPU
 - NVIDIA GPU
 
-For Jetson specific inference server images, check out the [Roboflow Inference](https://pypi.org/project/inference/) package, or pull the images directly following instructions in the official [Roboflow Inference documentation](https://inference.roboflow.com/quickstart/docker/#pull-from-docker-hub).
+For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](/quickstart/docker/#pull-from-docker-hub).

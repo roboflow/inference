@@ -1,5 +1,9 @@
 # Stream Management
 
+> [!IMPORTANT] 
+> We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
+
+
 ## Overview
 
 This feature is designed to cater to users requiring the execution of inference to generate predictions using
@@ -143,7 +147,7 @@ After running `roboflow-inference-stream-management-api` container, HTTP API wil
 `http://127.0.0.1:8080` (given that default configuration is used).
 
 One can call `wget http://127.0.0.1:8080/openapi.json` to get OpenApi specification of API that can be rendered
-[here](https://editor.swagger.io/)
+<a href="https://editor.swagger.io/" target="_blank">here</a>
 
 Example Python client is provided below:
 
@@ -263,6 +267,7 @@ Message must be a valid JSON after decoding and represent valid command.
   }
 }
 ```
+{% include 'model_id.md' %}
 
 #### `terminate` command
 

@@ -17,7 +17,11 @@ def test_yolov7_segmentation_single_image_inference(
     model = YOLOv7InstanceSegmentation(model_id=yolov7_seg_model, api_key="DUMMY")
 
     # when
-    result = model.infer(example_image)
+    result = model.infer(
+        example_image,
+        confidence=0.5,
+        iou_threshold=0.5,
+    )
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
@@ -34,14 +38,16 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     model = YOLOv7InstanceSegmentation(model_id=yolov7_seg_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer(
+        [example_image] * batch_size,
+        confidence=0.5,
+        iou_threshold=0.5,
+    )
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov7_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -58,14 +64,16 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_larger_than_max_bat
     model = YOLOv7InstanceSegmentation(model_id=yolov7_seg_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer(
+        [example_image] * batch_size,
+        confidence=0.5,
+        iou_threshold=0.5,
+    )
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov7_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov7_segmentation_prediction_matches_reference(

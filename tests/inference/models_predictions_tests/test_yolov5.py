@@ -39,10 +39,8 @@ def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov5_detection_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov5_detection_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -63,10 +61,8 @@ def test_yolov5_detection_batch_inference_when_batch_size_larger_then_max_batch_
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov5_detection_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov5_detection_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov5_detection_prediction_matches_reference(
@@ -126,10 +122,8 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov5_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov5_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -152,10 +146,8 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_larger_then_max_bat
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov5_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov5_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov5_segmentation_prediction_matches_reference(

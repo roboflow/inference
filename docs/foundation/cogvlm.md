@@ -1,4 +1,4 @@
-[CogVLM](https://github.com/THUDM/CogVLM) is a Large Multimodal Model (LMM). CogVLM is available for use in Inference.
+<a href="https://github.com/THUDM/CogVLM" target="_blank">CogVLM</a> is a Large Multimodal Model (LMM). CogVLM is available for use in Inference.
 
 You can ask CogVLM questions about the contents of an image and retrieve a text response.
 
@@ -12,9 +12,9 @@ You can run CogVLM through Roboflow Inference with three degrees of quantization
 
 ## Use CogVLM with Inference
 
-To use CogVLM with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). 
+To use CogVLM with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. 
 
-Then, retrieve your API key from the Roboflow dashboard. [Learn how to retrieve your API key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key).
+Then, retrieve your API key from the Roboflow dashboard. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your API key</a>.
 
 Run the following command to set your API key in your coding environment:
 
@@ -70,4 +70,4 @@ CogVLM successfully answered our question, noting there is a forklift close to t
 
 ## See Also
 
-- [How to deploy CogVLM](https://blog.roboflow.com/how-to-deploy-cogvlm/)
+- <a href="https://blog.roboflow.com/how-to-deploy-cogvlm/" target="_blank">How to deploy CogVLM</a>

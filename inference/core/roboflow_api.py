@@ -1,8 +1,8 @@
+import json
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-import numpy as np
 import requests
 from requests import Response
 from requests_toolbelt import MultipartEncoder
@@ -19,6 +19,7 @@ from inference.core.entities.types import (
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -323,6 +324,29 @@ def get_roboflow_labeling_jobs(
         params=[("api_key", api_key)],
     )
     return _get_from_url(url=api_url)
+
+
+@wrap_roboflow_api_errors()
+def get_deployment_specification(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    deployment_name: str,
+) -> dict:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/deployments/{deployment_name}",
+        params=[("api_key", api_key)],
+    )
+    response = _get_from_url(url=api_url)
+    if "deployment" not in response or "config" not in response["deployment"]:
+        raise MalformedWorkflowResponseError(
+            f"Could not found deployment specification in API response"
+        )
+    try:
+        return json.loads(response["deployment"]["config"])
+    except (ValueError, TypeError) as error:
+        raise MalformedWorkflowResponseError(
+            "Could not decode deployment specification in Roboflow API response"
+        ) from error
 
 
 @wrap_roboflow_api_errors()

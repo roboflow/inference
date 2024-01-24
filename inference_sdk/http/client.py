@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
@@ -34,6 +34,7 @@ from inference_sdk.http.utils.loaders import (
 )
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
+    decode_deployment_outputs,
     response_contains_jpeg_image,
     transform_base64_visualisation,
     transform_visualisation_bytes,
@@ -504,6 +505,69 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
+
+    @wrap_errors
+    def infer_from_deployment(
+        self,
+        deployment_name: Optional[str] = None,
+        deployment_specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Triggers inference from deployment specification at the inference HTTP
+        side. Either `deployment_name` or `deployment_specification` must be
+        provided. In the first case - definition of deployment will be fetched
+        from Roboflow API, in the latter - `deployment_specification` will be
+        used. `images` and `parameters` will be merged into deployment inputs,
+        the distinction is made to make sure the SDK can easily serialise
+        images and prepare a proper payload. Supported images are numpy arrays,
+        PIL.Image, links to images and local paths.
+        `excluded_fields` will be added to request to filter out results
+        of deployment execution at the server side.
+        """
+        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
+        if not ((deployment_name is None) != (deployment_specification is None)):
+            raise InvalidParameterError(
+                "Parameters `deployment_name` and `deployment_specification` are mutually exclusive, "
+                "but at least one must be set."
+            )
+        if images is None:
+            images = {}
+        if parameters is None:
+            parameters = {}
+        payload = self.__initialise_payload()
+        runtime_parameters = {}
+        for image_name, image in images.items():
+            loaded_image = load_static_inference_input(
+                inference_input=image,
+            )
+            inject_images_into_payload(
+                payload=runtime_parameters,
+                encoded_images=loaded_image,
+                key=image_name,
+            )
+        runtime_parameters.update(parameters)
+        payload["runtime_parameters"] = runtime_parameters
+        if excluded_fields is not None:
+            payload["excluded_fields"] = excluded_fields
+        if deployment_specification is not None:
+            payload["specification"] = deployment_specification
+        url = f"{self.__api_url}/infer/deployments"
+        if deployment_name is not None:
+            url = f"{url}/{deployment_name}"
+        response = requests.post(
+            url,
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        deployment_outputs = response.json()["deployment_outputs"]
+        return decode_deployment_outputs(
+            deployment_outputs=deployment_outputs,
+            expected_format=self.__inference_configuration.output_visualisation_format,
+        )
 
     def _post_images(
         self,

@@ -32,6 +32,7 @@ class ImageType(Enum):
     FILE = "file"
     MULTIPART = "multipart"
     NUMPY = "numpy"
+    NUMPY_OBJECT = "numpy_object"
     PILLOW = "pil"
     URL = "url"
 
@@ -119,7 +120,7 @@ def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]
         return value, image_type
     if image_type.lower() not in allowed_payload_types:
         raise InvalidImageTypeDeclared(
-            f"Declared image type: {value} which is not in allowed types: {allowed_payload_types}."
+            f"Declared image type: {image_type.lower()} which is not in allowed types: {allowed_payload_types}."
         )
     return value, ImageType(image_type.lower())
 
@@ -289,6 +290,11 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     return data
 
 
+def load_image_from_numpy_object(value: np.ndarray) -> np.ndarray:
+    validate_numpy_image(data=value)
+    return value
+
+
 def validate_numpy_image(data: np.ndarray) -> None:
     """
     Validate if the provided data is a valid numpy image.
@@ -363,6 +369,7 @@ IMAGE_LOADERS = {
     ImageType.FILE: cv2.imread,
     ImageType.MULTIPART: load_image_from_buffer,
     ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
+    ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
     ImageType.URL: load_image_from_url,
 }

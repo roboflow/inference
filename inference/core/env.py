@@ -68,7 +68,7 @@ CLASS_AGNOSTIC_NMS = str2bool(
 
 # Confidence threshold, default is 50%
 CONFIDENCE_ENV = "CONFIDENCE"
-DEFAULT_CONFIDENCE = 0.5
+DEFAULT_CONFIDENCE = 0.4
 CONFIDENCE = float(os.getenv(CONFIDENCE_ENV, DEFAULT_CONFIDENCE))
 
 # Flag to enable core models, default is True
@@ -138,9 +138,9 @@ FIX_BATCH_SIZE = str2bool(os.getenv("FIX_BATCH_SIZE", False))
 # Host, default is "0.0.0.0"
 HOST = os.getenv("HOST", "0.0.0.0")
 
-# IoU threshold, default is 0.5
+# IoU threshold, default is 0.3
 IOU_THRESHOLD_ENV = "IOU_THRESHOLD"
-DEFAULT_IOU_THRESHOLD = 0.5
+DEFAULT_IOU_THRESHOLD = 0.3
 IOU_THRESHOLD = float(os.getenv(IOU_THRESHOLD_ENV, DEFAULT_IOU_THRESHOLD))
 
 # IP broadcast address, default is "127.0.0.1"

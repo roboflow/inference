@@ -46,10 +46,8 @@ def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_classification_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_classification_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -70,10 +68,8 @@ def test_yolov8_classification_batch_inference_when_batch_size_larger_than_max_b
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_classification_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_classification_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov8_classification_prediction_matches_reference(
@@ -118,10 +114,8 @@ def test_yolov8_detection_batch_inference_when_batch_size_smaller_than_max_batch
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_detection_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_detection_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -142,10 +136,8 @@ def test_yolov8_detection_batch_inference_when_batch_size_larger_than_max_batch_
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_detection_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_detection_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov8_detection_prediction_matches_reference(
@@ -201,10 +193,8 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -225,10 +215,8 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_larger_than_max_bat
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_segmentation_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_segmentation_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov8_segmentation_prediction_matches_reference(
@@ -287,10 +275,8 @@ def test_yolov8_pose_batch_inference_when_batch_size_smaller_than_max_batch_size
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_pose_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_pose_prediction_matches_reference(prediction=prediction)
 
 
 @pytest.mark.slow
@@ -311,10 +297,8 @@ def test_yolov8_pose_batch_inference_when_batch_size_larger_than_max_batch_size(
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
-    assert all(
-        p == result[0] for p in result
-    ), "All predictions must be the same as input was re-used"
-    assert_yolov8_pose_prediction_matches_reference(prediction=result[0])
+    for prediction in result:
+        assert_yolov8_pose_prediction_matches_reference(prediction=prediction)
 
 
 def assert_yolov8_pose_prediction_matches_reference(

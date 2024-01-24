@@ -184,6 +184,7 @@ It is going to provide predictions in the following format:
     "task_type": "instance-segmentation"
 }
 ```
+{% include 'model_id.md' %}
 This option, combined with Active Learning (namely `random` sampling strategy), provides a way to start data collection
 even prior any model is trained. There are several benefits of such strategy. The most important is building 
 the dataset representing the true production distribution, before any model is trained.

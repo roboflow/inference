@@ -2,7 +2,7 @@
 
     This model is not yet available in Inference. Check back later for updates.
 
-[Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) is a zero-shot object detection model.
+<a href="https://github.com/IDEA-Research/GroundingDINO" target="_blank">Grounding DINO</a> is a zero-shot object detection model.
 
 You can use Grounding DINO to identify objects in images and videos using arbitrary text prompts.
 
@@ -27,7 +27,7 @@ Above, replace:
 1. `coffee cup` with the object you want to detect.
 2. `image.jpg` with the path to the image in which you want to detect objects.
 
-To use Grounding DINO with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com). Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
+To use Grounding DINO with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
 ```
 export ROBOFLOW_API_KEY=<your api key>
