@@ -237,6 +237,82 @@ def test_construct_graph() -> None:
     assert len(result.edges) == 10, "10 edges in total should be created"
 
 
+def test_construct_graph_when_detections_consensus_block_is_used() -> None:
+    # given
+    deployment_specs = DeploymentSpecV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+            ],
+            "steps": [
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "some/1",
+                },
+                {
+                    "type": "ObjectDetectionModel",
+                    "name": "step_2",
+                    "image": "$inputs.image",
+                    "model_id": "some/2",
+                },
+                {
+                    "type": "DetectionsConsensus",
+                    "name": "step_3",
+                    "predictions": [
+                        "$steps.step_1.predictions",
+                        "$steps.step_2.predictions",
+                    ],
+                    "required_votes": 1,
+                    "required_objects": 2,
+                    "iou_threshold": 0.5,
+                }
+            ],
+            "outputs": [
+                {"type": "JsonField", "name": "predictions", "selector": "$steps.step_3.predictions"},
+            ],
+        }
+    )
+
+    # when
+    result = construct_graph(deployment_spec=deployment_specs)
+
+    # then
+    assert (
+        result.nodes["$inputs.image"]["definition"].name == "image"
+    ), "Image node must be named correctly"
+    assert (
+        result.nodes["$steps.step_1"]["definition"].name == "step_1"
+    ), "Step 1 node must be named correctly"
+    assert (
+            result.nodes["$steps.step_2"]["definition"].name == "step_2"
+    ), "Step 2 node must be named correctly"
+    assert (
+            result.nodes["$steps.step_3"]["definition"].name == "step_3"
+    ), "Step 3 node must be named correctly"
+    assert (
+            result.nodes["$outputs.predictions"]["definition"].selector == "$steps.step_3.predictions"
+    ), "Output must be installed correctly"
+    assert result.has_edge(
+        "$inputs.image", "$steps.step_1"
+    ), "Image must be connected with step 1"
+    assert result.has_edge(
+        "$inputs.image", "$steps.step_2"
+    ), "Image must be connected with step 2"
+    assert result.has_edge(
+        "$steps.step_1", "$steps.step_3"
+    ), "Object detection node must be connected with Consensus step"
+    assert result.has_edge(
+        "$steps.step_2", "$steps.step_3"
+    ), "Object detection node must be connected with Consensus step"
+    assert result.has_edge(
+        "$steps.step_3", "$outputs.predictions"
+    ), "Step 3 must be connected to predictions output"
+    assert len(result.edges) == 5, "10 edges in total should be created"
+
+
 def test_verify_each_node_reach_at_least_one_output_when_graph_is_valid() -> None:
     # given
     execution_graph = nx.DiGraph()
