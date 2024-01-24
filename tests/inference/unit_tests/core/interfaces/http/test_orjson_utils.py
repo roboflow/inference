@@ -126,17 +126,18 @@ def test_serialise_deployment_workflow_result() -> None:
                 "value": np_image,
             },
         ],
-        "fourth": "to_be_excluded"
+        "fourth": "to_be_excluded",
     }
 
     # when
     result = serialise_deployment_workflow_result(
-        result=workflow_result,
-        excluded_fields=["fourth"]
+        result=workflow_result, excluded_fields=["fourth"]
     )
 
     # then
-    assert len(result) == 3, "Size of dictionary must be 3, one field should be excluded"
+    assert (
+        len(result) == 3
+    ), "Size of dictionary must be 3, one field should be excluded"
     assert result["some"] == [{"detection": 1}], "Element must not change"
     assert (
         result["other"]["type"] == "base64"

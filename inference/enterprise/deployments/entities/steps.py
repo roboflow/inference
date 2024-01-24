@@ -145,7 +145,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
 class ClassificationModel(RoboflowModel):
     type: Literal["ClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @validator("confidence")
     @classmethod
@@ -188,7 +188,7 @@ class ClassificationModel(RoboflowModel):
 
 class MultiLabelClassificationModel(RoboflowModel):
     type: Literal["MultiLabelClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @validator("confidence")
     @classmethod
@@ -233,7 +233,7 @@ class ObjectDetectionModel(RoboflowModel):
     type: Literal["ObjectDetectionModel"]
     class_agnostic_nms: Union[Optional[bool], str] = Field(default=False)
     class_filter: Union[Optional[List[str]], str] = Field(default=None)
-    confidence: Union[Optional[float], str] = Field(default=0.0)
+    confidence: Union[Optional[float], str] = Field(default=0.4)
     iou_threshold: Union[Optional[float], str] = Field(default=0.3)
     max_detections: Union[Optional[int], str] = Field(default=300)
     max_candidates: Union[Optional[int], str] = Field(default=3000)
