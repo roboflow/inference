@@ -89,15 +89,13 @@ Deploying inference into a cloud VM will also print out an endpoint of the form 
 
 Note that the port 9001 is automatically opened - check with your security admin if this is acceptable for your cloud/project.
 
-*List status on cloud deployments*
+### View status of deployments
 
 ```
-# List deployed cloud VMs
-
 inference cloud status
 ```
 
-*Stop/Start VM cloud deployments*
+### Stop and start deployments
 
 ```
 # Stop the VM, you only pay for disk storage while the VM is stopped
@@ -105,31 +103,32 @@ inference cloud stop <deployment_handle>
 
 ```
 
+### Restart deployments
+
 ```
-# Re-start the VM deployment
 inference cloud start <deployment_handle>
 ```
 
-*Undeploy (delete) the cloud deployment*
-```
-# !!This will delete the VM and the service
+### Undeploy (delete) the cloud deployment
 
+```
 inference cloud undeploy <deployment_handle>
 ```
 
-*SSH into a running deployment*
+### SSH into the cloud deployment
+
+You can SSH into your cloud deployment with the following command:
 ```
-# The SSH key is automatically added to your .ssh/config, you dont need to configure this manually!
 ssh <deployment_handle>
 ```
 
-
+The required SSH key is automatically added to your .ssh/config, you don't need to configure this manually.
 
 ### Cloud Deploy Customization
 
 Roboflow inference cloud deploy will create VMs based on internally tested templates.
 
-For advanced usecases and to customize the template, you can use your [sky yaml](https://skypilot.readthedocs.io/en/latest/reference/yaml-spec.html) template on the command-line, like so
+For advanced usecases and to customize the template, you can use your [sky yaml](https://skypilot.readthedocs.io/en/latest/reference/yaml-spec.html) template on the command-line, like so:
 
 ```
 inference cloud deploy --custom /path/to/sky-template.yaml
@@ -145,11 +144,9 @@ inference cloud deploy --dry-run --provider gcp --compute-type cpu
 
 Then you can deploy a custom template based off your changes.
 
-As an aside, you can also use the [sky cli](https://skypilot.readthedocs.io/en/latest/reference/cli.html) to control your deployment(=s) and access some more advanced functionality.
+As an aside, you can also use the [sky cli](https://skypilot.readthedocs.io/en/latest/reference/cli.html) to control your deployment(s) and access some more advanced functionality.
 
-
-
-Roboflow inference deploy currently supports AWS and GCP, please open an issue at https://github.com/roboflow/inference/issues if you would like to see other cloud providers supported.
+Roboflow inference deploy currently supports AWS and GCP, please open an issue on the [Inference GitHub repository](https://github.com/roboflow/inference/issues) if you would like to see other cloud providers supported.
 
 
 ### inference infer
@@ -167,8 +164,6 @@ inference infer ./image.jpg --project-id my-project --model-version 1 --api-key 
 ```bash
 inference infer https://[YOUR_HOSTED_IMAGE_URL] --project-id my-project --model-version 1 --api-key my-api-key
 ```
-
-###
 
 #### Hosted API inference
 
