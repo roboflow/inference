@@ -18,6 +18,8 @@ class BaseRequest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     api_key: Optional[str] = ApiKey
     start: Optional[float] = None
+    source: Optional[str] = None
+    source_info: Optional[str] = None
 
 
 class InferenceRequest(BaseRequest):
