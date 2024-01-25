@@ -90,9 +90,6 @@ def infer(
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
 ) -> None:
-    if display is False and output_location is None:
-        print("Both `display` parameter and `output_location` not set - nothing to do.")
-        return None
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if input_reference.split(".")[-1] in VIDEO_EXTENSIONS:
@@ -121,6 +118,17 @@ def infer(
             model_configuration=model_configuration,
         )
         return None
+    infer_on_image(
+        input_reference=input_reference,
+        model_id=model_id,
+        api_key=api_key,
+        host=host,
+        output_location=output_location,
+        display=display,
+        visualise=visualise,
+        visualisation_config=visualisation_config,
+        model_configuration=model_configuration,
+    )
 
 
 class NullVideoSink:
@@ -145,6 +153,14 @@ def infer_on_video(
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
 ) -> None:
+    if not is_something_to_do(
+        output_location=output_location, display=display, visualise=visualise
+    ):
+        print(
+            "Inference from video requires `output_location` to be given or both "
+            "`display` and `visualise` options to be requested."
+        )
+        return None
     client = initialise_client(
         api_key=api_key,
         host=host,
@@ -199,6 +215,14 @@ def infer_on_directory(
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
 ) -> None:
+    if not is_something_to_do(
+        output_location=output_location, display=display, visualise=visualise
+    ):
+        print(
+            "Inference from directory requires `output_location` to be given or both "
+            "`display` and `visualise` options to be requested."
+        )
+        return None
     client = initialise_client(
         api_key=api_key,
         host=host,
@@ -254,16 +278,17 @@ def infer_on_image(
         on_frame_visualise = build_visualisation_callback(
             visualisation_config=visualisation_config,
         )
-    prediction = client.infer(input_uri=input_reference, model_id=model_id)
+    prediction = client.infer(inference_input=input_reference, model_id=model_id)
     visualised = None
     if visualise:
         frame_base64 = load_image_from_uri(uri=input_reference)[0]
         frame_bytes = base64.b64decode(frame_base64)
         frame = bytes_to_opencv_image(payload=frame_bytes)
         visualised = on_frame_visualise(frame, prediction)
+    print(prediction)
     if display and visualised is not None:
         cv2.imshow("Visualisation", visualised)
-        cv2.waitKey(1)
+        cv2.waitKey(0)
     if output_location is not None:
         save_prediction(
             reference=input_reference,
@@ -296,9 +321,17 @@ def initialise_client(
     return client
 
 
+def is_something_to_do(
+    output_location: Optional[str],
+    display: bool,
+    visualise: bool,
+) -> bool:
+    return output_location is not None or (display is True and visualise is True)
+
+
 def build_visualisation_callback(
     visualisation_config: Optional[str],
-) -> Callable[[np.ndarray, dict], np.ndarray]:
+) -> Callable[[np.ndarray, dict], Optional[np.ndarray]]:
     annotators = [BoundingBoxAnnotator()]
     byte_tracker = None
     if visualisation_config is not None:
@@ -350,7 +383,7 @@ def create_visualisation(
     prediction: dict,
     annotators: List[BaseAnnotator],
     tracker: Optional[ByteTrack],
-) -> np.ndarray:
+) -> Optional[np.ndarray]:
     try:
         detections = Detections.from_roboflow(prediction)
         if tracker is not None:
@@ -364,6 +397,7 @@ def create_visualisation(
             "Could not visualise prediction. Probably visualisation was requested against model that does "
             "not produce detections."
         )
+        return None
 
 
 def save_prediction(
