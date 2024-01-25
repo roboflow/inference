@@ -5,7 +5,7 @@
         "payload": {
             "image": {
                 "type": "url",
-                "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
             }
         },
         "expected_response": {
@@ -535,15 +535,15 @@
             "image": [
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 },
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 },
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 }
             ]
         },
@@ -4185,7 +4185,7 @@
         "payload": {
             "subject": {
                 "type": "url",
-                "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
             },
             "prompt": "The quick brown fox jumps over the lazy dog."
         },
@@ -4202,7 +4202,7 @@
         "payload": {
             "subject": {
                 "type": "url",
-                "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
             },
             "prompt": [
                 "The quick brown fox jumps over the lazy dog.",
@@ -4225,7 +4225,7 @@
         "payload": {
             "prompt": {
                 "type": "url",
-                "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
             },
             "prompt_type": "image",
             "subject": "The quick brown fox jumps over the lazy dog.",
@@ -4245,15 +4245,15 @@
             "prompt": [
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 },
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 },
                 {
                     "type": "url",
-                    "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                    "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
                 }
             ],
             "prompt_type": "image",
@@ -4275,7 +4275,7 @@
         "payload": {
             "subject": {
                 "type": "url",
-                "value": "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+                "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
             },
             "prompt": {
                 "Key1": "The quick brown fox jumps over the lazy dog.",
