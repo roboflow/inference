@@ -154,6 +154,10 @@ class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
     pass
 
 
+class MalformedWorkflowResponseError(RoboflowAPIRequestError):
+    pass
+
+
 class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
     pass
 

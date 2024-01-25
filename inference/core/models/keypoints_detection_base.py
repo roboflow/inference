@@ -13,6 +13,7 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.keypoints import model_keypoints_to_response
 from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
@@ -144,7 +145,8 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
                             "class_id": int(pred[6]),
-                            "keypoints": self._model_keypoints_to_response(
+                            "keypoints": model_keypoints_to_response(
+                                keypoints_metadata=self.keypoints_metadata,
                                 keypoints=pred[7:],
                                 predicted_object_class_id=int(
                                     pred[4 + len(self.get_class_names)]
@@ -164,30 +166,6 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
-
-    def _model_keypoints_to_response(
-        self,
-        keypoints: List[float],
-        predicted_object_class_id: int,
-        keypoint_confidence_threshold: float,
-    ) -> List[Keypoint]:
-        if self.keypoints_metadata is None:
-            raise ModelArtefactError("Keypoints metadata not available.")
-        keypoint_id2name = self.keypoints_metadata[predicted_object_class_id]
-        results = []
-        for keypoint_id in range(len(keypoints) // 3):
-            confidence = keypoints[3 * keypoint_id + 2]
-            if confidence < keypoint_confidence_threshold:
-                continue
-            keypoint = Keypoint(
-                x=keypoints[3 * keypoint_id],
-                y=keypoints[3 * keypoint_id + 1],
-                confidence=confidence,
-                class_id=keypoint_id,
-                class_name=keypoint_id2name[keypoint_id],
-            )
-            results.append(keypoint)
-        return results
 
     def keypoints_count(self) -> int:
         raise NotImplementedError

@@ -1679,3 +1679,189 @@ def test_clip_compare_when_faulty_response_returned(
         _ = http_client.clip_compare(
             subject="some", prompt=["dog", "house"], subject_type="text"
         )
+
+
+def test_infer_from_deployment_when_client_in_v0_mode() -> None:
+    # given
+    http_client = InferenceHTTPClient(
+        api_key="my-api-key", api_url="https://detect.roboflow.com"
+    )
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        http_client.infer_from_deployment(deployment_name="some")
+
+
+def test_infer_from_deployment_when_no_parameters_given(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/infer/deployments/my_deployment",
+        json={
+            "deployment_outputs": {"some": 3},
+        },
+    )
+
+    # when
+    result = http_client.infer_from_deployment(deployment_name="my_deployment")
+
+    # then
+    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "runtime_parameters": {},
+    }, "Request payload must contain api ket end runtime_parameters"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/infer/deployments/my_deployment",
+        json={
+            "deployment_outputs": {"some": 3},
+        },
+    )
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+
+    # when
+    result = http_client.infer_from_deployment(
+        deployment_name="my_deployment",
+        images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
+        parameters={
+            "some": 10,
+        },
+        excluded_fields=["some"]
+    )
+
+    # then
+    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "runtime_parameters": {
+            "image_1": {
+                "type": "base64",
+                "value": "base64_image_1",
+            },
+            "image_2": [
+                {
+                    "type": "base64",
+                    "value": "base64_image_2",
+                },
+                {
+                    "type": "base64",
+                    "value": "base64_image_3",
+                },
+            ],
+            "some": 10,
+        },
+        "excluded_fields": ["some"],
+    }, "Request payload must contain api ket end runtime_parameters"
+
+
+def test_infer_from_deployment_when_faulty_response_given(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/infer/deployments/my_deployment",
+        json={"message": "some"},
+        status_code=500,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.infer_from_deployment(deployment_name="my_deployment")
+
+
+def test_infer_from_deployment_when_neither_deployment_name_nor_specs_given() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.infer_from_deployment()
+
+
+def test_infer_from_deployment_when_both_deployment_name_and_specs_given() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.infer_from_deployment(
+            deployment_name="some",
+            deployment_specification={"some": "specs"}
+        )
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_deployment_when_custom_deployment_used_and_arameters_and_excluded_fields_given(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/infer/deployments",
+        json={
+            "deployment_outputs": {"some": 3},
+        },
+    )
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+
+    # when
+    result = http_client.infer_from_deployment(
+        deployment_specification={
+            "my": "specification",
+        },
+        images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
+        parameters={
+            "some": 10,
+        },
+        excluded_fields=["some"]
+    )
+
+    # then
+    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "specification": {"my": "specification"},
+        "runtime_parameters": {
+            "image_1": {
+                "type": "base64",
+                "value": "base64_image_1",
+            },
+            "image_2": [
+                {
+                    "type": "base64",
+                    "value": "base64_image_2",
+                },
+                {
+                    "type": "base64",
+                    "value": "base64_image_3",
+                },
+            ],
+            "some": 10,
+        },
+        "excluded_fields": ["some"],
+    }, "Request payload must contain api ket end runtime_parameters"

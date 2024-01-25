@@ -22,6 +22,7 @@ def compile_and_execute(
     deployment_spec: dict,
     runtime_parameters: Dict[str, Any],
     api_key: Optional[str] = None,
+    model_manager: Optional[ModelManager] = None,
     loop: Optional[AbstractEventLoop] = None,
 ) -> dict:
     if loop is None:
@@ -30,6 +31,7 @@ def compile_and_execute(
         compile_and_execute_async(
             deployment_spec=deployment_spec,
             runtime_parameters=runtime_parameters,
+            model_manager=model_manager,
             api_key=api_key,
         )
     )
@@ -38,13 +40,15 @@ def compile_and_execute(
 async def compile_and_execute_async(
     deployment_spec: dict,
     runtime_parameters: Dict[str, Any],
+    model_manager: Optional[ModelManager] = None,
     api_key: Optional[str] = None,
 ) -> dict:
     if api_key is None:
         api_key = API_KEY
-    model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-    model_manager = ModelManager(model_registry=model_registry)
-    model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
+    if model_manager is None:
+        model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+        model_manager = ModelManager(model_registry=model_registry)
+        model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
     parsed_deployment_spec = DeploymentSpecification.parse_obj(deployment_spec)
     if parsed_deployment_spec.specification.version != "1.0":
         raise InvalidSpecificationVersionError(
