@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import numpy as np
 from PIL import Image
@@ -18,62 +18,6 @@ IMAGES_TRANSCODING_METHODS = {
     VisualisationResponseFormat.NUMPY: bytes_to_opencv_image,
     VisualisationResponseFormat.PILLOW: bytes_to_pillow_image,
 }
-
-
-def decode_deployment_outputs(
-    deployment_outputs: Dict[str, Any],
-    expected_format: VisualisationResponseFormat,
-) -> Dict[str, Any]:
-    result = {}
-    for key, value in deployment_outputs.items():
-        if is_deployment_image(value=value):
-            value = decode_deployment_output_image(
-                value=value,
-                expected_format=expected_format,
-            )
-        elif issubclass(type(value), list):
-            value = decode_deployment_output_list(
-                elements=value,
-                expected_format=expected_format,
-            )
-        result[key] = value
-    return result
-
-
-def decode_deployment_output_list(
-    elements: List[Any],
-    expected_format: VisualisationResponseFormat,
-) -> List[Any]:
-    result = []
-    for element in elements:
-        if is_deployment_image(value=element):
-            element = decode_deployment_output_image(
-                value=element,
-                expected_format=expected_format,
-            )
-        result.append(element)
-    return result
-
-
-def is_deployment_image(value: Any) -> bool:
-    return issubclass(type(value), dict) and value.get("type") == "base64"
-
-
-def decode_deployment_output_image(
-    value: Dict[str, Any],
-    expected_format: VisualisationResponseFormat,
-) -> Dict[str, Any]:
-    if expected_format is VisualisationResponseFormat.BASE64:
-        return value
-    if expected_format is VisualisationResponseFormat.NUMPY:
-        value["type"] = "numpy_object"
-    else:
-        value["type"] = "pil"
-    value["value"] = transform_base64_visualisation(
-        visualisation=value["value"],
-        expected_format=expected_format,
-    )
-    return value
 
 
 def response_contains_jpeg_image(response: Response) -> bool:

@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
+import aiohttp
 import numpy as np
 import requests
 from requests import HTTPError
@@ -27,9 +28,11 @@ from inference_sdk.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
-from inference_sdk.http.utils.iterables import unwrap_single_element_list
+from inference_sdk.http.utils.executors import RequestMethod, execute_requests_packages
+from inference_sdk.http.utils.iterables import make_batches, unwrap_single_element_list
 from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
+    load_static_inference_input_async,
     load_stream_inference_input,
 )
 from inference_sdk.http.utils.post_processing import (
@@ -38,6 +41,10 @@ from inference_sdk.http.utils.post_processing import (
     response_contains_jpeg_image,
     transform_base64_visualisation,
     transform_visualisation_bytes,
+)
+from inference_sdk.http.utils.request_building import (
+    ImagePlacement,
+    prepare_requests_data,
 )
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
@@ -223,16 +230,22 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+        requests_data = prepare_requests_data(
+            url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=params,
+            payload=None,
+            max_batch_size=1,
+            image_placement=ImagePlacement.DATA,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
         results = []
-        for element in encoded_inference_inputs:
-            image, scaling_factor = element
-            response = requests.post(
-                f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
-                headers=DEFAULT_HEADERS,
-                params=params,
-                data=image,
-            )
-            api_key_safe_raise_for_status(response=response)
+        for request_data, response in zip(requests_data, responses):
             if response_contains_jpeg_image(response=response):
                 visualisation = transform_visualisation_bytes(
                     visualisation=response.content,
@@ -243,10 +256,65 @@ class InferenceHTTPClient:
                 parsed_response = response.json()
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
-                scaling_factor=scaling_factor,
+                scaling_factor=request_data.image_scaling_factors,
             )
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
+
+    # async def infer_from_api_v0_async(
+    #     self,
+    #     inference_input: Union[ImagesReference, List[ImagesReference]],
+    #     model_id: Optional[str] = None,
+    # ) -> Union[dict, List[dict]]:
+    #     model_id_to_be_used = model_id or self.__selected_model
+    #     _ensure_model_is_selected(model_id=model_id_to_be_used)
+    #     model_id_chunks = model_id_to_be_used.split("/")
+    #     if len(model_id_chunks) != 2:
+    #         raise InvalidModelIdentifier(
+    #             f"Invalid model identifier: {model_id} in use."
+    #         )
+    #     max_height, max_width = _determine_client_downsizing_parameters(
+    #         client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+    #         model_description=None,
+    #         default_max_input_size=self.__inference_configuration.default_max_input_size,
+    #     )
+    #     encoded_inference_inputs = await load_static_inference_input_async(
+    #         inference_input=inference_input,
+    #         max_height=max_height,
+    #         max_width=max_width,
+    #     )
+    #     batched_encoded_inference_inputs = make_batches(
+    #         iterable=encoded_inference_inputs,
+    #         batch_size=self.__inference_configuration.max_concurent_requests,
+    #     )
+    #     params = {
+    #         "api_key": self.__api_key,
+    #     }
+    #     params.update(self.__inference_configuration.to_legacy_call_parameters())
+    #     results = []
+    #     for element in encoded_inference_inputs:
+    #         image, scaling_factor = element
+    #         response = requests.post(
+    #             f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
+    #             headers=DEFAULT_HEADERS,
+    #             params=params,
+    #             data=image,
+    #         )
+    #         api_key_safe_raise_for_status(response=response)
+    #         if response_contains_jpeg_image(response=response):
+    #             visualisation = transform_visualisation_bytes(
+    #                 visualisation=response.content,
+    #                 expected_format=self.__inference_configuration.output_visualisation_format,
+    #             )
+    #             parsed_response = {"visualization": visualisation}
+    #         else:
+    #             parsed_response = response.json()
+    #         parsed_response = adjust_prediction_to_client_scaling_factor(
+    #             prediction=parsed_response,
+    #             scaling_factor=scaling_factor,
+    #         )
+    #         results.append(parsed_response)
+    #     return unwrap_single_element_list(sequence=results)
 
     def infer_from_api_v1(
         self,
@@ -282,27 +350,40 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        requests_data = prepare_requests_data(
+            url=f"{self.__api_url}{endpoint}",
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.DATA,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
         results = []
-        for element in encoded_inference_inputs:
-            image, scaling_factor = element
-            payload["image"] = {"type": "base64", "value": image}
-            response = requests.post(
-                f"{self.__api_url}{endpoint}",
-                json=payload,
-                headers=DEFAULT_HEADERS,
-            )
-            api_key_safe_raise_for_status(response=response)
+        for request_data, response in zip(requests_data, responses):
             parsed_response = response.json()
-            if parsed_response.get("visualization") is not None:
-                parsed_response["visualization"] = transform_base64_visualisation(
-                    visualisation=parsed_response["visualization"],
-                    expected_format=self.__inference_configuration.output_visualisation_format,
+            if not issubclass(type(parsed_response), list):
+                parsed_response = []
+            for parsed_response_element, scaling_factor in zip(
+                parsed_response, request_data.image_scaling_factors
+            ):
+                if parsed_response_element.get("visualization") is not None:
+                    parsed_response_element[
+                        "visualization"
+                    ] = transform_base64_visualisation(
+                        visualisation=parsed_response_element["visualization"],
+                        expected_format=self.__inference_configuration.output_visualisation_format,
+                    )
+                parsed_response_element = adjust_prediction_to_client_scaling_factor(
+                    prediction=parsed_response_element,
+                    scaling_factor=scaling_factor,
                 )
-            parsed_response = adjust_prediction_to_client_scaling_factor(
-                prediction=parsed_response,
-                scaling_factor=scaling_factor,
-            )
-            results.append(parsed_response)
+                results.append(parsed_response_element)
         return unwrap_single_element_list(sequence=results)
 
     def get_model_description(
