@@ -89,10 +89,13 @@ def get_inference_results_for_model(
         # Don't send large image files
         if result.get("request", {}).get("image"):
             del result["request"]["image"]
-        if result.get("response", {}).get("image"):
-            for image in result["response"]["image"]:
-                if image["type"] != "url":
-                    del image["image"]
+        responses = result.get("response")
+        if responses:
+            if not isinstance(responses, list):
+                responses = [responses]
+            for resp in responses:
+                if resp.get("image"):
+                    del resp["image"]
         inference_results.append({"request_time": score, "inference": result})
 
     return inference_results
