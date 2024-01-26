@@ -122,6 +122,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.deployments.complier.core import compile_and_execute_async
+from inference.enterprise.deployments.complier.entities import StepExecutionMode
 from inference.enterprise.deployments.errors import (
     DeploymentCompilerError,
     RuntimePayloadError,
@@ -318,6 +319,7 @@ class HttpInterface(BaseInterface):
                 runtime_parameters=deployment_request.runtime_parameters,
                 model_manager=model_manager,
                 api_key=deployment_request.api_key,
+                step_execution_mode=StepExecutionMode.REMOTE,
             )
             deployment_outputs = serialise_deployment_workflow_result(
                 result=result,
