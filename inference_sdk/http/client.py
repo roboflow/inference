@@ -1,3 +1,4 @@
+import itertools
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -41,6 +42,8 @@ from inference_sdk.http.utils.loaders import (
 )
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
+    combine_clip_embeddings,
+    combine_gaze_detections,
     decode_deployment_outputs,
     response_contains_jpeg_image,
     transform_base64_visualisation,
@@ -670,7 +673,7 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
             parameters=None,
             payload=payload,
-            max_batch_size=self.__inference_configuration.max_batch_size,
+            max_batch_size=1,
             image_placement=ImagePlacement.JSON,
         )
         responses = execute_requests_packages(
@@ -697,7 +700,7 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
             parameters=None,
             payload=payload,
-            max_batch_size=self.__inference_configuration.max_batch_size,
+            max_batch_size=1,
             image_placement=ImagePlacement.JSON,
         )
         responses = await execute_requests_packages_async(
@@ -713,37 +716,45 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
         self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        return self._post_images(
+        result = self._post_images(
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
         )
+        return combine_gaze_detections(detections=result)
 
     @wrap_errors
-    async def detect_gazes(
+    async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
         self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        return await self._post_images_async(
+        result = await self._post_images_async(
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
         )
+        return combine_gaze_detections(detections=result)
 
     @wrap_errors
     def get_clip_image_embeddings(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        return self._post_images(
-            inference_input=inference_input, endpoint="/clip/embed_image"
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/clip/embed_image",
         )
+        result = combine_clip_embeddings(embeddings=result)
+        return unwrap_single_element_list(result)
 
     @wrap_errors
     async def get_clip_image_embeddings_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        return await self._post_images_async(
-            inference_input=inference_input, endpoint="/clip/embed_image"
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/clip/embed_image",
         )
+        result = combine_clip_embeddings(embeddings=result)
+        return unwrap_single_element_list(result)
 
     @wrap_errors
     def get_clip_text_embeddings(
@@ -760,7 +771,7 @@ class InferenceHTTPClient:
         return unwrap_single_element_list(sequence=response.json())
 
     @wrap_errors
-    async def get_clip_text_embeddings(
+    async def get_clip_text_embeddings_async(
         self, text: Union[str, List[str]]
     ) -> Union[dict, List[dict]]:
         payload = self.__initialise_payload()

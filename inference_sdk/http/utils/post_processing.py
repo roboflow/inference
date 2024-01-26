@@ -1,4 +1,5 @@
 import base64
+import itertools
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -211,3 +212,30 @@ def adjust_points_coordinates_to_client_scaling_factor(
         point["y"] = point["y"] / scaling_factor
         result.append(point)
     return result
+
+
+def combine_gaze_detections(
+    detections: Union[dict, List[Union[dict, List[dict]]]]
+) -> Union[dict, List[Dict]]:
+    if not issubclass(type(detections), list):
+        return detections
+    detections = [e if issubclass(type(e), list) else [e] for e in detections]
+    return list(itertools.chain.from_iterable(detections))
+
+
+def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:
+    if issubclass(type(embeddings), list):
+        result = []
+        for e in embeddings:
+            result.extend(combine_clip_embeddings(embeddings=e))
+        return result
+    frame_id = embeddings["frame_id"]
+    time = embeddings["time"]
+    if len(embeddings["embeddings"]) > 1:
+        new_embeddings = [
+            {"frame_id": frame_id, "time": time, "embeddings": [e]}
+            for e in embeddings["embeddings"]
+        ]
+    else:
+        new_embeddings = [embeddings]
+    return new_embeddings

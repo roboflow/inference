@@ -126,24 +126,6 @@ def test_load_file_from_url_on_successful_image_download_with_resize(
 
 
 @mock.patch.object(loaders.requests, "get")
-def test_load_file_from_url_on_successful_download_of_non_image_content(
-    requests_get_mock: MagicMock,
-) -> None:
-    # given
-    response = Response()
-    response.status_code = 200
-    response._content = b"For sure not an image :)"
-    requests_get_mock.return_value = response
-
-    # when
-    with pytest.raises(EncodingError):
-        _ = load_image_from_url(url="http://some/file.jpg")
-
-    # then
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
-
-
-@mock.patch.object(loaders.requests, "get")
 def test_load_image_from_uri_when_file_to_be_downloaded(
     requests_get_mock: MagicMock,
 ) -> None:

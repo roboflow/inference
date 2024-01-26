@@ -1742,7 +1742,7 @@ def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
         parameters={
             "some": 10,
         },
-        excluded_fields=["some"]
+        excluded_fields=["some"],
     )
 
     # then
@@ -1805,8 +1805,7 @@ def test_infer_from_deployment_when_both_deployment_name_and_specs_given() -> No
     # when
     with pytest.raises(InvalidParameterError):
         _ = http_client.infer_from_deployment(
-            deployment_name="some",
-            deployment_specification={"some": "specs"}
+            deployment_name="some", deployment_specification={"some": "specs"}
         )
 
 
@@ -1838,7 +1837,7 @@ def test_infer_from_deployment_when_custom_deployment_used_and_arameters_and_exc
         parameters={
             "some": 10,
         },
-        excluded_fields=["some"]
+        excluded_fields=["some"],
     )
 
     # then
