@@ -28,8 +28,12 @@ from inference_sdk.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
-from inference_sdk.http.utils.executors import RequestMethod, execute_requests_packages
-from inference_sdk.http.utils.iterables import make_batches, unwrap_single_element_list
+from inference_sdk.http.utils.executors import (
+    RequestMethod,
+    execute_requests_packages,
+    execute_requests_packages_async,
+)
+from inference_sdk.http.utils.iterables import unwrap_single_element_list
 from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
     load_static_inference_input_async,
@@ -204,6 +208,22 @@ class InferenceHTTPClient:
             model_id=model_id,
         )
 
+    @wrap_errors
+    async def infer_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        if self.__client_mode is HTTPClientMode.V0:
+            return await self.infer_from_api_v0_async(
+                inference_input=inference_input,
+                model_id=model_id,
+            )
+        return await self.infer_from_api_v1_async(
+            inference_input=inference_input,
+            model_id=model_id,
+        )
+
     def infer_from_api_v0(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -256,65 +276,67 @@ class InferenceHTTPClient:
                 parsed_response = response.json()
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
-                scaling_factor=request_data.image_scaling_factors,
+                scaling_factor=request_data.image_scaling_factors[0],
             )
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
-    # async def infer_from_api_v0_async(
-    #     self,
-    #     inference_input: Union[ImagesReference, List[ImagesReference]],
-    #     model_id: Optional[str] = None,
-    # ) -> Union[dict, List[dict]]:
-    #     model_id_to_be_used = model_id or self.__selected_model
-    #     _ensure_model_is_selected(model_id=model_id_to_be_used)
-    #     model_id_chunks = model_id_to_be_used.split("/")
-    #     if len(model_id_chunks) != 2:
-    #         raise InvalidModelIdentifier(
-    #             f"Invalid model identifier: {model_id} in use."
-    #         )
-    #     max_height, max_width = _determine_client_downsizing_parameters(
-    #         client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
-    #         model_description=None,
-    #         default_max_input_size=self.__inference_configuration.default_max_input_size,
-    #     )
-    #     encoded_inference_inputs = await load_static_inference_input_async(
-    #         inference_input=inference_input,
-    #         max_height=max_height,
-    #         max_width=max_width,
-    #     )
-    #     batched_encoded_inference_inputs = make_batches(
-    #         iterable=encoded_inference_inputs,
-    #         batch_size=self.__inference_configuration.max_concurent_requests,
-    #     )
-    #     params = {
-    #         "api_key": self.__api_key,
-    #     }
-    #     params.update(self.__inference_configuration.to_legacy_call_parameters())
-    #     results = []
-    #     for element in encoded_inference_inputs:
-    #         image, scaling_factor = element
-    #         response = requests.post(
-    #             f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
-    #             headers=DEFAULT_HEADERS,
-    #             params=params,
-    #             data=image,
-    #         )
-    #         api_key_safe_raise_for_status(response=response)
-    #         if response_contains_jpeg_image(response=response):
-    #             visualisation = transform_visualisation_bytes(
-    #                 visualisation=response.content,
-    #                 expected_format=self.__inference_configuration.output_visualisation_format,
-    #             )
-    #             parsed_response = {"visualization": visualisation}
-    #         else:
-    #             parsed_response = response.json()
-    #         parsed_response = adjust_prediction_to_client_scaling_factor(
-    #             prediction=parsed_response,
-    #             scaling_factor=scaling_factor,
-    #         )
-    #         results.append(parsed_response)
-    #     return unwrap_single_element_list(sequence=results)
+    async def infer_from_api_v0_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id_chunks = model_id_to_be_used.split("/")
+        if len(model_id_chunks) != 2:
+            raise InvalidModelIdentifier(
+                f"Invalid model identifier: {model_id} in use."
+            )
+        max_height, max_width = _determine_client_downsizing_parameters(
+            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+            model_description=None,
+            default_max_input_size=self.__inference_configuration.default_max_input_size,
+        )
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
+        )
+        params = {
+            "api_key": self.__api_key,
+        }
+        params.update(self.__inference_configuration.to_legacy_call_parameters())
+        requests_data = prepare_requests_data(
+            url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=params,
+            payload=None,
+            max_batch_size=1,
+            image_placement=ImagePlacement.DATA,
+        )
+        responses = await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        results = []
+        for request_data, response in zip(requests_data, responses):
+            if not issubclass(type(response), dict):
+                visualisation = transform_visualisation_bytes(
+                    visualisation=response,
+                    expected_format=self.__inference_configuration.output_visualisation_format,
+                )
+                parsed_response = {"visualization": visualisation}
+            else:
+                parsed_response = response
+            parsed_response = adjust_prediction_to_client_scaling_factor(
+                prediction=parsed_response,
+                scaling_factor=request_data.image_scaling_factors[0],
+            )
+            results.append(parsed_response)
+        return unwrap_single_element_list(sequence=results)
 
     def infer_from_api_v1(
         self,
@@ -357,7 +379,7 @@ class InferenceHTTPClient:
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
-            image_placement=ImagePlacement.DATA,
+            image_placement=ImagePlacement.JSON,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -368,7 +390,78 @@ class InferenceHTTPClient:
         for request_data, response in zip(requests_data, responses):
             parsed_response = response.json()
             if not issubclass(type(parsed_response), list):
-                parsed_response = []
+                parsed_response = [parsed_response]
+            for parsed_response_element, scaling_factor in zip(
+                parsed_response, request_data.image_scaling_factors
+            ):
+                if parsed_response_element.get("visualization") is not None:
+                    parsed_response_element[
+                        "visualization"
+                    ] = transform_base64_visualisation(
+                        visualisation=parsed_response_element["visualization"],
+                        expected_format=self.__inference_configuration.output_visualisation_format,
+                    )
+                parsed_response_element = adjust_prediction_to_client_scaling_factor(
+                    prediction=parsed_response_element,
+                    scaling_factor=scaling_factor,
+                )
+                results.append(parsed_response_element)
+        return unwrap_single_element_list(sequence=results)
+
+    async def infer_from_api_v1_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()
+        model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_description = await self.get_model_description_async(
+            model_id=model_id_to_be_used
+        )
+        max_height, max_width = _determine_client_downsizing_parameters(
+            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+            model_description=model_description,
+            default_max_input_size=self.__inference_configuration.default_max_input_size,
+        )
+        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
+            raise ModelTaskTypeNotSupportedError(
+                f"Model task {model_description.task_type} is not supported by API v1 client."
+            )
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
+        )
+        payload = {
+            "api_key": self.__api_key,
+            "model_id": model_id_to_be_used,
+        }
+        endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
+        payload.update(
+            self.__inference_configuration.to_api_call_parameters(
+                client_mode=self.__client_mode,
+                task_type=model_description.task_type,
+            )
+        )
+        requests_data = prepare_requests_data(
+            url=f"{self.__api_url}{endpoint}",
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        results = []
+        for request_data, parsed_response in zip(requests_data, responses):
+            if not issubclass(type(parsed_response), list):
+                parsed_response = [parsed_response]
             for parsed_response_element, scaling_factor in zip(
                 parsed_response, request_data.image_scaling_factors
             ):
@@ -403,6 +496,25 @@ class InferenceHTTPClient:
             f"Model {model_id} is not initialised and cannot retrieve its description."
         )
 
+    async def get_model_description_async(
+        self, model_id: str, allow_loading: bool = True
+    ) -> ModelDescription:
+        self.__ensure_v1_client_mode()
+        registered_models = await self.list_loaded_models_async()
+        matching_models = [
+            e for e in registered_models.models if e.model_id == model_id
+        ]
+        if len(matching_models) > 0:
+            return matching_models[0]
+        if allow_loading is True:
+            await self.load_model_async(model_id=model_id)
+            return await self.get_model_description_async(
+                model_id=model_id, allow_loading=False
+            )
+        raise ModelNotInitializedError(
+            f"Model {model_id} is not initialised and cannot retrieve its description."
+        )
+
     @wrap_errors
     def list_loaded_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
@@ -410,6 +522,15 @@ class InferenceHTTPClient:
         response.raise_for_status()
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
+
+    @wrap_errors
+    async def list_loaded_models_async(self) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.__api_url}/model/registry") as response:
+                response.raise_for_status()
+                response_payload = await response.json()
+                return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
     def load_model(
@@ -431,6 +552,27 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
+    async def load_model_async(
+        self, model_id: str, set_as_default: bool = False
+    ) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
+        payload = {
+            "model_id": model_id,
+            "api_key": self.__api_key,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.__api_url}/model/add",
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                response_payload = await response.json()
+        if set_as_default:
+            self.__selected_model = model_id
+        return RegisteredModels.from_dict(response_payload)
+
+    @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         response = requests.post(
@@ -447,11 +589,38 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
+    async def unload_model_async(self, model_id: str) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.__api_url}/model/remove",
+                json={
+                    "model_id": model_id,
+                },
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                response_payload = await response.json()
+        if model_id == self.__selected_model:
+            self.__selected_model = None
+        return RegisteredModels.from_dict(response_payload)
+
+    @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         response = requests.post(f"{self.__api_url}/model/clear")
         response.raise_for_status()
         response_payload = response.json()
+        self.__selected_model = None
+        return RegisteredModels.from_dict(response_payload)
+
+    @wrap_errors
+    async def unload_all_models_async(self) -> RegisteredModels:
+        self.__ensure_v1_client_mode()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{self.__api_url}/model/clear") as response:
+                response.raise_for_status()
+                response_payload = await response.json()
         self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
 
@@ -494,18 +663,49 @@ class InferenceHTTPClient:
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
-        results = []
-        for element in encoded_inference_inputs:
-            image, _ = element
-            payload["image"] = {"type": "base64", "value": image}
-            response = requests.post(
-                self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr"),
-                json=payload,
-                headers=DEFAULT_HEADERS,
-            )
-            api_key_safe_raise_for_status(response=response)
-            results.append(response.json())
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
+
+    @wrap_errors
+    async def ocr_image_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        return unwrap_single_element_list(sequence=responses)
 
     @wrap_errors
     def detect_gazes(
@@ -518,11 +718,30 @@ class InferenceHTTPClient:
         )
 
     @wrap_errors
+    async def detect_gazes(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
+        return await self._post_images_async(
+            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        )
+
+    @wrap_errors
     def get_clip_image_embeddings(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
         return self._post_images(
+            inference_input=inference_input, endpoint="/clip/embed_image"
+        )
+
+    @wrap_errors
+    async def get_clip_image_embeddings_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+    ) -> Union[dict, List[dict]]:
+        return await self._post_images_async(
             inference_input=inference_input, endpoint="/clip/embed_image"
         )
 
@@ -539,6 +758,22 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
+
+    @wrap_errors
+    async def get_clip_text_embeddings(
+        self, text: Union[str, List[str]]
+    ) -> Union[dict, List[dict]]:
+        payload = self.__initialise_payload()
+        payload["text"] = text
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                response_payload = await response.json()
+        return unwrap_single_element_list(sequence=response_payload)
 
     @wrap_errors
     def clip_compare(
@@ -586,6 +821,55 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
+
+    @wrap_errors
+    async def clip_compare_async(
+        self,
+        subject: Union[str, ImagesReference],
+        prompt: Union[str, List[str], ImagesReference, List[ImagesReference]],
+        subject_type: str = "image",
+        prompt_type: str = "text",
+    ) -> Union[dict, List[dict]]:
+        """
+        Both `subject_type` and `prompt_type` must be either "image" or "text"
+        """
+        if (
+            subject_type not in CLIP_ARGUMENT_TYPES
+            or prompt_type not in CLIP_ARGUMENT_TYPES
+        ):
+            raise InvalidParameterError(
+                f"Could not accept `subject_type` and `prompt_type` with values different than {CLIP_ARGUMENT_TYPES}"
+            )
+        payload = self.__initialise_payload()
+        payload["subject_type"] = subject_type
+        payload["prompt_type"] = prompt_type
+        if subject_type == "image":
+            encoded_image = await load_static_inference_input_async(
+                inference_input=subject,
+            )
+            payload = inject_images_into_payload(
+                payload=payload, encoded_images=encoded_image, key="subject"
+            )
+        else:
+            payload["subject"] = subject
+        if prompt_type == "image":
+            encoded_inference_inputs = await load_static_inference_input_async(
+                inference_input=prompt,
+            )
+            payload = inject_images_into_payload(
+                payload=payload, encoded_images=encoded_inference_inputs, key="prompt"
+            )
+        else:
+            payload["prompt"] = prompt
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
 
     @wrap_errors
     def infer_from_deployment(
@@ -662,17 +946,52 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         if model_id is not None:
             payload["model_id"] = model_id
-        payload = inject_images_into_payload(
-            payload=payload,
-            encoded_images=encoded_inference_inputs,
-        )
-        response = requests.post(
-            self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}"),
-            json=payload,
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
             headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.JSON,
         )
-        api_key_safe_raise_for_status(response=response)
-        return unwrap_single_element_list(sequence=response.json())
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        results = [r.json() for r in responses]
+        return unwrap_single_element_list(sequence=results)
+
+    async def _post_images_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        endpoint: str,
+        model_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        if model_id is not None:
+            payload["model_id"] = model_id
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=self.__inference_configuration.max_batch_size,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+        )
+        return unwrap_single_element_list(sequence=responses)
 
     def __initialise_payload(self) -> dict:
         if self.__client_mode is not HTTPClientMode.V0:
