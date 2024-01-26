@@ -12,7 +12,7 @@ from inference_cli.lib import (
 )
 
 cloud_app = typer.Typer(
-    help="""Commands for running the inference in cloud with skypilot . \n 
+    help="""Commands for running the inference in cloud with skypilot. \n 
     Supported devices targets are x86 CPU and NVIDIA GPU VMs."""
 )
 

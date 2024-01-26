@@ -1,0 +1,9 @@
+annotators:
+  - type: "bounding_box"
+    params:
+      thickness: 2
+  - type: "label"
+    params:
+      text_scale: 0.5
+      text_thickness: 2
+      text_padding: 5

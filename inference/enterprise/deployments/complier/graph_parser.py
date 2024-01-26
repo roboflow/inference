@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import networkx as nx
 from networkx import DiGraph
@@ -25,6 +25,7 @@ from inference.enterprise.deployments.entities.deployment_specs import (
     StepType,
 )
 from inference.enterprise.deployments.entities.outputs import JsonField
+from inference.enterprise.deployments.entities.steps import StepInterface
 from inference.enterprise.deployments.entities.validators import is_selector
 from inference.enterprise.deployments.errors import (
     AmbiguousPathDetected,
@@ -394,16 +395,40 @@ def verify_step_inputs_selectors(step: str, execution_graph: nx.DiGraph) -> None
     all_inputs = step_definition.get_input_names()
     for input_step in all_inputs:
         input_selector_or_value = getattr(step_definition, input_step)
-        if not is_selector(selector_or_value=input_selector_or_value):
-            continue
-        if is_step_output_selector(selector_or_value=input_selector_or_value):
-            input_selector_or_value = get_step_selector_from_its_output(
-                step_output_selector=input_selector_or_value
+        if issubclass(type(input_selector_or_value), list):
+            for idx, single_selector_or_value in enumerate(input_selector_or_value):
+                validate_step_definition_input(
+                    step_definition=step_definition,
+                    input_name=input_step,
+                    execution_graph=execution_graph,
+                    input_selector_or_value=single_selector_or_value,
+                    index=idx,
+                )
+        else:
+            validate_step_definition_input(
+                step_definition=step_definition,
+                input_name=input_step,
+                execution_graph=execution_graph,
+                input_selector_or_value=input_selector_or_value,
             )
-        input_node_definition = execution_graph.nodes[input_selector_or_value][
-            "definition"
-        ]
-        step_definition.validate_field_selector(
-            field_name=input_step,
-            input_step=input_node_definition,
+
+
+def validate_step_definition_input(
+    step_definition: StepInterface,
+    input_name: str,
+    execution_graph: nx.DiGraph,
+    input_selector_or_value: Any,
+    index: Optional[int] = None,
+) -> None:
+    if not is_selector(selector_or_value=input_selector_or_value):
+        return None
+    if is_step_output_selector(selector_or_value=input_selector_or_value):
+        input_selector_or_value = get_step_selector_from_its_output(
+            step_output_selector=input_selector_or_value
         )
+    input_node_definition = execution_graph.nodes[input_selector_or_value]["definition"]
+    step_definition.validate_field_selector(
+        field_name=input_name,
+        input_step=input_node_definition,
+        index=index,
+    )

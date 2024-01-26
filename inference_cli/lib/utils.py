@@ -1,4 +1,8 @@
-from typing import Dict, List
+import json
+import os.path
+from typing import Any, Dict, List, Union
+
+import yaml
 
 from inference_cli.lib.logger import CLI_LOGGER
 
@@ -21,3 +25,10 @@ def read_env_file(path: str) -> Dict[str, str]:
 def read_file_lines(path: str) -> List[str]:
     with open(path, "r") as f:
         return [line.strip() for line in f.readlines() if len(line.strip()) > 0]
+
+
+def dump_json(path: str, content: Union[dict, list]) -> None:
+    parent_dir = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(content, f)
