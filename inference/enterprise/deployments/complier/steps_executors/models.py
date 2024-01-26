@@ -1,8 +1,7 @@
+import asyncio
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-import numpy as np
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -36,6 +35,7 @@ from inference.enterprise.deployments.complier.steps_executors.types import (
 )
 from inference.enterprise.deployments.complier.steps_executors.utils import (
     get_image,
+    make_batches,
     resolve_parameter,
 )
 from inference.enterprise.deployments.complier.utils import construct_step_selector
@@ -392,6 +392,35 @@ async def run_ocr_model_step(
     )
     if not issubclass(type(image), list):
         image = [image]
+    if step_execution_mode is StepExecutionMode.LOCAL:
+        serialised_result = await get_ocr_predictions_locally(
+            image=image,
+            model_manager=model_manager,
+            api_key=api_key,
+        )
+    else:
+        serialised_result = get_ocr_predictions_from_remote_api(
+            step=step,
+            image=image,
+            api_key=api_key,
+        )
+    if len(serialised_result) == 1:
+        serialised_result = serialised_result[0]
+        image = image[0]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def get_ocr_predictions_locally(
+    image: List[dict],
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> List[dict]:
     serialised_result = []
     for single_image in image:
         inference_request = DoctrOCRInferenceRequest(
@@ -407,16 +436,27 @@ async def run_ocr_model_step(
             doctr_model_id, inference_request
         )
         serialised_result.append(result.dict())
-    if len(serialised_result) == 1:
-        serialised_result = serialised_result[0]
-        image = image[0]
-    serialised_result = attach_parent_info(
-        image=image,
-        results=serialised_result,
-        nested_key=None,
+    return serialised_result
+
+
+async def get_ocr_predictions_from_remote_api(
+    step: OCRModel,
+    image: List[dict],
+    api_key: Optional[str],
+) -> List[dict]:
+    api_url = resolve_model_api_url(step=step)
+    client = InferenceHTTPClient(
+        api_url=api_url,
+        api_key=api_key,
     )
-    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
-    return None, outputs_lookup
+    configuration = InferenceConfiguration(
+        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    )
+    client.configure(configuration)
+    return await client.ocr_image_async(
+        inference_input=[i["value"] for i in image],
+    )
 
 
 async def run_clip_comparison_step(
@@ -439,6 +479,38 @@ async def run_clip_comparison_step(
     )
     if not issubclass(type(image), list):
         image = [image]
+    if step_execution_mode is StepExecutionMode.LOCAL:
+        serialised_result = await get_clip_comparison_locally(
+            image=image,
+            text=text,
+            model_manager=model_manager,
+            api_key=api_key,
+        )
+    else:
+        serialised_result = await get_clip_comparison_from_remote_api(
+            step=step,
+            image=image,
+            text=text,
+            api_key=api_key,
+        )
+    if len(serialised_result) == 1:
+        serialised_result = serialised_result[0]
+        image = image[0]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def get_clip_comparison_locally(
+    image: List[dict],
+    text: str,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> List[dict]:
     serialised_result = []
     for single_image in image:
         inference_request = ClipCompareRequest(
@@ -454,16 +526,38 @@ async def run_clip_comparison_step(
             doctr_model_id, inference_request
         )
         serialised_result.append(result.dict())
-    if len(serialised_result) == 1:
-        serialised_result = serialised_result[0]
-        image = image[0]
-    serialised_result = attach_parent_info(
-        image=image,
-        results=serialised_result,
-        nested_key=None,
+    return serialised_result
+
+
+async def get_clip_comparison_from_remote_api(
+    step: ClipComparison,
+    image: List[dict],
+    text: str,
+    api_key: Optional[str],
+) -> List[dict]:
+    api_url = resolve_model_api_url(step=step)
+    client = InferenceHTTPClient(
+        api_url=api_url,
+        api_key=api_key,
     )
-    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
-    return None, outputs_lookup
+    image_batches = list(
+        make_batches(
+            iterable=image,
+            batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        )
+    )
+    serialised_result = []
+    for single_batch in image_batches:
+        coroutines = []
+        for single_image in single_batch:
+            coroutine = client.clip_compare_async(
+                subject=single_image["value"],
+                prompt=text,
+            )
+            coroutines.append(coroutine)
+        batch_results = list(await asyncio.gather(*coroutines))
+        serialised_result.extend(batch_results)
+    return serialised_result
 
 
 def load_core_model(

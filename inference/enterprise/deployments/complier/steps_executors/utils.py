@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict, Generator, Iterable, List, TypeVar, Union
 
 from inference.enterprise.deployments.complier.steps_executors.types import (
     OutputsLookup,
@@ -21,6 +21,8 @@ from inference.enterprise.deployments.entities.validators import (
     is_selector,
 )
 from inference.enterprise.deployments.errors import ExecutionGraphError
+
+T = TypeVar("T")
 
 
 def get_image(
@@ -65,3 +67,17 @@ def resolve_parameter(
             ]
         return step_output[get_last_selector_chunk(selector=selector_or_value)]
     return runtime_parameters[get_last_selector_chunk(selector=selector_or_value)]
+
+
+def make_batches(
+    iterable: Iterable[T], batch_size: int
+) -> Generator[List[T], None, None]:
+    batch_size = max(batch_size, 1)
+    batch = []
+    for element in iterable:
+        batch.append(element)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if len(batch) > 0:
+        yield batch
