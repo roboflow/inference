@@ -20,9 +20,11 @@ ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 # Base URL for the API
 API_BASE_URL = os.getenv(
     "API_BASE_URL",
-    "https://api.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://api.roboflow.one",
+    (
+        "https://api.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://api.roboflow.one"
+    ),
 )
 
 # Debug flag for the API, default is False
@@ -118,9 +120,11 @@ DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
     "ELASTICACHE_ENDPOINT",
-    "roboflow-infer-prod.ljzegl.cfg.use2.cache.amazonaws.com:11211"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
+    (
+        "roboflow-infer-prod.ljzegl.cfg.use2.cache.amazonaws.com:11211"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211"
+    ),
 )
 
 # Flag to enable byte track, default is False
@@ -278,17 +282,21 @@ METLO_KEY = os.getenv("METLO_KEY", None)
 # Core model bucket
 CORE_MODEL_BUCKET = os.getenv(
     "CORE_MODEL_BUCKET",
-    "roboflow-core-model-prod"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-core-model-staging",
+    (
+        "roboflow-core-model-prod"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-core-model-staging"
+    ),
 )
 
 # Inference bucket
 INFER_BUCKET = os.getenv(
     "INFER_BUCKET",
-    "roboflow-infer-prod"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-infer-staging",
+    (
+        "roboflow-infer-prod"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-infer-staging"
+    ),
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))

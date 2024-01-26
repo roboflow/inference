@@ -140,9 +140,11 @@ async def make_request_async(
     parameters_serialised = None
     if request_data.parameters is not None:
         parameters_serialised = {
-            name: str(value)
-            if not issubclass(type(value), list)
-            else [str(e) for e in value]
+            name: (
+                str(value)
+                if not issubclass(type(value), list)
+                else [str(e) for e in value]
+            )
             for name, value in request_data.parameters.items()
         }
     async with method(

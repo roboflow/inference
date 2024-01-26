@@ -56,4 +56,6 @@ class DeploymentSpecV1(BaseModel):
 
 
 class DeploymentSpecification(BaseModel):
-    specification: DeploymentSpecV1  # in the future - union with discriminator can be used
+    specification: (
+        DeploymentSpecV1  # in the future - union with discriminator can be used
+    )
