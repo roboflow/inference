@@ -10,6 +10,7 @@ import numpy as np
 
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import ImageType, load_image
+from inference.enterprise.deployments.complier.entities import StepExecutionMode
 from inference.enterprise.deployments.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
@@ -78,6 +79,7 @@ async def run_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
@@ -144,6 +146,7 @@ async def run_condition_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     left_value = resolve_parameter(
         selector_or_value=step.left,
@@ -166,6 +169,7 @@ async def run_detection_filter(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     predictions = resolve_parameter(
         selector_or_value=step.predictions,
@@ -232,6 +236,7 @@ async def run_detection_offset_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     detections = resolve_parameter(
         selector_or_value=step.predictions,
@@ -307,6 +312,7 @@ async def run_static_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
@@ -404,6 +410,7 @@ async def run_detections_consensus_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     resolve_parameter_closure = partial(
         resolve_parameter,

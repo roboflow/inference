@@ -4,6 +4,7 @@ import networkx as nx
 from networkx import DiGraph
 
 from inference.core.managers.base import ModelManager
+from inference.enterprise.deployments.complier.entities import StepExecutionMode
 from inference.enterprise.deployments.complier.runtime_input_validator import (
     prepare_runtime_parameters,
 )
@@ -56,6 +57,7 @@ async def execute_graph(
     runtime_parameters: Dict[str, Any],
     model_manager: ModelManager,
     api_key: Optional[str] = None,
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     runtime_parameters = prepare_runtime_parameters(
         execution_graph=execution_graph,
@@ -80,6 +82,7 @@ async def execute_graph(
             outputs_lookup=outputs_lookup,
             model_manager=model_manager,
             api_key=api_key,
+            step_execution_mode=step_execution_mode,
         )
         if is_condition_step(execution_graph=execution_graph, node=step):
             if execution_graph.nodes[step]["definition"].step_if_true == next_step:

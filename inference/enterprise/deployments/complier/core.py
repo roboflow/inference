@@ -6,6 +6,7 @@ from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.enterprise.deployments.complier.entities import StepExecutionMode
 from inference.enterprise.deployments.complier.execution_engine import execute_graph
 from inference.enterprise.deployments.complier.graph_parser import (
     prepare_execution_graph,
@@ -24,6 +25,7 @@ def compile_and_execute(
     api_key: Optional[str] = None,
     model_manager: Optional[ModelManager] = None,
     loop: Optional[AbstractEventLoop] = None,
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -33,6 +35,7 @@ def compile_and_execute(
             runtime_parameters=runtime_parameters,
             model_manager=model_manager,
             api_key=api_key,
+            step_execution_mode=step_execution_mode,
         )
     )
 
@@ -42,6 +45,7 @@ async def compile_and_execute_async(
     runtime_parameters: Dict[str, Any],
     model_manager: Optional[ModelManager] = None,
     api_key: Optional[str] = None,
+    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     if api_key is None:
         api_key = API_KEY
@@ -63,4 +67,5 @@ async def compile_and_execute_async(
         runtime_parameters=runtime_parameters,
         model_manager=model_manager,
         api_key=api_key,
+        step_execution_mode=step_execution_mode,
     )

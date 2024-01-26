@@ -318,3 +318,34 @@ DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
+
+
+LOCAL_INFERENCE_API_URL = os.getenv("LOCAL_INFERENCE_API_URL", "http://127.0.0.1:9001")
+HOSTED_DETECT_URL = (
+    "https://detect.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-object-detection.staging.roboflow.com"
+)
+HOSTED_INSTANCE_SEGMENTATION_URL = (
+    "https://outline.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-instance-segmentation.staging.roboflow.com"
+)
+HOSTED_CLASSIFICATION_URL = (
+    "https://classify.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-classification.staging.roboflow.com"
+)
+HOSTED_CORE_MODEL_URL = (
+    "https://infer.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://infer.roboflow.one"
+)
+
+DEPLOYMENTS_REMOTE_API = os.getenv("DEPLOYMENTS_REMOTE_API", "hosted")
+DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
+    os.getenv("DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
+)
+DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
+    os.getenv("DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
+)
