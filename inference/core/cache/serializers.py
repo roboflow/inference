@@ -24,7 +24,14 @@ def to_cachable_inference_item(
             "response": jsonable_encoder(infer_response),
         }
 
-    included_request_fields = {"api_key", "confidence", "model_id", "model_type", "source", "source_info"}
+    included_request_fields = {
+        "api_key",
+        "confidence",
+        "model_id",
+        "model_type",
+        "source",
+        "source_info",
+    }
     request = infer_request.dict(include=included_request_fields)
     response = build_condensed_response(infer_response)
 
