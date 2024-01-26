@@ -30,19 +30,19 @@ def adjust_prediction_to_client_scaling_factor(
     ):
         return prediction
     if prediction_type == INSTANCE_SEGMENTATION_TASK:
-        prediction[
-            "predictions"
-        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
-            points_key="points",
+        prediction["predictions"] = (
+            adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+                points_key="points",
+            )
         )
     if prediction_type == OBJECT_DETECTION_TASK:
-        prediction[
-            "predictions"
-        ] = adjust_object_detection_predictions_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
+        prediction["predictions"] = (
+            adjust_object_detection_predictions_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+            )
         )
     return prediction
 

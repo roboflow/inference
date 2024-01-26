@@ -123,27 +123,27 @@ def adjust_prediction_to_client_scaling_factor(
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
     if "points" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
-            points_key="points",
+        prediction["predictions"] = (
+            adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+                points_key="points",
+            )
         )
     elif "keypoints" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
-            points_key="keypoints",
+        prediction["predictions"] = (
+            adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+                points_key="keypoints",
+            )
         )
     elif "x" in prediction["predictions"][0] and "y" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_object_detection_predictions_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
+        prediction["predictions"] = (
+            adjust_object_detection_predictions_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+            )
         )
     return prediction
 
