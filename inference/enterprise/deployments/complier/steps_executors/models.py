@@ -2,6 +2,7 @@ import asyncio
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -25,6 +26,7 @@ from inference.enterprise.deployments.complier.entities import StepExecutionMode
 from inference.enterprise.deployments.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
+    DETECTION_ID_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
@@ -272,10 +274,44 @@ async def get_roboflow_model_predictions_from_remote_api(
         inference_input = image["value"]
     else:
         inference_input = [i["value"] for i in image]
-    return await client.infer_async(
+    results = await client.infer_async(
         inference_input=inference_input,
         model_id=model_id,
     )
+    # just for now, until we have hosted inference deployed with new version
+    return _inject_detection_id_if_remote_api_does_not_provide_one(
+        results=results,
+        step_type=step.type,
+    )
+
+
+def _inject_detection_id_if_remote_api_does_not_provide_one(
+    results: Union[List[dict], dict],
+    step_type: str,
+) -> Union[List[dict], dict]:
+    if step_type not in {
+        "ObjectDetectionModel",
+        "InstanceSegmentationModel",
+        "KeypointsDetectionModel",
+    }:
+        return results
+    if issubclass(type(results), dict):
+        results["predictions"] = _inject_detection_id_to_predictions(
+            predictions=results["predictions"]
+        )
+        return results
+    for result in results:
+        result["predictions"] = _inject_detection_id_to_predictions(
+            predictions=result["predictions"]
+        )
+    return results
+
+
+def _inject_detection_id_to_predictions(predictions: List[dict]) -> List[dict]:
+    for prediction in predictions:
+        if DETECTION_ID_KEY not in prediction:
+            prediction[DETECTION_ID_KEY] = str(uuid4())
+    return predictions
 
 
 def construct_http_client_configuration_for_classification_step(
@@ -399,7 +435,7 @@ async def run_ocr_model_step(
             api_key=api_key,
         )
     else:
-        serialised_result = get_ocr_predictions_from_remote_api(
+        serialised_result = await get_ocr_predictions_from_remote_api(
             step=step,
             image=image,
             api_key=api_key,
