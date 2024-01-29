@@ -347,7 +347,7 @@ HOSTED_CLASSIFICATION_URL = (
 HOSTED_CORE_MODEL_URL = (
     "https://infer.roboflow.com"
     if PROJECT == "roboflow-platform"
-    else "https://infer.roboflow.one"
+    else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
 )
 
 DEPLOYMENTS_REMOTE_API = os.getenv("DEPLOYMENTS_REMOTE_API", "hosted")
