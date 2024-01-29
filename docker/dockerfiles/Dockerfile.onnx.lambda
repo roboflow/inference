@@ -42,6 +42,12 @@ RUN pip3 install \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
 
+WORKDIR /build
+COPY inference_sdk .
+COPY .release .release
+RUN python -m pip install wheel twine requests && python .release/pypi/inference.sdk.setup.py bdist_wheel
+RUN pip install dist/inference_sdk*.whl
+
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 
