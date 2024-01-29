@@ -1,9 +1,9 @@
 name: Docs Workflow
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [created]
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -20,4 +20,5 @@ jobs:
       - run: pip install "mkdocs-swagger-ui-tag"
       - run: pip install "mkdocs-gen-files"
       - run: pip install "mkdocs-literate-nav"
+      - run: pip install -r requirements/requirements.docs.txt
       - run: mkdocs gh-deploy --force

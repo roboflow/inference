@@ -181,6 +181,16 @@ def test_get_class_names_from_environment_file() -> None:
 
     # then
     assert result == [
-        "class_a", "class_b", "class_c", "class_d", "class_e", "class_f", "class_g", "class_h",
-        "class_i", "class_j", "class_k", "class_l"
+        "class_a",
+        "class_b",
+        "class_c",
+        "class_d",
+        "class_e",
+        "class_f",
+        "class_g",
+        "class_h",
+        "class_i",
+        "class_j",
+        "class_k",
+        "class_l",
     ]

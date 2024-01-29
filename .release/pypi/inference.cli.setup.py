@@ -54,6 +54,7 @@ setuptools.setup(
             "inference=inference_cli.main:app",
         ],
     },
+    package_data={"": ["configs/*.yml"]},
     install_requires=read_requirements("requirements/requirements.cli.txt"),
     classifiers=[
         "Programming Language :: Python :: 3",

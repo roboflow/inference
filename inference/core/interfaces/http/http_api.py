@@ -5,7 +5,7 @@ from time import sleep
 from typing import Any, List, Optional, Union
 
 import uvicorn
-from fastapi import BackgroundTasks, Body, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +19,10 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
+from inference.core.entities.requests.deployments import (
+    DeploymentsInferenceRequest,
+    DeploymentSpecificationInferenceRequest,
+)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -43,6 +47,7 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
+from inference.core.entities.responses.deployments import DeploymentsInferenceResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -91,6 +96,7 @@ from inference.core.exceptions import (
     InvalidMaskDecodeArgument,
     InvalidModelIDError,
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelArtefactError,
@@ -105,9 +111,21 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.http.orjson_utils import orjson_response
+from inference.core.interfaces.http.orjson_utils import (
+    orjson_response,
+    serialise_deployment_workflow_result,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import (
+    get_deployment_specification,
+    get_roboflow_workspace,
+)
 from inference.core.utils.notebooks import start_notebook
+from inference.enterprise.deployments.complier.core import compile_and_execute_async
+from inference.enterprise.deployments.errors import (
+    DeploymentCompilerError,
+    RuntimePayloadError,
+)
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -140,6 +158,7 @@ def with_route_exceptions(route):
             InvalidModelIDError,
             InvalidMaskDecodeArgument,
             MissingApiKeyError,
+            RuntimePayloadError,
         ) as e:
             resp = JSONResponse(status_code=400, content={"message": str(e)})
             traceback.print_exc()
@@ -157,6 +176,8 @@ def with_route_exceptions(route):
             PostProcessingError,
             ServiceConfigurationError,
             ModelArtefactError,
+            MalformedWorkflowResponseError,
+            DeploymentCompilerError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
@@ -287,6 +308,25 @@ class HttpInterface(BaseInterface):
                 inference_request.model_id, inference_request, **kwargs
             )
             return orjson_response(resp)
+
+        async def process_deployment_inference_request(
+            deployment_request: DeploymentsInferenceRequest,
+            deployment_specification: dict,
+        ) -> DeploymentsInferenceResponse:
+            result = await compile_and_execute_async(
+                deployment_spec=deployment_specification,
+                runtime_parameters=deployment_request.runtime_parameters,
+                model_manager=model_manager,
+                api_key=deployment_request.api_key,
+            )
+            deployment_outputs = serialise_deployment_workflow_result(
+                result=result,
+                excluded_fields=deployment_request.excluded_fields,
+            )
+            response = DeploymentsInferenceResponse(
+                deployment_outputs=deployment_outputs
+            )
+            return orjson_response(response=response)
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -587,6 +627,46 @@ class HttpInterface(BaseInterface):
                 """
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
+
+            @app.post(
+                "/infer/deployments",
+                response_model=DeploymentsInferenceResponse,
+                summary="Endpoint to trigger inference from deployment specification provided in payload",
+                description="Parses and executes deployment specification, injecting runtime parameters from request body",
+            )
+            @with_route_exceptions
+            async def infer_from_specific_deployment(
+                deployment_request: DeploymentSpecificationInferenceRequest,
+            ) -> DeploymentsInferenceResponse:
+                deployment_specification = {
+                    "specification": deployment_request.specification
+                }
+                return await process_deployment_inference_request(
+                    deployment_request=deployment_request,
+                    deployment_specification=deployment_specification,
+                )
+
+            @app.post(
+                "/infer/deployments/{deployment_name}",
+                response_model=DeploymentsInferenceResponse,
+                summary="Endpoint to trigger inference from predefined deployment",
+                description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
+            )
+            @with_route_exceptions
+            async def infer_from_specific_deployment(
+                deployment_name: str,
+                deployment_request: DeploymentsInferenceRequest,
+            ) -> DeploymentsInferenceResponse:
+                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
+                deployment_specification = get_deployment_specification(
+                    api_key=deployment_request.api_key,
+                    workspace_id=workspace,
+                    deployment_name=deployment_name,
+                )
+                return await process_deployment_inference_request(
+                    deployment_request=deployment_request,
+                    deployment_specification=deployment_specification,
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

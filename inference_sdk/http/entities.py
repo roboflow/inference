@@ -42,12 +42,12 @@ class RegisteredModels(DataClassJsonMixin):
     models: List[ModelDescription]
 
 
-class HTTPClientMode(Enum):
+class HTTPClientMode(str, Enum):
     V0 = "v0"
     V1 = "v1"
 
 
-class VisualisationResponseFormat:
+class VisualisationResponseFormat(str, Enum):
     BASE64 = "base64"
     NUMPY = "numpy"
     PILLOW = "pillow"

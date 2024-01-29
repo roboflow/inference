@@ -1,4 +1,10 @@
-from inference.core.models.utils.keypoints import superset_keypoints_count
+from typing import List
+
+from inference.core.entities.responses.inference import Keypoint
+from inference.core.models.utils.keypoints import (
+    model_keypoints_to_response,
+    superset_keypoints_count,
+)
 
 
 def test_superset_keypoints_count() -> None:
@@ -93,3 +99,134 @@ def test_superset_keypoints_count_with_two_non_overlapping_classes() -> None:
     keypoints_count = superset_keypoints_count(keypoints_metadata)
     # then
     assert keypoints_count == 10
+
+
+def test_model_keypoints_to_response() -> None:
+    # given
+    keypoints_metadata = {
+        0: {
+            0: "nose",
+            1: "left_eye",
+            2: "right_eye",
+            3: "left_ear",
+        }
+    }
+    keypoints = [100, 100, 0.5, 200, 200, 0.5, 300, 300, 0.5, 400, 400, 0.5]
+    result = (
+        model_keypoints_to_response(
+            keypoints_metadata=keypoints_metadata,
+            keypoints=keypoints,
+            predicted_object_class_id=0,
+            keypoint_confidence_threshold=0,
+        ),
+    )
+    # List of keypoints
+    assert result == (
+        [
+            Keypoint(
+                x=100,
+                y=100,
+                confidence=0.5,
+                class_id=0,
+                class_name="nose",
+            ),
+            Keypoint(
+                x=200,
+                y=200,
+                confidence=0.5,
+                class_id=1,
+                class_name="left_eye",
+            ),
+            Keypoint(
+                x=300,
+                y=300,
+                confidence=0.5,
+                class_id=2,
+                class_name="right_eye",
+            ),
+            Keypoint(
+                x=400,
+                y=400,
+                confidence=0.5,
+                class_id=3,
+                class_name="left_ear",
+            ),
+        ],
+    )
+
+
+def test_model_keypoints_to_response_padded_points() -> None:
+    # given
+    keypoints_metadata = {
+        0: {
+            0: "nose",
+            1: "left_eye",
+            2: "right_eye",
+            3: "left_ear",
+        },
+        1: {
+            0: "nose",
+            1: "left_eye",
+            2: "right_eye",
+            3: "left_ear",
+            4: "right_ear",
+        },
+    }
+    keypoints = [
+        100,
+        100,
+        0.5,
+        200,
+        200,
+        0.5,
+        300,
+        300,
+        0.5,
+        400,
+        400,
+        0.5,
+        500,
+        500,
+        0.5,
+    ]
+    result = (
+        model_keypoints_to_response(
+            keypoints_metadata=keypoints_metadata,
+            keypoints=keypoints,
+            predicted_object_class_id=0,
+            keypoint_confidence_threshold=0,
+        ),
+    )
+    # List of keypoints
+    assert result == (
+        [
+            Keypoint(
+                x=100,
+                y=100,
+                confidence=0.5,
+                class_id=0,
+                class_name="nose",
+            ),
+            Keypoint(
+                x=200,
+                y=200,
+                confidence=0.5,
+                class_id=1,
+                class_name="left_eye",
+            ),
+            Keypoint(
+                x=300,
+                y=300,
+                confidence=0.5,
+                class_id=2,
+                class_name="right_eye",
+            ),
+            Keypoint(
+                x=400,
+                y=400,
+                confidence=0.5,
+                class_id=3,
+                class_name="left_ear",
+            ),
+        ],
+    )

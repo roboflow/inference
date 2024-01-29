@@ -37,11 +37,16 @@ def get_steps_input_selectors(steps: List[StepType]) -> Set[str]:
 
 
 def get_step_input_selectors(step: StepType) -> Set[str]:
-    return {
-        getattr(step, step_input_name)
-        for step_input_name in step.get_input_names()
-        if is_selector(selector_or_value=getattr(step, step_input_name))
-    }
+    result = set()
+    for step_input_name in step.get_input_names():
+        step_input = getattr(step, step_input_name)
+        if not issubclass(type(step_input), list):
+            step_input = [step_input]
+        for element in step_input:
+            if not is_selector(selector_or_value=element):
+                continue
+            result.add(element)
+    return result
 
 
 def get_steps_output_selectors(steps: List[StepType]) -> Set[str]:

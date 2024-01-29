@@ -2,7 +2,7 @@
 
 !!! note
 
-    This feature is only available for Roboflow Enterprise users. [Contact our sales team](https://roboflow.com/sales) to learn more about Roboflow Enterprise.
+    This feature is only available for Roboflow Enterprise users. <a href="https://roboflow.com/sales" target="_blank">Contact our sales team</a> to learn more about Roboflow Enterprise.
 
 You can run multiple models in parallel with Inference with parallel processing, a version of Roboflow Inference that processes inference requests asynchronously.
 
@@ -41,7 +41,7 @@ You can run Inference with Parallel Processing in two ways: via the CLI or via D
 
 ## Benchmarking
 
-We evaluated the performance of Inference Parallel on a variety of models from [Roboflow Universe](https://universe.roboflow.com/). We compared the performance of Inference Parallel to the latest version of Inference Server (0.9.5.rc) on the same hardware.
+We evaluated the performance of Inference Parallel on a variety of models from <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. We compared the performance of Inference Parallel to the latest version of Inference Server (0.9.5.rc) on the same hardware.
 
 We ran our tests on a computer with eight cores and one GPU. Instance segmentation metrics are calculated using `"mask_decode_mode": "fast"` in the request body. Requests are posted concurrently with a parallelism of 1000.
 

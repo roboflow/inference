@@ -1,17 +1,39 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
+<style>
+  .md-typeset h1,
+  .md-content__button {
+    display: none;
+  }
+  @media screen and (min-width: 800px) {.md-content {
+    padding-left: 10%;
+    padding-right: 10%;
+  }}
+</style>
+
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-[Roboflow](https://roboflow.com) Inference enables you to deploy computer vision models faster than ever.
+<a href="https://roboflow.com" target="_blank">Roboflow</a> Inference enables you to deploy computer vision models faster than ever.
 
 With a `pip install inference` and `inference server start`, you can start a server to run a fine-tuned model on images, videos, and streams.
 
 Inference supports running object detection, classification, instance segmentation, and foundation models (i.e. SAM, CLIP).
 
-You can [train and deploy your own custom model](https://github.com/roboflow/notebooks) or use one of the 50,000+
-[fine-tuned models shared by the Roboflow Universe community](https://universe.roboflow.com).
+You can <a href="https://github.com/roboflow/notebooks" target="_blank">train and deploy your own custom model</a> or use one of the 50,000+
+<a href="https://universe.roboflow.com" target="_blank">fine-tuned models shared by the Roboflow Universe community</a>.
 
 You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
 
-<a href="https://inference.roboflow.com/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
+<a href="/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
+
+<div class="button-holder">
+<a href="/quickstart/what_is_inference/" class="button half-button">Learn about the various ways you can use Inference</a>
+<a href="/foundation/about/" class="button half-button">See all of the models you can run with Inference</a>
+</div>
 
 <style>
   .button {
@@ -79,7 +101,7 @@ pip install inference-gpu
 
 ### Without ONNX Runtime:
 
-Roboflow Inference uses Onnxruntime as its core inference engine. Onnxruntime provides an array of different [execution providers](https://onnxruntime.ai/docs/execution-providers/) that can optimize inference on differnt target devices. If you decide to install onnxruntime on your own, install inference with:
+Roboflow Inference uses Onnxruntime as its core inference engine. Onnxruntime provides an array of different <a href="https://onnxruntime.ai/docs/execution-providers/" target="_blank">execution providers</a> that can optimize inference on differnt target devices. If you decide to install onnxruntime on your own, install inference with:
 
 ```bash
 pip install inference-core
@@ -91,15 +113,15 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
-| extra   | description                                                                          |
-| :------ | :----------------------------------------------------------------------------------- |
-| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                     |
-| `gaze`  | Ability to use the core `Gaze` model                                                 |
-| `http`  | Ability to run the http interface                                                    |
-| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                        |
-| `doctr` | Ability to use the core `doctr` model (by [Mindee](https://github.com/mindee/doctr)) |
+| extra   | description                                                                                                     |
+| :------ | :-------------------------------------------------------------------------------------------------------------- |
+| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                                                |
+| `gaze`  | Ability to use the core `Gaze` model                                                                            |
+| `http`  | Ability to run the http interface                                                                               |
+| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                                                   |
+| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>) |
 
-**_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the [official PyTorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
+**_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
 
 Example install with CLIP dependencies:
 
@@ -109,7 +131,7 @@ pip install inference[clip]
 
 ## 🐋 docker
 
-You can learn more about Roboflow Inference Docker Image build, pull and run in our [documentation](https://roboflow.github.io/inference/quickstart/docker/).
+You can learn more about Roboflow Inference Docker Image build, pull and run in our <a href="https://roboflow.github.io/inference/quickstart/docker/" target="_blank">documentation</a>.
 
 - Run on x86 CPU:
 
@@ -150,7 +172,7 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 
 ## 📟 CLI
 
-To use the CLI you will need python 3.7 or higher. To ensure you have the correct version of python, run `python --version` in your terminal. To install python, follow the instructions [here](https://www.python.org/downloads/).
+To use the CLI you will need python 3.7 or higher. To ensure you have the correct version of python, run `python --version` in your terminal. To install python, follow the instructions <a href="https://www.python.org/downloads/" target="_blank">here</a>.
 
 After you have python installed, install the pypi package `inference-cli` or `inference`:
 
@@ -170,7 +192,7 @@ CLI supports also stopping the server via:
 inference server stop
 ```
 
-To use the CLI to make inferences, first [find your project ID and model version number in Roboflow](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
+To use the CLI to make inferences, first <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">find your project ID and model version number in Roboflow</a>.
 
 See more detailed documentation on [HTTP Inference quickstart via CLI](./using_inference/http_api.md).
 
@@ -190,14 +212,14 @@ With a Roboflow Inference Enterprise License, you can access additional Inferenc
 - Active learning
 - YOLOv5 and YOLOv8 model sub-license
 
-To learn more, [contact the Roboflow team](https://roboflow.com/sales).
+To learn more, <a href="https://roboflow.com/sales" target="_blank">contact the Roboflow team</a>.
 
 ## More Roboflow Open Source Projects
 
-| Project                                                           | Description                                                                                                                                            |
-| :---------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [supervision](https://roboflow.com/supervision)                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
-| [Autodistill](https://github.com/autodistill/autodistill)         | Automatically label images for use in training computer vision models.                                                                                 |
-| [Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
-| [Notebooks](https://roboflow.com/notebooks)                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
-| [Collect](https://github.com/roboflow/roboflow-collect)           | Automated, intelligent data collection powered by CLIP.                                                                                                |
+| Project                                                                                      | Description                                                                                                                                            |
+| :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a href="https://roboflow.com/supervision" target="_blank">supervision</a>                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
+| <a href="https://github.com/autodistill/autodistill" target="_blank">Autodistill</a>         | Automatically label images for use in training computer vision models.                                                                                 |
+| <a href="https://github.com/roboflow/inference" target="_blank">Inference</a> (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
+| <a href="https://roboflow.com/notebooks" target="_blank">Notebooks</a>                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
+| <a href="https://github.com/roboflow/roboflow-collect" target="_blank">Collect</a>           | Automated, intelligent data collection powered by CLIP.                                                                                                |

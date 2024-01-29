@@ -46,9 +46,13 @@ class DeploymentCompilerRuntimeError(DeploymentCompilerError):
     pass
 
 
-class RuntimeParameterMissingError(DeploymentCompilerRuntimeError):
+class RuntimePayloadError(DeploymentCompilerRuntimeError):
     pass
 
 
-class VariableTypeError(DeploymentCompilerRuntimeError):
+class RuntimeParameterMissingError(RuntimePayloadError):
+    pass
+
+
+class VariableTypeError(RuntimePayloadError):
     pass
