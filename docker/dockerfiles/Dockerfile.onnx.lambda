@@ -24,6 +24,7 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/_requirements.txt \
+    requirements.sdk.http.txt \
     ./
 
 RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
