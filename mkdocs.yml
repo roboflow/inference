@@ -21,7 +21,8 @@ extra:
     provider: google
     property: G-T0CED2YY8K
   version:
-    default: 1.0
+    default: 0.9.8
+    provider: mike
 
 extra_css:
   - styles.css
@@ -121,6 +122,15 @@ plugins:
       nav_file: nav.md
   - macros:
       include_dir: docs/include
+  - mike:
+      # These fields are all optional; the defaults are as below...
+      alias_type: symlink
+      redirect_template: null
+      deploy_prefix: ''
+      canonical_version: null
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
 
 markdown_extensions:
   - admonition
@@ -136,3 +146,4 @@ markdown_extensions:
 extra_javascript:
   - "https://widget.kapa.ai/kapa-widget.bundle.js"
   - "javascript/init_kapa_widget.js"
+  

@@ -21,4 +21,4 @@ jobs:
       - run: pip install "mkdocs-gen-files"
       - run: pip install "mkdocs-literate-nav"
       - run: pip install -r requirements/requirements.docs.txt
-      - run: mkdocs gh-deploy --force
+      # - run: mkdocs gh-deploy --force
