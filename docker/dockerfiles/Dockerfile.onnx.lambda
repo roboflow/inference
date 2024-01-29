@@ -45,7 +45,8 @@ RUN pip3 install \
 WORKDIR /build
 COPY . .
 RUN pip3 install --upgrade pip
-RUN pip3 install wheel twine requests python-dotenv && python .release/pypi/inference.sdk.setup.py bdist_wheel
+RUN pip3 install wheel twine requests python-dotenv "opencv-python<=4.8.0.76" && python .release/pypi/inference.sdk.setup.py bdist_wheel
+RUN pip3 install /build/dist/inference_sdk*.whl --target "${LAMBDA_TASK_ROOT}"
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
@@ -59,7 +60,6 @@ ENV DOCTR_MULTIPROCESSING_DISABLE=TRUE
 ENV REDIS_SSL=true
 
 WORKDIR ${LAMBDA_TASK_ROOT}
-RUN pip3 install /build/dist/inference_sdk*.whl --target "${LAMBDA_TASK_ROOT}"
 RUN rm -rf /build
 
 CMD [ "lambda.handler" ]
