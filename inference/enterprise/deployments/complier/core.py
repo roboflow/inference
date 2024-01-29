@@ -25,6 +25,7 @@ def compile_and_execute(
     api_key: Optional[str] = None,
     model_manager: Optional[ModelManager] = None,
     loop: Optional[AbstractEventLoop] = None,
+    max_concurrent_steps: int = 1,
     step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     if loop is None:
@@ -35,6 +36,7 @@ def compile_and_execute(
             runtime_parameters=runtime_parameters,
             model_manager=model_manager,
             api_key=api_key,
+            max_concurrent_steps=max_concurrent_steps,
             step_execution_mode=step_execution_mode,
         )
     )
@@ -45,6 +47,7 @@ async def compile_and_execute_async(
     runtime_parameters: Dict[str, Any],
     model_manager: Optional[ModelManager] = None,
     api_key: Optional[str] = None,
+    max_concurrent_steps: int = 1,
     step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     if api_key is None:
@@ -67,5 +70,6 @@ async def compile_and_execute_async(
         runtime_parameters=runtime_parameters,
         model_manager=model_manager,
         api_key=api_key,
+        max_concurrent_steps=max_concurrent_steps,
         step_execution_mode=step_execution_mode,
     )

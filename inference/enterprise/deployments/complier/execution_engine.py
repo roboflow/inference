@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
 import networkx as nx
@@ -5,6 +7,10 @@ from networkx import DiGraph
 
 from inference.core.managers.base import ModelManager
 from inference.enterprise.deployments.complier.entities import StepExecutionMode
+from inference.enterprise.deployments.complier.flow_coordinator import (
+    ParallelStepExecutionCoordinator,
+    SerialExecutionCoordinator,
+)
 from inference.enterprise.deployments.complier.runtime_input_validator import (
     prepare_runtime_parameters,
 )
@@ -24,12 +30,16 @@ from inference.enterprise.deployments.complier.steps_executors.models import (
     run_ocr_model_step,
     run_roboflow_model_step,
 )
+from inference.enterprise.deployments.complier.steps_executors.types import (
+    OutputsLookup,
+)
+from inference.enterprise.deployments.complier.steps_executors.utils import make_batches
 from inference.enterprise.deployments.complier.utils import (
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
     is_condition_step,
 )
-from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND
 from inference.enterprise.deployments.entities.outputs import CoordinatesSystem
 from inference.enterprise.deployments.entities.validators import get_last_selector_chunk
 from inference.enterprise.deployments.errors import DeploymentCompilerRuntimeError
@@ -57,6 +67,7 @@ async def execute_graph(
     runtime_parameters: Dict[str, Any],
     model_manager: ModelManager,
     api_key: Optional[str] = None,
+    max_concurrent_steps: int = 1,
     step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     runtime_parameters = prepare_runtime_parameters(
@@ -64,41 +75,104 @@ async def execute_graph(
         runtime_parameters=runtime_parameters,
     )
     outputs_lookup = {}
-    step_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=STEP_NODE_KIND
-    )
-    steps_topological_order = [
-        n for n in nx.topological_sort(execution_graph) if n in step_nodes
-    ]
-    nodes_excluded_by_conditional_execution = set()
-    for step in steps_topological_order:
-        if step in nodes_excluded_by_conditional_execution:
-            continue
-        step_definition = execution_graph.nodes[step]["definition"]
-        executor = STEP_TYPE2EXECUTOR_MAPPING[step_definition.type]
-        next_step, outputs_lookup = await executor(
-            step=step_definition,
+    steps_to_discard = set()
+    if max_concurrent_steps > 1:
+        execution_coordinator = ParallelStepExecutionCoordinator.init(
+            execution_graph=execution_graph
+        )
+    else:
+        execution_coordinator = SerialExecutionCoordinator.init(
+            execution_graph=execution_graph
+        )
+    while True:
+        next_steps = execution_coordinator.get_steps_to_execute_next(
+            steps_to_discard=steps_to_discard
+        )
+        if next_steps is None:
+            break
+        steps_to_discard = await execute_steps(
+            steps=next_steps,
+            max_concurrent_steps=max_concurrent_steps,
+            execution_graph=execution_graph,
             runtime_parameters=runtime_parameters,
             outputs_lookup=outputs_lookup,
             model_manager=model_manager,
             api_key=api_key,
             step_execution_mode=step_execution_mode,
         )
-        if is_condition_step(execution_graph=execution_graph, node=step):
-            if execution_graph.nodes[step]["definition"].step_if_true == next_step:
-                nodes_to_discard = get_all_nodes_in_execution_path(
-                    execution_graph=execution_graph,
-                    source=execution_graph.nodes[step]["definition"].step_if_false,
-                )
-            else:
-                nodes_to_discard = get_all_nodes_in_execution_path(
-                    execution_graph=execution_graph,
-                    source=execution_graph.nodes[step]["definition"].step_if_true,
-                )
-            nodes_excluded_by_conditional_execution.update(nodes_to_discard)
     return construct_response(
         execution_graph=execution_graph, outputs_lookup=outputs_lookup
     )
+
+
+async def execute_steps(
+    steps: List[str],
+    max_concurrent_steps: int,
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Set[str]:
+    """outputs_lookup is mutated while execution, only independent steps may be run together"""
+    print(f"Executing steps: {steps}")
+    nodes_to_discard = set()
+    steps_batches = list(make_batches(iterable=steps, batch_size=max_concurrent_steps))
+    for steps_batch in steps_batches:
+        print(f"Steps batch: {steps_batch}")
+        coroutines = [
+            execute_step(
+                step=step,
+                execution_graph=execution_graph,
+                runtime_parameters=runtime_parameters,
+                outputs_lookup=outputs_lookup,
+                model_manager=model_manager,
+                api_key=api_key,
+                step_execution_mode=step_execution_mode,
+            )
+            for step in steps_batch
+        ]
+        results = await asyncio.gather(*coroutines)
+        for result in results:
+            nodes_to_discard.update(result)
+    return nodes_to_discard
+
+
+async def execute_step(
+    step: str,
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Set[str]:
+    print(f"started execution of: {step} - {datetime.now().isoformat()}")
+    nodes_to_discard = set()
+    step_definition = execution_graph.nodes[step]["definition"]
+    executor = STEP_TYPE2EXECUTOR_MAPPING[step_definition.type]
+    next_step, outputs_lookup = await executor(
+        step=step_definition,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+        model_manager=model_manager,
+        api_key=api_key,
+        step_execution_mode=step_execution_mode,
+    )
+    if is_condition_step(execution_graph=execution_graph, node=step):
+        if execution_graph.nodes[step]["definition"].step_if_true == next_step:
+            nodes_to_discard = get_all_nodes_in_execution_path(
+                execution_graph=execution_graph,
+                source=execution_graph.nodes[step]["definition"].step_if_false,
+            )
+        else:
+            nodes_to_discard = get_all_nodes_in_execution_path(
+                execution_graph=execution_graph,
+                source=execution_graph.nodes[step]["definition"].step_if_true,
+            )
+    print(f"finished execution of: {step} - {datetime.now().isoformat()}")
+    return nodes_to_discard
 
 
 def get_all_nodes_in_execution_path(
