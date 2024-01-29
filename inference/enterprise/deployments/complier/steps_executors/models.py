@@ -263,6 +263,8 @@ async def get_roboflow_model_predictions_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
+    if DEPLOYMENTS_REMOTE_API == "host":
+        client.select_api_v0()
     configuration = MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR[step.type](
         step=step,
         runtime_parameters=runtime_parameters,
@@ -484,6 +486,8 @@ async def get_ocr_predictions_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
+    if DEPLOYMENTS_REMOTE_API == "host":
+        client.select_api_v0()
     configuration = InferenceConfiguration(
         max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -575,6 +579,8 @@ async def get_clip_comparison_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
+    if DEPLOYMENTS_REMOTE_API == "host":
+        client.select_api_v0()
     image_batches = list(
         make_batches(
             iterable=image,
