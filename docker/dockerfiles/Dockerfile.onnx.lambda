@@ -43,7 +43,7 @@ RUN pip3 install \
     && rm -rf ~/.cache/pip
 
 WORKDIR /build
-COPY inference_sdk .
+COPY . .
 COPY .release .release
 RUN python -m pip install wheel twine requests && python .release/pypi/inference.sdk.setup.py bdist_wheel
 RUN pip install dist/inference_sdk*.whl
