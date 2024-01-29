@@ -37,18 +37,14 @@ RUN pip3 install \
     -r requirements.hosted.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
+    -r requirements.sdk.http.txt \
     mangum \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
 
-WORKDIR /build
-COPY . .
-RUN pip3 install --upgrade pip
-RUN pip3 install wheel twine requests python-dotenv "opencv-python<=4.8.0.76" && python .release/pypi/inference.sdk.setup.py bdist_wheel
-RUN pip3 install /build/dist/inference_sdk*.whl --target "${LAMBDA_TASK_ROOT}"
-
 COPY inference ${LAMBDA_TASK_ROOT}/inference
+COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 
 ENV LAMBDA=True
