@@ -116,7 +116,9 @@ async def execute_steps(
     step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
     """outputs_lookup is mutated while execution, only independent steps may be run together"""
-    print(f"Executing steps: {steps}. Execution mode: {step_execution_mode}", flush=True)
+    print(
+        f"Executing steps: {steps}. Execution mode: {step_execution_mode}", flush=True
+    )
     nodes_to_discard = set()
     steps_batches = list(make_batches(iterable=steps, batch_size=max_concurrent_steps))
     for steps_batch in steps_batches:
