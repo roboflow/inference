@@ -14,7 +14,7 @@ from inference_sdk.http.errors import EncodingError, InvalidInputFormatError
 from inference_sdk.http.utils import loaders
 from inference_sdk.http.utils.loaders import (
     load_directory_inference_input,
-    load_image_from_uri,
+    load_image_from_string,
     load_image_from_url,
     load_static_inference_input,
     load_stream_inference_input,
@@ -138,7 +138,7 @@ def test_load_image_from_uri_when_file_to_be_downloaded(
     requests_get_mock.return_value = response
 
     # when
-    serialised_image, scaling_factor = load_image_from_uri(uri="https://some/file.jpg")
+    serialised_image, scaling_factor = load_image_from_string(uri="https://some/file.jpg")
 
     # then
     recovered_image = base64.b64decode(serialised_image)
@@ -159,7 +159,7 @@ def test_load_image_from_uri_when_local_image_to_be_loaded(
     file_path, _ = example_local_image
 
     # when
-    serialised_image, scaling_factor = load_image_from_uri(
+    serialised_image, scaling_factor = load_image_from_string(
         uri=file_path,
         max_width=64,
         max_height=128,
@@ -179,7 +179,7 @@ def test_load_image_from_uri_when_local_non_image_file_to_be_loaded(
 ) -> None:
     # when
     with pytest.raises(EncodingError):
-        _ = load_image_from_uri(
+        _ = load_image_from_string(
             uri=example_local_text_file,
             max_width=64,
             max_height=128,

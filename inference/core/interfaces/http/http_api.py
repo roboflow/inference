@@ -77,6 +77,8 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
+    DEPLOYMENTS_MAX_CONCURRENT_STEPS,
+    DEPLOYMENTS_STEP_EXECUTION_MODE,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
@@ -314,12 +316,15 @@ class HttpInterface(BaseInterface):
             deployment_request: DeploymentsInferenceRequest,
             deployment_specification: dict,
         ) -> DeploymentsInferenceResponse:
+            step_execution_mode = StepExecutionMode(DEPLOYMENTS_STEP_EXECUTION_MODE)
+            print("step_execution_mode", step_execution_mode, flush=True)
             result = await compile_and_execute_async(
                 deployment_spec=deployment_specification,
                 runtime_parameters=deployment_request.runtime_parameters,
                 model_manager=model_manager,
                 api_key=deployment_request.api_key,
-                step_execution_mode=StepExecutionMode.REMOTE,
+                max_concurrent_steps=DEPLOYMENTS_MAX_CONCURRENT_STEPS,
+                step_execution_mode=step_execution_mode,
             )
             deployment_outputs = serialise_deployment_workflow_result(
                 result=result,
@@ -630,45 +635,45 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
-            @app.post(
-                "/infer/deployments",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from deployment specification provided in payload",
-                description="Parses and executes deployment specification, injecting runtime parameters from request body",
+        @app.post(
+            "/infer/deployments",
+            response_model=DeploymentsInferenceResponse,
+            summary="Endpoint to trigger inference from deployment specification provided in payload",
+            description="Parses and executes deployment specification, injecting runtime parameters from request body",
+        )
+        @with_route_exceptions
+        async def infer_from_specific_deployment(
+            deployment_request: DeploymentSpecificationInferenceRequest,
+        ) -> DeploymentsInferenceResponse:
+            deployment_specification = {
+                "specification": deployment_request.specification
+            }
+            return await process_deployment_inference_request(
+                deployment_request=deployment_request,
+                deployment_specification=deployment_specification,
             )
-            @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_request: DeploymentSpecificationInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                deployment_specification = {
-                    "specification": deployment_request.specification
-                }
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
-                )
 
-            @app.post(
-                "/infer/deployments/{deployment_name}",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from predefined deployment",
-                description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
+        @app.post(
+            "/infer/deployments/{deployment_name}",
+            response_model=DeploymentsInferenceResponse,
+            summary="Endpoint to trigger inference from predefined deployment",
+            description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
+        )
+        @with_route_exceptions
+        async def infer_from_specific_deployment(
+            deployment_name: str,
+            deployment_request: DeploymentsInferenceRequest,
+        ) -> DeploymentsInferenceResponse:
+            workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
+            deployment_specification = get_deployment_specification(
+                api_key=deployment_request.api_key,
+                workspace_id=workspace,
+                deployment_name=deployment_name,
             )
-            @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_name: str,
-                deployment_request: DeploymentsInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
-                deployment_specification = get_deployment_specification(
-                    api_key=deployment_request.api_key,
-                    workspace_id=workspace,
-                    deployment_name=deployment_name,
-                )
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
-                )
+            return await process_deployment_inference_request(
+                deployment_request=deployment_request,
+                deployment_specification=deployment_specification,
+            )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

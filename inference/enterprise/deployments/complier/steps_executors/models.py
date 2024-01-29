@@ -68,16 +68,11 @@ async def run_roboflow_model_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    model_manager.add_model(
-        model_id=model_id,
-        api_key=api_key,
-    )
     image = get_image(
         step=step,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-
     if step_execution_mode is StepExecutionMode.LOCAL:
         serialised_result = await get_roboflow_model_predictions_locally(
             image=image,
@@ -129,6 +124,10 @@ async def get_roboflow_model_predictions_locally(
         api_key=api_key,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
+    )
+    model_manager.add_model(
+        model_id=model_id,
+        api_key=api_key,
     )
     result = await model_manager.infer_from_request(model_id=model_id, request=request)
     if issubclass(type(result), list):
