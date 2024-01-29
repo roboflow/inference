@@ -45,7 +45,7 @@ RUN pip3 install \
 WORKDIR /build
 COPY . .
 RUN python -m pip install --upgrade pip
-RUN python -m pip install wheel twine requests dotenv && python .release/pypi/inference.sdk.setup.py bdist_wheel
+RUN python -m pip install wheel twine requests python-dotenv && python .release/pypi/inference.sdk.setup.py bdist_wheel
 RUN pip install dist/inference_sdk*.whl
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
