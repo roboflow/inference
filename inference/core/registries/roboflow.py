@@ -32,6 +32,7 @@ GENERIC_MODELS = {
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
+    "nanoowl": ("object-detection", "nanoowl"),
     "cogvlm": ("llm", "cogvlm"),
 }
 

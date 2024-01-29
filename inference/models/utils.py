@@ -168,6 +168,13 @@ except:
     pass
 
 try:
+    from inference.models import NanoOwl
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "nanoowl")] = NanoOwl
+except:
+    pass
+
+try:
     from inference.models import CogVLM
 
     ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM

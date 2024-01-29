@@ -24,6 +24,11 @@ except:
     pass
 
 try:
+    from inference.models.nanoowl import NanoOwl
+except:
+    pass
+
+try:
     from inference.models.cogvlm import CogVLM
 except:
     pass

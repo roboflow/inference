@@ -91,6 +91,11 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
 )
 
+# Flag to enable NANOOWL core model, default is True
+CORE_MODEL_NANOOWL_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_NANOOWL_ENABLED", True)
+)
+
 # Flag to enable CogVLM core model, default is True
 CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
 
