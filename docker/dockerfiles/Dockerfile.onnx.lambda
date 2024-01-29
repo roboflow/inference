@@ -44,9 +44,9 @@ RUN pip3 install \
 
 WORKDIR /build
 COPY . .
-RUN python -m pip install --upgrade pip
-RUN python -m pip install wheel twine requests python-dotenv && python .release/pypi/inference.sdk.setup.py bdist_wheel
-RUN pip install dist/inference_sdk*.whl
+RUN python -m pip3 install --upgrade pip
+RUN python -m pip3 install wheel twine requests python-dotenv && python .release/pypi/inference.sdk.setup.py bdist_wheel
+RUN pip3 install dist/inference_sdk*.whl
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
