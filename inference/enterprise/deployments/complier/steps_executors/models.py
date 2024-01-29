@@ -699,9 +699,9 @@ def anchor_image_detections_in_parent_coordinates(
 
 
 ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
-    "ClassificationModel": HOSTED_DETECT_URL,
+    "ClassificationModel": HOSTED_CLASSIFICATION_URL,
     "MultiLabelClassificationModel": HOSTED_CLASSIFICATION_URL,
-    "ObjectDetectionModel": HOSTED_CLASSIFICATION_URL,
+    "ObjectDetectionModel": HOSTED_DETECT_URL,
     "KeypointsDetectionModel": HOSTED_DETECT_URL,
     "InstanceSegmentationModel": HOSTED_DETECT_URL,
     "OCRModel": HOSTED_CORE_MODEL_URL,
