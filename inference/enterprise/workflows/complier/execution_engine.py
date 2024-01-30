@@ -41,7 +41,10 @@ from inference.enterprise.workflows.complier.utils import (
 from inference.enterprise.workflows.constants import OUTPUT_NODE_KIND
 from inference.enterprise.workflows.entities.outputs import CoordinatesSystem
 from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
-from inference.enterprise.workflows.errors import WorkflowsCompilerRuntimeError
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineError,
+    WorkflowsCompilerRuntimeError,
+)
 
 STEP_TYPE2EXECUTOR_MAPPING = {
     "ClassificationModel": run_roboflow_model_step,
@@ -136,6 +139,33 @@ async def execute_steps(
         for result in results:
             nodes_to_discard.update(result)
     return nodes_to_discard
+
+
+async def safe_execute_step(
+    step: str,
+    execution_graph: DiGraph,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Set[str]:
+    try:
+        return await execute_step(
+            step=step,
+            execution_graph=execution_graph,
+            runtime_parameters=runtime_parameters,
+            outputs_lookup=outputs_lookup,
+            model_manager=model_manager,
+            api_key=api_key,
+            step_execution_mode=step_execution_mode,
+        )
+    except Exception as error:
+        raise ExecutionEngineError(
+            f"Error during execution of step: {step}. "
+            f"Type of error: {type(error).__name__}. "
+            f"Cause: {error}"
+        ) from error
 
 
 async def execute_step(

@@ -127,6 +127,7 @@ from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.errors import (
+    ExecutionEngineError,
     RuntimePayloadError,
     WorkflowsCompilerError,
 )
@@ -182,6 +183,7 @@ def with_route_exceptions(route):
             ModelArtefactError,
             MalformedWorkflowResponseError,
             WorkflowsCompilerError,
+            ExecutionEngineError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()

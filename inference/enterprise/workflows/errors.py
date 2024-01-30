@@ -56,3 +56,7 @@ class RuntimeParameterMissingError(RuntimePayloadError):
 
 class VariableTypeError(RuntimePayloadError):
     pass
+
+
+class ExecutionEngineError(WorkflowsCompilerRuntimeError):
+    pass
