@@ -317,7 +317,6 @@ class HttpInterface(BaseInterface):
             deployment_specification: dict,
         ) -> DeploymentsInferenceResponse:
             step_execution_mode = StepExecutionMode(DEPLOYMENTS_STEP_EXECUTION_MODE)
-            print("step_execution_mode", step_execution_mode, flush=True)
             result = await compile_and_execute_async(
                 deployment_spec=deployment_specification,
                 runtime_parameters=deployment_request.runtime_parameters,
