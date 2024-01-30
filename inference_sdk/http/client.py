@@ -87,13 +87,25 @@ def wrap_errors(function: callable) -> callable:
                 status_code=error.response.status_code,
                 api_message=api_message,
             ) from error
+        except ConnectionError as error:
+            raise HTTPClientError(
+                f"Error with server connection: {deduct_api_key_from_string(str(error))}"
+            ) from error
+
+    return decorate
+
+
+def wrap_errors_async(function: callable) -> callable:
+    async def decorate(*args, **kwargs) -> Any:
+        try:
+            return await function(*args, **kwargs)
         except ClientResponseError as error:
             raise HTTPCallErrorError(
                 description=deduct_api_key_from_string(value=str(error)),
                 status_code=error.status,
                 api_message=error.message,
             ) from error
-        except (ConnectionError, ClientConnectionError) as error:
+        except ClientConnectionError as error:
             raise HTTPClientError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
@@ -534,7 +546,7 @@ class InferenceHTTPClient:
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
 
-    @wrap_errors
+    @wrap_errors_async
     async def list_loaded_models_async(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
@@ -562,7 +574,7 @@ class InferenceHTTPClient:
             self.__selected_model = model_id
         return RegisteredModels.from_dict(response_payload)
 
-    @wrap_errors
+    @wrap_errors_async
     async def load_model_async(
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
@@ -599,7 +611,7 @@ class InferenceHTTPClient:
             self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
 
-    @wrap_errors
+    @wrap_errors_async
     async def unload_model_async(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
@@ -625,7 +637,7 @@ class InferenceHTTPClient:
         self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
 
-    @wrap_errors
+    @wrap_errors_async
     async def unload_all_models_async(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
@@ -692,7 +704,7 @@ class InferenceHTTPClient:
         results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
 
-    @wrap_errors
+    @wrap_errors_async
     async def ocr_image_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -729,7 +741,7 @@ class InferenceHTTPClient:
         )
         return combine_gaze_detections(detections=result)
 
-    @wrap_errors
+    @wrap_errors_async
     async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -752,7 +764,7 @@ class InferenceHTTPClient:
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
 
-    @wrap_errors
+    @wrap_errors_async
     async def get_clip_image_embeddings_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -778,7 +790,7 @@ class InferenceHTTPClient:
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
 
-    @wrap_errors
+    @wrap_errors_async
     async def get_clip_text_embeddings_async(
         self, text: Union[str, List[str]]
     ) -> Union[dict, List[dict]]:
@@ -841,7 +853,7 @@ class InferenceHTTPClient:
         api_key_safe_raise_for_status(response=response)
         return response.json()
 
-    @wrap_errors
+    @wrap_errors_async
     async def clip_compare_async(
         self,
         subject: Union[str, ImagesReference],

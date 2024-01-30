@@ -5,16 +5,21 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
+from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
+from aioresponses import aioresponses
 from requests import HTTPError, Request, Response
 from requests_mock.mocker import Mocker
+from yarl import URL
 
 from inference_sdk.http import client
 from inference_sdk.http.client import (
+    DEFAULT_HEADERS,
     InferenceHTTPClient,
     _determine_client_downsizing_parameters,
     _determine_client_mode,
     _ensure_model_is_selected,
     wrap_errors,
+    wrap_errors_async,
 )
 from inference_sdk.http.entities import (
     CLASSIFICATION_TASK,
@@ -151,6 +156,31 @@ def test_wrap_errors_when_http_error_occurs() -> None:
     assert error.value.api_message == "Not Found"
 
 
+@pytest.mark.asyncio
+async def test_wrap_errors_async_when_http_error_occurs() -> None:
+    # given
+    @wrap_errors_async
+    async def example() -> None:
+
+        raise ClientResponseError(
+            request_info=RequestInfo(
+                url=URL("https://some.com"),
+                method="GET",
+                headers={},  # type: ignore
+            ),
+            history=(),
+            status=404,
+            message="Not Found",
+        )
+
+    # when
+    with pytest.raises(HTTPCallErrorError) as error:
+        await example()
+
+    assert error.value.status_code == 404
+    assert error.value.api_message == "Not Found"
+
+
 def test_wrap_errors_when_connection_error_occurs() -> None:
     # given
     @wrap_errors
@@ -162,6 +192,18 @@ def test_wrap_errors_when_connection_error_occurs() -> None:
         example()
 
 
+@pytest.mark.asyncio
+async def test_wrap_errors_async_when_connection_error_occurs() -> None:
+    # given
+    @wrap_errors_async
+    async def example() -> None:
+        raise ClientConnectionError()
+
+    # when
+    with pytest.raises(HTTPClientError):
+        await example()
+
+
 def test_wrap_errors_when_unknown_error_occurs() -> None:
     # given
     @wrap_errors
@@ -171,6 +213,18 @@ def test_wrap_errors_when_unknown_error_occurs() -> None:
     # when
     with pytest.raises(Exception):
         example()
+
+
+@pytest.mark.asyncio
+async def test_wrap_errors_async_when_unknown_error_occurs() -> None:
+    # given
+    @wrap_errors_async
+    async def example() -> None:
+        raise Exception()
+
+    # when
+    with pytest.raises(Exception):
+        await example()
 
 
 def test_setting_configuration_statically() -> None:
@@ -273,6 +327,18 @@ def test_client_unload_all_models_in_v0_mode() -> None:
             _ = http_client.unload_all_models()
 
 
+@pytest.mark.asyncio
+async def test_client_unload_all_models_async_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.unload_all_models_async()
+
+
 def test_client_unload_all_models_when_successful_response_expected(
     requests_mock: Mocker,
 ) -> None:
@@ -283,6 +349,23 @@ def test_client_unload_all_models_when_successful_response_expected(
 
     # when
     result = http_client.unload_all_models()
+
+    # then
+    assert result == RegisteredModels(models=[])
+
+
+@pytest.mark.asyncio
+async def test_client_unload_all_models_async_when_successful_response_expected() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    with aioresponses() as m:
+        m.post(f"{api_url}/model/clear", payload={"models": []})
+
+        # when
+        result = await http_client.unload_all_models_async()
 
     # then
     assert result == RegisteredModels(models=[])
@@ -303,6 +386,24 @@ def test_client_unload_all_models_when_error_occurs(requests_mock: Mocker) -> No
         _ = http_client.unload_all_models()
 
 
+@pytest.mark.asyncio
+async def test_client_unload_all_models_async_when_error_occurs() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/clear",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.unload_all_models_async()
+
+
 def test_client_unload_single_model_in_v0_mode() -> None:
     # given
     api_url = "http://some.com"
@@ -312,6 +413,18 @@ def test_client_unload_single_model_in_v0_mode() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.unload_model(model_id="other/1")
+
+
+@pytest.mark.asyncio
+async def test_client_unload_single_model_async_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.unload_model_async(model_id="other/1")
 
 
 def test_client_unload_single_model_when_successful_response_expected(
@@ -326,15 +439,44 @@ def test_client_unload_single_model_when_successful_response_expected(
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
-    result = http_client.unload_model(model_id="other/1")
+    result = http_client.unload_model(model_id="some/1")
 
     # then
     assert result == RegisteredModels(
         models=[ModelDescription(model_id="some/1", task_type="classification")]
     )
     assert requests_mock.last_request.json() == {
-        "model_id": "other/1",
+        "model_id": "some/1",
     }
+
+
+@pytest.mark.asyncio
+async def test_client_unload_single_model_async_when_successful_response_expected() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/remove",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+        # when
+        result = await http_client.unload_model_async(model_id="some/1")
+
+        # then
+        assert result == RegisteredModels(
+            models=[ModelDescription(model_id="some/1", task_type="classification")]
+        )
+        m.assert_called_with(
+            url=f"{api_url}/model/remove",
+            method="POST",
+            json={
+                "model_id": "some/1",
+            },
+            headers=DEFAULT_HEADERS,
+        )
 
 
 def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> None:
@@ -353,6 +495,31 @@ def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> 
     assert requests_mock.last_request.json() == {
         "model_id": "other/1",
     }
+
+
+@pytest.mark.asyncio
+async def test_client_unload_single_model_async_when_error_occurs() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/remove",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.unload_model_async(model_id="other/1")
+        m.assert_called_with(
+            url=f"{api_url}/model/remove",
+            method="POST",
+            json={
+                "model_id": "other/1",
+            },
+            headers=DEFAULT_HEADERS,
+        )
 
 
 def test_client_load_model_when_successful_response_expected(
@@ -380,6 +547,36 @@ def test_client_load_model_when_successful_response_expected(
     }
 
 
+@pytest.mark.asyncio
+async def test_client_load_model_async_when_successful_response_expected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/add",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+
+        # when
+        result = await http_client.load_model_async(
+            model_id="some/1", set_as_default=True
+        )
+
+        # then
+        assert result == RegisteredModels(
+            models=[ModelDescription(model_id="some/1", task_type="classification")]
+        )
+        assert http_client.selected_model == "some/1"
+        m.assert_called_with(
+            url=f"{api_url}/model/add",
+            method="POST",
+            json={"model_id": "some/1", "api_key": "my-api-key"},
+            headers=DEFAULT_HEADERS,
+        )
+
+
 def test_client_load_model_in_v0_mode() -> None:
     # given
     api_url = "http://some.com"
@@ -389,6 +586,18 @@ def test_client_load_model_in_v0_mode() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.load_model(model_id="other/1")
+
+
+@pytest.mark.asyncio
+async def test_client_load_model_async_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.load_model_async(model_id="other/1")
 
 
 def test_client_load_model_when_unsuccessful_response_expected(
@@ -415,6 +624,35 @@ def test_client_load_model_when_unsuccessful_response_expected(
     }
 
 
+@pytest.mark.asyncio
+async def test_client_load_model_async_when_unsuccessful_response_expected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/add",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.load_model_async(
+                model_id="some/1", set_as_default=True
+            )
+
+        # then
+        assert http_client.selected_model is None
+        m.assert_called_with(
+            url=f"{api_url}/model/add",
+            method="POST",
+            json={"model_id": "some/1", "api_key": "my-api-key"},
+            headers=DEFAULT_HEADERS,
+        )
+
+
 def test_list_loaded_models_in_v0_mode() -> None:
     # given
     api_url = "http://some.com"
@@ -424,6 +662,18 @@ def test_list_loaded_models_in_v0_mode() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.list_loaded_models()
+
+
+@pytest.mark.asyncio
+async def test_list_loaded_models_async_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.list_loaded_models_async()
 
 
 def test_list_loaded_models_when_successful_response_expected(
@@ -458,6 +708,39 @@ def test_list_loaded_models_when_successful_response_expected(
     )
 
 
+@pytest.mark.asyncio
+async def test_list_loaded_models_async_when_successful_response_expected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={
+                "models": [
+                    {
+                        "model_id": "some/1",
+                        "task_type": "classification",
+                        "batch_size": "batch",
+                    }
+                ]
+            },
+        )
+
+        # when
+        result = await http_client.list_loaded_models_async()
+
+        # then
+        assert result == RegisteredModels(
+            models=[
+                ModelDescription(
+                    model_id="some/1", task_type="classification", batch_size="batch"
+                )
+            ]
+        )
+
+
 def test_list_loaded_models_when_unsuccessful_response_expected(
     requests_mock: Mocker,
 ) -> None:
@@ -475,6 +758,23 @@ def test_list_loaded_models_when_unsuccessful_response_expected(
         _ = http_client.list_loaded_models()
 
 
+@pytest.mark.asyncio
+async def test_list_loaded_models_when_unsuccessful_response_expected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.list_loaded_models_async()
+
+
 def test_get_model_description_in_v0_mode() -> None:
     # given
     api_url = "http://some.com"
@@ -484,6 +784,18 @@ def test_get_model_description_in_v0_mode() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.get_model_description(model_id="some/1")
+
+
+@pytest.mark.asyncio
+async def test_get_model_description_async_in_v0_mode() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.get_model_description_async(model_id="some/1")
 
 
 def test_get_model_description_when_model_when_error_occurs_in_model_listing(
@@ -503,6 +815,25 @@ def test_get_model_description_when_model_when_error_occurs_in_model_listing(
         _ = http_client.get_model_description(model_id="some/1")
 
 
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_when_error_occurs_in_model_listing() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.get_model_description_async(model_id="some/1")
+
+
 def test_get_model_description_when_model_was_loaded_already(
     requests_mock: Mocker,
 ) -> None:
@@ -519,6 +850,24 @@ def test_get_model_description_when_model_was_loaded_already(
 
     # then
     assert result == ModelDescription(model_id="some/1", task_type="classification")
+
+
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_was_loaded_already() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+        # when
+        result = await http_client.get_model_description_async(model_id="some/1")
+
+        # then
+        assert result == ModelDescription(model_id="some/1", task_type="classification")
 
 
 def test_get_model_description_when_model_was_not_loaded_before_and_successful_load(
@@ -550,6 +899,35 @@ def test_get_model_description_when_model_was_not_loaded_before_and_successful_l
     assert result == ModelDescription(model_id="some/1", task_type="classification")
 
 
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_was_not_loaded_before_and_successful_load() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": []},
+        )
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+        m.post(
+            f"{api_url}/model/add",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+
+        # when
+        result = await http_client.get_model_description_async(model_id="some/1")
+
+        # then
+        assert result == ModelDescription(model_id="some/1", task_type="classification")
+
+
 def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful_load(
     requests_mock: Mocker,
 ) -> None:
@@ -559,11 +937,6 @@ def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful
         f"{api_url}/model/registry",
         [
             {"json": {"models": []}},
-            {
-                "json": {
-                    "models": [{"model_id": "some/1", "task_type": "classification"}]
-                }
-            },
         ],
     )
     requests_mock.post(
@@ -578,6 +951,30 @@ def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful
         _ = http_client.get_model_description(model_id="some/1")
 
 
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_was_not_loaded_before_and_unsuccessful_load() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": []},
+        )
+        m.post(
+            f"{api_url}/model/add",
+            payload={"message": "Internal error."},
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.get_model_description_async(model_id="some/1")
+
+
 def test_infer_from_api_v0_when_model_not_selected() -> None:
     # given
     api_url = "http://some.com"
@@ -586,6 +983,19 @@ def test_infer_from_api_v0_when_model_not_selected() -> None:
     # when
     with pytest.raises(ModelNotSelectedError):
         _ = http_client.infer_from_api_v0(inference_input="https://some/image.jpg")
+
+
+@pytest.mark.asyncio
+async def test_infer_from_api_v0_async_when_model_not_selected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(ModelNotSelectedError):
+        _ = await http_client.infer_from_api_v0_async(
+            inference_input="https://some/image.jpg"
+        )
 
 
 @mock.patch.object(client, "load_static_inference_input")
