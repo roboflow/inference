@@ -18,6 +18,8 @@ from inference_sdk.http.utils.post_processing import (
     adjust_points_coordinates_to_client_scaling_factor,
     adjust_prediction_to_client_scaling_factor,
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
+    combine_clip_embeddings,
+    combine_gaze_detections,
     decode_workflow_output_image,
     decode_workflow_outputs,
     is_workflow_image,
@@ -576,3 +578,63 @@ def test_decode_workflow_outputs() -> None:
     assert (
         result["third"][1]["type"] == "numpy_object"
     ), "This element must be deserialize"
+
+
+def test_combine_gaze_detections_when_single_detections_given() -> None:
+    # when
+    result = combine_gaze_detections(detections={"predictions": []})
+
+    # then
+    assert result == {"predictions": []}
+
+
+def test_combine_gaze_detections_when_multiple_detections_given() -> None:
+    # when
+    result = combine_gaze_detections(
+        detections=[
+            [{"predictions": ["a"]}, {"predictions": ["b"]}],
+            {"predictions": ["c"]},
+        ]
+    )
+
+    # then
+    assert result == [
+        {"predictions": ["a"]},
+        {"predictions": ["b"]},
+        {"predictions": ["c"]},
+    ]
+
+
+def test_combine_clip_embeddings_when_single_response_given() -> None:
+    # given
+    embeddings = {"frame_id": "a", "embeddings": ["1", "2", "3"], "time": "some"}
+
+    # when
+    result = combine_clip_embeddings(embeddings=embeddings)
+
+    # then
+    assert result == [
+        {"frame_id": "a", "embeddings": ["1"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["2"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["3"], "time": "some"},
+    ], "Single response with 3 elements in batch should be unwrapped into three separate outputs"
+
+
+def test_combine_clip_embeddings_when_multiple_responses_given() -> None:
+    # given
+    embeddings = [
+        {"frame_id": "a", "embeddings": ["1", "2", "3"], "time": "some"},
+        {"frame_id": "b", "embeddings": ["4", "5"], "time": "other"},
+    ]
+
+    # when
+    result = combine_clip_embeddings(embeddings=embeddings)
+
+    # then
+    assert result == [
+        {"frame_id": "a", "embeddings": ["1"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["2"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["3"], "time": "some"},
+        {"frame_id": "b", "embeddings": ["4"], "time": "other"},
+        {"frame_id": "b", "embeddings": ["5"], "time": "other"},
+    ], "Each embedding from each response should be unwrapped and results should be flattened at the end"
