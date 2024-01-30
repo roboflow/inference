@@ -134,7 +134,9 @@ def load_image_from_string(
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
     if uri_is_http_link(uri=reference):
-        return load_image_from_url(url=reference, max_height=max_height, max_width=max_width)
+        return load_image_from_url(
+            url=reference, max_height=max_height, max_width=max_width
+        )
     if os.path.exists(reference):
         local_image = cv2.imread(reference)
         if local_image is None:
