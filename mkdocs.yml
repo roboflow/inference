@@ -67,12 +67,10 @@ nav:
       - Predict Over UDP: quickstart/run_model_over_udp.md
       - Collect Data Without a Model: quickstart/stubs.md
   - Models:
-    # - Models: models.md
-    # - Fine Tuned Models:
-    #   - ViT: models/vit.md
-    #   - YOLOv5: models/yolov5.md
-    #   - YOLOv7: models/yolov7.md
-    #   - YOLOv8: models/yolov8.md
+    - How to Load a Model:
+      - Supported Models: models/supported_models.md
+      - From Roboflow: quickstart/explore_models.md
+      - From Local Weights: models/from_local_weights.md
     - Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md
