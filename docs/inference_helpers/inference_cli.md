@@ -13,6 +13,12 @@ To create custom Inference server Docker images, go to the parent package, <a hr
 
 <a href="https://roboflow.com" target="_blank">Roboflow</a> has everything you need to deploy a computer vision model to a range of devices and environments. Inference supports object detection, classification, and instance segmentation models, and running foundation models (CLIP and SAM).
 
+### Installation
+
+```bash
+pip install roboflow-cli
+```
+
 ## Examples
 
 ### inference server start
@@ -150,25 +156,127 @@ Roboflow Inference deploy currently supports AWS and GCP, please open an issue o
 
 ### inference infer
 
-Runs Inference on a single image. It takes a path to an image, a Roboflow project name, model version, and API key, and will return a JSON object with the model's predictions. You can also specify a host to run Inference on our hosted Inference server.
+It takes input path / url and model version to produce predictions (and optionally make visualisation using 
+`supervision`). You can also specify a host to run inference on our hosted inference server.
+
+!!! note
+    
+    If you decided to use hosted inference server - make sure command `inference server start` was used first 
+
+!!! tip
+    
+    Use `inference infer --help` to display description of parameters
+
+!!! tip
+    
+    Roboflow API key can be provided via `ROBOFLOW_API_KEY` environment variable
 
 #### Local image
 
+This command is going to make a prediction from local image using selected model and print the prediction on 
+the console.
+
 ```bash
-inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key
+inference infer -i ./image.jpg -m {your_project}/{version} --api-key {YOUR_API_KEY}
+```
+
+To display visualised prediction use `-D` option. To save prediction and visualisation in a local directory,
+use `-o {path_to_your_directory}` option. Those options work also in other modes.
+
+```bash
+inference infer -i ./image.jpg -m {your_project}/{version} --api-key {YOUR_API_KEY} -D -o {path_to_your_output_directory}
 ```
 
 #### Hosted image
 
 ```bash
-inference infer https://[YOUR_HOSTED_IMAGE_URL] --project-id my-project --model-version 1 --api-key my-api-key
+inference infer -i https://[YOUR_HOSTED_IMAGE_URL] -m {your_project}/{version} --api-key {YOUR_API_KEY}
 ```
 
 #### Hosted API inference
 
 ```bash
-inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
+inference infer -i ./image.jpg -m {your_project}/{version} --api-key {YOUR_API_KEY} -h https://detect.roboflow.com
 ```
+
+#### Local directory
+
+```bash
+inference infer -i {your_directory_with_images} -m {your_project}/{version} -o {path_to_your_output_directory} --api-key {YOUR_API_KEY}
+```
+
+#### Video file
+
+```bash
+inference infer -i {path_to_your_video_file} -m {your_project}/{version} -o {path_to_your_output_directory} --api-key {YOUR_API_KEY}
+```
+
+#### Configuration of visualisation
+Option `-c` can be provided with a path to `*.yml` file configuring `supervision` visualisation.
+There are few pre-defined configs:
+- `bounding_boxes` - with `BoundingBoxAnnotator` and `LabelAnnotator` annotators
+- `bounding_boxes_tracing` - with `ByteTracker` and annotators (`BoundingBoxAnnotator`, `LabelAnnotator`)
+- `masks` - with `MaskAnnotator` and `LabelAnnotator` annotators
+- `polygons` - with `PolygonAnnotator` and `LabelAnnotator` annotators
+
+Custom configuration can be created following the schema:
+```yaml
+annotators:
+  - type: "bounding_box"
+    params:
+      thickness: 2
+  - type: "label"
+    params:
+      text_scale: 0.5
+      text_thickness: 2
+      text_padding: 5
+  - type: "trace"
+    params:
+      trace_length: 60
+      thickness: 2
+tracking:
+  track_thresh: 0.25
+  track_buffer: 30
+  match_thresh: 0.8
+  frame_rate: 30
+```
+`annotators` field is a list of dictionaries with two keys: `type` and `param`. `type` points to 
+name of annotator class:
+```python
+from supervision import *
+ANNOTATOR_TYPE2CLASS = {
+    "bounding_box": BoundingBoxAnnotator,
+    "mask": MaskAnnotator,
+    "polygon": PolygonAnnotator,
+    "color": ColorAnnotator,
+    "halo": HaloAnnotator,
+    "ellipse": EllipseAnnotator,
+    "box_corner": BoxCornerAnnotator,
+    "circle": CircleAnnotator,
+    "dot": DotAnnotator,
+    "label": LabelAnnotator,
+    "blur": BlurAnnotator,
+    "trace": TraceAnnotator,
+    "heat_map": HeatMapAnnotator,
+    "pixelate": PixelateAnnotator,
+    "triangle": TriangleAnnotator,
+}
+```
+`param` is a dictionary of annotator constructor parameters (check them in 
+[`supervision`](https://github.com/roboflow/supervision) docs - you would only be able
+to use primitive values, classes and enums that are defined in constructors may not be possible
+to resolve from yaml config).
+
+`tracking` is an optional key that holds a dictionary with constructor parameters for
+`ByteTrack`.
+
+#### Configuration of model
+`-mc` parameter can be provided with path to `*.yml` file that specifies 
+model configuration (like confidence threshold or IoU threshold). If given,
+configuration will be used to initialise `InferenceConfiguration` object
+from `inference_sdk` library. See [sdk docs](./inference_sdk.md) to discover
+which options can be configured via `*.yml` file - configuration keys must match
+with names of fields in `InferenceConfiguration` object.
 
 ## Supported Devices
 
