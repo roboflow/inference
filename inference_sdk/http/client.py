@@ -5,6 +5,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 import aiohttp
 import numpy as np
 import requests
+from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
 from inference_sdk.http.entities import (
@@ -56,6 +57,7 @@ from inference_sdk.http.utils.request_building import (
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     inject_images_into_payload,
+    deduct_api_key_from_string,
 )
 
 SUCCESSFUL_STATUS_CODE = 200
@@ -85,9 +87,15 @@ def wrap_errors(function: callable) -> callable:
                 status_code=error.response.status_code,
                 api_message=api_message,
             ) from error
-        except ConnectionError as error:
+        except ClientResponseError as error:
+            raise HTTPCallErrorError(
+                description=deduct_api_key_from_string(value=str(error)),
+                status_code=error.status,
+                api_message=error.message,
+            ) from error
+        except (ConnectionError, ClientConnectionError) as error:
             raise HTTPClientError(
-                f"Error with server connection: {str(error)}"
+                f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
     return decorate
