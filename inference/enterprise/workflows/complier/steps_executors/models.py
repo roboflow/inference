@@ -52,6 +52,7 @@ from inference.enterprise.workflows.entities.steps import (
     RoboflowModel,
     StepInterface,
 )
+from inference.models.aliases import resolve_roboflow_model_alias
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
@@ -277,7 +278,7 @@ async def get_roboflow_model_predictions_from_remote_api(
         inference_input = [i["value"] for i in image]
     results = await client.infer_async(
         inference_input=inference_input,
-        model_id=model_id,
+        model_id=resolve_roboflow_model_alias(model_id),
     )
     # just for now, until we have hosted inference deployed with new version
     return _inject_detection_id_if_remote_api_does_not_provide_one(

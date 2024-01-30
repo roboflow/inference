@@ -1855,9 +1855,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
 
     # when
     result = http_client.infer_from_workflow(
-        workflow_specification={
-            "my": "specification",
-        },
+        workflow_specification={"specification": {"my": "specification"}},
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
             "some": 10,

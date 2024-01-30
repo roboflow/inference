@@ -904,8 +904,9 @@ class InferenceHTTPClient:
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
         """
-        named_workflow_specified = (workspace_name is not None) and (workflow_name is not None)
-        print("named_workflow_specified", named_workflow_specified, "workflow_specification", workflow_specification is not None)
+        named_workflow_specified = (workspace_name is not None) and (
+            workflow_name is not None
+        )
         if not (named_workflow_specified != (workflow_specification is not None)):
             raise InvalidParameterError(
                 "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
@@ -931,7 +932,7 @@ class InferenceHTTPClient:
         if excluded_fields is not None:
             payload["excluded_fields"] = excluded_fields
         if workflow_specification is not None:
-            payload["specification"] = workflow_specification
+            payload["specification"] = workflow_specification["specification"]
         if workflow_specification is not None:
             url = f"{self.__api_url}/infer/workflows"
         else:

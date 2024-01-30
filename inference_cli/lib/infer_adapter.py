@@ -36,7 +36,7 @@ from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import dump_json
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.encoding import bytes_to_opencv_image
-from inference_sdk.http.utils.loaders import load_image_from_uri
+from inference_sdk.http.utils.loaders import load_image_from_string
 
 CONFIGS_DIR_PATH = os.path.abspath(
     os.path.join(
@@ -281,7 +281,7 @@ def infer_on_image(
     prediction = client.infer(inference_input=input_reference, model_id=model_id)
     visualised = None
     if visualise:
-        frame_base64 = load_image_from_uri(uri=input_reference)[0]
+        frame_base64 = load_image_from_string(uri=input_reference)[0]
         frame_bytes = base64.b64decode(frame_base64)
         frame = bytes_to_opencv_image(payload=frame_bytes)
         visualised = on_frame_visualise(frame, prediction)

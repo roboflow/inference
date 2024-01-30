@@ -375,6 +375,12 @@ CLIENT.infer_from_workflow(
 )
 ```
 
+Please note that either `workflow_specification` is provided with specification of workflow as described
+[here](https://github.com/roboflow/inference/blob/main/inference/enterprise/deployments/README.md) or 
+both `workspace_name` and `workflow_name` are given to use workflow predefined in Roboflow app. `workspace_name`
+can be found in Roboflow APP URL once browser shows the main panel of workspace. 
+
+
 ## Details about client configuration
 
 `inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
