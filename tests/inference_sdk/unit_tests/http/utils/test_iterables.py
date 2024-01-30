@@ -1,6 +1,7 @@
 from inference_sdk.http.utils.iterables import (
+    make_batches,
     remove_empty_values,
-    unwrap_single_element_list, make_batches,
+    unwrap_single_element_list,
 )
 
 
