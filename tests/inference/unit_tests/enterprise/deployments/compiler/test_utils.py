@@ -1,6 +1,6 @@
 import networkx as nx
 
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.utils import (
     construct_selector_pointing_step_output,
     get_input_parameters_selectors,
     get_nodes_of_specific_kind,
@@ -14,13 +14,13 @@ from inference.enterprise.deployments.complier.utils import (
     is_input_selector,
     is_step_output_selector,
 )
-from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.steps import (
     Condition,
     Crop,
     DetectionsConsensus,

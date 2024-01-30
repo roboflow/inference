@@ -2,12 +2,12 @@ from typing import Any, List, Set
 
 from networkx import DiGraph
 
-from inference.enterprise.deployments.entities.deployment_specs import (
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.validators import is_selector
+from inference.enterprise.workflows.entities.workflows_specification import (
     InputType,
     StepType,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.validators import is_selector
 
 
 def get_input_parameters_selectors(inputs: List[InputType]) -> Set[str]:

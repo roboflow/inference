@@ -61,7 +61,7 @@ ENV PYTHONPATH=/app/
 ENV REDIS_HOST="localhost"
 ENV REDIS_PORT="6380"
 ENV CORE_MODELS_ENABLED=false
-
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 
 ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \

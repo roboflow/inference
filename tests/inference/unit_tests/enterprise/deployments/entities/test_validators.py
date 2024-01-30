@@ -3,12 +3,12 @@ from typing import Any, List
 import numpy as np
 import pytest
 
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
-from inference.enterprise.deployments.entities.validators import (
+from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
+from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
@@ -28,7 +28,7 @@ from inference.enterprise.deployments.entities.validators import (
     validate_value_is_empty_or_positive_number,
     validate_value_is_empty_or_selector_or_positive_number,
 )
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.errors import (
     InvalidStepInputDetected,
     VariableTypeError,
 )

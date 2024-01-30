@@ -49,5 +49,6 @@ COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
 ENV PYTHONPATH=/app/
 ENV PROJECT=roboflow-platform
 ENV CORE_MODELS_ENABLED=false
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 
 ENTRYPOINT python3 entrypoint.py

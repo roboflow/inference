@@ -1,8 +1,8 @@
-from inference.enterprise.deployments.complier.steps_executors.utils import (
+from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
     resolve_parameter,
 )
-from inference.enterprise.deployments.entities.steps import ObjectDetectionModel
+from inference.enterprise.workflows.entities.steps import ObjectDetectionModel
 
 
 def test_get_image_when_image_to_be_found_in_input() -> None:

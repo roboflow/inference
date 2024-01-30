@@ -37,7 +37,7 @@ def orjson_response(
     return ORJSONResponseBytes(content=content)
 
 
-def serialise_deployment_workflow_result(
+def serialise_workflow_result(
     result: Dict[str, Any],
     excluded_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:

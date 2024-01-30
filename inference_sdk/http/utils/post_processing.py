@@ -21,19 +21,19 @@ IMAGES_TRANSCODING_METHODS = {
 }
 
 
-def decode_deployment_outputs(
-    deployment_outputs: Dict[str, Any],
+def decode_workflow_outputs(
+    workflow_outputs: Dict[str, Any],
     expected_format: VisualisationResponseFormat,
 ) -> Dict[str, Any]:
     result = {}
-    for key, value in deployment_outputs.items():
-        if is_deployment_image(value=value):
-            value = decode_deployment_output_image(
+    for key, value in workflow_outputs.items():
+        if is_workflow_image(value=value):
+            value = decode_workflow_output_image(
                 value=value,
                 expected_format=expected_format,
             )
         elif issubclass(type(value), list):
-            value = decode_deployment_output_list(
+            value = decode_workflow_output_list(
                 elements=value,
                 expected_format=expected_format,
             )
@@ -41,14 +41,14 @@ def decode_deployment_outputs(
     return result
 
 
-def decode_deployment_output_list(
+def decode_workflow_output_list(
     elements: List[Any],
     expected_format: VisualisationResponseFormat,
 ) -> List[Any]:
     result = []
     for element in elements:
-        if is_deployment_image(value=element):
-            element = decode_deployment_output_image(
+        if is_workflow_image(value=element):
+            element = decode_workflow_output_image(
                 value=element,
                 expected_format=expected_format,
             )
@@ -56,11 +56,11 @@ def decode_deployment_output_list(
     return result
 
 
-def is_deployment_image(value: Any) -> bool:
+def is_workflow_image(value: Any) -> bool:
     return issubclass(type(value), dict) and value.get("type") == "base64"
 
 
-def decode_deployment_output_image(
+def decode_workflow_output_image(
     value: Dict[str, Any],
     expected_format: VisualisationResponseFormat,
 ) -> Dict[str, Any]:

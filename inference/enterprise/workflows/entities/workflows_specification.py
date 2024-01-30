@@ -2,12 +2,12 @@ from typing import Annotated, List, Literal, Union
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
     ClassificationModel,
     ClipComparison,
@@ -48,14 +48,14 @@ StepType = Annotated[
 ]
 
 
-class DeploymentSpecV1(BaseModel):
+class WorkflowSpecificationV1(BaseModel):
     version: Literal["1.0"]
     inputs: List[InputType]
     steps: List[StepType]
     outputs: List[JsonField]
 
 
-class DeploymentSpecification(BaseModel):
+class WorkflowSpecification(BaseModel):
     specification: (
-        DeploymentSpecV1  # in the future - union with discriminator can be used
+        WorkflowSpecificationV1  # in the future - union with discriminator can be used
     )

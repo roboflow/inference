@@ -3,8 +3,8 @@ from typing import Any, List, Optional, Set, Type
 from pydantic import PydanticTypeError
 
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.enterprise.deployments.entities.base import GraphNone
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.errors import (
     InvalidStepInputDetected,
     VariableTypeError,
 )

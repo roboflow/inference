@@ -52,5 +52,6 @@ ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV HOST=0.0.0.0
 ENV PORT=7070
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 
 ENTRYPOINT ["python3", "-m", "inference.enterprise.stream_management.manager.app"]

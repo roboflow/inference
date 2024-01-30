@@ -13,17 +13,17 @@ from inference.core.entities.requests.inference import (
     ObjectDetectionInferenceRequest,
 )
 from inference.core.env import (
-    DEPLOYMENTS_REMOTE_API,
-    DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     HOSTED_CLASSIFICATION_URL,
     HOSTED_CORE_MODEL_URL,
     HOSTED_DETECT_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.enterprise.deployments.complier.entities import StepExecutionMode
-from inference.enterprise.deployments.complier.steps_executors.constants import (
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
     DETECTION_ID_KEY,
@@ -31,17 +31,17 @@ from inference.enterprise.deployments.complier.steps_executors.constants import 
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
 )
-from inference.enterprise.deployments.complier.steps_executors.types import (
+from inference.enterprise.workflows.complier.steps_executors.types import (
     NextStepReference,
     OutputsLookup,
 )
-from inference.enterprise.deployments.complier.steps_executors.utils import (
+from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
     make_batches,
     resolve_parameter,
 )
-from inference.enterprise.deployments.complier.utils import construct_step_selector
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.complier.utils import construct_step_selector
+from inference.enterprise.workflows.entities.steps import (
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -263,7 +263,7 @@ async def get_roboflow_model_predictions_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
-    if DEPLOYMENTS_REMOTE_API == "hosted":
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         client.select_api_v0()
     configuration = MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR[step.type](
         step=step,
@@ -328,8 +328,8 @@ def construct_http_client_configuration_for_classification_step(
     return InferenceConfiguration(
         confidence_threshold=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
-        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -351,8 +351,8 @@ def construct_http_client_configuration_for_detection_step(
         iou_threshold=resolve(step.iou_threshold),
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
-        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -376,8 +376,8 @@ def construct_http_client_configuration_for_segmentation_step(
         max_candidates=resolve(step.max_candidates),
         mask_decode_mode=resolve(step.mask_decode_mode),
         tradeoff_factor=resolve(step.tradeoff_factor),
-        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -400,8 +400,8 @@ def construct_http_client_configuration_for_keypoints_detection_step(
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
         keypoint_confidence_threshold=resolve(step.keypoint_confidence),
-        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -486,11 +486,11 @@ async def get_ocr_predictions_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
-    if DEPLOYMENTS_REMOTE_API == "hosted":
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         client.select_api_v0()
     configuration = InferenceConfiguration(
-        max_batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
     client.configure(configuration)
     return await client.ocr_image_async(
@@ -579,12 +579,12 @@ async def get_clip_comparison_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
-    if DEPLOYMENTS_REMOTE_API == "hosted":
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         client.select_api_v0()
     image_batches = list(
         make_batches(
             iterable=image,
-            batch_size=DEPLOYMENTS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
     )
     serialised_result = []
@@ -710,6 +710,6 @@ ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
 
 
 def resolve_model_api_url(step: StepInterface) -> str:
-    if DEPLOYMENTS_REMOTE_API != "hosted":
+    if WORKFLOWS_REMOTE_API_TARGET != "hosted":
         return LOCAL_INFERENCE_API_URL
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]

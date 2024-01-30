@@ -138,7 +138,9 @@ def test_load_image_from_uri_when_file_to_be_downloaded(
     requests_get_mock.return_value = response
 
     # when
-    serialised_image, scaling_factor = load_image_from_string(uri="https://some/file.jpg")
+    serialised_image, scaling_factor = load_image_from_string(
+        uri="https://some/file.jpg"
+    )
 
     # then
     recovered_image = base64.b64decode(serialised_image)

@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.enterprise.deployments.complier.steps_executors import auxiliary
-from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
+from inference.enterprise.workflows.complier.steps_executors import auxiliary
+from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
     aggregate_field_values,
     calculate_iou,
     check_objects_presence_in_consensus_predictions,
@@ -32,7 +32,7 @@ from inference.enterprise.deployments.complier.steps_executors.auxiliary import 
     run_detection_filter,
     take_static_crop,
 )
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
     AggregationMode,
     Condition,
@@ -40,7 +40,7 @@ from inference.enterprise.deployments.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
-from inference.enterprise.deployments.errors import ExecutionGraphError
+from inference.enterprise.workflows.errors import ExecutionGraphError
 
 
 def test_crop_image() -> None:

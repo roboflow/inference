@@ -1,8 +1,8 @@
-class DeploymentCompilerError(Exception):
+class WorkflowsCompilerError(Exception):
     pass
 
 
-class ValidationError(DeploymentCompilerError):
+class ValidationError(WorkflowsCompilerError):
     pass
 
 
@@ -18,7 +18,7 @@ class InvalidReferenceError(ValidationError):
     pass
 
 
-class ExecutionGraphError(DeploymentCompilerError):
+class ExecutionGraphError(WorkflowsCompilerError):
     pass
 
 
@@ -42,11 +42,11 @@ class InvalidStepInputDetected(ExecutionGraphError):
     pass
 
 
-class DeploymentCompilerRuntimeError(DeploymentCompilerError):
+class WorkflowsCompilerRuntimeError(WorkflowsCompilerError):
     pass
 
 
-class RuntimePayloadError(DeploymentCompilerRuntimeError):
+class RuntimePayloadError(WorkflowsCompilerRuntimeError):
     pass
 
 

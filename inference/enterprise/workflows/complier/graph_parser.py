@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import networkx as nx
 from networkx import DiGraph
 
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.utils import (
     construct_input_selector,
     construct_output_name,
     construct_step_selector,
@@ -14,20 +14,20 @@ from inference.enterprise.deployments.complier.utils import (
     is_condition_step,
     is_step_output_selector,
 )
-from inference.enterprise.deployments.constants import (
+from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.deployments.entities.deployment_specs import (
-    DeploymentSpecV1,
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.steps import StepInterface
+from inference.enterprise.workflows.entities.validators import is_selector
+from inference.enterprise.workflows.entities.workflows_specification import (
     InputType,
     StepType,
+    WorkflowSpecificationV1,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import StepInterface
-from inference.enterprise.deployments.entities.validators import is_selector
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.errors import (
     AmbiguousPathDetected,
     NodesNotReachingOutputError,
     NotAcyclicGraphError,
@@ -35,8 +35,8 @@ from inference.enterprise.deployments.errors import (
 )
 
 
-def prepare_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
-    execution_graph = construct_graph(deployment_spec=deployment_spec)
+def prepare_execution_graph(workflow_specification: WorkflowSpecificationV1) -> DiGraph:
+    execution_graph = construct_graph(workflow_specification=workflow_specification)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
@@ -47,22 +47,22 @@ def prepare_execution_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
     return execution_graph
 
 
-def construct_graph(deployment_spec: DeploymentSpecV1) -> DiGraph:
+def construct_graph(workflow_specification: WorkflowSpecificationV1) -> DiGraph:
     execution_graph = nx.DiGraph()
     execution_graph = add_input_nodes_for_graph(
-        inputs=deployment_spec.inputs, execution_graph=execution_graph
+        inputs=workflow_specification.inputs, execution_graph=execution_graph
     )
     execution_graph = add_steps_nodes_for_graph(
-        steps=deployment_spec.steps, execution_graph=execution_graph
+        steps=workflow_specification.steps, execution_graph=execution_graph
     )
     execution_graph = add_output_nodes_for_graph(
-        outputs=deployment_spec.outputs, execution_graph=execution_graph
+        outputs=workflow_specification.outputs, execution_graph=execution_graph
     )
     execution_graph = add_steps_edges(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
+        workflow_specification=workflow_specification, execution_graph=execution_graph
     )
     return add_edges_for_outputs(
-        deployment_spec=deployment_spec, execution_graph=execution_graph
+        workflow_specification=workflow_specification, execution_graph=execution_graph
     )
 
 
@@ -108,10 +108,10 @@ def add_output_nodes_for_graph(
 
 
 def add_steps_edges(
-    deployment_spec: DeploymentSpecV1,
+    workflow_specification: WorkflowSpecificationV1,
     execution_graph: DiGraph,
 ) -> DiGraph:
-    for step in deployment_spec.steps:
+    for step in workflow_specification.steps:
         input_selectors = get_step_input_selectors(step=step)
         step_selector = construct_step_selector(step_name=step.name)
         execution_graph = add_edges_for_step_inputs(
@@ -155,10 +155,10 @@ def add_edges_for_step_inputs(
 
 
 def add_edges_for_outputs(
-    deployment_spec: DeploymentSpecV1,
+    workflow_specification: WorkflowSpecificationV1,
     execution_graph: DiGraph,
 ) -> DiGraph:
-    for output in deployment_spec.outputs:
+    for output in workflow_specification.outputs:
         output_selector = output.selector
         if is_step_output_selector(selector_or_value=output_selector):
             output_selector = get_step_selector_from_its_output(
@@ -292,11 +292,7 @@ def detect_steps_with_more_than_one_parent_step(execution_graph: DiGraph) -> Set
         execution_graph=execution_graph,
         kind=STEP_NODE_KIND,
     )
-    edges_of_steps_nodes = [
-        edge
-        for edge in execution_graph.edges()
-        if edge[0] in steps_nodes or edge[1] in steps_nodes
-    ]
+    edges_of_steps_nodes = [edge for edge in execution_graph.edges()]
     steps_parents = defaultdict(set)
     for edge in edges_of_steps_nodes:
         parent, child = edge

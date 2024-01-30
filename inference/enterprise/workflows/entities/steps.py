@@ -4,8 +4,8 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field, validator
 
-from inference.enterprise.deployments.entities.base import GraphNone
-from inference.enterprise.deployments.entities.validators import (
+from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.entities.validators import (
     is_selector,
     validate_field_has_given_type,
     validate_field_is_empty_or_selector_or_list_of_string,
@@ -24,7 +24,7 @@ from inference.enterprise.deployments.entities.validators import (
     validate_value_is_empty_or_positive_number,
     validate_value_is_empty_or_selector_or_positive_number,
 )
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
     InvalidStepInputDetected,
     VariableTypeError,

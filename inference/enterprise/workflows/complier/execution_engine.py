@@ -5,16 +5,17 @@ from typing import Any, Dict, List, Optional, Set
 import networkx as nx
 from networkx import DiGraph
 
+from inference.core import logger
 from inference.core.managers.base import ModelManager
-from inference.enterprise.deployments.complier.entities import StepExecutionMode
-from inference.enterprise.deployments.complier.flow_coordinator import (
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.flow_coordinator import (
     ParallelStepExecutionCoordinator,
     SerialExecutionCoordinator,
 )
-from inference.enterprise.deployments.complier.runtime_input_validator import (
+from inference.enterprise.workflows.complier.runtime_input_validator import (
     prepare_runtime_parameters,
 )
-from inference.enterprise.deployments.complier.steps_executors.auxiliary import (
+from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
     run_condition_step,
     run_crop_step,
     run_detection_filter,
@@ -22,27 +23,25 @@ from inference.enterprise.deployments.complier.steps_executors.auxiliary import 
     run_detections_consensus_step,
     run_static_crop_step,
 )
-from inference.enterprise.deployments.complier.steps_executors.constants import (
+from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_COORDINATES_SUFFIX,
 )
-from inference.enterprise.deployments.complier.steps_executors.models import (
+from inference.enterprise.workflows.complier.steps_executors.models import (
     run_clip_comparison_step,
     run_ocr_model_step,
     run_roboflow_model_step,
 )
-from inference.enterprise.deployments.complier.steps_executors.types import (
-    OutputsLookup,
-)
-from inference.enterprise.deployments.complier.steps_executors.utils import make_batches
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
+from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
+from inference.enterprise.workflows.complier.utils import (
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
     is_condition_step,
 )
-from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND
-from inference.enterprise.deployments.entities.outputs import CoordinatesSystem
-from inference.enterprise.deployments.entities.validators import get_last_selector_chunk
-from inference.enterprise.deployments.errors import DeploymentCompilerRuntimeError
+from inference.enterprise.workflows.constants import OUTPUT_NODE_KIND
+from inference.enterprise.workflows.entities.outputs import CoordinatesSystem
+from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
+from inference.enterprise.workflows.errors import WorkflowsCompilerRuntimeError
 
 STEP_TYPE2EXECUTOR_MAPPING = {
     "ClassificationModel": run_roboflow_model_step,
@@ -116,13 +115,11 @@ async def execute_steps(
     step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
     """outputs_lookup is mutated while execution, only independent steps may be run together"""
-    print(
-        f"Executing steps: {steps}. Execution mode: {step_execution_mode}", flush=True
-    )
+    logger.info(f"Executing steps: {steps}. Execution mode: {step_execution_mode}")
     nodes_to_discard = set()
     steps_batches = list(make_batches(iterable=steps, batch_size=max_concurrent_steps))
     for steps_batch in steps_batches:
-        print(f"Steps batch: {steps_batch}", flush=True)
+        logger.info(f"Steps batch: {steps_batch}")
         coroutines = [
             execute_step(
                 step=step,
@@ -150,7 +147,7 @@ async def execute_step(
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
-    print(f"started execution of: {step} - {datetime.now().isoformat()}", flush=True)
+    logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
     nodes_to_discard = set()
     step_definition = execution_graph.nodes[step]["definition"]
     executor = STEP_TYPE2EXECUTOR_MAPPING[step_definition.type]
@@ -173,7 +170,7 @@ async def execute_step(
                 execution_graph=execution_graph,
                 source=execution_graph.nodes[step]["definition"].step_if_true,
             )
-    print(f"finished execution of: {step} - {datetime.now().isoformat()}", flush=True)
+    logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard
 
 
@@ -255,7 +252,7 @@ def extract_step_result_from_dict(
 ) -> Any:
     step_result = result.get(step_field, result.get(fallback_step_field))
     if step_result is None:
-        raise DeploymentCompilerRuntimeError(
+        raise WorkflowsCompilerRuntimeError(
             f"Cannot find neither field {step_field} nor {fallback_step_field} in result of step {step_selector}"
         )
     return step_result

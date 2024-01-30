@@ -46,5 +46,6 @@ ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

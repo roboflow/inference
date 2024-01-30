@@ -1,4 +1,4 @@
-# Deployments compiler
+# Workflows compiler
 
 > [!IMPORTANT] 
 > We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
@@ -9,20 +9,20 @@ We are under development of new feature that would allow clients to define the M
 (JSON configuration or WYSIWYG UI) and let the `inference` care about all required computations. That goal can be
 achieved thanks to the compilation and runtime engine that is created here.
 
-The `deployment` module contains components capable to:
-* parse the deployment specification (see: [schemas of configuration entities](./entities))
-* validate the correctness of deployment specification (see: [validator module](./complier/validator.py))
+The `workflows` module contains components capable to:
+* parse the workflow specification (see: [schemas of configuration entities](./entities))
+* validate the correctness of workflows specification (see: [validator module](./complier/validator.py))
 * construct computational graph and validate its consistency prior to any computations (see: [graph parser](./complier/graph_parser.py))
 * analyse runtime input parameter and link them with graph placeholders (see: [input validator](./complier/runtime_input_validator.py))
 * execute the computation workflow (see: [execution engine](./complier/execution_engine.py))
 
-![overview diagram](./assets/named_deployments_overview.jpg)
+![overview diagram](./assets/workflows_overview.jpg)
 
-## How to create deployment specification?
+## How to create workflow specification?
 
-### Deployment specification basics
+### Workflow specification basics
 
-Deployment specification is defined via a JSON document in the following format:
+Workflow specification is defined via a JSON document in the following format:
 ```json
 {
   "specification": {
@@ -58,7 +58,7 @@ This input is reserved to represent image or list of images. Definition format:
 {"type": "InferenceImage", "name": "my_image"}
 ```
 When creating `InferenceImage` you do not point a specific image - you just create a placeholder that will be linked
-with other element of the graph. This placeholder will be substituted with actual image when you run the deployment 
+with other element of the graph. This placeholder will be substituted with actual image when you run the workflow 
 graph and provide input parameter called `my_image` that can be `np.ndarray` or other formats that `inference` support,
 like:
 ```json
@@ -70,12 +70,12 @@ like:
 
 ### `InferenceParameter`
 Similar to `InferenceImage` - `InferenceParameter` creates a placeholder for a parameters that can be used in runtime 
-to alter execution of deployment graph.
+to alter execution of workflow graph.
 ```json
 {"type": "InferenceParameter", "name": "confidence_threshold", "default_value": 0.5}
 ```
 `InferenceParameters` may be optionally defined with default values that will be used, if no actual parameter 
-of given name is present in user-defined input while executing the deployment graph. Type of parameter is not 
+of given name is present in user-defined input while executing the workflow graph. Type of parameter is not 
 explicitly defined, but will be checked in runtime, prior to execution based on types of parameters that 
 steps using this parameters can accept.
 

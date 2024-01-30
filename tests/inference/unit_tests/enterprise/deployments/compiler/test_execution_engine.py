@@ -1,16 +1,13 @@
 import networkx as nx
 import pytest
 
-from inference.enterprise.deployments.complier.execution_engine import (
+from inference.enterprise.workflows.complier.execution_engine import (
     construct_response,
     get_all_nodes_in_execution_path,
 )
-from inference.enterprise.deployments.constants import OUTPUT_NODE_KIND
-from inference.enterprise.deployments.entities.outputs import (
-    CoordinatesSystem,
-    JsonField,
-)
-from inference.enterprise.deployments.errors import DeploymentCompilerRuntimeError
+from inference.enterprise.workflows.constants import OUTPUT_NODE_KIND
+from inference.enterprise.workflows.entities.outputs import CoordinatesSystem, JsonField
+from inference.enterprise.workflows.errors import WorkflowsCompilerRuntimeError
 
 
 def test_get_all_nodes_in_execution_path() -> None:
@@ -233,5 +230,5 @@ def test_construct_response_when_expected_step_property_is_missing() -> None:
     outputs_lookup = {"$steps.a": {}}
 
     # when
-    with pytest.raises(DeploymentCompilerRuntimeError):
+    with pytest.raises(WorkflowsCompilerRuntimeError):
         _ = construct_response(execution_graph=graph, outputs_lookup=outputs_lookup)

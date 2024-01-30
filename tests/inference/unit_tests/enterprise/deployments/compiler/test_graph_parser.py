@@ -1,7 +1,7 @@
 import networkx as nx
 import pytest
 
-from inference.enterprise.deployments.complier.graph_parser import (
+from inference.enterprise.workflows.complier.graph_parser import (
     add_input_nodes_for_graph,
     add_output_nodes_for_graph,
     add_steps_nodes_for_graph,
@@ -10,19 +10,21 @@ from inference.enterprise.deployments.complier.graph_parser import (
     prepare_execution_graph,
     verify_each_node_reach_at_least_one_output,
 )
-from inference.enterprise.deployments.constants import (
+from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
+from inference.enterprise.workflows.entities.workflows_specification import (
+    WorkflowSpecificationV1,
+)
+from inference.enterprise.workflows.errors import (
     AmbiguousPathDetected,
     InvalidStepInputDetected,
     NodesNotReachingOutputError,
@@ -110,7 +112,7 @@ def test_add_output_nodes_for_graph() -> None:
 
 def test_construct_graph() -> None:
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -172,7 +174,7 @@ def test_construct_graph() -> None:
     )
 
     # when
-    result = construct_graph(deployment_spec=deployment_specs)
+    result = construct_graph(workflow_specification=workflow_specification)
 
     # then
     assert (
@@ -239,7 +241,7 @@ def test_construct_graph() -> None:
 
 def test_construct_graph_when_detections_consensus_block_is_used() -> None:
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -281,7 +283,7 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
     )
 
     # when
-    result = construct_graph(deployment_spec=deployment_specs)
+    result = construct_graph(workflow_specification=workflow_specification)
 
     # then
     assert (
@@ -394,7 +396,7 @@ def test_prepare_execution_graph_when_step_parameter_contains_undefined_referenc
     None
 ):
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -421,12 +423,12 @@ def test_prepare_execution_graph_when_step_parameter_contains_undefined_referenc
 
     # when
     with pytest.raises(SelectorToUndefinedNodeError):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
 def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -458,12 +460,12 @@ def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
 
     # when
     with pytest.raises(NotAcyclicGraphError):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
 def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None:
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -495,14 +497,14 @@ def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None
 
     # when
     with pytest.raises(NodesNotReachingOutputError):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
 def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branch() -> (
     None
 ):
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -539,7 +541,7 @@ def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_conditio
                     "name": "step_4",
                     "image": "$inputs.image",
                     "detections": "$steps.step_3.predictions",
-                },  # this step requires input from step_3 that will be executed conditionally in different branch
+                },  # this step requires the input from step_3 that will be executed conditionally in different branch
             ],
             "outputs": [
                 {
@@ -558,14 +560,14 @@ def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_conditio
 
     # when
     with pytest.raises(AmbiguousPathDetected):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
 def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branches() -> (
     None
 ):
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -619,14 +621,14 @@ def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_conditio
 
     # when
     with pytest.raises(AmbiguousPathDetected):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
 def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph_edge_incompatible_by_type() -> (
     None
 ):
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -658,4 +660,4 @@ def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph
 
     # when
     with pytest.raises(InvalidStepInputDetected):
-        _ = prepare_execution_graph(deployment_spec=deployment_specs)
+        _ = prepare_execution_graph(workflow_specification=workflow_specification)

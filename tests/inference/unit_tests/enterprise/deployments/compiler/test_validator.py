@@ -1,19 +1,21 @@
 import pytest
 
-from inference.enterprise.deployments.complier.validator import (
-    validate_deployment_spec,
+from inference.enterprise.workflows.complier.validator import (
     validate_inputs_names_are_unique,
     validate_outputs_names_are_unique,
     validate_steps_names_are_unique,
+    validate_workflow_specification,
 )
-from inference.enterprise.deployments.entities.deployment_specs import DeploymentSpecV1
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.outputs import JsonField
-from inference.enterprise.deployments.entities.steps import Crop, ObjectDetectionModel
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
+from inference.enterprise.workflows.entities.workflows_specification import (
+    WorkflowSpecificationV1,
+)
+from inference.enterprise.workflows.errors import (
     DuplicatedSymbolError,
     InvalidReferenceError,
 )
@@ -118,9 +120,11 @@ def test_validate_outputs_names_are_unique_when_input_is_invalid() -> None:
         validate_outputs_names_are_unique(outputs=outputs)
 
 
-def test_validate_deployment_spec_when_there_is_selector_to_missing_element() -> None:
+def test_validate_workflow_specification_when_there_is_selector_to_missing_element() -> (
+    None
+):
     # given
-    deployment_specs = DeploymentSpecV1.parse_obj(
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
             "version": "1.0",
             "inputs": [
@@ -147,4 +151,4 @@ def test_validate_deployment_spec_when_there_is_selector_to_missing_element() ->
 
     # when
     with pytest.raises(InvalidReferenceError):
-        validate_deployment_spec(deployment_spec=deployment_specs)
+        validate_workflow_specification(workflow_specification=workflow_specification)

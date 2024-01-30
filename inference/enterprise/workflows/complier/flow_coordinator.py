@@ -5,8 +5,8 @@ from typing import List, Optional, Set
 
 import networkx as nx
 
-from inference.enterprise.deployments.complier.utils import get_nodes_of_specific_kind
-from inference.enterprise.deployments.constants import STEP_NODE_KIND
+from inference.enterprise.workflows.complier.utils import get_nodes_of_specific_kind
+from inference.enterprise.workflows.constants import STEP_NODE_KIND
 
 
 class StepExecutionCoordinator(metaclass=abc.ABCMeta):

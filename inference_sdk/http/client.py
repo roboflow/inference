@@ -44,7 +44,7 @@ from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     combine_clip_embeddings,
     combine_gaze_detections,
-    decode_deployment_outputs,
+    decode_workflow_outputs,
     response_contains_jpeg_image,
     transform_base64_visualisation,
     transform_visualisation_bytes,
@@ -883,37 +883,36 @@ class InferenceHTTPClient:
                 return await response.json()
 
     @wrap_errors
-    def infer_from_deployment(
+    def infer_from_workflow(
         self,
-        deployment_name: Optional[str] = None,
-        deployment_specification: Optional[dict] = None,
+        workflow_name: Optional[str] = None,
+        workflow_specification: Optional[dict] = None,
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        Triggers inference from deployment specification at the inference HTTP
-        side. Either `deployment_name` or `deployment_specification` must be
-        provided. In the first case - definition of deployment will be fetched
-        from Roboflow API, in the latter - `deployment_specification` will be
-        used. `images` and `parameters` will be merged into deployment inputs,
+        Triggers inference from workflow specification at the inference HTTP
+        side. Either `workflow_name` or `workflow_specification` must be
+        provided. In the first case - definition of workflow will be fetched
+        from Roboflow API, in the latter - `workflow_specification` will be
+        used. `images` and `parameters` will be merged into workflow inputs,
         the distinction is made to make sure the SDK can easily serialise
         images and prepare a proper payload. Supported images are numpy arrays,
-        PIL.Image, links to images and local paths.
+        PIL.Image and base64 images, links to images and local paths.
         `excluded_fields` will be added to request to filter out results
-        of deployment execution at the server side.
+        of workflow execution at the server side.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        if not ((deployment_name is None) != (deployment_specification is None)):
+        if not ((workflow_name is None) != (workflow_specification is None)):
             raise InvalidParameterError(
-                "Parameters `deployment_name` and `deployment_specification` are mutually exclusive, "
+                "Parameters `workflow_name` and `workflow_specification` are mutually exclusive, "
                 "but at least one must be set."
             )
         if images is None:
             images = {}
         if parameters is None:
             parameters = {}
-        payload = self.__initialise_payload()
+        payload = {"api_key": self.__api_key}
         runtime_parameters = {}
         for image_name, image in images.items():
             loaded_image = load_static_inference_input(
@@ -928,20 +927,20 @@ class InferenceHTTPClient:
         payload["runtime_parameters"] = runtime_parameters
         if excluded_fields is not None:
             payload["excluded_fields"] = excluded_fields
-        if deployment_specification is not None:
-            payload["specification"] = deployment_specification
-        url = f"{self.__api_url}/infer/deployments"
-        if deployment_name is not None:
-            url = f"{url}/{deployment_name}"
+        if workflow_specification is not None:
+            payload["specification"] = workflow_specification
+        url = f"{self.__api_url}/infer/workflows"
+        if workflow_name is not None:
+            url = f"{url}/{workflow_name}"
         response = requests.post(
             url,
             json=payload,
             headers=DEFAULT_HEADERS,
         )
         api_key_safe_raise_for_status(response=response)
-        deployment_outputs = response.json()["deployment_outputs"]
-        return decode_deployment_outputs(
-            deployment_outputs=deployment_outputs,
+        workflow_outputs = response.json()["outputs"]
+        return decode_workflow_outputs(
+            workflow_outputs=workflow_outputs,
             expected_format=self.__inference_configuration.output_visualisation_format,
         )
 

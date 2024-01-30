@@ -1681,43 +1681,56 @@ def test_clip_compare_when_faulty_response_returned(
         )
 
 
-def test_infer_from_deployment_when_client_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(
-        api_key="my-api-key", api_url="https://detect.roboflow.com"
-    )
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        http_client.infer_from_deployment(deployment_name="some")
-
-
-def test_infer_from_deployment_when_no_parameters_given(
+def test_infer_from_workflow_when_v0_mode_used(
     requests_mock: Mocker,
 ) -> None:
     # given
-    api_url = "http://some.com"
+    api_url = "http://infer.roboflow.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/deployments/my_deployment",
+        f"{api_url}/infer/workflows/my_workflow",
         json={
-            "deployment_outputs": {"some": 3},
+            "outputs": {"some": 3},
         },
     )
 
     # when
-    result = http_client.infer_from_deployment(deployment_name="my_deployment")
+    result = http_client.infer_from_workflow(workflow_name="my_workflow")
 
     # then
     assert result == {"some": 3}, "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "runtime_parameters": {},
-    }, "Request payload must contain api ket end runtime_parameters"
+    }, "Request payload must contain api key and runtime_parameters"
+
+
+def test_infer_from_workflow_when_no_parameters_given(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/infer/workflows/my_workflow",
+        json={
+            "outputs": {"some": 3},
+        },
+    )
+
+    # when
+    result = http_client.infer_from_workflow(workflow_name="my_workflow")
+
+    # then
+    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "runtime_parameters": {},
+    }, "Request payload must contain api key and runtime_parameters"
 
 
 @mock.patch.object(client, "load_static_inference_input")
-def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
+def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
@@ -1725,9 +1738,9 @@ def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/deployments/my_deployment",
+        f"{api_url}/infer/workflows/my_workflow",
         json={
-            "deployment_outputs": {"some": 3},
+            "outputs": {"some": 3},
         },
     )
     load_static_inference_input_mock.side_effect = [
@@ -1736,8 +1749,8 @@ def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
     ]
 
     # when
-    result = http_client.infer_from_deployment(
-        deployment_name="my_deployment",
+    result = http_client.infer_from_workflow(
+        workflow_name="my_workflow",
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
             "some": 10,
@@ -1770,47 +1783,47 @@ def test_infer_from_deployment_when_parameters_and_excluded_fields_given(
     }, "Request payload must contain api ket end runtime_parameters"
 
 
-def test_infer_from_deployment_when_faulty_response_given(
+def test_infer_from_workflow_when_faulty_response_given(
     requests_mock: Mocker,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/deployments/my_deployment",
+        f"{api_url}/infer/workflows/my_workflow",
         json={"message": "some"},
         status_code=500,
     )
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = http_client.infer_from_deployment(deployment_name="my_deployment")
+        _ = http_client.infer_from_workflow(workflow_name="my_workflow")
 
 
-def test_infer_from_deployment_when_neither_deployment_name_nor_specs_given() -> None:
+def test_infer_from_workflow_when_neither_workflow_name_nor_specs_given() -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(InvalidParameterError):
-        _ = http_client.infer_from_deployment()
+        _ = http_client.infer_from_workflow()
 
 
-def test_infer_from_deployment_when_both_deployment_name_and_specs_given() -> None:
+def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(InvalidParameterError):
-        _ = http_client.infer_from_deployment(
-            deployment_name="some", deployment_specification={"some": "specs"}
+        _ = http_client.infer_from_workflow(
+            workflow_name="some", workflow_specification={"some": "specs"}
         )
 
 
 @mock.patch.object(client, "load_static_inference_input")
-def test_infer_from_deployment_when_custom_deployment_used_and_arameters_and_excluded_fields_given(
+def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
@@ -1818,9 +1831,9 @@ def test_infer_from_deployment_when_custom_deployment_used_and_arameters_and_exc
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/deployments",
+        f"{api_url}/infer/workflows",
         json={
-            "deployment_outputs": {"some": 3},
+            "outputs": {"some": 3},
         },
     )
     load_static_inference_input_mock.side_effect = [
@@ -1829,8 +1842,8 @@ def test_infer_from_deployment_when_custom_deployment_used_and_arameters_and_exc
     ]
 
     # when
-    result = http_client.infer_from_deployment(
-        deployment_specification={
+    result = http_client.infer_from_workflow(
+        workflow_specification={
             "my": "specification",
         },
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},

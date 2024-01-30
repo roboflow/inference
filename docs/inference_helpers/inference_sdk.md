@@ -343,7 +343,7 @@ CLIENT = InferenceHTTPClient(
 CLIENT.unload_all_models()
 ```
 
-## Inference `deployments`
+## Inference `workflows`
 
 !!! tip
 
@@ -352,7 +352,8 @@ CLIENT.unload_all_models()
 
 !!! tip
 
-    This feature only works with locally hosted inference container. Use inefernce-cli to run:
+    This feature only works with locally hosted inference container and hosted platform (access may be limited). 
+    Use inefernce-cli to run local container with HTTP API:
     ```
     inference server start
     ```
@@ -361,16 +362,16 @@ CLIENT.unload_all_models()
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-    "http://127.0.0.1:9001", 
-    "XXX",
+  "http://127.0.0.1:9001",
+  "XXX",
 )
 
-CLIENT.infer_from_deployment(
-    deployment_specification={...},
-    images={
-        "image": "url or your np.array",
-    },
-    parameters={...},
+CLIENT.infer_from_workflow(
+  workflow_specification={...},
+  images={
+    "image": "url or your np.array",
+  },
+  parameters={...},
 )
 ```
 
@@ -405,7 +406,6 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
-  > > > > > > > dfec32274e82c99ca74fce696538ad1522c1f187:docs/inference_sdk/http_client.md
 
 The following fields are passed to API
 

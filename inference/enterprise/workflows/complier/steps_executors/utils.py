@@ -1,14 +1,12 @@
 from typing import Any, Dict, Generator, Iterable, List, TypeVar, Union
 
-from inference.enterprise.deployments.complier.steps_executors.types import (
-    OutputsLookup,
-)
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
+from inference.enterprise.workflows.complier.utils import (
     get_step_selector_from_its_output,
     is_input_selector,
     is_step_output_selector,
 )
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
     ClipComparison,
     Crop,
@@ -16,11 +14,11 @@ from inference.enterprise.deployments.entities.steps import (
     RelativeStaticCrop,
     RoboflowModel,
 )
-from inference.enterprise.deployments.entities.validators import (
+from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
 )
-from inference.enterprise.deployments.errors import ExecutionGraphError
+from inference.enterprise.workflows.errors import ExecutionGraphError
 
 T = TypeVar("T")
 

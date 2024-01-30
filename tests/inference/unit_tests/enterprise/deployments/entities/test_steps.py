@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.deployments.entities.inputs import (
+from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
     InferenceParameter,
 )
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.steps import (
     AggregationMode,
     ClassificationModel,
     Condition,
@@ -24,7 +24,7 @@ from inference.enterprise.deployments.entities.steps import (
     OCRModel,
     Operator,
 )
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
     InvalidStepInputDetected,
     VariableTypeError,

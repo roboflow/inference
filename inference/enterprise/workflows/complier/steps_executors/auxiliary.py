@@ -10,8 +10,8 @@ import numpy as np
 
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import ImageType, load_image
-from inference.enterprise.deployments.complier.entities import StepExecutionMode
-from inference.enterprise.deployments.complier.steps_executors.constants import (
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
     DETECTION_ID_KEY,
@@ -23,19 +23,19 @@ from inference.enterprise.deployments.complier.steps_executors.constants import 
     PARENT_ID_KEY,
     WIDTH_KEY,
 )
-from inference.enterprise.deployments.complier.steps_executors.types import (
+from inference.enterprise.workflows.complier.steps_executors.types import (
     NextStepReference,
     OutputsLookup,
 )
-from inference.enterprise.deployments.complier.steps_executors.utils import (
+from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
     resolve_parameter,
 )
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.utils import (
     construct_selector_pointing_step_output,
     construct_step_selector,
 )
-from inference.enterprise.deployments.entities.steps import (
+from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
     AggregationMode,
     BinaryOperator,
@@ -49,7 +49,7 @@ from inference.enterprise.deployments.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
-from inference.enterprise.deployments.errors import ExecutionGraphError
+from inference.enterprise.workflows.errors import ExecutionGraphError
 
 OPERATORS = {
     Operator.EQUAL: lambda a, b: a == b,

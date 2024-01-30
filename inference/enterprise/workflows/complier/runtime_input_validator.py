@@ -4,18 +4,18 @@ import numpy as np
 from networkx import DiGraph
 
 from inference.core.utils.image_utils import ImageType
-from inference.enterprise.deployments.complier.steps_executors.constants import (
+from inference.enterprise.workflows.complier.steps_executors.constants import (
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
     PARENT_ID_KEY,
 )
-from inference.enterprise.deployments.complier.utils import (
+from inference.enterprise.workflows.complier.utils import (
     get_nodes_of_specific_kind,
     is_input_selector,
 )
-from inference.enterprise.deployments.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.deployments.entities.validators import get_last_selector_chunk
-from inference.enterprise.deployments.errors import (
+from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
+from inference.enterprise.workflows.errors import (
     InvalidStepInputDetected,
     RuntimeParameterMissingError,
 )

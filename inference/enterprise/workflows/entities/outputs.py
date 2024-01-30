@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.deployments.entities.base import GraphNone
+from inference.enterprise.workflows.entities.base import GraphNone
 
 
 class CoordinatesSystem(Enum):
