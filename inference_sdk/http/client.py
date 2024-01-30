@@ -56,8 +56,8 @@ from inference_sdk.http.utils.request_building import (
 )
 from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
-    inject_images_into_payload,
     deduct_api_key_from_string,
+    inject_images_into_payload,
 )
 
 SUCCESSFUL_STATUS_CODE = 200

@@ -7,7 +7,12 @@ from typing import List, Tuple, Union
 import aiohttp
 import backoff
 import requests
-from aiohttp import ClientConnectionError, ClientResponse
+from aiohttp import (
+    ClientConnectionError,
+    ClientResponse,
+    ClientResponseError,
+    RequestInfo,
+)
 from requests import Response
 
 from inference_sdk.http.utils.iterables import make_batches
@@ -20,12 +25,6 @@ RETRYABLE_STATUS_CODES = {429, 503}
 class RequestMethod(Enum):
     GET = "get"
     POST = "post"
-
-
-REQUEST_METHOD2FUNCTION = {
-    RequestMethod.GET: requests.get,
-    RequestMethod.POST: requests.post,
-}
 
 
 def execute_requests_packages(
@@ -75,8 +74,8 @@ def make_parallel_requests(
     interval=1,
 )
 def make_request(request_data: RequestData, request_method: RequestMethod) -> Response:
-    function = REQUEST_METHOD2FUNCTION[request_method]
-    return function(
+    method = requests.get if request_method is RequestMethod.GET else requests.post
+    return method(
         request_data.url,
         headers=request_data.headers,
         params=request_data.parameters,
@@ -119,11 +118,26 @@ async def make_parallel_requests_async(
         return [r[1] for r in responses]
 
 
+def raise_client_error(details: dict) -> None:
+    status_code = details["value"][0]
+    request_data = details["kwargs"]["request_data"]
+    raise ClientResponseError(
+        request_info=RequestInfo(
+            url=request_data.url,
+            method="POST",
+            headers={},
+        ),
+        history=(),
+        status=status_code,
+    )
+
+
 @backoff.on_predicate(
     backoff.constant,
     predicate=lambda r: r[0] in RETRYABLE_STATUS_CODES,
     max_tries=3,
     interval=1,
+    on_giveup=raise_client_error,
 )
 @backoff.on_exception(
     backoff.constant,
