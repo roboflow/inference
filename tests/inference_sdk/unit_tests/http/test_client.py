@@ -1688,14 +1688,17 @@ def test_infer_from_workflow_when_v0_mode_used(
     api_url = "http://infer.roboflow.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workflow",
+        f"{api_url}/infer/workflows/my_workspace/my_workflow",
         json={
             "outputs": {"some": 3},
         },
     )
 
     # when
-    result = http_client.infer_from_workflow(workflow_name="my_workflow")
+    result = http_client.infer_from_workflow(
+        workspace_name="my_workspace",
+        workflow_name="my_workflow",
+    )
 
     # then
     assert result == {"some": 3}, "Response from API must be properly decoded"
@@ -1712,14 +1715,17 @@ def test_infer_from_workflow_when_no_parameters_given(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workflow",
+        f"{api_url}/infer/workflows/my_workspace/my_workflow",
         json={
             "outputs": {"some": 3},
         },
     )
 
     # when
-    result = http_client.infer_from_workflow(workflow_name="my_workflow")
+    result = http_client.infer_from_workflow(
+        workspace_name="my_workspace",
+        workflow_name="my_workflow",
+    )
 
     # then
     assert result == {"some": 3}, "Response from API must be properly decoded"
@@ -1738,7 +1744,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workflow",
+        f"{api_url}/infer/workflows/my_workspace/my_workflow",
         json={
             "outputs": {"some": 3},
         },
@@ -1750,6 +1756,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
 
     # when
     result = http_client.infer_from_workflow(
+        workspace_name="my_workspace",
         workflow_name="my_workflow",
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
@@ -1790,14 +1797,17 @@ def test_infer_from_workflow_when_faulty_response_given(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workflow",
+        f"{api_url}/infer/workflows/my_workspace/my_workflow",
         json={"message": "some"},
         status_code=500,
     )
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = http_client.infer_from_workflow(workflow_name="my_workflow")
+        _ = http_client.infer_from_workflow(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
 
 
 def test_infer_from_workflow_when_neither_workflow_name_nor_specs_given() -> None:
@@ -1818,7 +1828,9 @@ def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
     # when
     with pytest.raises(InvalidParameterError):
         _ = http_client.infer_from_workflow(
-            workflow_name="some", workflow_specification={"some": "specs"}
+            workspace_name="my_workspace",
+            workflow_name="some",
+            workflow_specification={"some": "specs"},
         )
 
 

@@ -885,6 +885,7 @@ class InferenceHTTPClient:
     @wrap_errors
     def infer_from_workflow(
         self,
+        workspace_name: Optional[str] = None,
         workflow_name: Optional[str] = None,
         workflow_specification: Optional[dict] = None,
         images: Optional[Dict[str, Any]] = None,
@@ -893,7 +894,7 @@ class InferenceHTTPClient:
     ) -> Dict[str, Any]:
         """
         Triggers inference from workflow specification at the inference HTTP
-        side. Either `workflow_name` or `workflow_specification` must be
+        side. Either (`workspace_name` and `workflow_name`) or `workflow_specification` must be
         provided. In the first case - definition of workflow will be fetched
         from Roboflow API, in the latter - `workflow_specification` will be
         used. `images` and `parameters` will be merged into workflow inputs,
@@ -903,10 +904,12 @@ class InferenceHTTPClient:
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
         """
-        if not ((workflow_name is None) != (workflow_specification is None)):
+        named_workflow_specified = (workspace_name is not None) and (workflow_name is not None)
+        print("named_workflow_specified", named_workflow_specified, "workflow_specification", workflow_specification is not None)
+        if not (named_workflow_specified != (workflow_specification is not None)):
             raise InvalidParameterError(
-                "Parameters `workflow_name` and `workflow_specification` are mutually exclusive, "
-                "but at least one must be set."
+                "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
+                "`workflow_specification`, but at least one must be set."
             )
         if images is None:
             images = {}
@@ -929,9 +932,10 @@ class InferenceHTTPClient:
             payload["excluded_fields"] = excluded_fields
         if workflow_specification is not None:
             payload["specification"] = workflow_specification
-        url = f"{self.__api_url}/infer/workflows"
-        if workflow_name is not None:
-            url = f"{url}/{workflow_name}"
+        if workflow_specification is not None:
+            url = f"{self.__api_url}/infer/workflows"
+        else:
+            url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
         response = requests.post(
             url,
             json=payload,
