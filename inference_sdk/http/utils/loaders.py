@@ -65,7 +65,7 @@ def load_static_inference_input(
     if issubclass(type(inference_input), str):
         return [
             load_image_from_string(
-                uri=inference_input, max_height=max_height, max_width=max_width
+                reference=inference_input, max_height=max_height, max_width=max_width
             )
         ]
     if issubclass(type(inference_input), np.ndarray):
@@ -106,7 +106,7 @@ async def load_static_inference_input_async(
     if issubclass(type(inference_input), str):
         return [
             await load_image_from_string_async(
-                uri=inference_input, max_height=max_height, max_width=max_width
+                reference=inference_input, max_height=max_height, max_width=max_width
             )
         ]
     if issubclass(type(inference_input), np.ndarray):
@@ -129,16 +129,16 @@ async def load_static_inference_input_async(
 
 
 def load_image_from_string(
-    uri: str,
+    reference: str,
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
-    if uri_is_http_link(uri=uri):
-        return load_image_from_url(url=uri, max_height=max_height, max_width=max_width)
-    if os.path.exists(uri):
-        local_image = cv2.imread(uri)
+    if uri_is_http_link(uri=reference):
+        return load_image_from_url(url=reference, max_height=max_height, max_width=max_width)
+    if os.path.exists(reference):
+        local_image = cv2.imread(reference)
         if local_image is None:
-            raise EncodingError(f"Could not load image from {uri}")
+            raise EncodingError(f"Could not load image from {reference}")
         local_image, scaling_factor = resize_opencv_image(
             image=local_image,
             max_height=max_height,
@@ -146,7 +146,7 @@ def load_image_from_string(
         )
         return numpy_array_to_base64_jpeg(image=local_image), scaling_factor
     if max_height is not None and max_width is not None:
-        image_bytes = base64.b64decode(uri)
+        image_bytes = base64.b64decode(reference)
         image = bytes_to_opencv_image(payload=image_bytes)
         image, scaling_factor = resize_opencv_image(
             image=image,
@@ -154,22 +154,22 @@ def load_image_from_string(
             max_width=max_width,
         )
         return numpy_array_to_base64_jpeg(image=image), scaling_factor
-    return uri, None
+    return reference, None
 
 
 async def load_image_from_string_async(
-    uri: str,
+    reference: str,
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
-    if uri_is_http_link(uri=uri):
+    if uri_is_http_link(uri=reference):
         return await load_image_from_url_async(
-            url=uri, max_height=max_height, max_width=max_width
+            url=reference, max_height=max_height, max_width=max_width
         )
-    if os.path.exists(uri):
-        local_image = cv2.imread(uri)
+    if os.path.exists(reference):
+        local_image = cv2.imread(reference)
         if local_image is None:
-            raise EncodingError(f"Could not load image from {uri}")
+            raise EncodingError(f"Could not load image from {reference}")
         local_image, scaling_factor = resize_opencv_image(
             image=local_image,
             max_height=max_height,
@@ -177,7 +177,7 @@ async def load_image_from_string_async(
         )
         return numpy_array_to_base64_jpeg(image=local_image), scaling_factor
     if max_height is not None and max_width is not None:
-        image_bytes = base64.b64decode(uri)
+        image_bytes = base64.b64decode(reference)
         image = bytes_to_opencv_image(payload=image_bytes)
         image, scaling_factor = resize_opencv_image(
             image=image,
@@ -185,7 +185,7 @@ async def load_image_from_string_async(
             max_width=max_width,
         )
         return numpy_array_to_base64_jpeg(image=image), scaling_factor
-    return uri, None
+    return reference, None
 
 
 def load_image_from_url(

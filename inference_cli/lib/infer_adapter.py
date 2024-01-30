@@ -281,7 +281,7 @@ def infer_on_image(
     prediction = client.infer(inference_input=input_reference, model_id=model_id)
     visualised = None
     if visualise:
-        frame_base64 = load_image_from_string(uri=input_reference)[0]
+        frame_base64 = load_image_from_string(reference=input_reference)[0]
         frame_bytes = base64.b64decode(frame_base64)
         frame = bytes_to_opencv_image(payload=frame_bytes)
         visualised = on_frame_visualise(frame, prediction)

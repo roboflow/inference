@@ -474,12 +474,12 @@ async def test_make_request_async_when_non_retryable_error_occurs() -> None:
 async def test_make_request_async_when_request_is_successful() -> None:
     # given
     request_data = RequestData(
-        url="https://some.com",
+        url="https://some.com/",
         request_elements=1,
-        headers=None,
-        data="some",
+        headers={"my": "header"},
+        data=None,
         parameters=None,
-        payload=None,
+        payload={"some": "data"},
         image_scaling_factors=[None],
     )
 
@@ -494,11 +494,19 @@ async def test_make_request_async_when_request_is_successful() -> None:
                 session=session,
             )
 
-    # then
-    assert result == (
-        200,
-        {"status": "ok"},
-    ), "Expected to return HTTP 200 in second attempt with predefined JSON payload"
+        # then
+        m.assert_called_with(
+            url="https://some.com",
+            method="GET",
+            headers={"my": "header"},
+            json={"some": "data"},
+            data=None,
+            params=None,
+        )
+        assert result == (
+            200,
+            {"status": "ok"},
+        ), "Expected to return HTTP 200 in second attempt with predefined JSON payload"
 
 
 @pytest.mark.asyncio
