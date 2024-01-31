@@ -330,7 +330,7 @@ def construct_http_client_configuration_for_classification_step(
         confidence_threshold=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -353,7 +353,7 @@ def construct_http_client_configuration_for_detection_step(
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -378,7 +378,7 @@ def construct_http_client_configuration_for_segmentation_step(
         mask_decode_mode=resolve(step.mask_decode_mode),
         tradeoff_factor=resolve(step.tradeoff_factor),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -402,7 +402,7 @@ def construct_http_client_configuration_for_keypoints_detection_step(
         max_candidates=resolve(step.max_candidates),
         keypoint_confidence_threshold=resolve(step.keypoint_confidence),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
 
 
@@ -491,7 +491,7 @@ async def get_ocr_predictions_from_remote_api(
         client.select_api_v0()
     configuration = InferenceConfiguration(
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-        max_concurent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
     client.configure(configuration)
     return await client.ocr_image_async(

@@ -286,7 +286,7 @@ class InferenceHTTPClient:
         responses = execute_requests_packages(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = []
         for request_data, response in zip(requests_data, responses):
@@ -344,7 +344,7 @@ class InferenceHTTPClient:
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = []
         for request_data, response in zip(requests_data, responses):
@@ -410,7 +410,7 @@ class InferenceHTTPClient:
         responses = execute_requests_packages(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = []
         for request_data, response in zip(requests_data, responses):
@@ -483,7 +483,7 @@ class InferenceHTTPClient:
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = []
         for request_data, parsed_response in zip(requests_data, responses):
@@ -703,7 +703,7 @@ class InferenceHTTPClient:
         responses = execute_requests_packages(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
@@ -730,7 +730,7 @@ class InferenceHTTPClient:
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         return unwrap_single_element_list(sequence=responses)
 
@@ -998,7 +998,7 @@ class InferenceHTTPClient:
         responses = execute_requests_packages(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
@@ -1028,7 +1028,7 @@ class InferenceHTTPClient:
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
             request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurent_requests,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         return unwrap_single_element_list(sequence=responses)
 
