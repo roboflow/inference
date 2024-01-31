@@ -231,4 +231,4 @@ async def load_image_from_url_async(
 
 
 def uri_is_http_link(uri: str) -> bool:
-    return "http://" in uri or "https://" in uri
+    return uri.startswith("http://") or uri.startswith("https://")

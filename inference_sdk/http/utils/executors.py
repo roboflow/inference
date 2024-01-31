@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from enum import Enum
 from functools import partial
 from multiprocessing.pool import ThreadPool
@@ -66,12 +67,16 @@ def make_parallel_requests(
     predicate=lambda r: r.status_code in RETRYABLE_STATUS_CODES,
     max_tries=3,
     interval=1,
+    backoff_log_level=logging.DEBUG,
+    giveup_log_level=logging.DEBUG,
 )
 @backoff.on_exception(
     backoff.constant,
     exception=ConnectionError,
     max_tries=3,
     interval=1,
+    backoff_log_level=logging.DEBUG,
+    giveup_log_level=logging.DEBUG,
 )
 def make_request(request_data: RequestData, request_method: RequestMethod) -> Response:
     method = requests.get if request_method is RequestMethod.GET else requests.post
@@ -138,12 +143,16 @@ def raise_client_error(details: dict) -> None:
     max_tries=3,
     interval=1,
     on_giveup=raise_client_error,
+    backoff_log_level=logging.DEBUG,
+    giveup_log_level=logging.DEBUG,
 )
 @backoff.on_exception(
     backoff.constant,
     exception=ClientConnectionError,
     max_tries=3,
     interval=1,
+    backoff_log_level=logging.DEBUG,
+    giveup_log_level=logging.DEBUG,
 )
 async def make_request_async(
     request_data: RequestData,

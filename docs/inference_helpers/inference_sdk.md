@@ -362,20 +362,29 @@ CLIENT.unload_all_models()
 from inference_sdk import InferenceHTTPClient
 
 CLIENT = InferenceHTTPClient(
-  "http://127.0.0.1:9001",
-  "XXX",
+    "http://127.0.0.1:9001",
+    "XXX",
 )
 
 CLIENT.infer_from_workflow(
-  workflow_specification={...},
-  images={
-    "image": "url or your np.array",
-  },
-  parameters={...},
+    specification={
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"},
+            {"type": "InferenceParameter", "name": "my_param"},
+        ],
+        # ...
+    },
+    images={
+        "image": "url or your np.array",
+    },
+    parameters={
+        "my_param": 37,
+    },
 )
 ```
 
-Please note that either `workflow_specification` is provided with specification of workflow as described
+Please note that either `specification` is provided with specification of workflow as described
 [here](https://github.com/roboflow/inference/blob/main/inference/enterprise/deployments/README.md) or 
 both `workspace_name` and `workflow_name` are given to use workflow predefined in Roboflow app. `workspace_name`
 can be found in Roboflow APP URL once browser shows the main panel of workspace. 

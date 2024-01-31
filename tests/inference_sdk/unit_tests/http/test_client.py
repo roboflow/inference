@@ -2,7 +2,7 @@ import base64
 import json
 from io import BytesIO
 from unittest import mock
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
@@ -998,56 +998,6 @@ async def test_infer_from_api_v0_async_when_model_not_selected() -> None:
         )
 
 
-@mock.patch.object(client, "load_static_inference_input")
-def test_infer_from_api_v0_when_request_succeed_for_object_detection(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    configuration = InferenceConfiguration(confidence_threshold=0.5)
-    http_client.configure(inference_configuration=configuration)
-    requests_mock.post(
-        f"{api_url}/some/1",
-        json={
-            "image": {"height": 480, "width": 640},
-            "predictions": [
-                {
-                    "x": 100.0,
-                    "y": 200.0,
-                    "width": 200.0,
-                    "height": 300.0,
-                    "confidence": 0.9,
-                    "class": "A",
-                }
-            ],
-        },
-    )
-
-    # when
-    result = http_client.infer_from_api_v0(
-        inference_input="https://some/image.jpg", model_id="some/1"
-    )
-
-    # then
-    assert result == {
-        "image": {"height": 960, "width": 1280},
-        "predictions": [
-            {
-                "x": 200.0,
-                "y": 400.0,
-                "width": 400.0,
-                "height": 600.0,
-                "confidence": 0.9,
-                "class": "A",
-            }
-        ],
-    }
-    assert requests_mock.last_request.query == "api_key=my-api-key&confidence=0.5"
-
-
 def test_infer_from_api_v0_when_model_id_is_invalid() -> None:
     # given
     api_url = "http://some.com"
@@ -1061,6 +1011,20 @@ def test_infer_from_api_v0_when_model_id_is_invalid() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_infer_from_api_v0_async_when_model_id_is_invalid() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidModelIdentifier):
+        _ = await http_client.infer_from_api_v0_async(
+            inference_input="https://some/image.jpg",
+            model_id="invalid",
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_request(
     load_static_inference_input_mock: MagicMock,
@@ -1069,9 +1033,11 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [
-        ("base64_image", 0.5),
-        ("another_image", None),
+    load_static_inference_input_mock.side_effect = [
+        [
+            ("base64_image", 0.5),
+            ("another_image", None),
+        ]
     ]
     configuration = InferenceConfiguration(confidence_threshold=0.5)
     http_client.configure(inference_configuration=configuration)
@@ -1113,7 +1079,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
 
     # when
     result = http_client.infer_from_api_v0(
-        inference_input="https://some/image.jpg", model_id="some/1"
+        inference_input=["https://some/image.jpg"] * 2, model_id="some/1"
     )
 
     # then
@@ -1155,6 +1121,90 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
     )
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection_with_batch_request(
+    load_static_inference_input_mock_async: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock_async.return_value = [
+        ("base64_image", 0.5),
+        ("another_image", 0.5),
+    ]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+            },
+        )
+        m.post(
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+            },
+        )
+
+        # when
+        result = await http_client.infer_from_api_v0_async(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+        # then
+        assert result == [
+            {
+                "image": {"height": 960, "width": 1280},
+                "predictions": [
+                    {
+                        "x": 200.0,
+                        "y": 400.0,
+                        "width": 400.0,
+                        "height": 600.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+            },
+            {
+                "image": {"height": 960, "width": 1280},
+                "predictions": [
+                    {
+                        "x": 200.0,
+                        "y": 400.0,
+                        "width": 400.0,
+                        "height": 600.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+            },
+        ]
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visualisation(
     load_static_inference_input_mock: MagicMock,
@@ -1183,6 +1233,32 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
         requests_mock.last_request.query
         == "api_key=my-api-key&confidence=0.5&format=image&disable_active_learning=false"
     )
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection_with_visualisation(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(confidence_threshold=0.5, format="image")
+    http_client.configure(inference_configuration=configuration)
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False&format=image",
+            body=b"data",
+            headers={"content-type": "image/jpeg"},
+        )
+        # when
+        result = await http_client.infer_from_api_v0_async(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+
+        # then
+        assert result == {"visualization": base64.b64encode(b"data").decode("utf-8")}
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -1238,6 +1314,57 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection(
     )
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection(
+    load_static_inference_input_mock_async: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock_async.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(confidence_threshold=0.5)
+    http_client.configure(inference_configuration=configuration)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+            },
+        )
+
+        # when
+        result = await http_client.infer_from_api_v0_async(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+
+        # then
+        assert result == {
+            "image": {"height": 960, "width": 1280},
+            "predictions": [
+                {
+                    "x": 200.0,
+                    "y": 400.0,
+                    "width": 400.0,
+                    "height": 600.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+        }
+
+
 def test_infer_from_api_v1_when_model_id_is_not_selected() -> None:
     # given
     api_url = "http://some.com"
@@ -1246,6 +1373,19 @@ def test_infer_from_api_v1_when_model_id_is_not_selected() -> None:
     # when
     with pytest.raises(ModelNotSelectedError):
         _ = http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg",
+        )
+
+
+@pytest.mark.asyncio
+async def test_infer_from_api_v1_async_when_model_id_is_not_selected() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(ModelNotSelectedError):
+        _ = await http_client.infer_from_api_v1_async(
             inference_input="https://some/image.jpg",
         )
 
@@ -1259,6 +1399,20 @@ def test_infer_from_api_v1_when_v0_mode_enabled() -> None:
     with pytest.raises(WrongClientModeError):
         with http_client.use_api_v0():
             _ = http_client.infer_from_api_v1(
+                inference_input="https://some/image.jpg", model_id="some/1"
+            )
+
+
+@pytest.mark.asyncio
+async def test_infer_from_api_v1_async_when_v0_mode_enabled() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        with http_client.use_api_v0():
+            _ = await http_client.infer_from_api_v1_async(
                 inference_input="https://some/image.jpg", model_id="some/1"
             )
 
@@ -1277,6 +1431,25 @@ def test_infer_from_api_v1_when_task_type_is_not_recognised() -> None:
     # when
     with pytest.raises(ModelTaskTypeNotSupportedError):
         _ = http_client.infer_from_api_v1(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+
+
+@pytest.mark.asyncio
+async def test_infer_from_api_v1_async_when_task_type_is_not_recognised() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description_async = AsyncMock()
+    http_client.get_model_description_async.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="unknown",
+        input_height=480,
+        input_width=640,
+    )
+    # when
+    with pytest.raises(ModelTaskTypeNotSupportedError):
+        _ = await http_client.infer_from_api_v1_async(
             inference_input="https://some/image.jpg", model_id="some/1"
         )
 
@@ -1395,9 +1568,106 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
     }
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection_with_batch_request(
+    load_static_inference_input_async_mock: MagicMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description_async = AsyncMock()
+    http_client.get_model_description_async.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_async_mock.return_value = [
+        ("base64_image", 0.5),
+        ("another_image", 0.5),
+    ]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, disable_active_learning=True
+    )
+    http_client.configure(inference_configuration=configuration)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/infer/object_detection",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+                "visualization": None,
+            },
+        )
+        m.post(
+            f"{api_url}/infer/object_detection",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+                "visualization": None,
+            },
+        )
+
+        # when
+        result = await http_client.infer_from_api_v1_async(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+        # then
+        assert result == [
+            {
+                "image": {"height": 960, "width": 1280},
+                "predictions": [
+                    {
+                        "x": 200.0,
+                        "y": 400.0,
+                        "width": 400.0,
+                        "height": 600.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+                "visualization": None,
+            },
+            {
+                "image": {"height": 960, "width": 1280},
+                "predictions": [
+                    {
+                        "x": 200.0,
+                        "y": 400.0,
+                        "width": 400.0,
+                        "height": 600.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+                "visualization": None,
+            },
+        ]
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_visualisation(
-    load_static_inference_input_mock: MagicMock,
+    load_static_inference_input_mock: AsyncMock,
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1461,6 +1731,67 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_visual
         "confidence": 0.5,
         "disable_active_learning": False,
     }
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection_with_visualisation(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.get_model_description_async = AsyncMock()
+    http_client.get_model_description_async.return_value = ModelDescription(
+        model_id="some/1",
+        task_type="object-detection",
+        input_height=480,
+        input_width=640,
+    )
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, visualize_predictions=True
+    )
+    http_client.configure(inference_configuration=configuration)
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/infer/object_detection",
+            payload={
+                "image": {"height": 480, "width": 640},
+                "predictions": [
+                    {
+                        "x": 100.0,
+                        "y": 200.0,
+                        "width": 200.0,
+                        "height": 300.0,
+                        "confidence": 0.9,
+                        "class": "A",
+                    }
+                ],
+                "visualization": "aGVsbG8=",
+            },
+        )
+
+        # when
+        result = await http_client.infer_from_api_v1_async(
+            inference_input="https://some/image.jpg", model_id="some/1"
+        )
+
+        # then
+        assert result == {
+            "image": {"height": 960, "width": 1280},
+            "predictions": [
+                {
+                    "x": 200.0,
+                    "y": 400.0,
+                    "width": 400.0,
+                    "height": 600.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                },
+            ],
+            "visualization": "aGVsbG8=",
+        }
 
 
 def test_prompt_cogvlm_in_v0_mode() -> None:
@@ -1569,6 +1900,44 @@ def test_ocr_image_when_single_image_given_in_v1_mode(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_single_image_given_in_v1_mode(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/doctr/ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        # when
+        result = await http_client.ocr_image_async(inference_input="/some/image.jpg")
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/doctr/ocr",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_ocr_image_when_single_image_given_in_v0_mode(
     load_static_inference_input_mock: MagicMock,
@@ -1596,6 +1965,44 @@ def test_ocr_image_when_single_image_given_in_v0_mode(
     assert requests_mock.request_history[0].json() == {
         "image": {"type": "base64", "value": "base64_image"},
     }, "Request must image encoded in standard format"
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_single_image_given_in_v0_mode(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/doctr/ocr?api_key=my-api-key",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+
+        # when
+        result = await http_client.ocr_image_async(inference_input="/some/image.jpg")
+
+        # then
+        assert result == {
+            "response": "Image text 1.",
+            "time": 0.33,
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/doctr/ocr?api_key=my-api-key",
+            "POST",
+            json={
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            params=None,
+            data=None,
+            headers={"Content-Type": "application/json"},
+        )
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -1651,6 +2058,52 @@ def test_ocr_image_when_multiple_images_given(
     }, "Second request must contain API key and second image encoded in standard format"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_when_multiple_images_given(
+    load_static_inference_input_async: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async.return_value = [
+        ("base64_image_1", 0.5),
+        ("base64_image_2", 0.6),
+    ]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/doctr/ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+        m.post(
+            f"{api_url}/doctr/ocr",
+            payload={
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        )
+
+        # when
+        result = await http_client.ocr_image_async(
+            inference_input=["/some/image.jpg"] * 2
+        )
+
+        # then
+        assert result == [
+            {
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+            {
+                "response": "Image text 1.",
+                "time": 0.33,
+            },
+        ], "Result must match the value returned by HTTP endpoint"
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_ocr_image_when_faulty_response_returned(
     load_static_inference_input_mock: MagicMock,
@@ -1672,6 +2125,28 @@ def test_ocr_image_when_faulty_response_returned(
         _ = http_client.ocr_image(inference_input="/some/image.jpg")
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_ocr_image_async_hen_faulty_response_returned(
+    load_static_inference_input_async_mock: MagicMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/doctr/ocr",
+            payload={"message": "Cannot load DocTR model."},
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.ocr_image_async(inference_input="/some/image.jpg")
+
+
 def test_detect_gazes_in_v0_mode() -> None:
     # given
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
@@ -1680,6 +2155,19 @@ def test_detect_gazes_in_v0_mode() -> None:
     # when
     with pytest.raises(WrongClientModeError):
         _ = http_client.detect_gazes(
+            inference_input="https://some.com/image.jpg",
+        )
+
+
+@pytest.mark.asyncio
+async def test_detect_gazes_async_in_v0_mode() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+    http_client.select_api_v0()
+
+    # when
+    with pytest.raises(WrongClientModeError):
+        _ = await http_client.detect_gazes_async(
             inference_input="https://some.com/image.jpg",
         )
 
@@ -1740,6 +2228,71 @@ def test_detect_gazes_when_single_image_given(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_detect_gazes_async_when_single_image_given(
+    load_static_inference_input_async_mock: MagicMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "predictions": [
+            {
+                "face": {
+                    "x": 272.0,
+                    "y": 112.0,
+                    "width": 92.0,
+                    "height": 92.0,
+                    "confidence": 0.9473056197166443,
+                    "class": "face",
+                    "class_confidence": None,
+                    "class_id": 0,
+                    "tracker_id": None,
+                    "landmarks": [
+                        {"x": 252.0, "y": 90.0},
+                        {"x": 295.0, "y": 90.0},
+                        {"x": 275.0, "y": 111.0},
+                        {"x": 274.0, "y": 130.0},
+                        {"x": 225.0, "y": 99.0},
+                        {"x": 316.0, "y": 101.0},
+                    ],
+                },
+                "yaw": -0.060329124331474304,
+                "pitch": -0.012491557747125626,
+            }
+        ],
+        "time": 0.22586208400025498,
+        "time_face_det": None,
+        "time_gaze_det": None,
+    }
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/gaze/gaze_detection",
+            payload=expected_prediction,
+        )
+
+        # when
+        result = await http_client.detect_gazes_async(inference_input="/some/image.jpg")
+
+        # then
+        assert (
+            result == expected_prediction
+        ), "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/gaze/gaze_detection",
+            "POST",
+            params=None,
+            data=None,
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_detect_gazes_when_faulty_response_returned(
     load_static_inference_input_mock: MagicMock,
@@ -1759,6 +2312,30 @@ def test_detect_gazes_when_faulty_response_returned(
 
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.detect_gazes(inference_input="/some/image.jpg")
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_detect_gazes_when_faulty_response_returned(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/gaze/gaze_detection",
+            payload={
+                "message": "Cannot load gaze model.",
+            },
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.detect_gazes_async(inference_input="/some/image.jpg")
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -1803,6 +2380,59 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v1_mode(
     }, "Request must contain API key and image encoded in standard format"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_get_clip_image_embeddings_async_when_single_image_given_in_v1_mode(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/embed_image",
+            payload=expected_prediction,
+        )
+
+        # when
+        result = await http_client.get_clip_image_embeddings_async(
+            inference_input="/some/image.jpg"
+        )
+
+        # then
+        assert (
+            result == expected_prediction
+        ), "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/embed_image",
+            "POST",
+            params=None,
+            data=None,
+            json={
+                "api_key": "my-api-key",
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
     load_static_inference_input_mock: MagicMock,
@@ -1844,6 +2474,58 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
     }, "Request must contain image encoded in standard format"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_get_clip_image_embeddings_async_when_single_image_given_in_v0_mode(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    api_url = "https://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/embed_image?api_key=my-api-key",
+            payload=expected_prediction,
+        )
+
+        # when
+        result = await http_client.get_clip_image_embeddings_async(
+            inference_input="/some/image.jpg"
+        )
+
+        # then
+        assert (
+            result == expected_prediction
+        ), "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/embed_image?api_key=my-api-key",
+            "POST",
+            params=None,
+            data=None,
+            json={
+                "image": {"type": "base64", "value": "base64_image"},
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_get_clip_image_embeddings_when_faulty_response_returned(
     load_static_inference_input_mock: MagicMock,
@@ -1865,7 +2547,32 @@ def test_get_clip_image_embeddings_when_faulty_response_returned(
         _ = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
 
 
-def test_get_clip_text_embeddings_when_single_image_given(
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_get_clip_image_embeddings_when_faulty_response_returned(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.return_value = [("base64_image", 0.5)]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/embed_image",
+            payload={
+                "message": "Cannot load Clip model.",
+            },
+            status=500,
+        )
+
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.get_clip_image_embeddings_async(
+                inference_input="/some/image.jpg"
+            )
+
+
+def test_get_clip_text_embeddings_when_single_text_given(
     requests_mock: Mocker,
 ) -> None:
     api_url = "http://some.com"
@@ -1904,15 +2611,58 @@ def test_get_clip_text_embeddings_when_single_image_given(
     }, "Request must contain API key and text"
 
 
-@mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.asyncio
+async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    expected_prediction = {
+        "frame_id": None,
+        "time": 0.05899370899714995,
+        "embeddings": [
+            [
+                0.38750073313713074,
+                -0.1737658828496933,
+                -0.6624148488044739,
+                0.129795640707016,
+                0.10291421413421631,
+                0.42692098021507263,
+                -0.07305282354354858,
+                0.030459187924861908,
+            ]
+        ],
+    }
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/embed_text",
+            payload=expected_prediction,
+        )
+
+        # when
+        result = await http_client.get_clip_text_embeddings_async(text="some")
+
+        # then
+        assert (
+            result == expected_prediction
+        ), "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/embed_text",
+            "POST",
+            data=None,
+            json={
+                "api_key": "my-api-key",
+                "text": "some",
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 def test_get_clip_text_embeddings_when_faulty_response_returned(
-    load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
     requests_mock.post(
         f"{api_url}/clip/embed_text",
         json={
@@ -1923,6 +2673,25 @@ def test_get_clip_text_embeddings_when_faulty_response_returned(
 
     with pytest.raises(HTTPCallErrorError):
         _ = http_client.get_clip_text_embeddings(text="some")
+
+
+@pytest.mark.asyncio
+async def test_get_clip_text_embeddings_async_when_faulty_response_returned() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/embed_text",
+            payload={
+                "message": "Cannot load Clip model.",
+            },
+            status=500,
+        )
+
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.get_clip_text_embeddings_async(text="some")
 
 
 def test_clip_compare_when_invalid_subject_given() -> None:
@@ -1936,6 +2705,18 @@ def test_clip_compare_when_invalid_subject_given() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_clip_compare_async_when_invalid_subject_given() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = await http_client.clip_compare_async(
+            subject="/some/image.jpg", prompt=["dog", "house"], subject_type="unknown"
+        )
+
+
 def test_clip_compare_when_invalid_prompt_given() -> None:
     # given
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
@@ -1943,6 +2724,18 @@ def test_clip_compare_when_invalid_prompt_given() -> None:
     # when
     with pytest.raises(InvalidParameterError):
         _ = http_client.clip_compare(
+            subject="/some/image.jpg", prompt=["dog", "house"], prompt_type="unknown"
+        )
+
+
+@pytest.mark.asyncio
+async def test_clip_compare_async_when_invalid_prompt_given() -> None:
+    # given
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = await http_client.clip_compare_async(
             subject="/some/image.jpg", prompt=["dog", "house"], prompt_type="unknown"
         )
 
@@ -1985,6 +2778,49 @@ def test_clip_compare_when_both_prompt_and_subject_are_texts(
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
 
 
+@pytest.mark.asyncio
+async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/compare",
+            payload={
+                "frame_id": None,
+                "time": 0.1435863340011565,
+                "similarity": [0.8963012099266052, 0.8830886483192444],
+            },
+        )
+        # when
+        result = await http_client.clip_compare_async(
+            subject="some",
+            prompt=["dog", "house"],
+            subject_type="text",
+            prompt_type="text",
+        )
+
+        # then
+        assert result == {
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/compare",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "subject": "some",
+                "prompt": ["dog", "house"],
+                "prompt_type": "text",
+                "subject_type": "text",
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_clip_compare_when_mixed_input_is_given(
     load_static_inference_input_mock: MagicMock,
@@ -2022,6 +2858,52 @@ def test_clip_compare_when_mixed_input_is_given(
         "prompt_type": "text",
         "subject_type": "image",
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
+
+
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_clip_compare_when_mixed_input_is_given(
+    load_static_inference_input_async_mock: AsyncMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.side_effect = [[("base64_image_1", 0.5)]]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/compare",
+            payload={
+                "frame_id": None,
+                "time": 0.1435863340011565,
+                "similarity": [0.8963012099266052, 0.8830886483192444],
+            },
+        )
+
+        # when
+        result = await http_client.clip_compare_async(
+            subject="/some/image.jpg",
+            prompt=["dog", "house"],
+        )
+
+        # then
+        assert result == {
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/compare",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "subject": {"type": "base64", "value": "base64_image_1"},
+                "prompt": ["dog", "house"],
+                "prompt_type": "text",
+                "subject_type": "image",
+            },
+            headers={"Content-Type": "application/json"},
+        )
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -2071,6 +2953,60 @@ def test_clip_compare_when_both_prompt_and_subject_are_images(
     }, "Request must contain API key, subject and prompt types as image, and encoded image - image 1 as subject, images 2 and 3 as prompt"
 
 
+@pytest.mark.asyncio
+@mock.patch.object(client, "load_static_inference_input_async")
+async def test_clip_compare_when_both_prompt_and_subject_are_images(
+    load_static_inference_input_async_mock: MagicMock,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_async_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/compare",
+            payload={
+                "frame_id": None,
+                "time": 0.1435863340011565,
+                "similarity": [0.8963012099266052, 0.8830886483192444],
+            },
+        )
+
+        # when
+        result = await http_client.clip_compare_async(
+            subject="/some/image_1.jpg",
+            prompt=["/some/image_2.jpg", "/some/image_3.jpg"],
+            subject_type="image",
+            prompt_type="image",
+        )
+
+        # then
+        assert result == {
+            "frame_id": None,
+            "time": 0.1435863340011565,
+            "similarity": [0.8963012099266052, 0.8830886483192444],
+        }, "Result must match the value returned by HTTP endpoint"
+        m.assert_called_with(
+            f"{api_url}/clip/compare",
+            "POST",
+            json={
+                "api_key": "my-api-key",
+                "subject": {"type": "base64", "value": "base64_image_1"},
+                "prompt": [
+                    {"type": "base64", "value": "base64_image_2"},
+                    {"type": "base64", "value": "base64_image_3"},
+                ],
+                "prompt_type": "image",
+                "subject_type": "image",
+            },
+            headers={"Content-Type": "application/json"},
+        )
+
+
 def test_clip_compare_when_faulty_response_returned(
     requests_mock: Mocker,
 ) -> None:
@@ -2089,6 +3025,28 @@ def test_clip_compare_when_faulty_response_returned(
         _ = http_client.clip_compare(
             subject="some", prompt=["dog", "house"], subject_type="text"
         )
+
+
+@pytest.mark.asyncio
+async def test_clip_compare_when_faulty_response_returned() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/clip/compare",
+            payload={
+                "message": "Cannot load Clip model.",
+            },
+            status=500,
+        )
+
+        # when
+        with pytest.raises(HTTPCallErrorError):
+            _ = await http_client.clip_compare_async(
+                subject="some", prompt=["dog", "house"], subject_type="text"
+            )
 
 
 def test_infer_from_workflow_when_v0_mode_used(
@@ -2240,7 +3198,7 @@ def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
         _ = http_client.infer_from_workflow(
             workspace_name="my_workspace",
             workflow_name="some",
-            workflow_specification={"some": "specs"},
+            specification={"some": "specs"},
         )
 
 
@@ -2265,7 +3223,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
 
     # when
     result = http_client.infer_from_workflow(
-        workflow_specification={"specification": {"my": "specification"}},
+        specification={"my": "specification"},
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
             "some": 10,

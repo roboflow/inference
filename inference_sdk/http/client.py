@@ -1,4 +1,3 @@
-import itertools
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -30,6 +29,7 @@ from inference_sdk.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
+from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_sdk.http.utils.executors import (
     RequestMethod,
     execute_requests_packages,
@@ -254,6 +254,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
@@ -311,6 +312,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
@@ -369,6 +371,7 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_description = self.get_model_description(model_id=model_id_to_be_used)
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
@@ -439,6 +442,7 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_description = await self.get_model_description_async(
             model_id=model_id_to_be_used
         )
@@ -907,7 +911,7 @@ class InferenceHTTPClient:
         self,
         workspace_name: Optional[str] = None,
         workflow_name: Optional[str] = None,
-        workflow_specification: Optional[dict] = None,
+        specification: Optional[dict] = None,
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
@@ -927,7 +931,7 @@ class InferenceHTTPClient:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_name is not None
         )
-        if not (named_workflow_specified != (workflow_specification is not None)):
+        if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
                 "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
                 "`workflow_specification`, but at least one must be set."
@@ -951,9 +955,9 @@ class InferenceHTTPClient:
         payload["runtime_parameters"] = runtime_parameters
         if excluded_fields is not None:
             payload["excluded_fields"] = excluded_fields
-        if workflow_specification is not None:
-            payload["specification"] = workflow_specification["specification"]
-        if workflow_specification is not None:
+        if specification is not None:
+            payload["specification"] = specification
+        if specification is not None:
             url = f"{self.__api_url}/infer/workflows"
         else:
             url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
