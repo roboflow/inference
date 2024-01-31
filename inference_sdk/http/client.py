@@ -20,6 +20,7 @@ from inference_sdk.http.entities import (
     ServerInfo,
 )
 from inference_sdk.http.errors import (
+    APIKeyNotProvided,
     HTTPCallErrorError,
     HTTPClientError,
     InvalidModelIdentifier,
@@ -117,7 +118,7 @@ class InferenceHTTPClient:
     def __init__(
         self,
         api_url: str,
-        api_key: str,
+        api_key: Optional[str] = None,
     ):
         self.__api_url = api_url
         self.__api_key = api_key
@@ -254,6 +255,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        _ensure_api_key_provided(api_key=self.__api_key)
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
@@ -312,6 +314,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
+        _ensure_api_key_provided(api_key=self.__api_key)
         model_id = resolve_roboflow_model_alias(model_id=model_id)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
@@ -1072,3 +1075,8 @@ def _determine_client_mode(api_url: str) -> HTTPClientMode:
 def _ensure_model_is_selected(model_id: Optional[str]) -> None:
     if model_id is None:
         raise ModelNotSelectedError("No model was selected to be used.")
+
+
+def _ensure_api_key_provided(api_key: Optional[str]) -> None:
+    if api_key is None:
+        raise APIKeyNotProvided("API key must be provided in this case")
