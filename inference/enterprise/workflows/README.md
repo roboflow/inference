@@ -18,6 +18,61 @@ The `workflows` module contains components capable to:
 
 ![overview diagram](./assets/workflows_overview.jpg)
 
+## How `workflows` can be used?
+
+### Behind Roboflow hosted API
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(
+    api_url="https://detect.roboflow.com",
+    api_key="YOUR_API_KEY"
+)
+
+client.infer_from_workflow(
+    specification={},  # workflow specification goes here
+    images={},  # input images goes here
+    parameters={},  # input parameters other than image goes here
+)
+```
+
+### Behind `inference` HTTP API
+
+Use `inference_cli` to start server
+```bash
+inference server start
+```
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(
+    api_url="http://127.0.0.1:9001",
+    api_key="YOUR_API_KEY"
+)
+
+client.infer_from_workflow(
+    specification={},  # workflow specification goes here
+    images={},  # input images goes here
+    parameters={},  # input parameters other than image goes here
+)
+```
+
+### Integration with Python code
+
+```python
+from inference.enterprise.workflows.complier.core import compile_and_execute
+
+IMAGE = ...
+result = compile_and_execute(
+    workflow_specification={},
+    runtime_parameters={
+        "image": IMAGE,
+    },
+    api_key="YOUR_API_KEY",
+)
+```
+
 ## How to create workflow specification?
 
 ### Workflow specification basics
@@ -167,7 +222,7 @@ be empty due to conditional execution.
 }
 ```
 
-### The notion of parents in `depoyments`
+### The notion of parents in `workflows`
 Let's imagine a scenario when we have a graph definition that requires inference from object detection model on input 
 image. For each image that we have as an input - there will be most likely several detections. There is nothing that
 prevents us to do something with those detections. For instance, we can crop original image to extract RoIs with objects
@@ -541,3 +596,16 @@ of multi-step pipelines (can be `undefined` if all sources of predictions give n
 objects specified in config are present
 * `presence_confidence` - for each input image, for each present class - aggregated confidence indicating presence
 of objects
+
+## Different modes of execution
+Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps
+will be executed within the context of process running the code. `remote` will re-direct model steps into remote API
+using HTTP requests to send images and get predictions back. 
+
+When `workflows` are used directly, in Python code - `compile_and_execute(...)` and `compile_and_execute_async(...)`
+functions accept `step_execution_mode` parameter that controls the execution mode.
+
+Additionally, `max_concurrent_steps` parameter dictates how many steps in parallel can be executed. This will
+improve efficiency of `remote` execution (up to the limits of remote API capacity) and can improve `local` execution
+if `model_manager` instance is capable of running parallel requests (only using extensions from 
+`inference.enterprise.parallel`).
