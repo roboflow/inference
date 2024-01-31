@@ -1,9 +1,7 @@
-from typing import Any, Tuple
+from typing import Tuple
 
 import numpy as np
 
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
-from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
