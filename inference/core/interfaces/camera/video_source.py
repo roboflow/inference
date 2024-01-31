@@ -626,11 +626,11 @@ class VideoSource:
 
         Example:
             ```python
-            >>> source = VideoSource.init(video_reference="./some.mp4")
-            >>> source.start()
+            source = VideoSource.init(video_reference="./some.mp4")
+            source.start()
 
-            >>> for frame in source:
-            >>>     pass
+            for frame in source:
+                 pass
             ```
         """
         try:
