@@ -97,8 +97,6 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         predictions = self.onnx_session.run(None, {self.input_name: img_in})
         boxes = predictions[0]
         class_confs = predictions[1]
-        print(boxes[:, :8, :])
-        print(class_confs[:, :8, :])
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
         predictions = np.concatenate([boxes, confs, class_confs], axis=2)
         return (predictions,)

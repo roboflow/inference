@@ -44,6 +44,8 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
     ("object-detection", "yolo_nas_s"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_m"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_l"): YOLONASObjectDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",

@@ -709,9 +709,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.img_size_h = input_shape[2]
             self.img_size_w = input_shape[3]
             self.input_name = inputs.name
-            self.outputs_names = [x.name for x  in self.onnx_session.get_outputs()]
-            logger.warning("OUTPUT NAMES")
-            logger.warning(self.outputs_names)
             if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
                 if "resize" in self.preproc:
                     self.img_size_h = int(self.preproc["resize"]["height"])
