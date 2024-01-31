@@ -1,6 +1,7 @@
 from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
-    resolve_parameter, make_batches,
+    make_batches,
+    resolve_parameter,
 )
 from inference.enterprise.workflows.entities.steps import ObjectDetectionModel
 

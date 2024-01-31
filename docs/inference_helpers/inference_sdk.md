@@ -156,8 +156,8 @@ _ = CLIENT.infer(image_url, model_id="another-model/1")
 
 You may want to predict against multiple images at single call. There are two parameters of `InferenceConfiguration`
 that specifies batching and parallelism options:
-* `max_concurrent_requests` - max number of concurrent requests that can be started 
-* `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
+- `max_concurrent_requests` - max number of concurrent requests that can be started 
+- `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
 support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
 to prevent errors)
 
@@ -657,6 +657,10 @@ The following fields are passed to API
   to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
   If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
   `default_max_input_size` will be in use.
+- `max_concurrent_requests` - max number of concurrent requests that can be started 
+- `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
+support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
+to prevent errors)
 
 ## FAQs
 
