@@ -374,7 +374,6 @@ class RoboflowInferenceModel(Model):
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-        cast_to_32: bool = True,
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
         """
         Preprocesses an inference request image by loading it, then applying any pre-processing specified by the Roboflow platform, then scaling it to the inference input dimensions.
@@ -420,8 +419,7 @@ class RoboflowInferenceModel(Model):
         if is_bgr:
             resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         img_in = np.transpose(resized, (2, 0, 1))
-        if cast_to_32:
-            img_in = img_in.astype(np.float32)
+        img_in = img_in.astype(np.float32)
         img_in = np.expand_dims(img_in, axis=0)
 
         return img_in, img_dims
@@ -765,7 +763,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-        cast_to_32: bool = True,
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
         if isinstance(image, list):
             preproc_image = partial(
@@ -774,7 +771,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 disable_preproc_contrast=disable_preproc_contrast,
                 disable_preproc_grayscale=disable_preproc_grayscale,
                 disable_preproc_static_crop=disable_preproc_static_crop,
-                cast_to_32=cast_to_32,
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
@@ -786,7 +782,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 disable_preproc_contrast=disable_preproc_contrast,
                 disable_preproc_grayscale=disable_preproc_grayscale,
                 disable_preproc_static_crop=disable_preproc_static_crop,
-                cast_to_32=cast_to_32,
             )
             img_dims = [img_dims]
         return img_in, img_dims
