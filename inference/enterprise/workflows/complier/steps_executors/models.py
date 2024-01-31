@@ -19,7 +19,7 @@ from inference.core.env import (
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS, HOSTED_INSTANCE_SEGMENTATION_URL,
 )
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
@@ -703,7 +703,7 @@ ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
     "MultiLabelClassificationModel": HOSTED_CLASSIFICATION_URL,
     "ObjectDetectionModel": HOSTED_DETECT_URL,
     "KeypointsDetectionModel": HOSTED_DETECT_URL,
-    "InstanceSegmentationModel": HOSTED_DETECT_URL,
+    "InstanceSegmentationModel": HOSTED_INSTANCE_SEGMENTATION_URL,
     "OCRModel": HOSTED_CORE_MODEL_URL,
     "ClipComparison": HOSTED_CORE_MODEL_URL,
 }
