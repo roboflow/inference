@@ -3072,8 +3072,8 @@ def test_infer_from_workflow_when_v0_mode_used(
     assert result == {"some": 3}, "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
-        "runtime_parameters": {},
-    }, "Request payload must contain api key and runtime_parameters"
+        "inputs": {},
+    }, "Request payload must contain api key and inputs"
 
 
 def test_infer_from_workflow_when_no_parameters_given(
@@ -3099,8 +3099,8 @@ def test_infer_from_workflow_when_no_parameters_given(
     assert result == {"some": 3}, "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
-        "runtime_parameters": {},
-    }, "Request payload must contain api key and runtime_parameters"
+        "inputs": {},
+    }, "Request payload must contain api key and inputs"
 
 
 @mock.patch.object(client, "load_static_inference_input")
@@ -3137,7 +3137,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     assert result == {"some": 3}, "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
-        "runtime_parameters": {
+        "inputs": {
             "image_1": {
                 "type": "base64",
                 "value": "base64_image_1",
@@ -3155,7 +3155,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
             "some": 10,
         },
         "excluded_fields": ["some"],
-    }, "Request payload must contain api ket end runtime_parameters"
+    }, "Request payload must contain api key and inputs"
 
 
 def test_infer_from_workflow_when_faulty_response_given(
@@ -3236,7 +3236,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "specification": {"my": "specification"},
-        "runtime_parameters": {
+        "inputs": {
             "image_1": {
                 "type": "base64",
                 "value": "base64_image_1",
@@ -3254,4 +3254,4 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
             "some": 10,
         },
         "excluded_fields": ["some"],
-    }, "Request payload must contain api ket end runtime_parameters"
+    }, "Request payload must contain api key and inputs"

@@ -11,7 +11,7 @@ class WorkflowInferenceRequest(BaseModel):
     api_key: str = Field(
         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
     )
-    runtime_parameters: Dict[str, Any] = Field(
+    inputs: Dict[str, Any] = Field(
         description="Dictionary that contains each parameter defined as an input for chosen workflow"
     )
     excluded_fields: Optional[List[str]] = Field(

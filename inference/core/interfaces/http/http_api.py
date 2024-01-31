@@ -322,7 +322,7 @@ class HttpInterface(BaseInterface):
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             result = await compile_and_execute_async(
                 workflow_specification=workflow_specification,
-                runtime_parameters=workflow_request.runtime_parameters,
+                runtime_parameters=workflow_request.inputs,
                 model_manager=model_manager,
                 api_key=workflow_request.api_key,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,

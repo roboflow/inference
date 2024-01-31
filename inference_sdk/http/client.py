@@ -941,18 +941,18 @@ class InferenceHTTPClient:
         if parameters is None:
             parameters = {}
         payload = {"api_key": self.__api_key}
-        runtime_parameters = {}
+        inputs = {}
         for image_name, image in images.items():
             loaded_image = load_static_inference_input(
                 inference_input=image,
             )
             inject_images_into_payload(
-                payload=runtime_parameters,
+                payload=inputs,
                 encoded_images=loaded_image,
                 key=image_name,
             )
-        runtime_parameters.update(parameters)
-        payload["runtime_parameters"] = runtime_parameters
+        inputs.update(parameters)
+        payload["inputs"] = inputs
         if excluded_fields is not None:
             payload["excluded_fields"] = excluded_fields
         if specification is not None:
