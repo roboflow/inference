@@ -10,13 +10,13 @@ from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
     VitClassification,
+    YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
     YOLOv7InstanceSegmentation,
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
-    YOLONASObjectDetection
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 

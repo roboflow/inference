@@ -1,13 +1,17 @@
+from typing import Any, Tuple
+
+import numpy as np
+
+from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
+from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.models.base import PreprocessReturnMetadata
-from typing import Tuple, Any
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE 
-import numpy as np
+
 
 class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     box_format = "xyxy"
+
     @property
     def weights_file(self) -> str:
         """Gets the weights file for the YOLOv8 model.
@@ -41,7 +45,7 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             disable_preproc_contrast=disable_preproc_contrast,
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
-            cast_to_32=False
+            cast_to_32=False,
         )
 
         if self.batching_enabled:
@@ -76,7 +80,7 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),
                 "constant",
             )
-        
+
         assert img_in.dtype == np.uint8
 
         return img_in, PreprocessReturnMetadata(
@@ -85,6 +89,7 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 "disable_preproc_static_crop": disable_preproc_static_crop,
             }
         )
+
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 

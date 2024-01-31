@@ -174,7 +174,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             class_agnostic=class_agnostic_nms,
             max_detections=max_detections,
             max_candidate_detections=max_candidates,
-            box_format=self.box_format
+            box_format=self.box_format,
         )
 
         infer_shape = (self.img_size_h, self.img_size_w)
