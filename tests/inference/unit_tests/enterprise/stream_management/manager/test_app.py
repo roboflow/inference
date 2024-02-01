@@ -2,6 +2,7 @@
 Unit tests in this module are realised using `InferencePipelineManager` mock - and within single process, submitting
 command queues upfront, and then handling one-by-one in the same process.
 """
+
 import json
 from multiprocessing import Process, Queue
 from unittest import mock
