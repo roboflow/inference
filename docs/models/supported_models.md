@@ -10,7 +10,7 @@ The pages linked above will walk you through each of these options.
 
 The following custom models are supported:
 
-- YOLOv5 (Classification, Segmentation, Object Detection)
+- YOLOv5 (Segmentation, Object Detection)
 - YOLOv7 (Segmentation)
 - YOLOv8 (Classification, Segmentation, Object Detection)
 - YOLO-NAS (Coming soon)
