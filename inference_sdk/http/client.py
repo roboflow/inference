@@ -104,7 +104,7 @@ def wrap_errors_async(function: callable) -> callable:
             raise HTTPCallErrorError(
                 description=deduct_api_key_from_string(value=str(error)),
                 status_code=error.status,
-                api_message=error.message,
+                api_message=deduct_api_key_from_string(error.message),
             ) from error
         except ClientConnectionError as error:
             raise HTTPClientError(
