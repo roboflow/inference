@@ -36,7 +36,7 @@ version.deploy("model-type", "path/to/training/results/")
 The following model types are supported:
 
 - yolov5, yolov5-seg
-- yolov7, yolov7-seg
+- yolov7-seg
 - yolov8, yolov8-seg, yolov8-cls
 
 In the code above, replace:
