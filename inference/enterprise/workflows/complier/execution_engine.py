@@ -124,7 +124,7 @@ async def execute_steps(
     for steps_batch in steps_batches:
         logger.info(f"Steps batch: {steps_batch}")
         coroutines = [
-            execute_step(
+            safe_execute_step(
                 step=step,
                 execution_graph=execution_graph,
                 runtime_parameters=runtime_parameters,
