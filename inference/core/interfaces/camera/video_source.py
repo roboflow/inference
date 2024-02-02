@@ -119,8 +119,7 @@ class SourceMetadata:
 
 
 class VideoSourceMethod(Protocol):
-    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None:
-        ...
+    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None: ...
 
 
 def lock_state_transition(
@@ -627,11 +626,11 @@ class VideoSource:
 
         Example:
             ```python
-            >>> source = VideoSource.init(video_reference="./some.mp4")
-            >>> source.start()
+            source = VideoSource.init(video_reference="./some.mp4")
+            source.start()
 
-            >>> for frame in source:
-            >>>     pass
+            for frame in source:
+                 pass
             ```
         """
         try:

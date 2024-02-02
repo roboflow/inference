@@ -55,26 +55,27 @@ def render_boxes(
 
     Example:
         ```python
-        >>> from functools import partial
-        >>> import cv2
-        >>> from inference import InferencePipeline
+        from functools import partial
+        import cv2
+        from inference import InferencePipeline
+        from inference.core.interfaces.stream.sinks import render_boxes
 
-        >>> output_size = (640, 480)
-        >>> video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
-        >>> on_prediction = partial(render_boxes, display_size=output_size, on_frame_rendered=video_sink.write)
+        output_size = (640, 480)
+        video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
+        on_prediction = partial(render_boxes, display_size=output_size, on_frame_rendered=video_sink.write)
 
-        >>> pipeline = InferencePipeline.init(
-        ...     model_id="your-model/3",
-        ...     video_reference="./some_file.mp4",
-        ...     on_prediction=on_prediction,
-        ... )
-        >>> pipeline.start()
-        >>> pipeline.join()
-        >>> video_sink.release()
+        pipeline = InferencePipeline.init(
+             model_id="your-model/3",
+             video_reference="./some_file.mp4",
+             on_prediction=on_prediction,
+        )
+        pipeline.start()
+        pipeline.join()
+        video_sink.release()
         ```
 
         In this example, `render_boxes()` is used as a sink for `InferencePipeline` predictions - making frames with
-        prtedictions displayed to be saved into video file.
+        predictions displayed to be saved into video file.
     """
     fps_value = None
     if fps_monitor is not None:
@@ -173,18 +174,19 @@ class UDPSink:
 
         Example:
             ```python
-            >>> import cv2
-            >>> from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+            import cv2
+            from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+            from inference.core.interfaces.stream.sinks import UDPSink
 
-            >>> udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
+            udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
 
-            >>> pipeline = InferencePipeline.init(
-            ...     model_id="your-model/3",
-            ...     video_reference="./some_file.mp4",
-            ...     on_prediction=udp_sink.send_predictions,
-            ... )
-            >>> pipeline.start()
-            >>> pipeline.join()
+            pipeline = InferencePipeline.init(
+                 model_id="your-model/3",
+                 video_reference="./some_file.mp4",
+                 on_prediction=udp_sink.send_predictions,
+            )
+            pipeline.start()
+            pipeline.join()
             ```
             `UDPSink` used in this way will emit predictions to receiver automatically.
         """
@@ -224,20 +226,21 @@ def multi_sink(
 
     Example:
         ```python
-        >>> from functools import partial
-        >>> import cv2
-        >>> from inference import InferencePipeline
+        from functools import partial
+        import cv2
+        from inference import InferencePipeline
+        from inference.core.interfaces.stream.sinks import UDPSink, render_boxes
 
-        >>> udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
-        >>> on_prediction = partial(multi_sink, sinks=[udp_sink.send_predictions, render_boxes])
+        udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
+        on_prediction = partial(multi_sink, sinks=[udp_sink.send_predictions, render_boxes])
 
-        >>> pipeline = InferencePipeline.init(
-        ...     model_id="your-model/3",
-        ...     video_reference="./some_file.mp4",
-        ...     on_prediction=on_prediction,
-        ... )
-        >>> pipeline.start()
-        >>> pipeline.join()
+        pipeline = InferencePipeline.init(
+            model_id="your-model/3",
+            video_reference="./some_file.mp4",
+            on_prediction=on_prediction,
+        )
+        pipeline.start()
+        pipeline.join()
         ```
 
         As a result, predictions will both be sent via UDP socket and displayed in the screen.
@@ -293,22 +296,23 @@ class VideoFileSink:
         Returns: Initialized object of `VideoFileSink` class.
 
         Example:
-
             ```python
-            >>> import cv2
-            >>> from inference import InferencePipeline
+            import cv2
+            from inference import InferencePipeline
+            from inference.core.interfaces.stream.sinks import VideoFileSink
 
-            >>> video_sink = VideoFileSink.init(video_file_name="output.avi")
+            video_sink = VideoFileSink.init(video_file_name="output.avi")
 
-            >>> pipeline = InferencePipeline.init(
-            ...     model_id="your-model/3",
-            ...     video_reference="./some_file.mp4",
-            ...     on_prediction=video_sink.on_prediction,
-            ... )
-            >>> pipeline.start()
-            >>> pipeline.join()
-            >>> video_sink.release()
+            pipeline = InferencePipeline.init(
+                model_id="your-model/3",
+                video_reference="./some_file.mp4",
+                on_prediction=video_sink.on_prediction,
+            )
+            pipeline.start()
+            pipeline.join()
+            video_sink.release()
             ```
+
             `VideoFileSink` used in this way will save predictions to video file automatically.
         """
         return cls(

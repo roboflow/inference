@@ -73,7 +73,7 @@ inference.Stream(
             "Prediction", 
             annotator.annotate(
                 scene=image, 
-                detections=sv.Detections.from_roboflow(predictions)
+                detections=sv.Detections.from_inference(predictions)
             )
         ),
         cv2.waitKey(1)

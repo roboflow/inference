@@ -12,8 +12,12 @@ def api_key_safe_raise_for_status(response: Response) -> None:
     request_is_successful = response.status_code < 400
     if request_is_successful:
         return None
-    response.url = API_KEY_PATTERN.sub(deduct_api_key, response.url)
+    response.url = deduct_api_key_from_string(value=response.url)
     response.raise_for_status()
+
+
+def deduct_api_key_from_string(value: str) -> str:
+    return API_KEY_PATTERN.sub(deduct_api_key, value)
 
 
 def deduct_api_key(match: re.Match) -> str:
