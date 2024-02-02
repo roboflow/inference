@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+from pydantic import ConfigDict
 
 from inference.core.entities.types import DatasetID, WorkspaceID
 from inference.core.exceptions import ActiveLearningConfigurationDecodingError

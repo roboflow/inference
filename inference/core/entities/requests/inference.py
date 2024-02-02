@@ -1,7 +1,7 @@
 from typing import Any, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
@@ -15,6 +15,7 @@ class BaseRequest(BaseModel):
         start (Optional[float]): start time of request
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     id: str = Field(default_factory=lambda: str(uuid4()))
     api_key: Optional[str] = ApiKey
     start: Optional[float] = None
@@ -41,11 +42,12 @@ class InferenceRequestImage(BaseModel):
     """
 
     type: str = Field(
-        example="url",
+        examples=["url"],
         description="The type of image data provided, one of 'url', 'base64', or 'numpy'",
     )
     value: Optional[Any] = Field(
-        example="http://www.example-image-url.com",
+        None,
+        examples=["http://www.example-image-url.com"],
         description="Image data corresponding to the image type, if type = 'url' then value is a string containing the url of an image, else if type = 'base64' then value is a string containing base64 encoded image data, else if type = 'numpy' then value is binary numpy data serialized using pickle.dumps(); array should 3 dimensions, channels last, with values in the range [0,255].",
     )
 
@@ -98,32 +100,32 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
 
     class_agnostic_nms: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, NMS is applied to all detections at once, if false, NMS is applied per class",
     )
     class_filter: Optional[List[str]] = Field(
         default=None,
-        example=["class-1", "class-2", "class-n"],
+        examples=[["class-1", "class-2", "class-n"]],
         description="If provided, only predictions for the listed classes will be returned",
     )
     confidence: Optional[float] = Field(
         default=0.4,
-        example=0.5,
+        examples=[0.5],
         description="The confidence threshold used to filter out predictions",
     )
     fix_batch_size: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, the batch size will be fixed to the maximum batch size configured for this server",
     )
     iou_threshold: Optional[float] = Field(
         default=0.3,
-        example=0.5,
+        examples=[0.5],
         description="The IoU threhsold that must be met for a box pair to be considered duplicate during NMS",
     )
     max_detections: Optional[int] = Field(
         default=300,
-        example=300,
+        examples=[300],
         description="The maximum number of detections that will be returned",
     )
     max_candidates: Optional[int] = Field(
@@ -132,22 +134,22 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
     )
     visualization_labels: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, labels will be rendered on prediction visualizations",
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,
-        example=1,
+        examples=[1],
         description="The stroke width used when visualizing predictions",
     )
     visualize_predictions: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
     disable_active_learning: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
     )
 
@@ -155,7 +157,7 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
 class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
     keypoint_confidence: Optional[float] = Field(
         default=0.0,
-        example=0.5,
+        examples=[0.5],
         description="The confidence threshold used to filter out non visible keypoints",
     )
 
@@ -170,12 +172,12 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
 
     mask_decode_mode: Optional[str] = Field(
         default="accurate",
-        example="accurate",
+        examples=["accurate"],
         description="The mode used to decode instance segmentation masks, one of 'accurate', 'fast', 'tradeoff'",
     )
     tradeoff_factor: Optional[float] = Field(
         default=0.0,
-        example=0.5,
+        examples=[0.5],
         description="The amount to tradeoff between 0='fast' and 1='accurate'",
     )
 
@@ -191,22 +193,22 @@ class ClassificationInferenceRequest(CVInferenceRequest):
 
     confidence: Optional[float] = Field(
         default=0.4,
-        example=0.5,
+        examples=[0.5],
         description="The confidence threshold used to filter out predictions",
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,
-        example=1,
+        examples=[1],
         description="The stroke width used when visualizing predictions",
     )
     visualize_predictions: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
     disable_active_learning: Optional[bool] = Field(
         default=False,
-        example=False,
+        examples=[False],
         description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
     )
 
