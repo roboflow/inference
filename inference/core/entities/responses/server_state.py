@@ -24,16 +24,20 @@ class ModelDescriptionEntity(BaseModel):
         description="Identifier of the model", examples=["some-project/3"]
     )
     task_type: str = Field(
-        description="Type of the task that the model performs", examples=["classification"]
+        description="Type of the task that the model performs",
+        examples=["classification"],
     )
     batch_size: Optional[Union[int, str]] = Field(
-        None, description="Batch size accepted by the model (if registered).",
+        None,
+        description="Batch size accepted by the model (if registered).",
     )
     input_height: Optional[int] = Field(
-        None, description="Image input height accepted by the model (if registered).",
+        None,
+        description="Image input height accepted by the model (if registered).",
     )
     input_width: Optional[int] = Field(
-        None, description="Image input width accepted by the model (if registered).",
+        None,
+        description="Image input width accepted by the model (if registered).",
     )
 
     @classmethod

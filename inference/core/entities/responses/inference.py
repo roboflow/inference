@@ -2,7 +2,7 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import ConfigDict, BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -200,7 +200,9 @@ class WithVisualizationResponse(BaseModel):
     )
     # TODO[pydantic]: The following keys were removed: `json_encoders`.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
-    model_config = ConfigDict(json_encoders={bytes: lambda v: base64.b64encode(v).decode("utf-8")})
+    model_config = ConfigDict(
+        json_encoders={bytes: lambda v: base64.b64encode(v).decode("utf-8")}
+    )
 
 
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):

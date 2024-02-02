@@ -149,7 +149,7 @@ def validate_image_biding(value: Any, field_name: str = "image") -> None:
         if not issubclass(type(value), list):
             value = [value]
         for e in value:
-            InferenceRequestImage.validate(e)
+            InferenceRequestImage.model_validate(e)
     except (ValueError, ValidationError) as error:
         raise VariableTypeError(
             f"Parameter `{field_name}` must be compatible with `InferenceRequestImage`"
