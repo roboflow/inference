@@ -14,26 +14,26 @@ class ServerVersionInfo(BaseModel):
         uuid (str): Server UUID.
     """
 
-    name: str = Field(example="Roboflow Inference Server")
-    version: str = Field(example="0.0.1")
-    uuid: str = Field(example="9c18c6f4-2266-41fb-8a0f-c12ae28f6fbe")
+    name: str = Field(examples=["Roboflow Inference Server"])
+    version: str = Field(examples=["0.0.1"])
+    uuid: str = Field(examples=["9c18c6f4-2266-41fb-8a0f-c12ae28f6fbe"])
 
 
 class ModelDescriptionEntity(BaseModel):
     model_id: str = Field(
-        description="Identifier of the model", example="some-project/3"
+        description="Identifier of the model", examples=["some-project/3"]
     )
     task_type: str = Field(
-        description="Type of the task that the model performs", example="classification"
+        description="Type of the task that the model performs", examples=["classification"]
     )
     batch_size: Optional[Union[int, str]] = Field(
-        description="Batch size accepted by the model (if registered).",
+        None, description="Batch size accepted by the model (if registered).",
     )
     input_height: Optional[int] = Field(
-        description="Image input height accepted by the model (if registered).",
+        None, description="Image input height accepted by the model (if registered).",
     )
     input_width: Optional[int] = Field(
-        description="Image input width accepted by the model (if registered).",
+        None, description="Image input width accepted by the model (if registered).",
     )
 
     @classmethod

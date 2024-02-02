@@ -13,7 +13,7 @@ class GroundingDINOInferenceRequest(CVInferenceRequest):
     """
 
     text: List[str] = Field(
-        example=["person", "dog", "cat"],
+        examples=[["person", "dog", "cat"]],
         description="A list of strings",
     )
     grounding_dino_version_id: Optional[str] = "default"

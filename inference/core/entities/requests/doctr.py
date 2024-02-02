@@ -18,8 +18,10 @@ class DoctrOCRInferenceRequest(BaseRequest):
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     doctr_version_id: Optional[str] = "default"
-    model_id: Optional[str] = Field()
+    model_id: Optional[str] = Field(None)
 
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
     @validator("model_id", always=True, allow_reuse=True)
     def validate_model_id(cls, value, values):
         if value is not None:

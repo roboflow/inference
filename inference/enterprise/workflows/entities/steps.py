@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import field_validator, BaseModel, Field
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
@@ -70,13 +70,15 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     model_id: str
     disable_active_learning: Union[Optional[bool], str] = Field(default=False)
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def validate_image(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @validator("model_id")
+    @field_validator("model_id")
+    @classmethod
     @classmethod
     def model_id_must_be_selector_or_str(cls, value: Any) -> str:
         validate_field_is_selector_or_has_given_type(
@@ -84,7 +86,8 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         )
         return value
 
-    @validator("disable_active_learning")
+    @field_validator("disable_active_learning")
+    @classmethod
     @classmethod
     def disable_active_learning_must_be_selector_or_bool(
         cls, value: Any
@@ -147,7 +150,8 @@ class ClassificationModel(RoboflowModel):
     type: Literal["ClassificationModel"]
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
-    @validator("confidence")
+    @field_validator("confidence")
+    @classmethod
     @classmethod
     def confidence_must_be_selector_or_number(
         cls, value: Any
@@ -190,7 +194,8 @@ class MultiLabelClassificationModel(RoboflowModel):
     type: Literal["MultiLabelClassificationModel"]
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
-    @validator("confidence")
+    @field_validator("confidence")
+    @classmethod
     @classmethod
     def confidence_must_be_selector_or_number(
         cls, value: Any
@@ -238,7 +243,8 @@ class ObjectDetectionModel(RoboflowModel):
     max_detections: Union[Optional[int], str] = Field(default=300)
     max_candidates: Union[Optional[int], str] = Field(default=3000)
 
-    @validator("class_agnostic_nms")
+    @field_validator("class_agnostic_nms")
+    @classmethod
     @classmethod
     def class_agnostic_nms_must_be_selector_or_bool(
         cls, value: Any
@@ -250,7 +256,8 @@ class ObjectDetectionModel(RoboflowModel):
         )
         return value
 
-    @validator("class_filter")
+    @field_validator("class_filter")
+    @classmethod
     @classmethod
     def class_filter_must_be_selector_or_list_of_string(
         cls, value: Any
@@ -260,7 +267,8 @@ class ObjectDetectionModel(RoboflowModel):
         )
         return value
 
-    @validator("confidence", "iou_threshold")
+    @field_validator("confidence", "iou_threshold")
+    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -270,7 +278,8 @@ class ObjectDetectionModel(RoboflowModel):
         )
         return value
 
-    @validator("max_detections", "max_candidates")
+    @field_validator("max_detections", "max_candidates")
+    @classmethod
     @classmethod
     def field_must_be_selector_or_positive_number(
         cls, value: Any
@@ -353,7 +362,8 @@ class KeypointsDetectionModel(ObjectDetectionModel):
     type: Literal["KeypointsDetectionModel"]
     keypoint_confidence: Union[Optional[float], str] = Field(default=0.0)
 
-    @validator("keypoint_confidence")
+    @field_validator("keypoint_confidence")
+    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -397,7 +407,8 @@ class InstanceSegmentationModel(ObjectDetectionModel):
     mask_decode_mode: Optional[str] = Field(default="accurate")
     tradeoff_factor: Union[Optional[float], str] = Field(default=0.0)
 
-    @validator("mask_decode_mode")
+    @field_validator("mask_decode_mode")
+    @classmethod
     @classmethod
     def mask_decode_mode_must_be_selector_or_one_of_allowed_values(
         cls, value: Any
@@ -409,7 +420,8 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         )
         return value
 
-    @validator("tradeoff_factor")
+    @field_validator("tradeoff_factor")
+    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -457,7 +469,8 @@ class OCRModel(BaseModel, StepInterface):
     name: str
     image: Union[str, List[str]]
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
@@ -496,13 +509,15 @@ class Crop(BaseModel, StepInterface):
     image: Union[str, List[str]]
     detections: str
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @validator("detections")
+    @field_validator("detections")
+    @classmethod
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if not is_selector(selector_or_value=value):
@@ -704,13 +719,15 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
     width: Union[int, str]
     height: Union[int, str]
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @validator("x_center", "y_center", "width", "height")
+    @field_validator("x_center", "y_center", "width", "height")
+    @classmethod
     @classmethod
     def validate_crops_coordinates(cls, value: Any) -> str:
         validate_value_is_empty_or_selector_or_positive_number(
@@ -767,13 +784,15 @@ class RelativeStaticCrop(BaseModel, StepInterface):
     width: Union[float, str]
     height: Union[float, str]
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @validator("x_center", "y_center", "width", "height")
+    @field_validator("x_center", "y_center", "width", "height")
+    @classmethod
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if issubclass(type(value), str):
@@ -829,13 +848,15 @@ class ClipComparison(BaseModel, StepInterface):
     image: Union[str, List[str]]
     text: Union[str, List[str]]
 
-    @validator("image")
+    @field_validator("image")
+    @classmethod
     @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @validator("text")
+    @field_validator("text")
+    @classmethod
     @classmethod
     def text_must_be_valid(cls, value: Any) -> Union[str, List[str]]:
         if is_selector(selector_or_value=value):
@@ -917,7 +938,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
         default=AggregationMode.AVERAGE
     )
 
-    @validator("predictions")
+    @field_validator("predictions")
+    @classmethod
     @classmethod
     def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
         validate_field_is_list_of_selectors(value=value, field_name="predictions")
@@ -927,7 +949,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
             )
         return value
 
-    @validator("required_votes")
+    @field_validator("required_votes")
+    @classmethod
     @classmethod
     def required_votes_must_be_selector_or_positive_integer(
         cls, value: Any
@@ -939,7 +962,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
         )
         return value
 
-    @validator("class_aware")
+    @field_validator("class_aware")
+    @classmethod
     @classmethod
     def class_aware_must_be_selector_or_boolean(cls, value: Any) -> Union[str, bool]:
         validate_field_is_selector_or_has_given_type(
@@ -947,7 +971,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
         )
         return value
 
-    @validator("iou_threshold", "confidence")
+    @field_validator("iou_threshold", "confidence")
+    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -959,7 +984,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
         )
         return value
 
-    @validator("classes_to_consider")
+    @field_validator("classes_to_consider")
+    @classmethod
     @classmethod
     def classes_to_consider_must_be_empty_or_selector_or_list_of_strings(
         cls, value: Any
@@ -969,7 +995,8 @@ class DetectionsConsensus(BaseModel, StepInterface):
         )
         return value
 
-    @validator("required_objects")
+    @field_validator("required_objects")
+    @classmethod
     @classmethod
     def required_objects_field_must_be_valid(
         cls, value: Any
