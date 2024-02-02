@@ -80,7 +80,8 @@ class SamSegmentationRequest(SamInferenceRequest):
     """
 
     embeddings: Optional[Union[List[List[List[List[float]]]], Any]] = Field(
-        None, examples=["[[[[0.1, 0.2, 0.3, ...] ...] ...]]"],
+        None,
+        examples=["[[[[0.1, 0.2, 0.3, ...] ...] ...]]"],
         description="The embeddings to be decoded. The dimensions of the embeddings are 1 x 256 x 64 x 64. If embeddings is not provided, image must be provided.",
     )
     embeddings_format: Optional[str] = Field(

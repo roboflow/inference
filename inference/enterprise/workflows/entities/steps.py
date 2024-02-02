@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
-from pydantic import field_validator, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
@@ -73,13 +73,11 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def validate_image(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
     @field_validator("model_id")
-    @classmethod
     @classmethod
     def model_id_must_be_selector_or_str(cls, value: Any) -> str:
         validate_field_is_selector_or_has_given_type(
@@ -88,7 +86,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         return value
 
     @field_validator("disable_active_learning")
-    @classmethod
     @classmethod
     def disable_active_learning_must_be_selector_or_bool(
         cls, value: Any
@@ -153,7 +150,6 @@ class ClassificationModel(RoboflowModel):
 
     @field_validator("confidence")
     @classmethod
-    @classmethod
     def confidence_must_be_selector_or_number(
         cls, value: Any
     ) -> Union[Optional[float], str]:
@@ -196,7 +192,6 @@ class MultiLabelClassificationModel(RoboflowModel):
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @field_validator("confidence")
-    @classmethod
     @classmethod
     def confidence_must_be_selector_or_number(
         cls, value: Any
@@ -246,7 +241,6 @@ class ObjectDetectionModel(RoboflowModel):
 
     @field_validator("class_agnostic_nms")
     @classmethod
-    @classmethod
     def class_agnostic_nms_must_be_selector_or_bool(
         cls, value: Any
     ) -> Union[Optional[bool], str]:
@@ -259,7 +253,6 @@ class ObjectDetectionModel(RoboflowModel):
 
     @field_validator("class_filter")
     @classmethod
-    @classmethod
     def class_filter_must_be_selector_or_list_of_string(
         cls, value: Any
     ) -> Union[Optional[List[str]], str]:
@@ -270,7 +263,6 @@ class ObjectDetectionModel(RoboflowModel):
 
     @field_validator("confidence", "iou_threshold")
     @classmethod
-    @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
@@ -280,7 +272,6 @@ class ObjectDetectionModel(RoboflowModel):
         return value
 
     @field_validator("max_detections", "max_candidates")
-    @classmethod
     @classmethod
     def field_must_be_selector_or_positive_number(
         cls, value: Any
@@ -365,8 +356,7 @@ class KeypointsDetectionModel(ObjectDetectionModel):
 
     @field_validator("keypoint_confidence")
     @classmethod
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
+    def keypoint_confidence_field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
     ) -> Union[Optional[float], str]:
         validate_field_is_in_range_zero_one_or_empty_or_selector(
@@ -941,7 +931,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
 
     @field_validator("predictions")
     @classmethod
-    @classmethod
     def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
         validate_field_is_list_of_selectors(value=value, field_name="predictions")
         if len(value) < 1:
@@ -951,7 +940,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
         return value
 
     @field_validator("required_votes")
-    @classmethod
     @classmethod
     def required_votes_must_be_selector_or_positive_integer(
         cls, value: Any
@@ -965,7 +953,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
 
     @field_validator("class_aware")
     @classmethod
-    @classmethod
     def class_aware_must_be_selector_or_boolean(cls, value: Any) -> Union[str, bool]:
         validate_field_is_selector_or_has_given_type(
             value=value, field_name="class_aware", allowed_types=[bool]
@@ -973,7 +960,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
         return value
 
     @field_validator("iou_threshold", "confidence")
-    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -987,7 +973,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
 
     @field_validator("classes_to_consider")
     @classmethod
-    @classmethod
     def classes_to_consider_must_be_empty_or_selector_or_list_of_strings(
         cls, value: Any
     ) -> Optional[Union[str, List[str]]]:
@@ -997,7 +982,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
         return value
 
     @field_validator("required_objects")
-    @classmethod
     @classmethod
     def required_objects_field_must_be_valid(
         cls, value: Any

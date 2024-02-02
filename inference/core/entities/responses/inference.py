@@ -2,7 +2,7 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import ConfigDict, BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class ObjectDetectionPrediction(BaseModel):
