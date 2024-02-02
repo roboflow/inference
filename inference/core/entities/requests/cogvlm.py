@@ -31,8 +31,9 @@ class CogVLMInferenceRequest(BaseRequest):
         examples=["Describe this image."],
     )
     history: Optional[List[Tuple[str, str]]] = Field(
-        None, description="Optional chat history, formatted as a list of 2-tuples where the first entry is the user prompt"
-        " and the second entry is the generated model response"
+        None,
+        description="Optional chat history, formatted as a list of 2-tuples where the first entry is the user prompt"
+        " and the second entry is the generated model response",
     )
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.

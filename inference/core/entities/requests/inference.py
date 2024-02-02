@@ -1,7 +1,7 @@
 from typing import Any, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
@@ -15,6 +15,7 @@ class BaseRequest(BaseModel):
         start (Optional[float]): start time of request
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     id: str = Field(default_factory=lambda: str(uuid4()))
     api_key: Optional[str] = ApiKey
     start: Optional[float] = None
@@ -45,7 +46,8 @@ class InferenceRequestImage(BaseModel):
         description="The type of image data provided, one of 'url', 'base64', or 'numpy'",
     )
     value: Optional[Any] = Field(
-        None, examples=["http://www.example-image-url.com"],
+        None,
+        examples=["http://www.example-image-url.com"],
         description="Image data corresponding to the image type, if type = 'url' then value is a string containing the url of an image, else if type = 'base64' then value is a string containing base64 encoded image data, else if type = 'numpy' then value is binary numpy data serialized using pickle.dumps(); array should 3 dimensions, channels last, with values in the range [0,255].",
     )
 

@@ -167,6 +167,7 @@ class InferenceResponse(BaseModel):
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     frame_id: Optional[int] = Field(
         default=None,
         description="The frame id of the image used in inference if the input was a video",
@@ -200,7 +201,10 @@ class WithVisualizationResponse(BaseModel):
     )
     # TODO[pydantic]: The following keys were removed: `json_encoders`.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
-    model_config = ConfigDict(json_encoders={bytes: lambda v: base64.b64encode(v).decode("utf-8")})
+    model_config = ConfigDict(
+        json_encoders={bytes: lambda v: base64.b64encode(v).decode("utf-8")},
+        protected_namespaces=(),
+    )
 
 
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):

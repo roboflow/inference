@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
-from pydantic import field_validator, BaseModel, Field
+from pydantic import field_validator, BaseModel, ConfigDict, Field
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
@@ -64,6 +64,7 @@ class StepInterface(GraphNone, metaclass=ABCMeta):
 
 
 class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
+    model_config = ConfigDict(protected_namespaces=())
     type: Literal["RoboflowModel"]
     name: str
     image: Union[str, List[str]]
