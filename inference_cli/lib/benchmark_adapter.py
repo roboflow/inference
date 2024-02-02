@@ -70,10 +70,62 @@ def run_api_speed_benchmark(
             "model_id": model_id,
             "dataset_reference": dataset_reference,
             "host": host,
-            "benchmark_requests": benchmark_requests,
-            "request_batch_size": request_batch_size,
+            "benchmark_inferences": benchmark_requests,
+            "batch_size": request_batch_size,
             "number_of_clients": number_of_clients,
             "requests_per_second": requests_per_second,
+            "model_configuration": model_configuration,
+        }
+        dump_benchmark_results(
+            output_directory=output_location,
+            benchmark_parameters=benchmark_parameters,
+            benchmark_results=benchmark_results,
+        )
+
+
+def run_python_package_speed_benchmark(
+    model_id: str,
+    dataset_reference: str,
+    warm_up_inferences: int = 10,
+    benchmark_inferences: int = 1000,
+    batch_size: int = 1,
+    api_key: Optional[str] = None,
+    model_configuration: Optional[str] = None,
+    output_location: Optional[str] = None,
+) -> None:
+    # importing here not to affect other entrypoints by missing `inference` core library
+    from inference_cli.lib.benchmark.python_package_speed import (
+        run_python_package_speed_benchmark,
+    )
+
+    dataset_images = load_dataset_images(
+        dataset_reference=dataset_reference,
+    )
+    image_sizes = {i.shape[:2] for i in dataset_images}
+    print(f"Detected images dimensions: {image_sizes}")
+    results_collector = ResultsCollector()
+    statistics_display_thread = Thread(
+        target=display_benchmark_statistics, args=(results_collector,)
+    )
+    statistics_display_thread.start()
+    run_python_package_speed_benchmark(
+        model_id=model_id,
+        images=dataset_images,
+        results_collector=results_collector,
+        warm_up_inferences=warm_up_inferences,
+        benchmark_inferences=benchmark_inferences,
+        batch_size=batch_size,
+        api_key=api_key,
+        model_configuration=model_configuration,
+    )
+    benchmark_results = results_collector.get_statistics()
+    statistics_display_thread.join()
+    if output_location is not None:
+        benchmark_parameters = {
+            "model_id": model_id,
+            "dataset_reference": dataset_reference,
+            "benchmark_inferences": benchmark_inferences,
+            "batch_size": batch_size,
             "model_configuration": model_configuration,
         }
         dump_benchmark_results(
@@ -116,7 +168,9 @@ def coordinate_api_speed_benchmark(
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
     )
-    return results_collector.get_statistics()
+    statistics = results_collector.get_statistics()
+    statistics_display_thread.join()
+    return statistics
 
 
 def display_benchmark_statistics(
@@ -127,6 +181,7 @@ def display_benchmark_statistics(
     while not results_collector.has_benchmark_finished():
         statistics = results_collector.get_statistics(window=window)
         if statistics is None:
+            time.sleep(sleep_time)
             continue
         print(statistics.to_string())
         time.sleep(sleep_time)

@@ -8,3 +8,7 @@ class DockerConnectionErrorException(CLIError):
 
 class DatasetLoadingError(CLIError):
     pass
+
+
+class InferencePackageMissingError(CLIError):
+    pass

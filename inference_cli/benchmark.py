@@ -5,7 +5,10 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
-from inference_cli.lib.benchmark_adapter import run_api_speed_benchmark
+from inference_cli.lib.benchmark_adapter import (
+    run_api_speed_benchmark,
+    run_python_package_speed_benchmark,
+)
 from inference_cli.lib.container_adapter import stop_inference_containers
 
 benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
@@ -95,6 +98,73 @@ def api_speed(
         request_batch_size=request_batch_size,
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
+        api_key=api_key,
+        model_configuration=model_configuration,
+        output_location=output_location,
+    )
+
+
+@benchmark_app.command()
+def python_package_speed(
+    model_id: Annotated[
+        str,
+        typer.Option(
+            "--model_id",
+            "-m",
+            help="Model ID in format project/version.",
+        ),
+    ],
+    dataset_reference: Annotated[
+        str,
+        typer.Option(
+            "--dataset_reference",
+            "-d",
+            help=f"Name of predefined dataset (one of {list(PREDEFINED_DATASETS.keys())}) or path to directory with images",
+        ),
+    ] = "coco",
+    warm_up_inferences: Annotated[
+        int,
+        typer.Option("--warm_up_inferences", "-wi", help="Number of warm-up requests"),
+    ] = 10,
+    benchmark_inferences: Annotated[
+        int,
+        typer.Option(
+            "--benchmark_requests", "-bi", help="Number of benchmark requests"
+        ),
+    ] = 1000,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch_size", "-bs", help="Batch size of single request"),
+    ] = 1,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    model_configuration: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_config", "-mc", help="Location of yaml file with model config"
+        ),
+    ] = None,
+    output_location: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output_location",
+            "-o",
+            help="Location where to save the result (path to directory)",
+        ),
+    ] = None,
+):
+    run_python_package_speed_benchmark(
+        model_id=model_id,
+        dataset_reference=dataset_reference,
+        warm_up_inferences=warm_up_inferences,
+        benchmark_inferences=benchmark_inferences,
+        batch_size=batch_size,
         api_key=api_key,
         model_configuration=model_configuration,
         output_location=output_location,
