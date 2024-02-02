@@ -63,7 +63,7 @@ client = InferenceHTTPClient(
 results = client.infer(image, model_id=model_id)
 
 #Load results into Supervision Detection API
-detections = sv.Detections.from_roboflow(results[0])
+detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
 
 #Create Supervision annotators
 bounding_box_annotator = sv.BoundingBoxAnnotator()

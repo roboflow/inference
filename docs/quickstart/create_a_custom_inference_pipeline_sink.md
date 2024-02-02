@@ -90,7 +90,7 @@ def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     # get the text labels for each prediction
     labels = [p["class"] for p in predictions["predictions"]]
     # load our predictions into the Supervision Detections api
-    detections = sv.Detections.from_roboflow(predictions)
+    detections = sv.Detections.from_inference(predictions)
     # annotate the frame using our supervision annotator, the video_frame, the predictions (as supervision Detections), and the prediction labels
     image = annotator.annotate(
         scene=video_frame.image.copy(), detections=detections, labels=labels
