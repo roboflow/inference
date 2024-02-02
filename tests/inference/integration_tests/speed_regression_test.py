@@ -42,7 +42,7 @@ def model_add(test, port=9001, api_key="", base_url="http://localhost"):
 def test_speed():
     try:
         buffered = BytesIO()
-        image_url = "https://storage.googleapis.com/roboflow-platform-sources/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
+        image_url = "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"
         pil_image = Image.open(requests.get(image_url, stream=True).raw)
         pil_image.save(buffered, quality=100, format="PNG")
         img_str = base64.b64encode(buffered.getvalue())

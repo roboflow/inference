@@ -5,14 +5,14 @@ from typing_extensions import Annotated
 
 from inference_cli.lib import (
     cloud_deploy,
-    cloud_undeploy,
+    cloud_start,
     cloud_status,
     cloud_stop,
-    cloud_start,
+    cloud_undeploy,
 )
 
 cloud_app = typer.Typer(
-    help="""Commands for running the inference in cloud with skypilot . \n 
+    help="""Commands for running the inference in cloud with skypilot. \n 
     Supported devices targets are x86 CPU and NVIDIA GPU VMs."""
 )
 

@@ -1,5 +1,6 @@
 import base64
-from typing import List, Optional, Union
+import itertools
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from PIL import Image
@@ -18,6 +19,62 @@ IMAGES_TRANSCODING_METHODS = {
     VisualisationResponseFormat.NUMPY: bytes_to_opencv_image,
     VisualisationResponseFormat.PILLOW: bytes_to_pillow_image,
 }
+
+
+def decode_workflow_outputs(
+    workflow_outputs: Dict[str, Any],
+    expected_format: VisualisationResponseFormat,
+) -> Dict[str, Any]:
+    result = {}
+    for key, value in workflow_outputs.items():
+        if is_workflow_image(value=value):
+            value = decode_workflow_output_image(
+                value=value,
+                expected_format=expected_format,
+            )
+        elif issubclass(type(value), list):
+            value = decode_workflow_output_list(
+                elements=value,
+                expected_format=expected_format,
+            )
+        result[key] = value
+    return result
+
+
+def decode_workflow_output_list(
+    elements: List[Any],
+    expected_format: VisualisationResponseFormat,
+) -> List[Any]:
+    result = []
+    for element in elements:
+        if is_workflow_image(value=element):
+            element = decode_workflow_output_image(
+                value=element,
+                expected_format=expected_format,
+            )
+        result.append(element)
+    return result
+
+
+def is_workflow_image(value: Any) -> bool:
+    return issubclass(type(value), dict) and value.get("type") == "base64"
+
+
+def decode_workflow_output_image(
+    value: Dict[str, Any],
+    expected_format: VisualisationResponseFormat,
+) -> Dict[str, Any]:
+    if expected_format is VisualisationResponseFormat.BASE64:
+        return value
+    if expected_format is VisualisationResponseFormat.NUMPY:
+        value["type"] = "numpy_object"
+    else:
+        value["type"] = "pil"
+    value["value"] = transform_base64_visualisation(
+        visualisation=value["value"],
+        expected_format=expected_format,
+    )
+    return value
 
 
 def response_contains_jpeg_image(response: Response) -> bool:
@@ -67,27 +124,27 @@ def adjust_prediction_to_client_scaling_factor(
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
     if "points" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
-            points_key="points",
+        prediction["predictions"] = (
+            adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+                points_key="points",
+            )
         )
     elif "keypoints" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
-            points_key="keypoints",
+        prediction["predictions"] = (
+            adjust_prediction_with_bbox_and_points_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+                points_key="keypoints",
+            )
         )
     elif "x" in prediction["predictions"][0] and "y" in prediction["predictions"][0]:
-        prediction[
-            "predictions"
-        ] = adjust_object_detection_predictions_to_client_scaling_factor(
-            predictions=prediction["predictions"],
-            scaling_factor=scaling_factor,
+        prediction["predictions"] = (
+            adjust_object_detection_predictions_to_client_scaling_factor(
+                predictions=prediction["predictions"],
+                scaling_factor=scaling_factor,
+            )
         )
     return prediction
 
@@ -155,3 +212,30 @@ def adjust_points_coordinates_to_client_scaling_factor(
         point["y"] = point["y"] / scaling_factor
         result.append(point)
     return result
+
+
+def combine_gaze_detections(
+    detections: Union[dict, List[Union[dict, List[dict]]]]
+) -> Union[dict, List[Dict]]:
+    if not issubclass(type(detections), list):
+        return detections
+    detections = [e if issubclass(type(e), list) else [e] for e in detections]
+    return list(itertools.chain.from_iterable(detections))
+
+
+def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:
+    if issubclass(type(embeddings), list):
+        result = []
+        for e in embeddings:
+            result.extend(combine_clip_embeddings(embeddings=e))
+        return result
+    frame_id = embeddings["frame_id"]
+    time = embeddings["time"]
+    if len(embeddings["embeddings"]) > 1:
+        new_embeddings = [
+            {"frame_id": frame_id, "time": time, "embeddings": [e]}
+            for e in embeddings["embeddings"]
+        ]
+    else:
+        new_embeddings = [embeddings]
+    return new_embeddings

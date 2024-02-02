@@ -1,8 +1,8 @@
+import json
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-import numpy as np
 import requests
 from requests import Response
 from requests_toolbelt import MultipartEncoder
@@ -19,6 +19,7 @@ from inference.core.entities.types import (
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -76,14 +77,10 @@ def wrap_roboflow_api_errors(
             try:
                 return function(*args, **kwargs)
             except (requests.exceptions.ConnectionError, ConnectionError) as error:
-                logger.error(f"Could not connect to Roboflow API. Error: {error}")
                 raise RoboflowAPIConnectionError(
                     "Could not connect to Roboflow API."
                 ) from error
             except requests.exceptions.HTTPError as error:
-                logger.error(
-                    f"HTTP error encountered while requesting Roboflow API response: {error}"
-                )
                 user_handler_override = (
                     http_errors_handlers if http_errors_handlers is not None else {}
                 )
@@ -96,9 +93,6 @@ def wrap_roboflow_api_errors(
                     f"Unsuccessful request to Roboflow API with response code: {status_code}"
                 ) from error
             except requests.exceptions.InvalidJSONError as error:
-                logger.error(
-                    f"Could not decode JSON response from Roboflow API. Error: {error}."
-                )
                 raise MalformedRoboflowAPIResponseError(
                     "Could not decode JSON response from Roboflow API."
                 ) from error
@@ -323,6 +317,29 @@ def get_roboflow_labeling_jobs(
         params=[("api_key", api_key)],
     )
     return _get_from_url(url=api_url)
+
+
+@wrap_roboflow_api_errors()
+def get_workflow_specification(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_name: str,
+) -> dict:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_name}",
+        params=[("api_key", api_key)],
+    )
+    response = _get_from_url(url=api_url)
+    if "workflow" not in response or "config" not in response["workflow"]:
+        raise MalformedWorkflowResponseError(
+            f"Could not found workflow specification in API response"
+        )
+    try:
+        return json.loads(response["workflow"]["config"])
+    except (ValueError, TypeError) as error:
+        raise MalformedWorkflowResponseError(
+            "Could not decode workflow specification in Roboflow API response"
+        ) from error
 
 
 @wrap_roboflow_api_errors()

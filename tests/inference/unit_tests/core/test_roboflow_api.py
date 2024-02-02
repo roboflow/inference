@@ -10,6 +10,7 @@ from inference.core import roboflow_api
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
+    MalformedWorkflowResponseError,
     MissingDefaultModelError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
@@ -30,6 +31,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_model_type,
     get_roboflow_workspace,
+    get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
@@ -1682,3 +1684,210 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
     assert (
         requests_mock.last_request.query == "api_key=my_api_key"
     ), "API key must be given in query"
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_when_connection_error_occurs(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    get_mock.side_effect = ConnectionError()
+
+    # when
+    with pytest.raises(RoboflowAPIConnectionError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+
+def test_get_workflow_specification_when_wrong_api_key_used(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_not_found_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_internal_error_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=500,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_malformed_response_returned(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        content=b"Not a JSON :)",
+    )
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_config_not_provided(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={},
+    )
+
+    # when
+    with pytest.raises(MalformedWorkflowResponseError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_config_not_parsable(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={"config": "Not a JSON"},
+    )
+
+    # when
+    with pytest.raises(MalformedWorkflowResponseError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_name="some_workflow",
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_valid_response_given(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={
+            "workflow": {
+                "owner": "50hbxrck9m8nKykOhCEq",
+                "name": "Thermal",
+                "url": "thermal",
+                "config": '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
+                "id": "Har3FW34j1Rjc4p8IX4B",
+            },
+            "status": "ok",
+        },
+    )
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_name="some_workflow",
+    )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+    assert result == {
+        "specification": {
+            "version": "1.0",
+            "inputs": [{"type": "InferenceImage", "name": "image"}],
+            "steps": [
+                {
+                    "type": "CVModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "thermal dogs and people/18",
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "a",
+                    "selector": "$steps.step_1.predictions",
+                }
+            ],
+        },
+        "preset": "single-model",
+    }

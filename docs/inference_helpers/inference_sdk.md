@@ -13,6 +13,7 @@ For models trained at Roboflow platform, client accepts the following inputs:
 - Multiple images;
 - A directory of images, or;
 - A video file.
+- Single image encoded as `base64`
 
 For core model - client exposes dedicated methods to be used, but standard image loader used accepts
 file paths, URLs, `np.ndarray` and `PIL.Image` formats. Apart from client version (`v0` or `v1`) - options
@@ -20,9 +21,44 @@ provided via configuration are used against models trained at the platform, not 
 
 The client returns a dictionary of predictions for each image or frame.
 
+Starting from `0.9.10` - `InferenceHTTPClient` provides async equivalents for the majority of methods and
+support for requests parallelism and batching implemented (yet in limited scope, not for all methods). 
+Further details to be found in specific sections of this document. 
+
 !!! tip
 
     Read our [Run Model on an Image](/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
+
+## Quickstart
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+result = CLIENT.infer(image_url, model_id="soccer-players-5fuqs/1")
+```
+
+### AsyncIO client
+```python
+import asyncio
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
+)
+
+image_url = "https://source.roboflow.com/pwYAXv9BTpqLyFfgQoPZ/u48G0UpWfk8giSw7wrU8/original.jpg"
+loop = asyncio.get_event_loop()
+result = loop.run_until_complete(
+  CLIENT.infer_async(image_url, model_id="soccer-players-5fuqs/1")
+)
+```
 
 ## Configuration options (used for models trained at Roboflow platform)
 
@@ -116,10 +152,23 @@ CLIENT = InferenceHTTPClient(api_url="http://localhost:9001", api_key="ROBOFLOW_
 _ = CLIENT.infer(image_url, model_id="another-model/1")
 ```
 
-## Batch inference
+## Parallel / Batch inference
 
-You may want to predict against multiple images at single call. It is possible, but so far - client-side
-batching is implemented in naive way (sequential requests to API) - stay tuned for future improvements.
+You may want to predict against multiple images at single call. There are two parameters of `InferenceConfiguration`
+that specifies batching and parallelism options:
+- `max_concurrent_requests` - max number of concurrent requests that can be started 
+- `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
+support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
+to prevent errors)
+
+Thanks to that the following improvements can be achieved:
+- if you run inference container with API on prem on powerful GPU machine - setting `max_batch_size` properly
+may bring performance / throughput benefits
+- if you run inference against hosted Roboflow API - setting `max_concurrent_requests` will cause multiple images
+being served at once bringing performance / throughput benefits
+- combination of both options can be beneficial for clients running inference container with API on cluster of machines,
+then the load of single node can be optimised and parallel requests to different nodes can be made at a time 
+``
 
 ```python
 from inference_sdk import InferenceHTTPClient
@@ -135,6 +184,14 @@ predictions = CLIENT.infer([image_url] * 5, model_id="soccer-players-5fuqs/1")
 
 print(predictions)
 ```
+
+Methods that support batching / parallelism:
+-`infer(...)` and `infer_async(...)`
+- `infer_from_api_v0(...)` and `infer_from_api_v0_async(...)` (enforcing `max_batch_size=1`)
+- `ocr_image(...)` and `ocr_image_async(...)` (enforcing `max_batch_size=1`)
+- `detect_gazes(...)` and `detect_gazes_async(...)`
+- `get_clip_image_embeddings(...)` and `get_clip_image_embeddings_async(...)`
+
 
 ## Client for core models
 
@@ -178,6 +235,28 @@ CLIENT.clip_compare(
 - `(text, text)`
   Default mode is `(image, text)`.
 
+!!! tip
+
+    Check out async methods for Clip model:
+    ```python
+    from inference_sdk import InferenceHTTPClient
+    
+    CLIENT = InferenceHTTPClient(
+        api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+        api_key="ROBOFLOW_API_KEY"
+    )
+    
+    async def see_async_method(): 
+      await CLIENT.get_clip_image_embeddings_async(inference_input="./my_image.jpg")  # single image request
+      await CLIENT.get_clip_image_embeddings_async(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
+      await CLIENT.get_clip_text_embeddings_async(text="some")  # single text request
+      await CLIENT.get_clip_text_embeddings_async(text=["some", "other"])  # other text request
+      await CLIENT.clip_compare_async(
+          subject="./my_image.jpg",
+          prompt=["fox", "dog"],
+      )
+    ```
+
 ### CogVLM
 
 ```python
@@ -209,6 +288,21 @@ CLIENT.ocr_image(inference_input="./my_image.jpg")  # single image request
 CLIENT.ocr_image(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
 ```
 
+!!! tip
+
+    Check out async methods for DocTR model:
+    ```python
+    from inference_sdk import InferenceHTTPClient
+    
+    CLIENT = InferenceHTTPClient(
+        api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+        api_key="ROBOFLOW_API_KEY"
+    )
+    
+    async def see_async_method(): 
+      await CLIENT.ocr_image(inference_input="./my_image.jpg")  # single image request
+    ```
+
 ### Gaze
 
 ```python
@@ -222,6 +316,22 @@ CLIENT = InferenceHTTPClient(
 CLIENT.detect_gazes(inference_input="./my_image.jpg")  # single image request
 CLIENT.detect_gazes(inference_input=["./my_image.jpg", "./other_image.jpg"])  # batch image request
 ```
+
+!!! tip
+
+    Check out async methods for Gaze model:
+    ```python
+    from inference_sdk import InferenceHTTPClient
+    
+    CLIENT = InferenceHTTPClient(
+        api_url="http://localhost:9001",  # or "https://infer.roboflow.com" to use hosted serving
+        api_key="ROBOFLOW_API_KEY"
+    )
+    
+    async def see_async_method(): 
+      await CLIENT.detect_gazes(inference_input="./my_image.jpg")  # single image request
+    ```
+
 
 ## Inference against stream
 
@@ -282,6 +392,11 @@ CLIENT = InferenceHTTPClient(
 CLIENT.list_loaded_models()
 ```
 
+!!! tip
+
+    This method has async equivaluent: `list_loaded_models_async()`
+
+
 ### Getting specific model description
 
 ```python
@@ -297,6 +412,10 @@ CLIENT.get_model_description(model_id="some/1", allow_loading=True)
 
 If `allow_loading` is set to `True`: model will be loaded as side-effect if it is not already loaded.
 Default: `True`.
+
+!!! tip
+
+    This method has async equivaluent: `get_model_description_async()`
 
 ### Loading model
 
@@ -314,6 +433,10 @@ CLIENT.load_model(model_id="some/1", set_as_default=True)
 The pointed model will be loaded. If `set_as_default` is set to `True`: after successful load, model
 will be used as default model for the client. Default value: `False`.
 
+!!! tip
+
+    This method has async equivaluent: `load_model_async()`
+
 ### Unloading model
 
 ```python
@@ -330,6 +453,10 @@ CLIENT.unload_model(model_id="some/1")
 Sometimes (to avoid OOM at server side) - unloading model will be required.
 [test_postprocessing.py](..%2F..%2Ftests%2Finference_client%2Funit_tests%2Fhttp%2Futils%2Ftest_postprocessing.py)
 
+!!! tip
+
+    This method has async equivaluent: `unload_model_async()`
+
 ### Unloading all models
 
 ```python
@@ -343,6 +470,58 @@ CLIENT = InferenceHTTPClient(
 CLIENT.unload_all_models()
 ```
 
+!!! tip
+
+    This method has async equivaluent: `unload_all_models_async()`
+
+
+## Inference `workflows`
+
+!!! tip
+
+    This feature is in `alpha` preview. We encourage you to experiment and reach out to us with issues spotted.
+    Check out [documentation of deployment specs, create one and run](https://github.com/roboflow/inference/tree/main/inference/enterprise/deployments)
+
+!!! tip
+
+    This feature only works with locally hosted inference container and hosted platform (access may be limited). 
+    Use inefernce-cli to run local container with HTTP API:
+    ```
+    inference server start
+    ```
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+CLIENT = InferenceHTTPClient(
+    "http://127.0.0.1:9001",
+    "XXX",
+)
+
+CLIENT.infer_from_workflow(
+    specification={
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"},
+            {"type": "InferenceParameter", "name": "my_param"},
+        ],
+        # ...
+    },
+    images={
+        "image": "url or your np.array",
+    },
+    parameters={
+        "my_param": 37,
+    },
+)
+```
+
+Please note that either `specification` is provided with specification of workflow as described
+[here](https://github.com/roboflow/inference/blob/main/inference/enterprise/deployments/README.md) or 
+both `workspace_name` and `workflow_name` are given to use workflow predefined in Roboflow app. `workspace_name`
+can be found in Roboflow APP URL once browser shows the main panel of workspace. 
+
+
 ## Details about client configuration
 
 `inference-client` provides `InferenceConfiguration` dataclass to hold whole configuration.
@@ -355,8 +534,6 @@ Overriding fields in this config changes the behaviour of client (and API servin
 used in specific contexts. In particular:
 
 ### Inference in `v0` mode
-
-# <<<<<<< HEAD:docs/inference_helpers/inference_sdk.md
 
 The following fields are passed to API
 
@@ -376,7 +553,6 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
-  > > > > > > > dfec32274e82c99ca74fce696538ad1522c1f187:docs/inference_sdk/http_client.md
 
 The following fields are passed to API
 
@@ -481,6 +657,10 @@ The following fields are passed to API
   to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
   If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
   `default_max_input_size` will be in use.
+- `max_concurrent_requests` - max number of concurrent requests that can be started 
+- `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
+support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
+to prevent errors)
 
 ## FAQs
 

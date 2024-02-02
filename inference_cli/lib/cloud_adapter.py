@@ -1,7 +1,8 @@
-import sky
 import random
 import string
 import tempfile
+
+import sky
 
 YAML_DEFS = {
     "gcp_cpu": """

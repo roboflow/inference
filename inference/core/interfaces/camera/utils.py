@@ -40,11 +40,11 @@ def get_video_frames_generator(
 
     Example:
         ```python
-        >>> for frame in get_video_frames_generator(
-        ...    video="./some.mp4",
-        ...    max_fps=50,
-        ... ):
-        >>>     pass
+        for frame in get_video_frames_generator(
+            video="./some.mp4",
+            max_fps=50,
+        ):
+             pass
         ```
     """
     if issubclass(type(video), str) or issubclass(type(video), int):

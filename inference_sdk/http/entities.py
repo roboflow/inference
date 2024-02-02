@@ -42,12 +42,12 @@ class RegisteredModels(DataClassJsonMixin):
     models: List[ModelDescription]
 
 
-class HTTPClientMode(Enum):
+class HTTPClientMode(str, Enum):
     V0 = "v0"
     V1 = "v1"
 
 
-class VisualisationResponseFormat:
+class VisualisationResponseFormat(str, Enum):
     BASE64 = "base64"
     NUMPY = "numpy"
     PILLOW = "pillow"
@@ -84,6 +84,8 @@ class InferenceConfiguration:
     client_downsizing_disabled: bool = False
     default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
     disable_active_learning: bool = False
+    max_concurrent_requests: int = 1
+    max_batch_size: int = 1
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
