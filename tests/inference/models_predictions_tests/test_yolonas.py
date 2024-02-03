@@ -11,11 +11,11 @@ from inference.models import (
 
 @pytest.mark.slow
 def test_yolonas_detection_single_image_inference(
-    yolov8_det_model: str,
+    yolonas_det_model: str,
     beer_image: np.ndarray,
 ) -> None:
     # given
-    model = YOLONASObjectDetection(model_id=yolov8_det_model, api_key="DUMMY")
+    model = YOLONASObjectDetection(model_id=yolonas_det_model, api_key="DUMMY")
 
     # when
     result = model.infer(beer_image)
@@ -27,12 +27,12 @@ def test_yolonas_detection_single_image_inference(
 
 @pytest.mark.slow
 def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batch_size(
-    yolov8_det_model: str,
+    yolonas_det_model: str,
     beer_image: np.ndarray,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
-    model = YOLONASObjectDetection(model_id=yolov8_det_model, api_key="DUMMY")
+    model = YOLONASObjectDetection(model_id=yolonas_det_model, api_key="DUMMY")
 
     # when
     result = model.infer([beer_image] * batch_size)
@@ -49,12 +49,12 @@ def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batc
     reason="This test requires reasonably small MAX_BATCH_SIZE set via environment variable",
 )
 def test_yolonas_detection_batch_inference_when_batch_size_larger_than_max_batch_size(
-    yolov8_det_model: str,
+    yolonas_det_model: str,
     beer_image: np.ndarray,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
-    model = YOLONASObjectDetection(model_id=yolov8_det_model, api_key="DUMMY")
+    model = YOLONASObjectDetection(model_id=yolonas_det_model, api_key="DUMMY")
 
     # when
     result = model.infer([beer_image] * batch_size)
