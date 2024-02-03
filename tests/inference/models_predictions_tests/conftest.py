@@ -29,6 +29,9 @@ def example_image() -> np.ndarray:
 def person_image() -> np.ndarray:
     return cv2.imread(PERSON_IMAGE_PATH)
 
+@pytest.fixture(scope="function")
+def beer_image() -> np.ndarray:
+    return cv2.imread(PERSON_IMAGE_PATH)
 
 @pytest.fixture(scope="function")
 def vit_multi_class_model() -> Generator[str, None, None]:
@@ -128,6 +131,15 @@ def yolov8_seg_model() -> Generator[str, None, None]:
     yield model_id
     shutil.rmtree(model_cache_dir)
 
+@pytest.fixture(scope="function")
+def yolonas_det_model() -> Generator[str, None, None]:
+    model_id = "yolonas/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolonas.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
 
 def fetch_and_place_model_in_cache(
     model_id: str,
