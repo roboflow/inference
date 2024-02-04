@@ -12,7 +12,7 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     @property
     def weights_file(self) -> str:
-        """Gets the weights file for the YOLOv8 model.
+        """Gets the weights file for the YOLO-NAS model.
 
         Returns:
             str: Path to the ONNX weights file.

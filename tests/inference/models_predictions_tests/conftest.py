@@ -18,6 +18,7 @@ ASSETS_DIR = os.path.abspath(
 )
 EXAMPLE_IMAGE_PATH = os.path.join(ASSETS_DIR, "example_image.jpg")
 PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
+BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
 
 
 @pytest.fixture(scope="function")
@@ -31,7 +32,7 @@ def person_image() -> np.ndarray:
 
 @pytest.fixture(scope="function")
 def beer_image() -> np.ndarray:
-    return cv2.imread(PERSON_IMAGE_PATH)
+    return cv2.imread(BEER_IMAGE_PATH)
 
 @pytest.fixture(scope="function")
 def vit_multi_class_model() -> Generator[str, None, None]:
