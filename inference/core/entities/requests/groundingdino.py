@@ -11,6 +11,7 @@ class GroundingDINOInferenceRequest(CVInferenceRequest):
     Attributes:
         text (List[str]): A list of strings.
     """
+
     model_id: Optional[str] = Field(None)
     text: List[str] = Field(
         examples=[["person", "dog", "cat"]],
