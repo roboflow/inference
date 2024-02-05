@@ -2,7 +2,7 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -199,12 +199,12 @@ class WithVisualizationResponse(BaseModel):
         default=None,
         description="Base64 encoded string containing prediction visualization image data",
     )
-    # TODO[pydantic]: The following keys were removed: `json_encoders`.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
-    model_config = ConfigDict(
-        json_encoders={bytes: lambda v: base64.b64encode(v).decode("utf-8")},
-        protected_namespaces=(),
-    )
+
+    @field_serializer('visualization', when_used="json")
+    def serialize_courses_in_order(self, visualization: Optional[Any]) -> Optional[str]:
+        if visualization is None:
+            return None
+        return base64.b64encode(visualization).decode("utf-8")
 
 
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):
