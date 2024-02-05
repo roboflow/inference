@@ -19,11 +19,13 @@ class ClipInferenceRequest(BaseRequest):
 
     clip_version_id: Optional[str] = Field(
         default=CLIP_VERSION_ID,
-        example="ViT-B-16",
+        examples=["ViT-B-16"],
         description="The version ID of CLIP to be used for this request. Must be one of RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, and ViT-L-14.",
     )
-    model_id: Optional[str] = Field()
+    model_id: Optional[str] = Field(None)
 
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):
         if value is not None:
@@ -51,7 +53,7 @@ class ClipTextEmbeddingRequest(ClipInferenceRequest):
     """
 
     text: Union[List[str], str] = Field(
-        example="The quick brown fox jumps over the lazy dog",
+        examples=["The quick brown fox jumps over the lazy dog"],
         description="A string or list of strings",
     )
 
@@ -67,12 +69,12 @@ class ClipCompareRequest(ClipInferenceRequest):
     """
 
     subject: Union[InferenceRequestImage, str] = Field(
-        example="url",
+        examples=["url"],
         description="The type of image data provided, one of 'url' or 'base64'",
     )
     subject_type: str = Field(
         default="image",
-        example="image",
+        examples=["image"],
         description="The type of subject, one of 'image' or 'text'",
     )
     prompt: Union[
@@ -84,6 +86,6 @@ class ClipCompareRequest(ClipInferenceRequest):
     ]
     prompt_type: str = Field(
         default="text",
-        example="text",
+        examples=["text"],
         description="The type of prompt, one of 'image' or 'text'",
     )

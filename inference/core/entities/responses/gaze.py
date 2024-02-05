@@ -32,8 +32,8 @@ class GazeDetectionInferenceResponse(BaseModel):
 
     time: float = Field(description="The processing time (second)")
     time_face_det: Optional[float] = Field(
-        description="The face detection time (second)"
+        None, description="The face detection time (second)"
     )
     time_gaze_det: Optional[float] = Field(
-        description="The gaze detection time (second)"
+        None, description="The gaze detection time (second)"
     )

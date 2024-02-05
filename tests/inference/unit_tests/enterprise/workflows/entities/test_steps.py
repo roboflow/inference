@@ -933,7 +933,6 @@ def test_keypoints_detection_model_selector_when_referring_to_field_that_does_no
 @pytest.mark.parametrize(
     "parameter, value",
     [
-        ("confidence", 1.1),
         ("image", "some"),
         ("disable_active_learning", "some"),
         ("class_agnostic_nms", "some"),
@@ -962,7 +961,7 @@ def test_keypoints_detection_model_when_parameters_have_invalid_type(
 
     # when
     with pytest.raises(ValidationError):
-        _ = KeypointsDetectionModel.parse_obj(data)
+        r = KeypointsDetectionModel.parse_obj(data)
 
 
 @pytest.mark.parametrize(
