@@ -39,4 +39,4 @@ jobs:
           cache-from: type=registry,ref=roboflow/roboflow-inference-stream-manager-cpu:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-stream-manager-cpu:cache,mode=max
           platforms: linux/amd64,linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.cpu
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu.stream_manager

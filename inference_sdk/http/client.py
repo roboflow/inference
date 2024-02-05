@@ -232,7 +232,7 @@ class InferenceHTTPClient:
             model_id=model_id,
         )
 
-    @wrap_errors
+    @wrap_errors_async
     async def infer_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
