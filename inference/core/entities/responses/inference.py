@@ -200,7 +200,7 @@ class WithVisualizationResponse(BaseModel):
         description="Base64 encoded string containing prediction visualization image data",
     )
 
-    @field_serializer('visualization', when_used="json")
+    @field_serializer("visualization", when_used="json")
     def serialize_courses_in_order(self, visualization: Optional[Any]) -> Optional[str]:
         if visualization is None:
             return None
