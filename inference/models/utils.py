@@ -10,6 +10,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.models import (
     YOLACT,
     VitClassification,
+    YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
     YOLOv7InstanceSegmentation,
@@ -42,6 +43,9 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov8m"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
+    ("object-detection", "yolo_nas_s"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_m"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_l"): YOLONASObjectDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",

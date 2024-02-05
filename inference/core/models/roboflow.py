@@ -418,7 +418,8 @@ class RoboflowInferenceModel(Model):
 
         if is_bgr:
             resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        img_in = np.transpose(resized, (2, 0, 1)).astype(np.float32)
+        img_in = np.transpose(resized, (2, 0, 1))
+        img_in = img_in.astype(np.float32)
         img_in = np.expand_dims(img_in, axis=0)
 
         return img_in, img_dims
