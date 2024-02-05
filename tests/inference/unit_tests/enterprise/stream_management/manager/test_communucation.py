@@ -1,6 +1,7 @@
 """
 In this module, tests are written to mock, avoiding issues with trying to find empty socket in tests
 """
+
 import json
 import random
 from unittest.mock import MagicMock

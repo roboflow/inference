@@ -7,9 +7,9 @@ import pytest
 
 from inference.core.interfaces.http.orjson_utils import (
     contains_image,
-    serialise_deployment_workflow_result,
     serialise_image,
     serialise_list,
+    serialise_workflow_result,
 )
 
 
@@ -110,7 +110,7 @@ def test_serialise_list() -> None:
     ).all(), "Recovered image should be equal to input image"
 
 
-def test_serialise_deployment_workflow_result() -> None:
+def test_serialise_workflow_result() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
     workflow_result = {
@@ -130,7 +130,7 @@ def test_serialise_deployment_workflow_result() -> None:
     }
 
     # when
-    result = serialise_deployment_workflow_result(
+    result = serialise_workflow_result(
         result=workflow_result, excluded_fields=["fourth"]
     )
 

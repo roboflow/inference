@@ -77,14 +77,10 @@ def wrap_roboflow_api_errors(
             try:
                 return function(*args, **kwargs)
             except (requests.exceptions.ConnectionError, ConnectionError) as error:
-                logger.error(f"Could not connect to Roboflow API. Error: {error}")
                 raise RoboflowAPIConnectionError(
                     "Could not connect to Roboflow API."
                 ) from error
             except requests.exceptions.HTTPError as error:
-                logger.error(
-                    f"HTTP error encountered while requesting Roboflow API response: {error}"
-                )
                 user_handler_override = (
                     http_errors_handlers if http_errors_handlers is not None else {}
                 )
@@ -97,9 +93,6 @@ def wrap_roboflow_api_errors(
                     f"Unsuccessful request to Roboflow API with response code: {status_code}"
                 ) from error
             except requests.exceptions.InvalidJSONError as error:
-                logger.error(
-                    f"Could not decode JSON response from Roboflow API. Error: {error}."
-                )
                 raise MalformedRoboflowAPIResponseError(
                     "Could not decode JSON response from Roboflow API."
                 ) from error
@@ -112,7 +105,7 @@ def wrap_roboflow_api_errors(
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_url = _add_params_to_url(
-        url=API_BASE_URL,
+        url=f"{API_BASE_URL}/",
         params=[("api_key", api_key), ("nocache", "true")],
     )
     api_key_info = _get_from_url(url=api_url)
@@ -327,25 +320,25 @@ def get_roboflow_labeling_jobs(
 
 
 @wrap_roboflow_api_errors()
-def get_deployment_specification(
+def get_workflow_specification(
     api_key: str,
     workspace_id: WorkspaceID,
-    deployment_name: str,
+    workflow_name: str,
 ) -> dict:
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/deployments/{deployment_name}",
+        url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_name}",
         params=[("api_key", api_key)],
     )
     response = _get_from_url(url=api_url)
-    if "deployment" not in response or "config" not in response["deployment"]:
+    if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
-            f"Could not found deployment specification in API response"
+            f"Could not found workflow specification in API response"
         )
     try:
-        return json.loads(response["deployment"]["config"])
+        return json.loads(response["workflow"]["config"])
     except (ValueError, TypeError) as error:
         raise MalformedWorkflowResponseError(
-            "Could not decode deployment specification in Roboflow API response"
+            "Could not decode workflow specification in Roboflow API response"
         ) from error
 
 

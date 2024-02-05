@@ -81,7 +81,9 @@ async def test_infer_from_request_when_model_is_available() -> None:
 
 
 @pytest.mark.asyncio
-async def test_infer_from_request_when_model_is_available_but_exception_raised() -> None:
+async def test_infer_from_request_when_model_is_available_but_exception_raised() -> (
+    None
+):
     # given
     model_registry = MagicMock()
     model_manager = ModelManager(model_registry=model_registry)

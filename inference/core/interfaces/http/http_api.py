@@ -19,10 +19,6 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.entities.requests.deployments import (
-    DeploymentsInferenceRequest,
-    DeploymentSpecificationInferenceRequest,
-)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -42,12 +38,15 @@ from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
 )
+from inference.core.entities.requests.workflows import (
+    WorkflowInferenceRequest,
+    WorkflowSpecificationInferenceRequest,
+)
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.deployments import DeploymentsInferenceResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -68,6 +67,7 @@ from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
 )
+from inference.core.entities.responses.workflows import WorkflowInferenceResponse
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
@@ -77,6 +77,7 @@ from inference.core.env import (
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODELS_ENABLED,
+    DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
@@ -86,6 +87,8 @@ from inference.core.env import (
     NOTEBOOK_PORT,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -113,18 +116,20 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
-    serialise_deployment_workflow_result,
+    serialise_workflow_result,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
-    get_deployment_specification,
     get_roboflow_workspace,
+    get_workflow_specification,
 )
 from inference.core.utils.notebooks import start_notebook
-from inference.enterprise.deployments.complier.core import compile_and_execute_async
-from inference.enterprise.deployments.errors import (
-    DeploymentCompilerError,
+from inference.enterprise.workflows.complier.core import compile_and_execute_async
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineError,
     RuntimePayloadError,
+    WorkflowsCompilerError,
 )
 
 if LAMBDA:
@@ -177,7 +182,8 @@ def with_route_exceptions(route):
             ServiceConfigurationError,
             ModelArtefactError,
             MalformedWorkflowResponseError,
-            DeploymentCompilerError,
+            WorkflowsCompilerError,
+            ExecutionEngineError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
@@ -309,23 +315,24 @@ class HttpInterface(BaseInterface):
             )
             return orjson_response(resp)
 
-        async def process_deployment_inference_request(
-            deployment_request: DeploymentsInferenceRequest,
-            deployment_specification: dict,
-        ) -> DeploymentsInferenceResponse:
+        async def process_workflow_inference_request(
+            workflow_request: WorkflowInferenceRequest,
+            workflow_specification: dict,
+        ) -> WorkflowInferenceResponse:
+            step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             result = await compile_and_execute_async(
-                deployment_spec=deployment_specification,
-                runtime_parameters=deployment_request.runtime_parameters,
+                workflow_specification=workflow_specification,
+                runtime_parameters=workflow_request.inputs,
                 model_manager=model_manager,
-                api_key=deployment_request.api_key,
+                api_key=workflow_request.api_key,
+                max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+                step_execution_mode=step_execution_mode,
             )
-            deployment_outputs = serialise_deployment_workflow_result(
+            outputs = serialise_workflow_result(
                 result=result,
-                excluded_fields=deployment_request.excluded_fields,
+                excluded_fields=workflow_request.excluded_fields,
             )
-            response = DeploymentsInferenceResponse(
-                deployment_outputs=deployment_outputs
-            )
+            response = WorkflowInferenceResponse(outputs=outputs)
             return orjson_response(response=response)
 
         def load_core_model(
@@ -628,44 +635,46 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
+        if not DISABLE_WORKFLOW_ENDPOINTS:
+
             @app.post(
-                "/infer/deployments",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from deployment specification provided in payload",
-                description="Parses and executes deployment specification, injecting runtime parameters from request body",
+                "/infer/workflows/{workspace_name}/{workflow_name}",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_request: DeploymentSpecificationInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                deployment_specification = {
-                    "specification": deployment_request.specification
-                }
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
+            async def infer_from_predefined_workflow(
+                workspace_name: str,
+                workflow_name: str,
+                workflow_request: WorkflowInferenceRequest,
+            ) -> WorkflowInferenceResponse:
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_name=workflow_name,
+                )
+                return await process_workflow_inference_request(
+                    workflow_request=workflow_request,
+                    workflow_specification=workflow_specification,
                 )
 
             @app.post(
-                "/infer/deployments/{deployment_name}",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from predefined deployment",
-                description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
+                "/infer/workflows",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from workflow specification provided in payload",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body",
             )
             @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_name: str,
-                deployment_request: DeploymentsInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
-                deployment_specification = get_deployment_specification(
-                    api_key=deployment_request.api_key,
-                    workspace_id=workspace,
-                    deployment_name=deployment_name,
-                )
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
+            async def infer_from_workflow(
+                workflow_request: WorkflowSpecificationInferenceRequest,
+            ) -> WorkflowInferenceResponse:
+                workflow_specification = {
+                    "specification": workflow_request.specification
+                }
+                return await process_workflow_inference_request(
+                    workflow_request=workflow_request,
+                    workflow_specification=workflow_specification,
                 )
 
         if CORE_MODELS_ENABLED:

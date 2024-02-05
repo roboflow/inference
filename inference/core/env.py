@@ -326,3 +326,37 @@ DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
+
+
+LOCAL_INFERENCE_API_URL = os.getenv("LOCAL_INFERENCE_API_URL", "http://127.0.0.1:9001")
+HOSTED_DETECT_URL = (
+    "https://detect.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-object-detection.staging.roboflow.com"
+)
+HOSTED_INSTANCE_SEGMENTATION_URL = (
+    "https://outline.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-instance-segmentation.staging.roboflow.com"
+)
+HOSTED_CLASSIFICATION_URL = (
+    "https://classify.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-classification.staging.roboflow.com"
+)
+HOSTED_CORE_MODEL_URL = (
+    "https://infer.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+)
+
+DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
+WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
+)
+WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
+)
