@@ -201,7 +201,7 @@ class WithVisualizationResponse(BaseModel):
     )
 
     @field_serializer("visualization", when_used="json")
-    def serialize_courses_in_order(self, visualization: Optional[Any]) -> Optional[str]:
+    def serialize_visualisation(self, visualization: Optional[Any]) -> Optional[str]:
         if visualization is None:
             return None
         return base64.b64encode(visualization).decode("utf-8")
