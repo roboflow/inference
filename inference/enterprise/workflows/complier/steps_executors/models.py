@@ -494,9 +494,12 @@ async def get_ocr_predictions_from_remote_api(
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
     client.configure(configuration)
-    return await client.ocr_image_async(
+    result = await client.ocr_image_async(
         inference_input=[i["value"] for i in image],
     )
+    if len(image) == 1:
+        return [result]
+    return result
 
 
 async def run_clip_comparison_step(
