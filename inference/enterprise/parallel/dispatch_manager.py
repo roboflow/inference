@@ -135,7 +135,7 @@ class DispatchModelManager(ModelManager):
 
         if request.visualize_predictions:
             for response in responses:
-                response.visualization = self.draw_predictions(request, response)
+                response.visualization = self._models[model_id].draw_predictions(request, response)
 
         if list_mode:
             return responses
