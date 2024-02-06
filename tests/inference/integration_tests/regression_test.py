@@ -460,7 +460,12 @@ def test_detection(test, res_function):
     except Exception as e:
         raise Exception(f"Error in test {test['description']}: {e}")
 
+
 VISUALIZATION_TEST_PARAMS = [p for p in DETECTION_TEST_PARAMS if p[0]["type"] != "classification"]
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_VISUALISATION_TESTS", False)),
+    reason="Skipping visualisation test"
+)
 @pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
 def test_visualization(test, res_function):
     test = deepcopy(test)
