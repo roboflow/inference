@@ -38,7 +38,9 @@ def model_add(test, port=9001, api_key="", base_url="http://localhost"):
     )
 
 
-
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_SPEED_TEST", False)), reason="Skipping speed test"
+)
 def test_speed():
     try:
         buffered = BytesIO()

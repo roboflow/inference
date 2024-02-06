@@ -19,7 +19,9 @@ def bool_env(val):
         return val
     return val.lower() in ["true", "1", "t", "y", "yes"]
 
-
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_CLIP_TEST", False)), reason="Skipping CLIP test"
+)
 @pytest.mark.parametrize("test", TESTS)
 def test_clip(test):
     payload = deepcopy(test["payload"])

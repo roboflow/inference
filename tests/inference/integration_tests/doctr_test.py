@@ -27,7 +27,14 @@ TESTS = [
     }
 ]
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
 
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_DOCTR_TEST", False)), reason="Skipping DocTR test"
+)
 @pytest.mark.parametrize("test", TESTS)
 def test_doctr(test):
     payload = deepcopy(test["payload"])
