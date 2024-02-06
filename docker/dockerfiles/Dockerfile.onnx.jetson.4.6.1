@@ -4,8 +4,23 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG en_US.UTF-8 
 
 RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
-    python3.8 \
-    python3.8-dev \
+    build-essential \
+    zlib1g-dev \
+    libncurses5-dev \
+    libgdbm-dev \
+    libnss3-dev \
+    libssl-dev \ 
+    libreadline-dev \
+    libffi-dev \
+    curl \
+    libbz2-dev \
+    software-properties-common
+
+RUN wget https://www.python.org/ftp/python/3.9.0/Python-3.9.0.tar.xz && tar -xf Python-3.9.0.tar.xz && rm Python-3.9.0.tar.xz
+WORKDIR ./Python-3.9.0
+RUN ./configure && make altinstall
+
+RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     lshw \
     git \
     python3-pip \
@@ -27,29 +42,32 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
+    requirements/requirements.sdk.http.txt \
     requirements/_requirements.txt \
     ./
 
-RUN python3.8 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
+RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
-RUN python3.8 -m pip install --upgrade pip  && python3.8 -m pip install \
+RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
+    -r requirements.sdk.http.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN python3.8 -m pip uninstall --yes onnxruntime
-RUN wget https://nvidia.box.com/shared/static/2sv2fv1wseihaw8ym0d4srz41dzljwxh.whl -O onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl
-RUN python3.8 -m pip install onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl \
+RUN python3.9 -m pip uninstall --yes onnxruntime
+RUN wget https://nvidia.box.com/shared/static/jmomlpcctmjojz14zbwa12lxmeh2h6o5.whl -O onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl
+RUN python3.9 -m pip install onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl \
     && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl
+    && rm onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl
 
 WORKDIR /app/
 COPY inference inference
+COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
