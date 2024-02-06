@@ -42,6 +42,14 @@ RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
 FROM scratch
 COPY --from=base / /
 
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
