@@ -102,6 +102,8 @@ class DispatchModelManager(ModelManager):
         self.checker = checker
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
+        if request.visualize_predictions:
+            raise NotImplementedError("Visualisation of prediction is not supported")
         request.start = time()
         t = perf_counter()
         task_type = self.get_task_type(model_id, request.api_key)
@@ -132,10 +134,6 @@ class DispatchModelManager(ModelManager):
             response = response_from_type(task_type, response_json)
             response.time = perf_counter() - t
             responses.append(response)
-
-        if request.visualize_predictions:
-            for response in responses:
-                response.visualization = self._models[model_id].draw_predictions(request, response)
 
         if list_mode:
             return responses
