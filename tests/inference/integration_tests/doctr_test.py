@@ -67,7 +67,7 @@ def setup():
         success = True
     except:
         success = False
-
+    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
@@ -79,7 +79,7 @@ def setup():
             success = True
         except:
             success = False
-        if waited > 30:
+        if waited > MAX_WAIT:
             raise Exception("Test server failed to start")
 
 
