@@ -18,5 +18,5 @@ requests-toolbelt>=1.0.0
 wheel>=0.38.1
 setuptools>=65.5.1
 pytest-asyncio<=0.21.1
-networkx>=3.2.1
+networkx>=3.1
 pydantic>=2.0

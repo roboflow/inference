@@ -38,7 +38,9 @@ def model_add(test, port=9001, api_key="", base_url="http://localhost"):
     )
 
 
-
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_SPEED_TEST", False)), reason="Skipping speed test"
+)
 def test_speed():
     try:
         buffered = BytesIO()
@@ -87,7 +89,7 @@ def setup():
         success = True
     except:
         success = False
-
+    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
@@ -99,6 +101,6 @@ def setup():
             success = True
         except:
             success = False
-        if waited > 30:
+        if waited > MAX_WAIT:
             raise Exception("Test server failed to start")
 

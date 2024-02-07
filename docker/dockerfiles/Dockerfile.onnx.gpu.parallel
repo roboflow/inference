@@ -42,6 +42,15 @@ RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
 FROM scratch
 COPY --from=base / /
 
+WORKDIR /build
+COPY . .
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN /bin/make create_wheels_for_gpu_notebook
+RUN pip3 install dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
@@ -51,5 +60,6 @@ ENV PROJECT=roboflow-platform
 ENV CORE_MODELS_ENABLED=false
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV REDIS_HOST=localhost
 
 ENTRYPOINT python3 entrypoint.py
