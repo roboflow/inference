@@ -400,7 +400,6 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
     @field_validator("mask_decode_mode")
     @classmethod
-    @classmethod
     def mask_decode_mode_must_be_selector_or_one_of_allowed_values(
         cls, value: Any
     ) -> Optional[str]:
@@ -412,7 +411,6 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         return value
 
     @field_validator("tradeoff_factor")
-    @classmethod
     @classmethod
     def field_must_be_selector_or_number_from_zero_to_one(
         cls, value: Any
@@ -462,7 +460,6 @@ class OCRModel(BaseModel, StepInterface):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
@@ -502,13 +499,11 @@ class Crop(BaseModel, StepInterface):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
     @field_validator("detections")
-    @classmethod
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if not is_selector(selector_or_value=value):
@@ -712,13 +707,11 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
     @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
     @classmethod
     def validate_crops_coordinates(cls, value: Any) -> str:
         validate_value_is_empty_or_selector_or_positive_number(
@@ -777,13 +770,11 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
     @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
     @classmethod
     def detections_must_hold_selector(cls, value: Any) -> str:
         if issubclass(type(value), str):
@@ -841,13 +832,11 @@ class ClipComparison(BaseModel, StepInterface):
 
     @field_validator("image")
     @classmethod
-    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
     @field_validator("text")
-    @classmethod
     @classmethod
     def text_must_be_valid(cls, value: Any) -> Union[str, List[str]]:
         if is_selector(selector_or_value=value):
