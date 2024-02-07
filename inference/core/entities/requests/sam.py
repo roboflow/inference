@@ -19,12 +19,14 @@ class SamInferenceRequest(BaseRequest):
 
     sam_version_id: Optional[str] = Field(
         default=SAM_VERSION_ID,
-        example="vit_h",
+        examples=["vit_h"],
         description="The version ID of SAM to be used for this request. Must be one of vit_h, vit_l, or vit_b.",
     )
 
-    model_id: Optional[str] = Field()
+    model_id: Optional[str] = Field(None)
 
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):
         if value is not None:
@@ -49,12 +51,12 @@ class SamEmbeddingRequest(SamInferenceRequest):
     )
     image_id: Optional[str] = Field(
         default=None,
-        example="image_id",
+        examples=["image_id"],
         description="The ID of the image to be embedded used to cache the embedding.",
     )
     format: Optional[str] = Field(
         default="json",
-        example="json",
+        examples=["json"],
         description="The format of the response. Must be one of json or binary. If binary, embedding is returned as a binary numpy array.",
     )
 
@@ -78,17 +80,18 @@ class SamSegmentationRequest(SamInferenceRequest):
     """
 
     embeddings: Optional[Union[List[List[List[List[float]]]], Any]] = Field(
-        example="[[[[0.1, 0.2, 0.3, ...] ...] ...]]",
+        None,
+        examples=["[[[[0.1, 0.2, 0.3, ...] ...] ...]]"],
         description="The embeddings to be decoded. The dimensions of the embeddings are 1 x 256 x 64 x 64. If embeddings is not provided, image must be provided.",
     )
     embeddings_format: Optional[str] = Field(
         default="json",
-        example="json",
+        examples=["json"],
         description="The format of the embeddings. Must be one of json or binary. If binary, embeddings are expected to be a binary numpy array.",
     )
     format: Optional[str] = Field(
         default="json",
-        example="json",
+        examples=["json"],
         description="The format of the response. Must be one of json or binary. If binary, masks are returned as binary numpy arrays. If json, masks are converted to polygons, then returned as json.",
     )
     image: Optional[InferenceRequestImage] = Field(
@@ -97,12 +100,12 @@ class SamSegmentationRequest(SamInferenceRequest):
     )
     image_id: Optional[str] = Field(
         default=None,
-        example="image_id",
+        examples=["image_id"],
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
     has_mask_input: Optional[bool] = Field(
         default=False,
-        example=True,
+        examples=[True],
         description="Whether or not the request includes a mask input. If true, the mask input must be provided.",
     )
     mask_input: Optional[Union[List[List[List[float]]], Any]] = Field(
@@ -111,26 +114,26 @@ class SamSegmentationRequest(SamInferenceRequest):
     )
     mask_input_format: Optional[str] = Field(
         default="json",
-        example="json",
+        examples=["json"],
         description="The format of the mask input. Must be one of json or binary. If binary, mask input is expected to be a binary numpy array.",
     )
     orig_im_size: Optional[List[int]] = Field(
         default=None,
-        example=[640, 320],
+        examples=[[640, 320]],
         description="The original size of the image used to generate the embeddings. This is only required if the image is not provided.",
     )
     point_coords: Optional[List[List[float]]] = Field(
         default=[[0.0, 0.0]],
-        example=[[10.0, 10.0]],
+        examples=[[[10.0, 10.0]]],
         description="The coordinates of the interactive points used during decoding. Each point (x,y pair) corresponds to a label in point_labels.",
     )
     point_labels: Optional[List[float]] = Field(
         default=[-1],
-        example=[1],
+        examples=[[1]],
         description="The labels of the interactive points used during decoding. A 1 represents a positive point (part of the object to be segmented). A -1 represents a negative point (not part of the object to be segmented). Each label corresponds to a point in point_coords.",
     )
     use_mask_input_cache: Optional[bool] = Field(
         default=True,
-        example=True,
+        examples=[True],
         description="Whether or not to use the mask input cache. If true, the mask input cache will be used if it exists. If false, the mask input cache will not be used.",
     )

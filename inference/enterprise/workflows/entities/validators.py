@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Set, Type
 
-from pydantic import PydanticTypeError
+from pydantic import ValidationError
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.enterprise.workflows.entities.base import GraphNone
@@ -149,8 +149,8 @@ def validate_image_biding(value: Any, field_name: str = "image") -> None:
         if not issubclass(type(value), list):
             value = [value]
         for e in value:
-            InferenceRequestImage.validate(e)
-    except (ValueError, PydanticTypeError) as error:
+            InferenceRequestImage.model_validate(e)
+    except (ValueError, ValidationError) as error:
         raise VariableTypeError(
             f"Parameter `{field_name}` must be compatible with `InferenceRequestImage`"
         ) from error

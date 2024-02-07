@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
@@ -14,6 +14,7 @@ class AddModelRequest(BaseModel):
         api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     model_id: str = ModelID
     model_type: Optional[str] = ModelType
     api_key: Optional[str] = ApiKey
@@ -26,4 +27,5 @@ class ClearModelRequest(BaseModel):
         model_id (str): A unique model identifier.
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     model_id: str = ModelID

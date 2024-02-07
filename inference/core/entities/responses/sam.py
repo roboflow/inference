@@ -12,7 +12,7 @@ class SamEmbeddingResponse(BaseModel):
     """
 
     embeddings: Union[List[List[List[List[float]]]], Any] = Field(
-        example="[[[[0.1, 0.2, 0.3, ...] ...] ...]]",
+        examples=["[[[[0.1, 0.2, 0.3, ...] ...] ...]]"],
         description="If request format is json, embeddings is a series of nested lists representing the SAM embedding. If request format is binary, embeddings is a binary numpy array. The dimensions of the embedding are 1 x 256 x 64 x 64.",
     )
     time: float = Field(

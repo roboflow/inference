@@ -105,7 +105,7 @@ def wrap_roboflow_api_errors(
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     api_url = _add_params_to_url(
-        url=API_BASE_URL,
+        url=f"{API_BASE_URL}/",
         params=[("api_key", api_key), ("nocache", "true")],
     )
     api_key_info = _get_from_url(url=api_url)

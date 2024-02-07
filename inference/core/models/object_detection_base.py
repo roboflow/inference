@@ -28,6 +28,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
     task_type = "object-detection"
+    box_format = "xywh"
 
     def infer(
         self,
@@ -173,6 +174,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             class_agnostic=class_agnostic_nms,
             max_detections=max_detections,
             max_candidate_detections=max_candidates,
+            box_format=self.box_format,
         )
 
         infer_shape = (self.img_size_h, self.img_size_w)
