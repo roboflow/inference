@@ -46,7 +46,7 @@ COPY --from=base / /
 WORKDIR /build
 COPY . .
 RUN make create_wheels
-RUN pip3 install dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
+RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
 
 WORKDIR /notebooks
 COPY examples/notebooks .
