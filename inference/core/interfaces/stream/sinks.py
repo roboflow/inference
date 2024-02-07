@@ -1,6 +1,7 @@
 import json
 import socket
 from datetime import datetime
+from functools import partial
 from typing import Callable, List, Optional, Tuple
 
 import cv2
@@ -54,26 +55,27 @@ def render_boxes(
 
     Example:
         ```python
-        >>> from functools import partial
-        >>> import cv2
-        >>> from inference import InferencePipeline
+        from functools import partial
+        import cv2
+        from inference import InferencePipeline
+        from inference.core.interfaces.stream.sinks import render_boxes
 
-        >>> output_size = (640, 480)
-        >>> video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
-        >>> on_prediction = partial(render_boxes, display_size=output_size, on_frame_rendered=video_sink.write)
+        output_size = (640, 480)
+        video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
+        on_prediction = partial(render_boxes, display_size=output_size, on_frame_rendered=video_sink.write)
 
-        >>> pipeline = InferencePipeline.init(
-        ...     model_id="your-model/3",
-        ...     video_reference="./some_file.mp4",
-        ...     on_prediction=on_prediction,
-        ... )
-        >>> pipeline.start()
-        >>> pipeline.join()
-        >>> video_sink.release()
+        pipeline = InferencePipeline.init(
+             model_id="your-model/3",
+             video_reference="./some_file.mp4",
+             on_prediction=on_prediction,
+        )
+        pipeline.start()
+        pipeline.join()
+        video_sink.release()
         ```
 
         In this example, `render_boxes()` is used as a sink for `InferencePipeline` predictions - making frames with
-        prtedictions displayed to be saved into video file.
+        predictions displayed to be saved into video file.
     """
     fps_value = None
     if fps_monitor is not None:
@@ -172,18 +174,19 @@ class UDPSink:
 
         Example:
             ```python
-            >>> import cv2
-            >>> from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+            import cv2
+            from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+            from inference.core.interfaces.stream.sinks import UDPSink
 
-            >>> udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
+            udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
 
-            >>> pipeline = InferencePipeline.init(
-            ...     model_id="your-model/3",
-            ...     video_reference="./some_file.mp4",
-            ...     on_prediction=udp_sink.send_predictions,
-            ... )
-            >>> pipeline.start()
-            >>> pipeline.join()
+            pipeline = InferencePipeline.init(
+                 model_id="your-model/3",
+                 video_reference="./some_file.mp4",
+                 on_prediction=udp_sink.send_predictions,
+            )
+            pipeline.start()
+            pipeline.join()
             ```
             `UDPSink` used in this way will emit predictions to receiver automatically.
         """
@@ -223,20 +226,21 @@ def multi_sink(
 
     Example:
         ```python
-        >>> from functools import partial
-        >>> import cv2
-        >>> from inference import InferencePipeline
+        from functools import partial
+        import cv2
+        from inference import InferencePipeline
+        from inference.core.interfaces.stream.sinks import UDPSink, render_boxes
 
-        >>> udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
-        >>> on_prediction = partial(multi_sink, sinks=[udp_sink.send_predictions, render_boxes])
+        udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
+        on_prediction = partial(multi_sink, sinks=[udp_sink.send_predictions, render_boxes])
 
-        >>> pipeline = InferencePipeline.init(
-        ...     model_id="your-model/3",
-        ...     video_reference="./some_file.mp4",
-        ...     on_prediction=on_prediction,
-        ... )
-        >>> pipeline.start()
-        >>> pipeline.join()
+        pipeline = InferencePipeline.init(
+            model_id="your-model/3",
+            video_reference="./some_file.mp4",
+            on_prediction=on_prediction,
+        )
+        pipeline.start()
+        pipeline.join()
         ```
 
         As a result, predictions will both be sent via UDP socket and displayed in the screen.
@@ -264,3 +268,110 @@ def active_learning_sink(
         prediction_type=model_type,
         disable_preproc_auto_orient=disable_preproc_auto_orient,
     )
+
+
+class VideoFileSink:
+    @classmethod
+    def init(
+        cls,
+        video_file_name: str,
+        annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
+        display_size: Optional[Tuple[int, int]] = (1280, 720),
+        fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
+        display_statistics: bool = False,
+        output_fps: int = 25,
+        quiet: bool = False,
+    ) -> "VideoFileSink":
+        """
+        Creates `InferencePipeline` predictions sink capable of saving model predictions into video file.
+
+        As an `inference` user, please use .init() method instead of constructor to instantiate objects.
+        Args:
+            video_file_name (str): name of the video file to save predictions
+            render_boxes (Callable[[dict, VideoFrame], None]): callable to render predictions on top of video frame
+
+        Attributes:
+            on_prediction (Callable[[dict, VideoFrame], None]): callable to be used as a sink for predictions
+
+        Returns: Initialized object of `VideoFileSink` class.
+
+        Example:
+            ```python
+            import cv2
+            from inference import InferencePipeline
+            from inference.core.interfaces.stream.sinks import VideoFileSink
+
+            video_sink = VideoFileSink.init(video_file_name="output.avi")
+
+            pipeline = InferencePipeline.init(
+                model_id="your-model/3",
+                video_reference="./some_file.mp4",
+                on_prediction=video_sink.on_prediction,
+            )
+            pipeline.start()
+            pipeline.join()
+            video_sink.release()
+            ```
+
+            `VideoFileSink` used in this way will save predictions to video file automatically.
+        """
+        return cls(
+            video_file_name=video_file_name,
+            annotator=annotator,
+            display_size=display_size,
+            fps_monitor=fps_monitor,
+            display_statistics=display_statistics,
+            output_fps=output_fps,
+            quiet=quiet,
+        )
+
+    def __init__(
+        self,
+        video_file_name: str,
+        annotator: sv.BoxAnnotator,
+        display_size: Optional[Tuple[int, int]],
+        fps_monitor: Optional[sv.FPSMonitor],
+        display_statistics: bool,
+        output_fps: int,
+        quiet: bool,
+    ):
+        self._video_file_name = video_file_name
+        self._annotator = annotator
+        self._display_size = display_size
+        self._fps_monitor = fps_monitor
+        self._display_statistics = display_statistics
+        self._output_fps = output_fps
+        self._quiet = quiet
+        self._frame_idx = 0
+
+        self._video_writer = cv2.VideoWriter(
+            self._video_file_name,
+            cv2.VideoWriter_fourcc(*"MJPG"),
+            self._output_fps,
+            self._display_size,
+        )
+
+        self.on_prediction = partial(
+            render_boxes,
+            annotator=self._annotator,
+            display_size=self._display_size,
+            fps_monitor=self._fps_monitor,
+            display_statistics=self._display_statistics,
+            on_frame_rendered=self._save_predictions,
+        )
+
+    def _save_predictions(
+        self,
+        frame: np.ndarray,
+    ) -> None:
+        """ """
+        self._video_writer.write(frame)
+        if not self._quiet:
+            print(f"Writing frame {self._frame_idx}", end="\r")
+        self._frame_idx += 1
+
+    def release(self) -> None:
+        """
+        Releases VideoWriter object.
+        """
+        self._video_writer.release()

@@ -6,7 +6,7 @@ The HTTP Inference API provides a standard API through which to run inference on
 
 _You can skip this step if you already have Inference installed and running._
 
-The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the [official Docker installation guide](https://docs.docker.com/get-docker/).
+The Inference Server runs in Docker. Before we begin, make sure you have installed Docker on your system. To learn how to install Docker, refer to the <a href="https://docs.docker.com/get-docker/" target="_blank">official Docker installation guide</a>.
 
 Once you have Docker installed, you are ready to download Roboflow Inference. The command you need to run depends on what device you are using.
 
@@ -25,7 +25,9 @@ Next, instantiate a client and use the `infer(...)` method:
 ```python
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
-project_id = "soccer-players-5fuqs/1"
+project_id = "soccer-players-5fuqs"
+model_version = "1"
+model_id = project_id + "/" + model_version
 image_url = "https://media.roboflow.com/inference/soccer.jpg"
 
 client = InferenceHTTPClient(
@@ -33,11 +35,10 @@ client = InferenceHTTPClient(
     api_key=os.environ["ROBOFLOW_API_KEY"],
 )
 
-client.select_api(model_version)
 
-results = client.infer(image_url, model_id=f"{model_id}")
+results = client.infer(image_url, model_id=model_id)
 ```
-
+{% include 'model_id.md' %}
 !!! Hint
 
     See [full docs for the Inference SDK](../../inference_helpers/inference_sdk).
@@ -54,16 +55,15 @@ image = cv2.imread(image_file)
 
 #Configure client
 client = InferenceHTTPClient(
-    api_url="http://localhost:9001",
-    api_key=os.environ["ROBOFLOW_API_KEY"],
+    api_url="http://localhost:9001", # route for local inference server
+    api_key=os.environ["ROBOFLOW_API_KEY"], # api key for your workspace
 )
-client.select_api(model_version)
 
 #Run inference
 results = client.infer(image, model_id=model_id)
 
 #Load results into Supervision Detection API
-detections = sv.Detections.from_roboflow(results[0])
+detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
 
 #Create Supervision annotators
 bounding_box_annotator = sv.BoundingBoxAnnotator()
@@ -98,8 +98,6 @@ client = InferenceHTTPClient(
     api_url="https://detect.roboflow.com",
     api_key=os.environ["ROBOFLOW_API_KEY"],
 )
-
-client.select_api(model_version)
 
 results = client.infer(image_url, model_id=f"{model_id}")
 ```

@@ -1,0 +1,10 @@
+annotators:
+  - type: "mask"
+    params:
+      opacity: 0.5
+  - type: "label"
+    params:
+      text_scale: 0.5
+      text_thickness: 2
+      text_padding: 5
+

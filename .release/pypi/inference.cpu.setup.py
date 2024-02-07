@@ -52,10 +52,9 @@ setuptools.setup(
     install_requires=read_requirements(
         [
             "requirements/_requirements.txt",
-            "requirements/requirements.cli.txt",
             "requirements/requirements.cpu.txt",
         ]
-    ),
+    ).extend([f'inference-cli=={__version__}']),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "gaze": read_requirements("requirements/requirements.gaze.txt"),

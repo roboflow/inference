@@ -27,8 +27,8 @@ extra_css:
   - styles.css
 
 nav:
-  - Home:
-    - Home: index.md
+  - Inference: index.md
+  - Learn:
     - Get Started:
       - What is Inference?: quickstart/what_is_inference.md
       - What Devices Can I Use?: quickstart/devices.md
@@ -38,33 +38,34 @@ nav:
       - Native Python API: using_inference/native_python_api.md
       - HTTP API: using_inference/http_api.md
       - Inference Pipeline: using_inference/inference_pipeline.md
-    - Quickstart Tutorials:
+    - Documentation:
+      - Advanced Usage:
+        - Active Learning: enterprise/active-learning/
+        - Parallel HTTP API: enterprise/parallel_processing.md
+        - Stream Management API: enterprise/stream_management_api.md
+      - Inference Helpers:
+        - Inference Landing Page: inference_helpers/inference_landing_page.md
+        - Inference CLI: inference_helpers/inference_cli.md
+        - Inference SDK: inference_helpers/inference_sdk.md
+      - Reference:
+        - Inference API Reference: docs/reference/
+        - HTTP API Reference: api.md
+        - Model Aliases: reference_pages/model_aliases.md
+        - Model Licensing: quickstart/licensing.md
+        - Model Device Compatability: quickstart/compatability_matrix.md
+        - Running With Docker: quickstart/docker.md
+        - Docker Configuration Options: quickstart/docker_configuration_options.md
+        - Contribute to Inference: contributing.md
+        - Changelog: https://github.com/roboflow/inference/releases
+  - Quickstart Tutorials:
       - Run Your First Model: quickstart/run_a_model.md
       - Run a Fine-Tuned Model: quickstart/explore_models.md
       - Inference Notebook: inference_helpers/inference_landing_page/#inference-notebook
-    - Run a Model:
-      - On an Image: quickstart/run_model_on_image.md
-      - On a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-      - Over UDP: quickstart/run_model_over_udp.md
+      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
+      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+      - Create a Custom Sink for Inference Pipeline: quickstart/create_a_custom_inference_pipeline_sink.md
+      - Predict Over UDP: quickstart/run_model_over_udp.md
       - Collect Data Without a Model: quickstart/stubs.md
-    - Advanced Usage:
-      - Active Learning: enterprise/active-learning/
-      - Parallel HTTP API: enterprise/parallel_processing.md
-      - Stream Management API: enterprise/stream_management_api.md
-    - Inference Helpers:
-      - Inference Landing Page: inference_helpers/inference_landing_page.md
-      - Inference CLI: inference_helpers/inference_cli.md
-      - Inference SDK: inference_helpers/inference_sdk.md
-    - Reference:
-      - Inference API Reference: docs/reference/
-      - HTTP API Reference: api.md
-      - Model Aliases: reference_pages/model_aliases.md
-      - Model Licensing: quickstart/licensing.md
-      - Model Device Compatability: quickstart/compatability_matrix.md
-      - Running With Docker: quickstart/docker.md
-      - Docker Configuration Options: quickstart/docker_configuration_options.md
-      - Contribute to Inference: contributing.md
-      - Changelog: https://github.com/roboflow/inference/releases
   - Models:
     # - Models: models.md
     # - Fine Tuned Models:
@@ -118,6 +119,8 @@ plugins:
       - docs/scripts/gen_ref_pages.py
   - literate-nav:
       nav_file: nav.md
+  - macros:
+      include_dir: docs/include
 
 markdown_extensions:
   - admonition
