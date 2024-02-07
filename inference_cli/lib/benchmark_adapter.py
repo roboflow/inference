@@ -1,18 +1,20 @@
 import os.path
-import time
 from dataclasses import asdict
 from datetime import datetime
 from threading import Thread
 from typing import Optional
 
-from inference_cli.lib.benchmark.api_speed import run_api_warm_up, coordinate_api_speed_benchmark
+from inference_cli.lib.benchmark.api_speed import (
+    coordinate_api_speed_benchmark,
+    display_benchmark_statistics,
+)
 from inference_cli.lib.benchmark.dataset import load_dataset_images
+from inference_cli.lib.benchmark.platform import retrieve_platform_specifics
 from inference_cli.lib.benchmark.results_gathering import (
     InferenceStatistics,
     ResultsCollector,
 )
 from inference_cli.lib.utils import dump_json, initialise_client
-from inference_sdk.http.entities import HTTPClientMode
 
 
 def run_api_speed_benchmark(
@@ -50,23 +52,24 @@ def run_api_speed_benchmark(
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
     )
-    if output_location is not None:
-        benchmark_parameters = {
-            "datetime": datetime.now().isoformat(),
-            "model_id": model_id,
-            "dataset_reference": dataset_reference,
-            "host": host,
-            "benchmark_inferences": benchmark_requests,
-            "batch_size": request_batch_size,
-            "number_of_clients": number_of_clients,
-            "requests_per_second": requests_per_second,
-            "model_configuration": model_configuration,
-        }
-        dump_benchmark_results(
-            output_directory=output_location,
-            benchmark_parameters=benchmark_parameters,
-            benchmark_results=benchmark_results,
-        )
+    if output_location is None:
+        return None
+    benchmark_parameters = {
+        "datetime": datetime.now().isoformat(),
+        "model_id": model_id,
+        "dataset_reference": dataset_reference,
+        "host": host,
+        "benchmark_inferences": benchmark_requests,
+        "batch_size": request_batch_size,
+        "number_of_clients": number_of_clients,
+        "requests_per_second": requests_per_second,
+        "model_configuration": model_configuration,
+    }
+    dump_benchmark_results(
+        output_location=output_location,
+        benchmark_parameters=benchmark_parameters,
+        benchmark_results=benchmark_results,
+    )
 
 
 def run_python_package_speed_benchmark(
@@ -106,45 +109,39 @@ def run_python_package_speed_benchmark(
     )
     benchmark_results = results_collector.get_statistics()
     statistics_display_thread.join()
-    if output_location is not None:
-        benchmark_parameters = {
-            "datetime": datetime.now().isoformat(),
-            "model_id": model_id,
-            "dataset_reference": dataset_reference,
-            "benchmark_inferences": benchmark_inferences,
-            "batch_size": batch_size,
-            "model_configuration": model_configuration,
-        }
-        dump_benchmark_results(
-            output_directory=output_location,
-            benchmark_parameters=benchmark_parameters,
-            benchmark_results=benchmark_results,
-        )
-
-
-def display_benchmark_statistics(
-    results_collector: ResultsCollector,
-    sleep_time: float = 5.0,
-    window: int = 100,
-) -> None:
-    while not results_collector.has_benchmark_finished():
-        statistics = results_collector.get_statistics(window=window)
-        if statistics is None:
-            time.sleep(sleep_time)
-            continue
-        print(statistics.to_string())
-        time.sleep(sleep_time)
+    if output_location is None:
+        return None
+    benchmark_parameters = {
+        "datetime": datetime.now().isoformat(),
+        "model_id": model_id,
+        "dataset_reference": dataset_reference,
+        "benchmark_inferences": benchmark_inferences,
+        "batch_size": batch_size,
+        "model_configuration": model_configuration,
+    }
+    dump_benchmark_results(
+        output_location=output_location,
+        benchmark_parameters=benchmark_parameters,
+        benchmark_results=benchmark_results,
+    )
 
 
 def dump_benchmark_results(
-    output_directory: str,
+    output_location: str,
     benchmark_parameters: dict,
     benchmark_results: InferenceStatistics,
 ) -> None:
-    target_path = os.path.join(output_directory, f"{datetime.now().isoformat()}.json")
+    platform_specifics = retrieve_platform_specifics()
+    if os.path.isdir(output_location):
+        target_path = os.path.join(
+            output_location, f"{datetime.now().isoformat()}.json"
+        )
+    else:
+        target_path = output_location
     print(f"Saving statistics under: {target_path}")
     results = {
         "benchmark_parameters": benchmark_parameters,
         "benchmark_results": asdict(benchmark_results),
+        "platform": platform_specifics,
     }
     dump_json(path=target_path, content=results)

@@ -95,7 +95,7 @@ class ResultsCollector:
             else stats[0][0]
         )
         errors_number = len([e for e in errors if e[0] >= start])
-        error_rate = round(errors_number / (inferences_made + errors_number) * 100, 2)
+        error_rate = round(errors_number / inferences_made * 100, 2)
         duration = (end_time - start).total_seconds()
         requests_per_second = round(inferences_made / duration, 1)
         images_per_second = round(images_processed / duration, 1)

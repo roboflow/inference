@@ -85,7 +85,7 @@ def api_speed(
         typer.Option(
             "--output_location",
             "-o",
-            help="Location where to save the result (path to directory)",
+            help="Location where to save the result (path to file or directory)",
         ),
     ] = None,
 ):
@@ -155,7 +155,7 @@ def python_package_speed(
         typer.Option(
             "--output_location",
             "-o",
-            help="Location where to save the result (path to directory)",
+            help="Location where to save the result (path to file or directory)",
         ),
     ] = None,
 ):

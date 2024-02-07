@@ -8,3 +8,5 @@ PyYAML>=6.0.0
 supervision>=0.17.1
 opencv-python>=4.6.0
 tqdm>=4.0.0
+GPUtil>=1.4.0
+py-cpuinfo>=9.0.0
