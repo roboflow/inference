@@ -88,7 +88,29 @@ def api_speed(
             help="Location where to save the result (path to file or directory)",
         ),
     ] = None,
+    enforce_legacy_endpoints: Annotated[
+        bool,
+        typer.Option(
+            "--legacy-endpoints/--no-legacy-endpoints",
+            "-L/-l",
+            help="Boolean flag to decide if legacy endpoints should be used (applicable for self-hosted API benchmark)",
+        ),
+    ] = True,
+    proceed_automatically: Annotated[
+        bool,
+        typer.Option(
+            "--yes/--no",
+            "-y/-n",
+            help="Boolean flag to decide on auto `yes` answer given on user input required.",
+        ),
+    ] = False,
 ):
+    if "roboflow.com" in host and not proceed_automatically:
+        proceed = input(
+            "This action may easily exceed your Roboflow inference credits. Are you sure? [y/N]"
+        )
+        if proceed.lower() != "y":
+            return None
     run_api_speed_benchmark(
         model_id=model_id,
         dataset_reference=dataset_reference,
@@ -101,6 +123,7 @@ def api_speed(
         api_key=api_key,
         model_configuration=model_configuration,
         output_location=output_location,
+        enforce_legacy_endpoints=enforce_legacy_endpoints,
     )
 
 

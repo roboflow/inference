@@ -29,6 +29,7 @@ def run_api_speed_benchmark(
     api_key: Optional[str] = None,
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
+    enforce_legacy_endpoints: bool = False,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -42,6 +43,8 @@ def run_api_speed_benchmark(
         max_batch_size=request_batch_size,
     )
     client.select_model(model_id=model_id)
+    if enforce_legacy_endpoints:
+        client.select_api_v0()
     benchmark_results = coordinate_api_speed_benchmark(
         client=client,
         images=dataset_images,

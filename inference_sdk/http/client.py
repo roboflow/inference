@@ -256,7 +256,7 @@ class InferenceHTTPClient:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
-        model_id = resolve_roboflow_model_alias(model_id=model_id)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
@@ -315,7 +315,7 @@ class InferenceHTTPClient:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
-        model_id = resolve_roboflow_model_alias(model_id=model_id)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
