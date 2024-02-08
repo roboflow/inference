@@ -6,8 +6,8 @@ from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import TINY_CACHE
-from inference.core.version import __version__
 from inference.core.logger import logger
+from inference.core.version import __version__
 
 
 def to_cachable_inference_item(
