@@ -1,4 +1,3 @@
-import uuid
 from typing import Union
 
 from fastapi.encoders import jsonable_encoder
@@ -8,16 +7,16 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import TINY_CACHE
 from inference.core.version import __version__
+from inference.core.logger import logger
 
 
 def to_cachable_inference_item(
     infer_request: InferenceRequest,
     infer_response: Union[InferenceResponse, list[InferenceResponse]],
 ) -> dict:
-    inference_id = str(uuid.uuid4())
     if not TINY_CACHE:
         return {
-            "inference_id": inference_id,
+            "inference_id": infer_request.id,
             "inference_server_version": __version__,
             "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
             "request": jsonable_encoder(infer_request),
@@ -29,7 +28,7 @@ def to_cachable_inference_item(
     response = build_condensed_response(infer_response)
 
     return {
-        "inference_id": inference_id,
+        "inference_id": infer_request.id,
         "inference_server_version": __version__,
         "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
         "request": jsonable_encoder(request),
@@ -43,15 +42,20 @@ def build_condensed_response(responses):
 
     formatted_responses = []
     for response in responses:
-        predictions = [
-            {"confidence": pred.confidence, "class": pred.class_name}
-            for pred in response.predictions
-        ]
-        formatted_responses.append(
-            {
-                "predictions": predictions,
-                "time": response.time,
-            }
-        )
+        if not getattr(response, "predictions", None):
+            continue
+        try:
+            predictions = [
+                {"confidence": pred.confidence, "class": pred.class_name}
+                for pred in response.predictions
+            ]
+            formatted_responses.append(
+                {
+                    "predictions": predictions,
+                    "time": response.time,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Error formatting response, skipping caching: {e}")
 
     return formatted_responses
