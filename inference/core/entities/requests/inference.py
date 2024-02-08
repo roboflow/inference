@@ -20,7 +20,7 @@ class BaseRequest(BaseModel):
         super().__init__(**kwargs)
 
     model_config = ConfigDict(protected_namespaces=())
-    id: str = Field(default_factory=lambda: str(uuid4()))
+    id: str
     api_key: Optional[str] = ApiKey
     start: Optional[float] = None
 
