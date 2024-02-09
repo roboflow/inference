@@ -59,7 +59,7 @@ model = get_roboflow_model(model_id="yolov8n-640")
 results = model.infer(image)
 
 # load the results into the supervision Detections api
-detections = sv.Detections.from_roboflow(results[0].dict(by_alias=True, exclude_none=True))
+detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
 
 # create supervision annotators
 bounding_box_annotator = sv.BoundingBoxAnnotator()

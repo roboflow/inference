@@ -51,7 +51,7 @@ image = cv2.imread("people-walking.jpg")
 results = model.infer(image)
 
 #Load results into Supervision Detection API
-detections = sv.Detections.from_roboflow(
+detections = sv.Detections.from_inference(
     results[0].dict(by_alias=True, exclude_none=True)
 )
 

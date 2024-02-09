@@ -22,19 +22,21 @@ class GazeDetectionInferenceRequest(BaseRequest):
 
     gaze_version_id: Optional[str] = Field(
         default=GAZE_VERSION_ID,
-        example="l2cs",
+        examples=["l2cs"],
         description="The version ID of Gaze to be used for this request. Must be one of l2cs.",
     )
 
     do_run_face_detection: Optional[bool] = Field(
         default=True,
-        example=False,
+        examples=[False],
         description="If true, face detection will be applied; if false, face detection will be ignored and the whole input image will be used for gaze detection",
     )
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
-    model_id: Optional[str] = Field()
+    model_id: Optional[str] = Field(None)
 
+    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
+    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
     @validator("model_id", always=True, allow_reuse=True)
     def validate_model_id(cls, value, values):
         if value is not None:

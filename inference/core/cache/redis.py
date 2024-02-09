@@ -71,7 +71,8 @@ class RedisCache(BaseCache):
                     )
                     del self.zexpires[k]
             logger.debug("Redis cleaner finished task.")
-            time.sleep(MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now))
+            sleep_time = MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now)
+            time.sleep(max(sleep_time, 0))
 
     def get(self, key: str):
         """

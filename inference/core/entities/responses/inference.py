@@ -2,7 +2,7 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer
 
 
 class ObjectDetectionPrediction(BaseModel):
@@ -33,7 +33,7 @@ class ObjectDetectionPrediction(BaseModel):
     class_name: str = Field(alias="class", description="The predicted class label")
 
     class_confidence: Union[float, None] = Field(
-        description="The class label confidence as a fraction between 0 and 1"
+        None, description="The class label confidence as a fraction between 0 and 1"
     )
     class_id: int = Field(description="The class id of the prediction")
     tracker_id: Optional[int] = Field(
@@ -101,7 +101,7 @@ class InstanceSegmentationPrediction(BaseModel):
     class_name: str = Field(alias="class", description="The predicted class label")
 
     class_confidence: Union[float, None] = Field(
-        description="The class label confidence as a fraction between 0 and 1"
+        None, description="The class label confidence as a fraction between 0 and 1"
     )
     points: List[Point] = Field(
         description="The list of points that make up the instance polygon"
@@ -167,6 +167,7 @@ class InferenceResponse(BaseModel):
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
     """
 
+    model_config = ConfigDict(protected_namespaces=())
     frame_id: Optional[int] = Field(
         default=None,
         description="The frame id of the image used in inference if the input was a video",
@@ -199,9 +200,11 @@ class WithVisualizationResponse(BaseModel):
         description="Base64 encoded string containing prediction visualization image data",
     )
 
-    # We need to tell pydantic how to encode bytes as base64 strings. We don't encode the visualization field directly because we want to return it directly for the legacy infer route with content type image/jpeg.
-    class Config:
-        json_encoders = {bytes: lambda v: base64.b64encode(v).decode("utf-8")}
+    @field_serializer("visualization", when_used="json")
+    def serialize_visualisation(self, visualization: Optional[Any]) -> Optional[str]:
+        if visualization is None:
+            return None
+        return base64.b64encode(visualization).decode("utf-8")
 
 
 class ObjectDetectionInferenceResponse(CvInferenceResponse, WithVisualizationResponse):

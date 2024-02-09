@@ -104,7 +104,7 @@ def wrap_errors_async(function: callable) -> callable:
             raise HTTPCallErrorError(
                 description=deduct_api_key_from_string(value=str(error)),
                 status_code=error.status,
-                api_message=error.message,
+                api_message=deduct_api_key_from_string(error.message),
             ) from error
         except ClientConnectionError as error:
             raise HTTPClientError(
@@ -232,7 +232,7 @@ class InferenceHTTPClient:
             model_id=model_id,
         )
 
-    @wrap_errors
+    @wrap_errors_async
     async def infer_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
