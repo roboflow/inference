@@ -95,7 +95,7 @@ def api_speed(
             "-L/-l",
             help="Boolean flag to decide if legacy endpoints should be used (applicable for self-hosted API benchmark)",
         ),
-    ] = True,
+    ] = False,
     proceed_automatically: Annotated[
         bool,
         typer.Option(
