@@ -107,7 +107,7 @@ def api_speed(
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
-            "This action may easily exceed your Roboflow inference credits. Are you sure? [y/N]"
+            "This action may easily exceed your Roboflow inference credits. Are you sure? [y/N] "
         )
         if proceed.lower() != "y":
             return None
