@@ -35,6 +35,18 @@ class BaseCache:
         """
         raise NotImplementedError()
 
+    def delete(self, key: str):
+        """
+        Deletes the value associated with the given key.
+
+        Args:
+            key (str): The key to delete.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
+        raise NotImplementedError()
+
     def zadd(self, key: str, value: str, score: float, expire: float = None):
         """
         Adds a member with the specified score to the sorted set stored at key.

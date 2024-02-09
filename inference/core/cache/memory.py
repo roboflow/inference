@@ -85,6 +85,18 @@ class MemoryCache(BaseCache):
         if expire:
             self.expires[key] = expire + time.time()
 
+    def delete(self, key: str):
+        """
+        Deletes the value associated with the given key.
+
+        Args:
+            key (str): The key to delete.
+        """
+        if key in self.cache:
+            del self.cache[key]
+        if key in self.expires:
+            del self.expires[key]
+
     def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
         Adds a member with the specified score to the sorted set stored at key.

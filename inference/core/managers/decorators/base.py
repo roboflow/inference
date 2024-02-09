@@ -189,3 +189,8 @@ class ModelManagerDecorator(ModelManager):
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
     ) -> InferenceResponse:
         return self.model_manager.make_response(model_id, predictions, *args, **kwargs)
+
+    def _resolve_queue_id(
+        self, model_id: str, model_id_alias: Optional[str] = None
+    ) -> str:
+        return self.model_manager._resolve_queue_id(model_id, model_id_alias)

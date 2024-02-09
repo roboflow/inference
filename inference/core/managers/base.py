@@ -327,3 +327,8 @@ class ModelManager:
             )
             for model_id, model in self._models.items()
         ]
+
+    def _resolve_queue_id(
+        self, model_id: str, model_id_alias: Optional[str] = None
+    ) -> str:
+        return model_id if model_id_alias is None else model_id_alias

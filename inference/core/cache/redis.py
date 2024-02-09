@@ -99,6 +99,9 @@ class RedisCache(BaseCache):
         """
         self.client.set(key, json.dumps(value), ex=expire)
 
+    def delete(self, key: str):
+        return self.client.delete(key)
+
     def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
         Adds a member with the specified score to the sorted set stored at key.
