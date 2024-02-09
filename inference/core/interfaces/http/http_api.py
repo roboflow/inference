@@ -1146,6 +1146,14 @@ class HttpInterface(BaseInterface):
                     default=False,
                     description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
                 ),
+                source: Optional[str] = Query(
+                    "external",
+                    description="The source of the inference request",
+                ),
+                source_info: Optional[str] = Query(
+                    "external",
+                    description="The detailed source information of the inference request",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -1255,6 +1263,8 @@ class HttpInterface(BaseInterface):
                     disable_preproc_grayscale=disable_preproc_grayscale,
                     disable_preproc_static_crop=disable_preproc_static_crop,
                     disable_active_learning=disable_active_learning,
+                    source=source,
+                    source_info=source_info,
                     **args,
                 )
 
