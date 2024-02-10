@@ -680,7 +680,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
             if not self.load_weights:
-                providers = ["CPUExecutionProvider"]
+                providers = ["OpenVINOExecutionProvider"]
             try:
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),

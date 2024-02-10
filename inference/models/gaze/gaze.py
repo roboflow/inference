@@ -63,7 +63,7 @@ class Gaze(OnnxRoboflowCoreModel):
                     },
                 ),
                 "CUDAExecutionProvider",
-                "CPUExecutionProvider",
+                "OpenVINOExecutionProvider",
             ],
         )
 

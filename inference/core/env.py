@@ -224,7 +224,7 @@ NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
-    "ONNXRUNTIME_EXECUTION_PROVIDERS", "[CUDAExecutionProvider,CPUExecutionProvider]"
+    "ONNXRUNTIME_EXECUTION_PROVIDERS", "[CUDAExecutionProvider,OpenVINOExecutionProvider]"
 )
 
 # Port, default is 9001
