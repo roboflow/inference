@@ -879,11 +879,6 @@ def test_get_model_description_when_model_was_not_loaded_before_and_successful_l
         f"{api_url}/model/registry",
         [
             {"json": {"models": []}},
-            {
-                "json": {
-                    "models": [{"model_id": "some/1", "task_type": "classification"}]
-                }
-            },
         ],
     )
     requests_mock.post(
@@ -911,10 +906,6 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
         m.get(
             f"{api_url}/model/registry",
             payload={"models": []},
-        )
-        m.get(
-            f"{api_url}/model/registry",
-            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
         )
         m.post(
             f"{api_url}/model/add",

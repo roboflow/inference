@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from requests import Response
 
-from inference_sdk.http.entities import VisualisationResponseFormat
+from inference_sdk.http.entities import ModelDescription, VisualisationResponseFormat
 from inference_sdk.http.utils.encoding import (
     bytes_to_opencv_image,
     bytes_to_pillow_image,
@@ -239,3 +239,13 @@ def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:
     else:
         new_embeddings = [embeddings]
     return new_embeddings
+
+
+def filter_model_descriptions(
+    descriptions: List[ModelDescription],
+    model_id: str,
+) -> Optional[ModelDescription]:
+    matching_models = [d for d in descriptions if d.model_id == model_id]
+    if len(matching_models) > 0:
+        return matching_models[0]
+    return None
