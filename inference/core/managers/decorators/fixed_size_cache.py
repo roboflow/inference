@@ -45,8 +45,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue.append(queue_id)
         try:
             return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
-        except:
+        except Exception as error:
             self._key_queue.remove(model_id)
+            raise error
 
     def clear(self) -> None:
         """Removes all models from the manager."""
