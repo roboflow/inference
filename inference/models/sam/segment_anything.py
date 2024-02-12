@@ -57,7 +57,7 @@ class SegmentAnything(RoboflowCoreModel):
             self.cache_file("decoder.onnx"),
             providers=[
                 "CUDAExecutionProvider",
-                "CPUExecutionProvider",
+                "OpenVINOExecutionProvider",
             ],
         )
         self.embedding_cache = {}
