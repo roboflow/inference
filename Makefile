@@ -46,6 +46,7 @@ create_wheels_for_gpu_notebook:
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 upload_wheels:
 	twine upload dist/*.whl
