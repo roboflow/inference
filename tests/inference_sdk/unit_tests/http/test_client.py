@@ -450,6 +450,31 @@ def test_client_unload_single_model_when_successful_response_expected(
     }
 
 
+def test_client_unload_single_model_when_successful_response_expected_against_alias(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/remove",
+        json={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.select_model(model_id="yolov8n-640")
+
+    # when
+    result = http_client.unload_model(model_id="yolov8n-640")
+
+    # then
+    assert result == RegisteredModels(
+        models=[ModelDescription(model_id="some/1", task_type="classification")]
+    )
+    assert requests_mock.last_request.json() == {
+        "model_id": "coco/3",
+    }
+    assert http_client.selected_model is None, "Even when alias is in use - selected model should be emptied"
+
+
 @pytest.mark.asyncio
 async def test_client_unload_single_model_async_when_successful_response_expected() -> (
     None
@@ -477,6 +502,37 @@ async def test_client_unload_single_model_async_when_successful_response_expecte
             },
             headers=DEFAULT_HEADERS,
         )
+
+
+@pytest.mark.asyncio
+async def test_client_unload_single_model_async_when_successful_response_expected_against_alias() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client.select_model(model_id="yolov8n-640")
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/remove",
+            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
+        )
+        # when
+        result = await http_client.unload_model_async(model_id="yolov8n-640")
+
+        # then
+        assert result == RegisteredModels(
+            models=[ModelDescription(model_id="some/1", task_type="classification")]
+        )
+        m.assert_called_with(
+            url=f"{api_url}/model/remove",
+            method="POST",
+            json={
+                "model_id": "coco/3",
+            },
+            headers=DEFAULT_HEADERS,
+        )
+        assert http_client.selected_model is None, "Even when alias is in use - selected model should be emptied"
 
 
 def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> None:
@@ -547,6 +603,31 @@ def test_client_load_model_when_successful_response_expected(
     }
 
 
+def test_client_load_model_when_successful_response_expected_against_alias(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.load_model(model_id="yolov8n-640", set_as_default=True)
+
+    # then
+    assert result == RegisteredModels(
+        models=[ModelDescription(model_id="coco/3", task_type="object-detection")]
+    )
+    assert http_client.selected_model == "coco/3"
+    assert requests_mock.last_request.json() == {
+        "model_id": "coco/3",
+        "api_key": "my-api-key",
+    }
+
+
 @pytest.mark.asyncio
 async def test_client_load_model_async_when_successful_response_expected() -> None:
     # given
@@ -573,6 +654,36 @@ async def test_client_load_model_async_when_successful_response_expected() -> No
             url=f"{api_url}/model/add",
             method="POST",
             json={"model_id": "some/1", "api_key": "my-api-key"},
+            headers=DEFAULT_HEADERS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_client_load_model_async_when_successful_response_expected_against_alias() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.post(
+            f"{api_url}/model/add",
+            payload={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+        )
+
+        # when
+        result = await http_client.load_model_async(
+            model_id="yolov8n-640", set_as_default=True
+        )
+
+        # then
+        assert result == RegisteredModels(
+            models=[ModelDescription(model_id="coco/3", task_type="object-detection")]
+        )
+        assert http_client.selected_model == "coco/3"
+        m.assert_called_with(
+            url=f"{api_url}/model/add",
+            method="POST",
+            json={"model_id": "coco/3", "api_key": "my-api-key"},
             headers=DEFAULT_HEADERS,
         )
 
@@ -852,6 +963,24 @@ def test_get_model_description_when_model_was_loaded_already(
     assert result == ModelDescription(model_id="some/1", task_type="classification")
 
 
+def test_get_model_description_when_model_was_loaded_already_and_alias_was_resolved(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        json={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.get_model_description(model_id="yolov8n-640")
+
+    # then
+    assert result == ModelDescription(model_id="coco/3", task_type="object-detection")
+
+
 @pytest.mark.asyncio
 async def test_get_model_description_async_when_model_was_loaded_already() -> None:
     # given
@@ -870,6 +999,24 @@ async def test_get_model_description_async_when_model_was_loaded_already() -> No
         assert result == ModelDescription(model_id="some/1", task_type="classification")
 
 
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_was_loaded_already_and_alias_was_resolved() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+        )
+        # when
+        result = await http_client.get_model_description_async(model_id="yolov8n-640")
+
+        # then
+        assert result == ModelDescription(model_id="coco/3", task_type="object-detection")
+
+
 def test_get_model_description_when_model_was_not_loaded_before_and_successful_load(
     requests_mock: Mocker,
 ) -> None:
@@ -879,11 +1026,6 @@ def test_get_model_description_when_model_was_not_loaded_before_and_successful_l
         f"{api_url}/model/registry",
         [
             {"json": {"models": []}},
-            {
-                "json": {
-                    "models": [{"model_id": "some/1", "task_type": "classification"}]
-                }
-            },
         ],
     )
     requests_mock.post(
@@ -899,6 +1041,30 @@ def test_get_model_description_when_model_was_not_loaded_before_and_successful_l
     assert result == ModelDescription(model_id="some/1", task_type="classification")
 
 
+def test_get_model_description_when_model_was_not_loaded_before_and_successful_load_with_alias_resolution(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.get(
+        f"{api_url}/model/registry",
+        [
+            {"json": {"models": []}},
+        ],
+    )
+    requests_mock.post(
+        f"{api_url}/model/add",
+        json={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+    )
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    result = http_client.get_model_description(model_id="yolov8n-640")
+
+    # then
+    assert result == ModelDescription(model_id="coco/3", task_type="object-detection")
+
+
 @pytest.mark.asyncio
 async def test_get_model_description_async_when_model_was_not_loaded_before_and_successful_load() -> (
     None
@@ -912,10 +1078,6 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
             f"{api_url}/model/registry",
             payload={"models": []},
         )
-        m.get(
-            f"{api_url}/model/registry",
-            payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
-        )
         m.post(
             f"{api_url}/model/add",
             payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
@@ -926,6 +1088,31 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
         # then
         assert result == ModelDescription(model_id="some/1", task_type="classification")
+
+
+@pytest.mark.asyncio
+async def test_get_model_description_async_when_model_was_not_loaded_before_and_successful_load_with_alias_resolution() -> (
+    None
+):
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    with aioresponses() as m:
+        m.get(
+            f"{api_url}/model/registry",
+            payload={"models": []},
+        )
+        m.post(
+            f"{api_url}/model/add",
+            payload={"models": [{"model_id": "coco/3", "task_type": "object-detection"}]},
+        )
+
+        # when
+        result = await http_client.get_model_description_async(model_id="yolov8n-640")
+
+        # then
+        assert result == ModelDescription(model_id="coco/3", task_type="object-detection")
 
 
 def test_get_model_description_when_model_was_not_loaded_before_and_unsuccessful_load(
@@ -1026,9 +1213,11 @@ async def test_infer_from_api_v0_async_when_model_id_is_invalid() -> None:
 
 
 @mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
 def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_request(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
+    model_id_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
@@ -1042,7 +1231,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
     configuration = InferenceConfiguration(confidence_threshold=0.5)
     http_client.configure(inference_configuration=configuration)
     requests_mock.post(
-        f"{api_url}/some/1",
+        f"{api_url}/coco/3",
         [
             {
                 "json": {
@@ -1079,7 +1268,7 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
 
     # when
     result = http_client.infer_from_api_v0(
-        inference_input=["https://some/image.jpg"] * 2, model_id="some/1"
+        inference_input=["https://some/image.jpg"] * 2, model_id=model_id_to_use,
     )
 
     # then
@@ -1123,8 +1312,10 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_batch_
 
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
+@pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
 async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection_with_batch_request(
     load_static_inference_input_mock_async: AsyncMock,
+    model_id_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
@@ -1138,7 +1329,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
 
     with aioresponses() as m:
         m.post(
-            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
             payload={
                 "image": {"height": 480, "width": 640},
                 "predictions": [
@@ -1154,7 +1345,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
             },
         )
         m.post(
-            f"{api_url}/some/1?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
+            f"{api_url}/coco/3?api_key=my-api-key&confidence=0.5&disable_active_learning=False",
             payload={
                 "image": {"height": 480, "width": 640},
                 "predictions": [
@@ -1172,7 +1363,7 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
 
         # when
         result = await http_client.infer_from_api_v0_async(
-            inference_input="https://some/image.jpg", model_id="some/1"
+            inference_input="https://some/image.jpg", model_id=model_id_to_use,
         )
         # then
         assert result == [
@@ -1455,16 +1646,18 @@ async def test_infer_from_api_v1_async_when_task_type_is_not_recognised() -> Non
 
 
 @mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
 def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_request(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
+    model_id_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     http_client.get_model_description = MagicMock()
     http_client.get_model_description.return_value = ModelDescription(
-        model_id="some/1",
+        model_id="coco/3",
         task_type="object-detection",
         input_height=480,
         input_width=640,
@@ -1517,7 +1710,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
 
     # when
     result = http_client.infer_from_api_v1(
-        inference_input="https://some/image.jpg", model_id="some/1"
+        inference_input="https://some/image.jpg", model_id=model_id_to_use,
     )
     # then
     assert result == [
@@ -1551,7 +1744,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
         },
     ]
     assert requests_mock.request_history[0].json() == {
-        "model_id": "some/1",
+        "model_id": "coco/3",
         "api_key": "my-api-key",
         "image": {"type": "base64", "value": "base64_image"},
         "visualize_predictions": False,
@@ -1559,7 +1752,7 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
         "disable_active_learning": True,
     }
     assert requests_mock.request_history[1].json() == {
-        "model_id": "some/1",
+        "model_id": "coco/3",
         "api_key": "my-api-key",
         "image": {"type": "base64", "value": "another_image"},
         "visualize_predictions": False,
@@ -1570,15 +1763,17 @@ def test_infer_from_api_v1_when_request_succeed_for_object_detection_with_batch_
 
 @pytest.mark.asyncio
 @mock.patch.object(client, "load_static_inference_input_async")
+@pytest.mark.parametrize("model_id_to_use", ["coco/3", "yolov8n-640"])
 async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection_with_batch_request(
     load_static_inference_input_async_mock: MagicMock,
+    model_id_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     http_client.get_model_description_async = AsyncMock()
     http_client.get_model_description_async.return_value = ModelDescription(
-        model_id="some/1",
+        model_id="coco/3",
         task_type="object-detection",
         input_height=480,
         input_width=640,
@@ -1630,7 +1825,7 @@ async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection
 
         # when
         result = await http_client.infer_from_api_v1_async(
-            inference_input="https://some/image.jpg", model_id="some/1"
+            inference_input="https://some/image.jpg", model_id=model_id_to_use,
         )
         # then
         assert result == [

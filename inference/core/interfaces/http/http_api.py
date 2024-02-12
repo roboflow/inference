@@ -131,6 +131,7 @@ from inference.enterprise.workflows.errors import (
     RuntimePayloadError,
     WorkflowsCompilerError,
 )
+from inference.models.aliases import resolve_roboflow_model_alias
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -307,11 +308,12 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
-            self.model_manager.add_model(
-                inference_request.model_id, inference_request.api_key
+            de_aliased_model_id = resolve_roboflow_model_alias(
+                model_id=inference_request.model_id
             )
+            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
             resp = await self.model_manager.infer_from_request(
-                inference_request.model_id, inference_request, **kwargs
+                de_aliased_model_id, inference_request, **kwargs
             )
             return orjson_response(resp)
 
@@ -473,7 +475,10 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/add")
-                self.model_manager.add_model(request.model_id, request.api_key)
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=request.model_id
+                )
+                self.model_manager.add_model(de_aliased_model_id, request.api_key)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -496,7 +501,10 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/remove")
-                self.model_manager.remove(request.model_id)
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=request.model_id
+                )
+                self.model_manager.remove(de_aliased_model_id)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
