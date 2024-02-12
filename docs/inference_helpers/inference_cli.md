@@ -278,6 +278,67 @@ from `inference_sdk` library. See [sdk docs](./inference_sdk.md) to discover
 which options can be configured via `*.yml` file - configuration keys must match
 with names of fields in `InferenceConfiguration` object.
 
+### inference benchmark
+
+!!! note
+
+    The command is introduced in `inference_cli>=0.9.10`
+
+`inference benchmark` is a set of command suited to run benchmarks of `inference`. There are two types of benchmark 
+available `inference benchmark api-speed` - to test `inference` HTTP server and `inference benchmark python-package-speed`
+to verify the performance of `inference` Python package.
+
+!!! tip
+    
+    Use `inference benchmark api-speed --help` / `inference benchmark python-package-speed --help` to
+    display all options of benchmark commands.
+
+!!! tip
+    
+    Roboflow API key can be provided via `ROBOFLOW_API_KEY` environment variable
+
+#### Running benchmark of Python package 
+
+Basic benchmark can be run using the following command: 
+
+```bash
+inference benchmark python-package-speed \
+  -m {your_model_id} \
+  -d {pre-configured dataset name or path to directory with images} \
+  -o {output_directory}  
+```
+Command runs specified number of inferences using pointed model and saves statistics (including benchmark 
+parameter, throughput, latency, errors and platform details) in pointed directory.
+
+#### Running benchmark of `inference server`
+
+!!! note
+
+    Before running API benchmark - make sure the server is up and running:
+    ```bash
+    inference server start
+    ```
+Basic benchmark can be run using the following command: 
+
+```bash
+inference benchmark api-speed \
+  -m {your_model_id} \
+  -d {pre-configured dataset name or path to directory with images} \
+  -o {output_directory}  
+```
+Command runs specified number of inferences using pointed model and saves statistics (including benchmark 
+parameter, throughput, latency, errors and platform details) in pointed directory.
+
+This benchmark has more configuration options to support different ways HTTP API profiling. In default mode,
+single client will be spawned, and it will send one request after another sequentially. This may be suboptimal
+in specific cases, so one may specify number of concurrent clients using `-c {number_of_clients}` option.
+Each client will send next request once previous is handled. This option will also not cover all scenarios
+of tests. For instance one may want to send `x` requests each second (which is closer to the scenario of
+production environment where multiple clients are sending requests concurrently). In this scenario, `--rps {value}` 
+option can be used (and `-c` will be ignored). Value provided in `--rps` option specifies how many requests 
+are to be spawned **each second** without waiting for previous requests to be handled. In I/O intensive benchmark 
+scenarios - we suggest running command from multiple separate processes and possibly multiple hosts.
+
 ## Supported Devices
 
 Roboflow Inference CLI currently supports the following device targets:

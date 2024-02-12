@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageChops
 from requests import Response
 
-from inference_sdk.http.entities import VisualisationResponseFormat
+from inference_sdk.http.entities import VisualisationResponseFormat, ModelDescription
 from inference_sdk.http.utils import post_processing
 from inference_sdk.http.utils.post_processing import (
     adjust_bbox_coordinates_to_client_scaling_factor,
@@ -24,7 +24,7 @@ from inference_sdk.http.utils.post_processing import (
     decode_workflow_outputs,
     is_workflow_image,
     response_contains_jpeg_image,
-    transform_base64_visualisation,
+    transform_base64_visualisation, filter_model_descriptions,
 )
 
 
@@ -638,3 +638,53 @@ def test_combine_clip_embeddings_when_multiple_responses_given() -> None:
         {"frame_id": "b", "embeddings": ["4"], "time": "other"},
         {"frame_id": "b", "embeddings": ["5"], "time": "other"},
     ], "Each embedding from each response should be unwrapped and results should be flattened at the end"
+
+
+def test_filter_model_descriptions_when_empty_input_given() -> None:
+    # when
+    result = filter_model_descriptions(descriptions=[], model_id="some/1")
+
+    # then
+    assert result is None
+
+
+def test_filter_model_descriptions_when_not_matching_input_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="other/1", task_type="object-detection"),
+        ModelDescription(model_id="some/2", task_type="object-detection"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result is None
+
+
+def test_filter_model_descriptions_when_input_with_single_match_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="other/1", task_type="object-detection"),
+        ModelDescription(model_id="some/1", task_type="object-detection"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="object-detection")
+
+
+def test_filter_model_descriptions_when_input_with_multiple_matches_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="some/1", task_type="object-detection"),
+        ModelDescription(model_id="some/1", task_type="object-detection*"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="object-detection")

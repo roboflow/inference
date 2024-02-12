@@ -297,3 +297,20 @@ def test_clear_cache(
     get_cache_dir_mock.assert_called_once_with(model_id="some/2")
     assert os.listdir(empty_local_dir) == ["some"]
     assert os.listdir(os.path.join(empty_local_dir, "some")) == ["1"]
+
+
+@mock.patch.object(model_artifacts, "get_cache_dir")
+def test_clear_cache_when_nothing_to_delete(
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    touch(os.path.join(empty_local_dir, "some", "1", "file.txt"))
+    # when
+    clear_cache(model_id="some/2")
+
+    # then
+    get_cache_dir_mock.assert_called_once_with(model_id="some/2")
+    assert os.listdir(empty_local_dir) == ["some"]
+    assert os.listdir(os.path.join(empty_local_dir, "some")) == ["1"]

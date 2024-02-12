@@ -47,6 +47,7 @@ from inference_sdk.http.utils.post_processing import (
     combine_clip_embeddings,
     combine_gaze_detections,
     decode_workflow_outputs,
+    filter_model_descriptions,
     response_contains_jpeg_image,
     transform_base64_visualisation,
     transform_visualisation_bytes,
@@ -256,7 +257,7 @@ class InferenceHTTPClient:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
-        model_id = resolve_roboflow_model_alias(model_id=model_id)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
@@ -315,7 +316,7 @@ class InferenceHTTPClient:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
-        model_id = resolve_roboflow_model_alias(model_id=model_id)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
@@ -513,36 +514,48 @@ class InferenceHTTPClient:
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = self.list_loaded_models()
-        matching_models = [
-            e for e in registered_models.models if e.model_id == model_id
-        ]
-        if len(matching_models) > 0:
-            return matching_models[0]
-        if allow_loading is True:
-            self.load_model(model_id=model_id)
-            return self.get_model_description(model_id=model_id, allow_loading=False)
+        matching_model = filter_model_descriptions(
+            descriptions=registered_models.models,
+            model_id=de_aliased_model_id,
+        )
+        if matching_model is None and allow_loading is True:
+            registered_models = self.load_model(model_id=de_aliased_model_id)
+            matching_model = filter_model_descriptions(
+                descriptions=registered_models.models,
+                model_id=de_aliased_model_id,
+            )
+        if matching_model is not None:
+            return matching_model
         raise ModelNotInitializedError(
-            f"Model {model_id} is not initialised and cannot retrieve its description."
+            f"Model {model_id} (de-aliased: {de_aliased_model_id}) is not initialised and cannot "
+            f"retrieve its description."
         )
 
     async def get_model_description_async(
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = await self.list_loaded_models_async()
-        matching_models = [
-            e for e in registered_models.models if e.model_id == model_id
-        ]
-        if len(matching_models) > 0:
-            return matching_models[0]
-        if allow_loading is True:
-            await self.load_model_async(model_id=model_id)
-            return await self.get_model_description_async(
-                model_id=model_id, allow_loading=False
+        matching_model = filter_model_descriptions(
+            descriptions=registered_models.models,
+            model_id=de_aliased_model_id,
+        )
+        if matching_model is None and allow_loading is True:
+            registered_models = await self.load_model_async(
+                model_id=de_aliased_model_id
             )
+            matching_model = filter_model_descriptions(
+                descriptions=registered_models.models,
+                model_id=de_aliased_model_id,
+            )
+        if matching_model is not None:
+            return matching_model
         raise ModelNotInitializedError(
-            f"Model {model_id} is not initialised and cannot retrieve its description."
+            f"Model {model_id} (de-aliased: {de_aliased_model_id}) is not initialised and cannot "
+            f"retrieve its description."
         )
 
     @wrap_errors
@@ -567,10 +580,11 @@ class InferenceHTTPClient:
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         response = requests.post(
             f"{self.__api_url}/model/add",
             json={
-                "model_id": model_id,
+                "model_id": de_aliased_model_id,
                 "api_key": self.__api_key,
             },
             headers=DEFAULT_HEADERS,
@@ -578,7 +592,7 @@ class InferenceHTTPClient:
         response.raise_for_status()
         response_payload = response.json()
         if set_as_default:
-            self.__selected_model = model_id
+            self.__selected_model = de_aliased_model_id
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors_async
@@ -586,8 +600,9 @@ class InferenceHTTPClient:
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         payload = {
-            "model_id": model_id,
+            "model_id": de_aliased_model_id,
             "api_key": self.__api_key,
         }
         async with aiohttp.ClientSession() as session:
@@ -599,39 +614,47 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 response_payload = await response.json()
         if set_as_default:
-            self.__selected_model = model_id
+            self.__selected_model = de_aliased_model_id
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
-                "model_id": model_id,
+                "model_id": de_aliased_model_id,
             },
             headers=DEFAULT_HEADERS,
         )
         response.raise_for_status()
         response_payload = response.json()
-        if model_id == self.__selected_model:
+        if (
+            de_aliased_model_id == self.__selected_model
+            or model_id == self.__selected_model
+        ):
             self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors_async
     async def unload_model_async(self, model_id: str) -> RegisteredModels:
         self.__ensure_v1_client_mode()
+        de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/remove",
                 json={
-                    "model_id": model_id,
+                    "model_id": de_aliased_model_id,
                 },
                 headers=DEFAULT_HEADERS,
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
-        if model_id == self.__selected_model:
+        if (
+            de_aliased_model_id == self.__selected_model
+            or model_id == self.__selected_model
+        ):
             self.__selected_model = None
         return RegisteredModels.from_dict(response_payload)
 

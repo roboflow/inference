@@ -178,7 +178,7 @@ class UDPSink:
             from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
             from inference.core.interfaces.stream.sinks import UDPSink
 
-            udp_sink = UDPSink(ip_address="127.0.0.1", port=9090)
+            udp_sink = UDPSink.init(ip_address="127.0.0.1", port=9090)
 
             pipeline = InferencePipeline.init(
                  model_id="your-model/3",
