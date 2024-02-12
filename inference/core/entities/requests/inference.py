@@ -15,10 +15,16 @@ class BaseRequest(BaseModel):
         start (Optional[float]): start time of request
     """
 
+    def __init__(self, **kwargs):
+        kwargs["id"] = str(uuid4())
+        super().__init__(**kwargs)
+
     model_config = ConfigDict(protected_namespaces=())
-    id: str = Field(default_factory=lambda: str(uuid4()))
+    id: str
     api_key: Optional[str] = ApiKey
     start: Optional[float] = None
+    source: Optional[str] = None
+    source_info: Optional[str] = None
 
 
 class InferenceRequest(BaseRequest):
@@ -214,11 +220,14 @@ class ClassificationInferenceRequest(CVInferenceRequest):
 
 
 def request_from_type(model_type, request_dict):
+    """Uses original request id"""
     if model_type == "classification":
-        return ClassificationInferenceRequest(**request_dict)
+        request = ClassificationInferenceRequest(**request_dict)
     elif model_type == "instance-segmentation":
-        return InstanceSegmentationInferenceRequest(**request_dict)
+        request = InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
-        return ObjectDetectionInferenceRequest(**request_dict)
+        request = ObjectDetectionInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Uknown task type {model_type}")
+    request.id = request_dict["id"]
+    return request
