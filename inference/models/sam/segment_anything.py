@@ -58,6 +58,7 @@ class SegmentAnything(RoboflowCoreModel):
             providers=[
                 "CUDAExecutionProvider",
                 "OpenVINOExecutionProvider",
+                "CPUExecutionProvider",
             ],
         )
         self.embedding_cache = {}
