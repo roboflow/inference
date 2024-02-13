@@ -7,10 +7,14 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, U
 from uuid import uuid4
 
 import numpy as np
+from fastapi import BackgroundTasks
 
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
@@ -37,6 +41,7 @@ from inference.enterprise.workflows.complier.utils import (
 )
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
+    ActiveLearningDataCollector,
     AggregationMode,
     BinaryOperator,
     CompoundDetectionFilterDefinition,
@@ -49,6 +54,7 @@ from inference.enterprise.workflows.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
+from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import ExecutionGraphError
 
 OPERATORS = {
@@ -79,7 +85,7 @@ async def run_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
@@ -143,7 +149,7 @@ async def run_condition_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     left_value = resolve_parameter(
         selector_or_value=step.left,
@@ -166,7 +172,7 @@ async def run_detection_filter(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     predictions = resolve_parameter(
         selector_or_value=step.predictions,
@@ -218,7 +224,7 @@ async def run_detection_offset_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     detections = resolve_parameter(
         selector_or_value=step.predictions,
@@ -277,7 +283,7 @@ async def run_static_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
@@ -372,7 +378,7 @@ async def run_detections_consensus_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     resolve_parameter_closure = partial(
         resolve_parameter,
@@ -821,3 +827,57 @@ def aggregate_field_values(
 ) -> float:
     values = [d[field] for d in detections]
     return AGGREGATION_MODE2FIELD_AGGREGATOR[aggregation_mode](values)
+
+
+async def run_active_learning_data_collector(
+    step: ActiveLearningDataCollector,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks],
+) -> Tuple[NextStepReference, OutputsLookup]:
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    images_meta_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="image",
+    )
+    images_meta = resolve_parameter_closure(images_meta_selector)
+    predictions = resolve_parameter_closure(step.predictions)
+    predictions_output_name = get_last_selector_chunk(step.predictions)
+    target_dataset = resolve_parameter_closure(step.target_dataset)
+    target_dataset_api_key = resolve_parameter_closure(step.target_dataset_api_key)
+    disable_active_learning = resolve_parameter_closure(step.disable_active_learning)
+    active_learning_compatible_predictions = [
+        {"image": image_meta, predictions_output_name: prediction}
+        for image_meta, prediction in zip(images_meta, predictions)
+    ]
+    active_learning_middleware.register(
+        # this should actually be asyncio, but that requires a lot of backend components redesign
+        dataset_name=target_dataset,
+        images=image,
+        predictions=active_learning_compatible_predictions,
+        api_key=target_dataset_api_key or api_key,
+        active_learning_disabled_for_request=disable_active_learning,
+        prediction_type=(
+            "classification" if predictions_output_name == "top" else "object-detection"
+        ),
+        # This is quick and dirty assumption - that shall work as samplers are suited to distinguish
+        # between cls and non-cls predictions and at this stage, we do also only recognise those 2
+        # states - to further divide between tasks, each prediction step should provide output metadata
+        # that can be referred using `step.predictions` with output name replaced to `task_type` or sth
+        # similar
+        background_tasks=background_tasks,
+    )
+    return None, outputs_lookup

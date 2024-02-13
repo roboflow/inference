@@ -8,7 +8,6 @@ from inference.enterprise.workflows.complier.graph_parser import (
     construct_graph,
     get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph,
     prepare_execution_graph,
-    verify_each_node_reach_at_least_one_output,
 )
 from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
@@ -320,43 +319,6 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
     assert len(result.edges) == 5, "10 edges in total should be created"
 
 
-def test_verify_each_node_reach_at_least_one_output_when_graph_is_valid() -> None:
-    # given
-    execution_graph = nx.DiGraph()
-    execution_graph.add_node("a", kind=INPUT_NODE_KIND)
-    execution_graph.add_node("b", kind=INPUT_NODE_KIND)
-    execution_graph.add_node("c", kind=STEP_NODE_KIND)
-    execution_graph.add_node("d", kind=STEP_NODE_KIND)
-    execution_graph.add_node("e", kind=OUTPUT_NODE_KIND)
-    execution_graph.add_node("f", kind=OUTPUT_NODE_KIND)
-    execution_graph.add_edge("a", "c")
-    execution_graph.add_edge("b", "d")
-    execution_graph.add_edge("c", "e")
-    execution_graph.add_edge("d", "f")
-
-    # when
-    verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
-
-    # then - no error raised
-
-
-def test_verify_each_node_reach_at_least_one_output_when_graph_is_invalid() -> None:
-    # given
-    execution_graph = nx.DiGraph()
-    execution_graph.add_node("a", kind=INPUT_NODE_KIND)
-    execution_graph.add_node("b", kind=INPUT_NODE_KIND)
-    execution_graph.add_node("c", kind=STEP_NODE_KIND)
-    execution_graph.add_node("d", kind=STEP_NODE_KIND)
-    execution_graph.add_node("e", kind=OUTPUT_NODE_KIND)
-    execution_graph.add_edge("a", "c")
-    execution_graph.add_edge("b", "d")
-    execution_graph.add_edge("c", "e")
-
-    # when
-    with pytest.raises(NodesNotReachingOutputError):
-        verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
-
-
 def test_get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph() -> None:
     # given
     execution_graph = nx.DiGraph()
@@ -496,8 +458,15 @@ def test_prepare_execution_graph_when_graph_node_does_not_reach_output() -> None
     )
 
     # when
-    with pytest.raises(NodesNotReachingOutputError):
-        _ = prepare_execution_graph(workflow_specification=workflow_specification)
+    execution_graph = prepare_execution_graph(workflow_specification=workflow_specification)
+
+    # then
+    assert len(execution_graph.edges) == 4, "4 edges are expected to be created"
+    assert execution_graph.has_edge("$inputs.image", "$steps.step_1"), "Input must be connected to step_1"
+    assert execution_graph.has_edge("$inputs.image", "$steps.step_2"), "Input must be connected to step_2"
+    assert execution_graph.has_edge("$steps.step_1", "$steps.step_2"), "step_1 must be connected to step_2"
+    assert execution_graph.has_edge("$steps.step_1", "$outputs.predictions"), "step_1 output must be connected to output"
+
 
 
 def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branch() -> (

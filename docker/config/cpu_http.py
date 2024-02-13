@@ -10,6 +10,8 @@ import os
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from inference.core.env import MAX_ACTIVE_MODELS, ACTIVE_LEARNING_ENABLED, LAMBDA
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import \
+    BackgroundTaskWorkflowsActiveLearningMiddleware
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)

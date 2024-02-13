@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
+    get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
     validate_field_is_empty_or_selector_or_list_of_string,
@@ -1119,5 +1120,151 @@ class DetectionsConsensus(BaseModel, StepInterface):
             validate_value_is_empty_or_positive_number(
                 value=v,
                 field_name=f"required_objects[{k}]",
+                error=VariableTypeError,
+            )
+
+
+ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
+    "ObjectDetectionModel": "predictions",
+    "KeypointsDetectionModel": "predictions",
+    "InstanceSegmentationModel": "predictions",
+    "DetectionFilter": "predictions",
+    "DetectionsConsensus": "predictions",
+    "DetectionOffset": "predictions",
+    "ClassificationModel": "top",
+}
+
+
+class ActiveLearningDataCollector(BaseModel, StepInterface):
+    type: Literal["ActiveLearningDataCollector"]
+    name: str
+    image: str
+    predictions: str
+    target_dataset: str
+    target_dataset_api_key: Optional[str] = Field(default=None)
+    disable_active_learning: Union[bool, str] = Field(default=False)
+
+    @classmethod
+    @field_validator("image")
+    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    @classmethod
+    @field_validator("predictions")
+    def predictions_must_hold_selector(cls, value: Any) -> str:
+        if not is_selector(selector_or_value=value):
+            raise ValueError("`predictions` field can only contain selector values")
+        return value
+
+    @classmethod
+    @field_validator("target_dataset")
+    def validate_target_dataset_field(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="target_dataset", allowed_types=[bool]
+        )
+        return value
+
+    @classmethod
+    @field_validator("target_dataset")
+    def validate_target_dataset_api_key_field(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value,
+            field_name="target_dataset_api_key",
+            allowed_types=[bool, type(None)],
+        )
+        return value
+
+    @classmethod
+    @field_validator("disable_active_learning")
+    def validate_boolean_flags_or_selectors(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="class_aware", allowed_types=[bool]
+        )
+        return value
+
+    def get_type(self) -> str:
+        return self.type
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "image",
+            "predictions",
+            "target_dataset",
+            "target_dataset_api_key",
+            "disable_active_learning",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return set()
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        selector = getattr(self, field_name)
+        if not is_selector(selector_or_value=selector):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        if field_name == "predictions":
+            input_step_type = input_step.get_type()
+            expected_last_selector_chunk = (
+                ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS.get(input_step_type)
+            )
+            if expected_last_selector_chunk is None:
+                raise ExecutionGraphError(
+                    f"Attempted to validate predictions selector of {self.name} step, but input step of type: "
+                    f"{input_step_type} does match by type."
+                )
+            if get_last_selector_chunk(selector) != expected_last_selector_chunk:
+                raise ExecutionGraphError(
+                    f"It is only allowed to refer to {input_step_type} step output named {expected_last_selector_chunk}. "
+                    f"Reference that was found: {selector}"
+                )
+            input_step_image = getattr(input_step, "image", self.image)
+            if input_step_image != self.image:
+                raise ExecutionGraphError(
+                    f"ActiveLearningDataCollector step refers to input step that uses reference to different image. "
+                    f"ActiveLearningDataCollector step image: {self.image}. Input step (of type {input_step_image}) "
+                    f"uses {input_step_image}."
+                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "target_dataset",
+                "target_dataset_api_key",
+                "disable_active_learning",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+        elif field_name in {"disable_active_learning"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"target_dataset"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"target_dataset_api_key"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str, type(None)],
+                value=value,
                 error=VariableTypeError,
             )

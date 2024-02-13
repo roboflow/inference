@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors import auxiliary
 from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
     aggregate_field_values,
@@ -125,6 +126,7 @@ async def test_run_condition_step() -> None:
         outputs_lookup={"$steps.step_0": {"top": "cat"}},
         model_manager=MagicMock(),
         api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # then
@@ -219,6 +221,7 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
         },
         model_manager=MagicMock(),
         api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # then

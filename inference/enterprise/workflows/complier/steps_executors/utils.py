@@ -10,6 +10,7 @@ from inference.enterprise.workflows.complier.utils import (
 )
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
+    ActiveLearningDataCollector,
     ClipComparison,
     Crop,
     OCRModel,
@@ -33,6 +34,7 @@ def get_image(
         AbsoluteStaticCrop,
         RelativeStaticCrop,
         ClipComparison,
+        ActiveLearningDataCollector,
     ],
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
