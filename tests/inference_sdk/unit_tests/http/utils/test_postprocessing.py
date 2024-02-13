@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageChops
 from requests import Response
 
-from inference_sdk.http.entities import VisualisationResponseFormat, ModelDescription
+from inference_sdk.http.entities import ModelDescription, VisualisationResponseFormat
 from inference_sdk.http.utils import post_processing
 from inference_sdk.http.utils.post_processing import (
     adjust_bbox_coordinates_to_client_scaling_factor,
@@ -22,9 +22,10 @@ from inference_sdk.http.utils.post_processing import (
     combine_gaze_detections,
     decode_workflow_output_image,
     decode_workflow_outputs,
+    filter_model_descriptions,
     is_workflow_image,
     response_contains_jpeg_image,
-    transform_base64_visualisation, filter_model_descriptions,
+    transform_base64_visualisation,
 )
 
 

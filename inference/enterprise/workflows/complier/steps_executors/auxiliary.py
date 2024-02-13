@@ -91,9 +91,6 @@ async def run_crop_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    if not issubclass(type(image), list):
-        image = [image]
-        detections = [detections]
     decoded_images = [load_image(e) for e in image]
     decoded_images = [
         i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
@@ -187,30 +184,15 @@ async def run_detection_filter(
     )
     filter_callable = build_filter_callable(definition=step.filter_definition)
     result_detections, result_parent_id = [], []
-    nested = False
     for prediction in predictions:
-        if issubclass(type(prediction), list):
-            nested = True  # assuming that we either have all nested or none
-            filtered_predictions = [
-                deepcopy(p) for p in prediction if filter_callable(p)
-            ]
-            result_detections.append(filtered_predictions)
-            result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
-        elif filter_callable(prediction):
-            result_detections.append(deepcopy(prediction))
-            result_parent_id.append(prediction[PARENT_ID_KEY])
+        filtered_predictions = [deepcopy(p) for p in prediction if filter_callable(p)]
+        result_detections.append(filtered_predictions)
+        result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
     step_selector = construct_step_selector(step_name=step.name)
-    if nested:
-        outputs_lookup[step_selector] = [
-            {"predictions": d, PARENT_ID_KEY: p, "image": i}
-            for d, p, i in zip(result_detections, result_parent_id, images_meta)
-        ]
-    else:
-        outputs_lookup[step_selector] = {
-            "predictions": result_detections,
-            PARENT_ID_KEY: result_parent_id,
-            "image": images_meta,
-        }
+    outputs_lookup[step_selector] = [
+        {"predictions": d, PARENT_ID_KEY: p, "image": i}
+        for d, p, i in zip(result_detections, result_parent_id, images_meta)
+    ]
     return None, outputs_lookup
 
 
@@ -263,35 +245,18 @@ async def run_detection_offset_step(
         outputs_lookup=outputs_lookup,
     )
     result_detections, result_parent_id = [], []
-    nested = False
     for detection in detections:
-        if issubclass(type(detection), list):
-            nested = True  # assuming that we either have all nested or none
-            offset_detections = [
-                offset_detection(detection=d, offset_x=offset_x, offset_y=offset_y)
-                for d in detection
-            ]
-            result_detections.append(offset_detections)
-            result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
-        else:
-            result_detections.append(
-                offset_detection(
-                    detection=detection, offset_x=offset_x, offset_y=offset_y
-                )
-            )
-            result_parent_id.append(detection[PARENT_ID_KEY])
-    step_selector = construct_step_selector(step_name=step.name)
-    if nested:
-        outputs_lookup[step_selector] = [
-            {"predictions": d, PARENT_ID_KEY: p, "image": i}
-            for d, p, i in zip(result_detections, result_parent_id, images_meta)
+        offset_detections = [
+            offset_detection(detection=d, offset_x=offset_x, offset_y=offset_y)
+            for d in detection
         ]
-    else:
-        outputs_lookup[step_selector] = {
-            "predictions": result_detections,
-            PARENT_ID_KEY: result_parent_id,
-            "image": images_meta,
-        }
+        result_detections.append(offset_detections)
+        result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
+    step_selector = construct_step_selector(step_name=step.name)
+    outputs_lookup[step_selector] = [
+        {"predictions": d, PARENT_ID_KEY: p, "image": i}
+        for d, p, i in zip(result_detections, result_parent_id, images_meta)
+    ]
     return None, outputs_lookup
 
 
@@ -319,9 +284,6 @@ async def run_static_crop_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-
-    if not issubclass(type(image), list):
-        image = [image]
     decoded_images = [load_image(e) for e in image]
     decoded_images = [
         i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
@@ -418,6 +380,7 @@ async def run_detections_consensus_step(
         outputs_lookup=outputs_lookup,
     )
     all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
+    # all_predictions has shape (n_consensus_input, bs, img_predictions)
     if len(all_predictions) < 1:
         raise ExecutionGraphError(
             f"Consensus step requires at least one source of predictions."
@@ -432,19 +395,16 @@ async def run_detections_consensus_step(
     )
     images_meta = resolve_parameter_closure(images_meta_selector)
     batch_size = batch_sizes[0]
-    if batch_size == 1:
-        all_predictions = [[e] for e in all_predictions]
-        images_meta = [images_meta]
     results = []
     for batch_index in range(batch_size):
-        batch_predictions = [e[batch_index] for e in all_predictions]
+        batch_element_predictions = [e[batch_index] for e in all_predictions]
         (
             parent_id,
             object_present,
             presence_confidence,
             consensus_detections,
         ) = resolve_batch_consensus(
-            predictions=batch_predictions,
+            predictions=batch_element_predictions,
             required_votes=resolve_parameter_closure(step.required_votes),
             class_aware=resolve_parameter_closure(step.class_aware),
             iou_threshold=resolve_parameter_closure(step.iou_threshold),
@@ -464,14 +424,12 @@ async def run_detections_consensus_step(
                 "image": images_meta[batch_index],
             }
         )
-    if batch_size == 1:
-        results = results[0]
     outputs_lookup[construct_step_selector(step_name=step.name)] = results
     return None, outputs_lookup
 
 
 def get_and_validate_batch_sizes(
-    all_predictions: List[Union[List[dict], List[List[dict]]]],
+    all_predictions: List[List[List[dict]]],
     step_name: str,
 ) -> List[int]:
     batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
@@ -482,16 +440,8 @@ def get_and_validate_batch_sizes(
     return batch_sizes
 
 
-def get_predictions_batch_sizes(
-    all_predictions: List[Union[List[dict], List[List[dict]]]]
-) -> List[int]:
-    return [get_batch_size(predictions=predictions) for predictions in all_predictions]
-
-
-def get_batch_size(predictions: Union[List[dict], List[List[dict]]]) -> int:
-    if len(predictions) == 0 or issubclass(type(predictions[0]), dict):
-        return 1
-    return len(predictions)
+def get_predictions_batch_sizes(all_predictions: List[List[List[dict]]]) -> List[int]:
+    return [len(predictions) for predictions in all_predictions]
 
 
 def all_batch_sizes_equal(batch_sizes: List[int]) -> bool:
