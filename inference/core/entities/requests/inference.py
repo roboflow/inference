@@ -229,5 +229,5 @@ def request_from_type(model_type, request_dict):
         request = ObjectDetectionInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Uknown task type {model_type}")
-    request.id = request_dict["id"]
+    request.id = request_dict.get("id")
     return request
