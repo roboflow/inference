@@ -27,7 +27,6 @@ from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
-    DETECTION_ID_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
@@ -54,6 +53,14 @@ from inference.enterprise.workflows.entities.steps import (
     StepInterface,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+MODEL_TYPE2PREDICTION_TYPE = {
+    "ClassificationModel": "classification",
+    "MultiLabelClassificationModel": "classification",
+    "ObjectDetectionModel": "object-detection",
+    "InstanceSegmentationModel": "instance-segmentation",
+    "KeypointsDetectionModel": "keypoint-detection",
+}
 
 
 async def run_roboflow_model_step(
@@ -93,6 +100,10 @@ async def run_roboflow_model_step(
             outputs_lookup=outputs_lookup,
             api_key=api_key,
         )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type=MODEL_TYPE2PREDICTION_TYPE[step.get_type()],
+    )
     if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
         serialised_result = attach_parent_info(
             image=image, results=serialised_result, nested_key=None
@@ -407,6 +418,10 @@ async def run_ocr_model_step(
         results=serialised_result,
         nested_key=None,
     )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="ocr",
+    )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -496,6 +511,10 @@ async def run_clip_comparison_step(
         results=serialised_result,
         nested_key=None,
     )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="embeddings-comparison",
+    )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -571,6 +590,16 @@ def load_core_model(
     )
     model_manager.add_model(core_model_id, inference_request.api_key)
     return core_model_id
+
+
+def attach_prediction_type_info(
+    results: List[Dict[str, Any]],
+    prediction_type: str,
+    key: str = "prediction_type",
+) -> List[Dict[str, Any]]:
+    for result in results:
+        result[key] = prediction_type
+    return results
 
 
 def attach_parent_info(

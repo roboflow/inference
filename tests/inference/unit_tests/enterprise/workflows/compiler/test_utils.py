@@ -262,6 +262,7 @@ def test_get_steps_output_selectors() -> None:
         "$steps.my_model.image",
         "$steps.my_model.predictions",
         "$steps.my_model.parent_id",
+        "$steps.my_model.prediction_type",
     }, "Each step output must be prefixed with $steps. and name of step. Crop step defines `crops` and `parent_id` outputs, object detection defines `image`, `predictions` and `parent_id`"
 
 

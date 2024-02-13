@@ -105,7 +105,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         return {"image", "model_id", "disable_active_learning"}
 
     def get_output_names(self) -> Set[str]:
-        return set()
+        return {"prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -489,7 +489,7 @@ class OCRModel(BaseModel, StepInterface):
         return {"image"}
 
     def get_output_names(self) -> Set[str]:
-        return {"result", "parent_id"}
+        return {"result", "parent_id", "prediction_type"}
 
 
 class Crop(BaseModel, StepInterface):
@@ -624,7 +624,7 @@ class DetectionFilter(BaseModel, StepInterface):
         return {"predictions"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
+        return {"predictions", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -660,7 +660,7 @@ class DetectionOffset(BaseModel, StepInterface):
         return {"predictions", "offset_x", "offset_y"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
+        return {"predictions", "parent_id", "image", "predictions_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -890,7 +890,7 @@ class ClipComparison(BaseModel, StepInterface):
         return {"image", "text"}
 
     def get_output_names(self) -> Set[str]:
-        return {"similarity", "parent_id"}
+        return {"similarity", "parent_id", "predictions_type"}
 
 
 class AggregationMode(Enum):
@@ -1013,6 +1013,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
             "image",
             "object_present",
             "presence_confidence",
+            "predictions_type",
         }
 
     def validate_field_selector(

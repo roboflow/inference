@@ -188,6 +188,15 @@ async def run_detection_filter(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     filter_callable = build_filter_callable(definition=step.filter_definition)
     result_detections, result_parent_id = [], []
     for prediction in predictions:
@@ -196,8 +205,10 @@ async def run_detection_filter(
         result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
     step_selector = construct_step_selector(step_name=step.name)
     outputs_lookup[step_selector] = [
-        {"predictions": d, PARENT_ID_KEY: p, "image": i}
-        for d, p, i in zip(result_detections, result_parent_id, images_meta)
+        {"predictions": d, PARENT_ID_KEY: p, "image": i, "prediction_type": pt}
+        for d, p, i, pt in zip(
+            result_detections, result_parent_id, images_meta, predictions_type
+        )
     ]
     return None, outputs_lookup
 
@@ -240,6 +251,15 @@ async def run_detection_offset_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     offset_x = resolve_parameter(
         selector_or_value=step.offset_x,
         runtime_parameters=runtime_parameters,
@@ -260,8 +280,10 @@ async def run_detection_offset_step(
         result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
     step_selector = construct_step_selector(step_name=step.name)
     outputs_lookup[step_selector] = [
-        {"predictions": d, PARENT_ID_KEY: p, "image": i}
-        for d, p, i in zip(result_detections, result_parent_id, images_meta)
+        {"predictions": d, PARENT_ID_KEY: p, "image": i, "prediction_type": pt}
+        for d, p, i, pt in zip(
+            result_detections, result_parent_id, images_meta, predictions_type
+        )
     ]
     return None, outputs_lookup
 
@@ -428,6 +450,7 @@ async def run_detections_consensus_step(
                 "object_present": object_present,
                 "presence_confidence": presence_confidence,
                 "image": images_meta[batch_index],
+                "prediction_type": "object-detection",
             }
         )
     outputs_lookup[construct_step_selector(step_name=step.name)] = results
@@ -854,6 +877,22 @@ async def run_active_learning_data_collector(
         new_output="image",
     )
     images_meta = resolve_parameter_closure(images_meta_selector)
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    prediction_type = set(predictions_type)
+    if len(prediction_type) > 1:
+        raise ExecutionGraphError(
+            f"Active Learning data collection step requires only single prediction "
+            f"type to be part of ingest. Detected: {prediction_type}."
+        )
+    prediction_type = next(iter(prediction_type))
     predictions = resolve_parameter_closure(step.predictions)
     predictions_output_name = get_last_selector_chunk(step.predictions)
     target_dataset = resolve_parameter_closure(step.target_dataset)
@@ -870,14 +909,7 @@ async def run_active_learning_data_collector(
         predictions=active_learning_compatible_predictions,
         api_key=target_dataset_api_key or api_key,
         active_learning_disabled_for_request=disable_active_learning,
-        prediction_type=(
-            "classification" if predictions_output_name == "top" else "object-detection"
-        ),
-        # This is quick and dirty assumption - that shall work as samplers are suited to distinguish
-        # between cls and non-cls predictions and at this stage, we do also only recognise those 2
-        # states - to further divide between tasks, each prediction step should provide output metadata
-        # that can be referred using `step.predictions` with output name replaced to `task_type` or sth
-        # similar
+        prediction_type=prediction_type,
         background_tasks=background_tasks,
     )
     return None, outputs_lookup

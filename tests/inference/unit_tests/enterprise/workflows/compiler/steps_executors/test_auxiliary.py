@@ -217,6 +217,7 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
             "$steps.step_1": {
                 "predictions": detections,
                 "image": [{"height": 100, "width": 100}] * 2,
+                "prediction_type": ["object-detection"] * 2
             }
         },
         model_manager=MagicMock(),
@@ -226,6 +227,8 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
 
     # then
     assert next_step is None, "Next step should not be set here"
+    assert outputs_lookup["$steps.step_2"][0]["prediction_type"] == "object-detection", "Prediction type must be preserved"
+    assert outputs_lookup["$steps.step_2"][1]["prediction_type"] == "object-detection", "Prediction type must be preserved"
     assert outputs_lookup["$steps.step_2"][0]["predictions"] == [
         {
             "x": 10,
