@@ -39,6 +39,7 @@ def prepare_execution_graph(workflow_specification: WorkflowSpecificationV1) -> 
     execution_graph = construct_graph(workflow_specification=workflow_specification)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
+    verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
     verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     verify_that_steps_are_connected_with_compatible_inputs(
         execution_graph=execution_graph
@@ -186,6 +187,44 @@ def verify_edge_is_created_between_existing_nodes(
         raise SelectorToUndefinedNodeError(
             f"Graph definition contains selector {end} that points to not defined element."
         )
+
+
+def verify_each_node_reach_at_least_one_output(
+    execution_graph: DiGraph,
+) -> None:
+    all_nodes = set(execution_graph.nodes())
+    output_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
+    )
+    nodes_without_outputs = get_nodes_that_do_not_produce_outputs(
+        execution_graph=execution_graph
+    )
+    nodes_that_must_be_reached = output_nodes.union(nodes_without_outputs)
+    nodes_reaching_output = (
+        get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
+            execution_graph=execution_graph,
+            pointed_nodes=nodes_that_must_be_reached,
+        )
+    )
+    nodes_not_reaching_output = all_nodes.difference(nodes_reaching_output)
+    if len(nodes_not_reaching_output) > 0:
+        raise NodesNotReachingOutputError(
+            f"Detected {len(nodes_not_reaching_output)} nodes not reaching any of output node:"
+            f"{nodes_not_reaching_output}."
+        )
+
+
+def get_nodes_that_do_not_produce_outputs(execution_graph: DiGraph) -> Set[str]:
+    # assumption is that nodes without outputs will produce some side effect and shall be
+    # treated as output nodes while checking if there is no dangling steps in graph
+    step_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph, kind=STEP_NODE_KIND
+    )
+    return {
+        step_node
+        for step_node in step_nodes
+        if len(execution_graph.nodes[step_node]["definition"].get_output_names()) == 0
+    }
 
 
 def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
