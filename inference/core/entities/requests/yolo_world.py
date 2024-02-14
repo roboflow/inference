@@ -5,11 +5,11 @@ from inference.core.entities.requests.dynamic_class_base import (
 )
 
 
-class GroundingDINOInferenceRequest(DynamicClassBaseInferenceRequest):
+class YOLOWorldInferenceRequest(DynamicClassBaseInferenceRequest):
     """Request for Grounding DINO zero-shot predictions.
 
     Attributes:
         text (List[str]): A list of strings.
     """
 
-    grounding_dino_version_id: Optional[str] = "default"
+    yolo_world_version_id: Optional[str] = "s"
