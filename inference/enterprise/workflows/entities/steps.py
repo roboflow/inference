@@ -1147,6 +1147,15 @@ ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
 class DisabledActiveLearningConfiguration(BaseModel):
     enabled: bool
 
+    @field_validator("enabled")
+    @classmethod
+    def ensure_only_false_is_valid(cls, value: Any) -> bool:
+        if value is not False:
+            raise ValueError(
+                "One can only specify enabled=False in `DisabledActiveLearningConfiguration`"
+            )
+        return value
+
 
 class LimitDefinition(BaseModel):
     type: Literal["minutely", "hourly", "daily"]
@@ -1223,7 +1232,7 @@ class EnabledActiveLearningConfiguration(BaseModel):
 
     @field_validator("jpeg_compression_level")
     @classmethod
-    def validate_json_compression_level(cls, value: Any):
+    def validate_json_compression_level(cls, value: Any) -> int:
         validate_field_has_given_type(
             field_name="jpeg_compression_level", allowed_types=[int], value=value
         )
