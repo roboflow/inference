@@ -9,21 +9,29 @@ from inference.enterprise.workflows.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.workflows.entities.steps import (
+    ActiveLearningBatchingStrategy,
     ActiveLearningDataCollector,
     AggregationMode,
+    ClassesBasedSampling,
     ClassificationModel,
+    CloseToThresholdSampling,
     Condition,
     Crop,
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
+    DetectionsBasedSampling,
     DetectionsConsensus,
+    DisabledActiveLearningConfiguration,
+    EnabledActiveLearningConfiguration,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
+    LimitDefinition,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
     Operator,
+    RandomSamplingConfig,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -2343,9 +2351,168 @@ def test_validate_al_data_collector_when_valid_input_given() -> None:
     }
 
     # when
-    _ = ActiveLearningDataCollector.parse_obj(specification)
+    result = ActiveLearningDataCollector.parse_obj(specification)
 
-    # then NO ERROR is raised
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=None,
+    )
+
+
+def test_validate_al_data_collector_when_valid_input_with_disabled_al_config_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "active_learning_configuration": {"enabled": False},
+    }
+
+    # when
+    result = ActiveLearningDataCollector.parse_obj(specification)
+
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=DisabledActiveLearningConfiguration(
+            enabled=False
+        ),
+    )
+
+
+def test_validate_al_data_collector_when_valid_input_with_enabled_al_config_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "active_learning_configuration": {
+            "enabled": True,
+            "persist_predictions": True,
+            "sampling_strategies": [
+                {
+                    "type": "random",
+                    "name": "a",
+                    "traffic_percentage": 0.6,
+                    "limits": [{"type": "daily", "value": 100}],
+                },
+                {
+                    "type": "close_to_threshold",
+                    "name": "b",
+                    "probability": 0.7,
+                    "threshold": 0.5,
+                    "epsilon": 0.25,
+                    "tags": ["some"],
+                    "limits": [{"type": "daily", "value": 200}],
+                },
+                {
+                    "type": "classes_based",
+                    "name": "c",
+                    "probability": 0.8,
+                    "selected_class_names": ["a", "b", "c"],
+                    "limits": [{"type": "daily", "value": 300}],
+                },
+                {
+                    "type": "detections_number_based",
+                    "name": "d",
+                    "probability": 0.9,
+                    "more_than": 3,
+                    "less_than": 5,
+                    "limits": [{"type": "daily", "value": 400}],
+                },
+            ],
+            "batching_strategy": {
+                "batches_name_prefix": "my_batches",
+                "recreation_interval": "monthly",
+            },
+        },
+    }
+
+    # when
+    result = ActiveLearningDataCollector.parse_obj(specification)
+
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=EnabledActiveLearningConfiguration(
+            enabled=True,
+            persist_predictions=True,
+            sampling_strategies=[
+                RandomSamplingConfig(
+                    type="random",
+                    name="a",
+                    traffic_percentage=0.6,
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=100)],
+                ),
+                CloseToThresholdSampling(
+                    type="close_to_threshold",
+                    name="b",
+                    probability=0.7,
+                    threshold=0.5,
+                    epsilon=0.25,
+                    max_batch_images=None,
+                    only_top_classes=True,
+                    minimum_objects_close_to_threshold=1,
+                    selected_class_names=None,
+                    tags=["some"],
+                    limits=[LimitDefinition(type="daily", value=200)],
+                ),
+                ClassesBasedSampling(
+                    type="classes_based",
+                    name="c",
+                    probability=0.8,
+                    selected_class_names=["a", "b", "c"],
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=300)],
+                ),
+                DetectionsBasedSampling(
+                    type="detections_number_based",
+                    name="d",
+                    probability=0.9,
+                    more_than=3,
+                    less_than=5,
+                    selected_class_names=None,
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=400)],
+                ),
+            ],
+            batching_strategy=ActiveLearningBatchingStrategy(
+                batches_name_prefix="my_batches",
+                recreation_interval="monthly",
+            ),
+            tags=[],
+            max_image_size=None,
+            jpeg_compression_level=95,
+        ),
+    )
 
 
 @pytest.mark.parametrize("image_selector", [1, None, "some", 1.3, True])
