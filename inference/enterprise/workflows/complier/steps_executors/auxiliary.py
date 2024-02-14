@@ -911,5 +911,6 @@ async def run_active_learning_data_collector(
         active_learning_disabled_for_request=disable_active_learning,
         prediction_type=prediction_type,
         background_tasks=background_tasks,
+        active_learning_configuration=step.active_learning_configuration,
     )
     return None, outputs_lookup
