@@ -668,7 +668,7 @@ class DetectionOffset(BaseModel, StepInterface):
         return {"predictions", "offset_x", "offset_y"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image", "predictions_type"}
+        return {"predictions", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
