@@ -1145,29 +1145,29 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
     target_dataset_api_key: Optional[str] = Field(default=None)
     disable_active_learning: Union[bool, str] = Field(default=False)
 
-    @classmethod
     @field_validator("image")
+    @classmethod
     def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
         validate_image_is_valid_selector(value=value)
         return value
 
-    @classmethod
     @field_validator("predictions")
+    @classmethod
     def predictions_must_hold_selector(cls, value: Any) -> str:
         if not is_selector(selector_or_value=value):
             raise ValueError("`predictions` field can only contain selector values")
         return value
 
-    @classmethod
     @field_validator("target_dataset")
-    def validate_target_dataset_field(cls, value: Any) -> Union[str, bool]:
+    @classmethod
+    def validate_target_dataset_field(cls, value: Any) -> str:
         validate_field_is_selector_or_has_given_type(
-            value=value, field_name="target_dataset", allowed_types=[bool]
+            value=value, field_name="target_dataset", allowed_types=[str]
         )
         return value
 
+    @field_validator("target_dataset_api_key")
     @classmethod
-    @field_validator("target_dataset")
     def validate_target_dataset_api_key_field(cls, value: Any) -> Union[str, bool]:
         validate_field_is_selector_or_has_given_type(
             value=value,
@@ -1176,11 +1176,11 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
         )
         return value
 
-    @classmethod
     @field_validator("disable_active_learning")
+    @classmethod
     def validate_boolean_flags_or_selectors(cls, value: Any) -> Union[str, bool]:
         validate_field_is_selector_or_has_given_type(
-            value=value, field_name="class_aware", allowed_types=[bool]
+            value=value, field_name="disable_active_learning", allowed_types=[bool]
         )
         return value
 
@@ -1265,7 +1265,7 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
         elif field_name in {"target_dataset_api_key"}:
             validate_field_has_given_type(
                 field_name=field_name,
-                allowed_types=[str, type(None)],
+                allowed_types=[str],
                 value=value,
                 error=VariableTypeError,
             )

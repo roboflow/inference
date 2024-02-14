@@ -7,7 +7,8 @@ from inference.enterprise.workflows.complier.graph_parser import (
     add_steps_nodes_for_graph,
     construct_graph,
     get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph,
-    prepare_execution_graph, verify_each_node_reach_at_least_one_output,
+    prepare_execution_graph,
+    verify_each_node_reach_at_least_one_output,
 )
 from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
@@ -19,7 +20,11 @@ from inference.enterprise.workflows.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel, ActiveLearningDataCollector
+from inference.enterprise.workflows.entities.steps import (
+    ActiveLearningDataCollector,
+    Crop,
+    ObjectDetectionModel,
+)
 from inference.enterprise.workflows.entities.workflows_specification import (
     WorkflowSpecificationV1,
 )
@@ -319,7 +324,9 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
     assert len(result.edges) == 5, "10 edges in total should be created"
 
 
-def test_verify_each_node_reach_at_least_one_output_when_all_steps_are_connected_to_inputs_and_outputs() -> None:
+def test_verify_each_node_reach_at_least_one_output_when_all_steps_are_connected_to_inputs_and_outputs() -> (
+    None
+):
     # given
     example_step = Crop(
         type="Crop",
@@ -345,7 +352,9 @@ def test_verify_each_node_reach_at_least_one_output_when_all_steps_are_connected
     # then - no error raised
 
 
-def test_verify_each_node_reach_at_least_one_output_when_there_is_step_with_outputs_defined_not_connected_to_output_node() -> None:
+def test_verify_each_node_reach_at_least_one_output_when_there_is_step_with_outputs_defined_not_connected_to_output_node() -> (
+    None
+):
     # given
     example_step = Crop(
         type="Crop",
@@ -368,7 +377,9 @@ def test_verify_each_node_reach_at_least_one_output_when_there_is_step_with_outp
         verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
 
 
-def test_verify_each_node_reach_at_least_one_output_when_there_is_input_node_not_used() -> None:
+def test_verify_each_node_reach_at_least_one_output_when_there_is_input_node_not_used() -> (
+    None
+):
     # given
     example_step = Crop(
         type="Crop",
@@ -392,7 +403,9 @@ def test_verify_each_node_reach_at_least_one_output_when_there_is_input_node_not
         verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
 
 
-def test_verify_each_node_reach_at_least_one_output_when_there_is_a_step_executing_side_effect_not_connected_to_output() -> None:
+def test_verify_each_node_reach_at_least_one_output_when_there_is_a_step_executing_side_effect_not_connected_to_output() -> (
+    None
+):
     # given
     example_step = Crop(
         type="Crop",
@@ -530,7 +543,9 @@ def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
         _ = prepare_execution_graph(workflow_specification=workflow_specification)
 
 
-def test_prepare_execution_graph_when_graph_node_with_side_effect_step_does_not_reach_output() -> None:
+def test_prepare_execution_graph_when_graph_node_with_side_effect_step_does_not_reach_output() -> (
+    None
+):
     # given
     workflow_specification = WorkflowSpecificationV1.parse_obj(
         {
@@ -564,15 +579,24 @@ def test_prepare_execution_graph_when_graph_node_with_side_effect_step_does_not_
     )
 
     # when
-    execution_graph = prepare_execution_graph(workflow_specification=workflow_specification)
+    execution_graph = prepare_execution_graph(
+        workflow_specification=workflow_specification
+    )
 
     # then
     assert len(execution_graph.edges) == 4, "4 edges are expected to be created"
-    assert execution_graph.has_edge("$inputs.image", "$steps.step_1"), "Input must be connected to step_1"
-    assert execution_graph.has_edge("$inputs.image", "$steps.step_2"), "Input must be connected to step_2"
-    assert execution_graph.has_edge("$steps.step_1", "$steps.step_2"), "step_1 must be connected to step_2"
-    assert execution_graph.has_edge("$steps.step_1", "$outputs.predictions"), "step_1 output must be connected to output"
-
+    assert execution_graph.has_edge(
+        "$inputs.image", "$steps.step_1"
+    ), "Input must be connected to step_1"
+    assert execution_graph.has_edge(
+        "$inputs.image", "$steps.step_2"
+    ), "Input must be connected to step_2"
+    assert execution_graph.has_edge(
+        "$steps.step_1", "$steps.step_2"
+    ), "step_1 must be connected to step_2"
+    assert execution_graph.has_edge(
+        "$steps.step_1", "$outputs.predictions"
+    ), "step_1 output must be connected to output"
 
 
 def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_condition_branch() -> (
