@@ -12,7 +12,7 @@ VERSION=`python inference/core/version.py`
 REPOSITORY=$1
 DOCKERFILE=$2
 
-docker build --pull -t $REPOSITORY:$VERSION -f $DOCKERFILE .
+docker buildx build --platform linux/amd64 --pull -t  $REPOSITORY:$VERSION -f $DOCKERFILE . --push
 check_return_code $? "Docker build"
 
 docker tag $REPOSITORY:$VERSION $REPOSITORY:latest
