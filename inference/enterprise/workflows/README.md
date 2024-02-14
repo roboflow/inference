@@ -651,6 +651,9 @@ latency
 predicting from each model, `inference` HTTP API tries to get Active Learning config from the project that model
 belongs to and register datapoint. To prevent that from happening - model steps can be provided with 
 `disable_active_learning=True` parameter. Then the only place where AL registration happens is `ActiveLearningDataCollector`.
+* **important :exclamation:** be careful with names of sampling strategies if you define Active Learning configuration - 
+you should keep them unique not only within a single config, but globally in project - otherwise limits accounting may
+not work well
 
 ## Different modes of execution
 Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps
