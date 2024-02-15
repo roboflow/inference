@@ -16,7 +16,7 @@ from inference.core.models.utils.validate import (
 )
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes
-from inference.models.defaults import (
+from inference.core.models.defaults import (
     DEFAULT_CONFIDENCE,
     DEFAULT_IOU_THRESH,
     DEFAULT_MAX_CANDIDATES,

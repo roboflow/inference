@@ -15,7 +15,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
-from inference.models.defaults import (
+from inference.core.models.defaults import (
     DEFAULT_CONFIDENCE,
 )
 
