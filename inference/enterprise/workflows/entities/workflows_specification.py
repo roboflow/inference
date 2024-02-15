@@ -9,6 +9,7 @@ from inference.enterprise.workflows.entities.inputs import (
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
+    ActiveLearningDataCollector,
     ClassificationModel,
     ClipComparison,
     Condition,
@@ -43,6 +44,7 @@ StepType = Annotated[
         RelativeStaticCrop,
         AbsoluteStaticCrop,
         DetectionsConsensus,
+        ActiveLearningDataCollector,
     ],
     Field(discriminator="type"),
 ]
