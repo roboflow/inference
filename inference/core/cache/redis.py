@@ -87,7 +87,10 @@ class RedisCache(BaseCache):
         """
         item = self.client.get(key)
         if item is not None:
-            return json.loads(item)
+            try:
+                return json.loads(item)
+            except TypeError:
+                return item
 
     def set(self, key: str, value: str, expire: float = None):
         """
@@ -98,7 +101,9 @@ class RedisCache(BaseCache):
             value (str): The value to store.
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
-        self.client.set(key, json.dumps(value), ex=expire)
+        if not isinstance(value, bytes):
+            value = json.dumps(value)
+        self.client.set(key, value, ex=expire)
 
     def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
