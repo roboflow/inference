@@ -43,6 +43,7 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.sdk.http.txt \
+    requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     ./
 
@@ -55,6 +56,7 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
+    -r requirements.yolo_world.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
