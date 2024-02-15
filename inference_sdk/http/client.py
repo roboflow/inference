@@ -1007,7 +1007,6 @@ class InferenceHTTPClient:
         model_version: Optional[str] = None,
         confidence: Optional[float] = None,
     ) -> List[dict]:
-        _ensure_api_key_provided(api_key=self.__api_key)
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
@@ -1042,7 +1041,6 @@ class InferenceHTTPClient:
         model_version: Optional[str] = None,
         confidence: Optional[float] = None,
     ) -> List[dict]:
-        _ensure_api_key_provided(api_key=self.__api_key)
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
         )
