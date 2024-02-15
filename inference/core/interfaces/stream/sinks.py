@@ -81,11 +81,18 @@ def render_boxes(
     if fps_monitor is not None:
         fps_monitor.tick()
         fps_value = fps_monitor()
-    labels = [p["class"] for p in predictions["predictions"]]
-    detections = sv.Detections.from_roboflow(predictions)
-    image = annotator.annotate(
-        scene=video_frame.image.copy(), detections=detections, labels=labels
-    )
+    try:
+        labels = [p["class"] for p in predictions["predictions"]]
+        detections = sv.Detections.from_roboflow(predictions)
+        image = annotator.annotate(
+            scene=video_frame.image.copy(), detections=detections, labels=labels
+        )
+    except KeyError:
+        logger.warning(
+            f"Used `render_boxes()` sink, but predictions that were provided do not match the expected format "
+            f"of object detection prediction that could be accepted by `supervision.Detection.from_roboflow(...)"
+        )
+        image = video_frame.image.copy()
     if display_size is not None:
         image = letterbox_image(image, desired_size=display_size)
     if display_statistics:

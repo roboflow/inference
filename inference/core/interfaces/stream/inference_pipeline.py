@@ -302,7 +302,10 @@ class InferencePipeline:
                     iou_threshold=self._inference_config.iou_threshold,
                     max_candidates=self._inference_config.max_candidates,
                     max_detections=self._inference_config.max_detections,
-                )[0].dict(
+                )
+                if issubclass(type(predictions), list):
+                    predictions = predictions[0]
+                predictions = predictions.dict(
                     by_alias=True,
                     exclude_none=True,
                 )
