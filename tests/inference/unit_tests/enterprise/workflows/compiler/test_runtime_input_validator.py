@@ -144,20 +144,23 @@ def test_assembly_input_images_when_images_provided_as_single_elements() -> None
     )
 
     # then
-    assert result["one"] == {
-        "type": "url",
-        "value": "https://some.com/image.jpg",
-        "parent_id": "$inputs.one",
-    }, "parent_id expected to be added"
+    assert result["one"] == [
+        {
+            "type": "url",
+            "value": "https://some.com/image.jpg",
+            "parent_id": "$inputs.one",
+        }
+    ], "parent_id expected to be added"
     assert result["some"] == "value", "Value must not be touched by function"
+    assert len(result["two"]) == 1, "Image must be wrapped with list"
     assert (
-        result["two"]["type"] == "numpy_object"
+        result["two"][0]["type"] == "numpy_object"
     ), "numpy array must be packed in dict with type definition"
     assert (
-        result["two"]["value"] == np.zeros((192, 168, 3), dtype=np.uint8)
+        result["two"][0]["value"] == np.zeros((192, 168, 3), dtype=np.uint8)
     ).all(), "Image cannot be mutated"
     assert (
-        result["two"]["parent_id"] == "$inputs.two"
+        result["two"][0]["parent_id"] == "$inputs.two"
     ), "parent_id expected to be added and match input identifier"
 
 

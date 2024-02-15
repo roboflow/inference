@@ -1,11 +1,20 @@
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    confloat,
+    field_validator,
+)
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
+    get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
     validate_field_is_empty_or_selector_or_list_of_string,
@@ -104,7 +113,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         return {"image", "model_id", "disable_active_learning"}
 
     def get_output_names(self) -> Set[str]:
-        return set()
+        return {"prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -488,7 +497,7 @@ class OCRModel(BaseModel, StepInterface):
         return {"image"}
 
     def get_output_names(self) -> Set[str]:
-        return {"result", "parent_id"}
+        return {"result", "parent_id", "prediction_type"}
 
 
 class Crop(BaseModel, StepInterface):
@@ -623,7 +632,7 @@ class DetectionFilter(BaseModel, StepInterface):
         return {"predictions"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
+        return {"predictions", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -659,7 +668,7 @@ class DetectionOffset(BaseModel, StepInterface):
         return {"predictions", "offset_x", "offset_y"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
+        return {"predictions", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -889,7 +898,7 @@ class ClipComparison(BaseModel, StepInterface):
         return {"image", "text"}
 
     def get_output_names(self) -> Set[str]:
-        return {"similarity", "parent_id"}
+        return {"similarity", "parent_id", "predictions_type"}
 
 
 class AggregationMode(Enum):
@@ -1012,6 +1021,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
             "image",
             "object_present",
             "presence_confidence",
+            "predictions_type",
         }
 
     def validate_field_selector(
@@ -1119,5 +1129,251 @@ class DetectionsConsensus(BaseModel, StepInterface):
             validate_value_is_empty_or_positive_number(
                 value=v,
                 field_name=f"required_objects[{k}]",
+                error=VariableTypeError,
+            )
+
+
+ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
+    "ObjectDetectionModel": "predictions",
+    "KeypointsDetectionModel": "predictions",
+    "InstanceSegmentationModel": "predictions",
+    "DetectionFilter": "predictions",
+    "DetectionsConsensus": "predictions",
+    "DetectionOffset": "predictions",
+    "ClassificationModel": "top",
+}
+
+
+class DisabledActiveLearningConfiguration(BaseModel):
+    enabled: bool
+
+    @field_validator("enabled")
+    @classmethod
+    def ensure_only_false_is_valid(cls, value: Any) -> bool:
+        if value is not False:
+            raise ValueError(
+                "One can only specify enabled=False in `DisabledActiveLearningConfiguration`"
+            )
+        return value
+
+
+class LimitDefinition(BaseModel):
+    type: Literal["minutely", "hourly", "daily"]
+    value: PositiveInt
+
+
+class RandomSamplingConfig(BaseModel):
+    type: Literal["random"]
+    name: str
+    traffic_percentage: confloat(ge=0.0, le=1.0)
+    tags: List[str] = Field(default_factory=lambda: [])
+    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
+
+
+class CloseToThresholdSampling(BaseModel):
+    type: Literal["close_to_threshold"]
+    name: str
+    probability: confloat(ge=0.0, le=1.0)
+    threshold: confloat(ge=0.0, le=1.0)
+    epsilon: confloat(ge=0.0, le=1.0)
+    max_batch_images: Optional[int] = Field(default=None)
+    only_top_classes: bool = Field(default=True)
+    minimum_objects_close_to_threshold: int = Field(default=1)
+    selected_class_names: Optional[List[str]] = Field(default=None)
+    tags: List[str] = Field(default_factory=lambda: [])
+    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
+
+
+class ClassesBasedSampling(BaseModel):
+    type: Literal["classes_based"]
+    name: str
+    probability: confloat(ge=0.0, le=1.0)
+    selected_class_names: List[str]
+    tags: List[str] = Field(default_factory=lambda: [])
+    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
+
+
+class DetectionsBasedSampling(BaseModel):
+    type: Literal["detections_number_based"]
+    name: str
+    probability: confloat(ge=0.0, le=1.0)
+    more_than: Optional[NonNegativeInt]
+    less_than: Optional[NonNegativeInt]
+    selected_class_names: Optional[List[str]] = Field(default=None)
+    tags: List[str] = Field(default_factory=lambda: [])
+    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
+
+
+class ActiveLearningBatchingStrategy(BaseModel):
+    batches_name_prefix: str
+    recreation_interval: Literal["never", "daily", "weekly", "monthly"]
+    max_batch_images: Optional[int] = Field(default=None)
+
+
+ActiveLearningStrategyType = Annotated[
+    Union[
+        RandomSamplingConfig,
+        CloseToThresholdSampling,
+        ClassesBasedSampling,
+        DetectionsBasedSampling,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class EnabledActiveLearningConfiguration(BaseModel):
+    enabled: bool
+    persist_predictions: bool
+    sampling_strategies: List[ActiveLearningStrategyType]
+    batching_strategy: ActiveLearningBatchingStrategy
+    tags: List[str] = Field(default_factory=lambda: [])
+    max_image_size: Optional[Tuple[PositiveInt, PositiveInt]] = Field(default=None)
+    jpeg_compression_level: int = Field(default=95)
+
+    @field_validator("jpeg_compression_level")
+    @classmethod
+    def validate_json_compression_level(cls, value: Any) -> int:
+        validate_field_has_given_type(
+            field_name="jpeg_compression_level", allowed_types=[int], value=value
+        )
+        if value <= 0 or value > 100:
+            raise ValueError("`jpeg_compression_level` must be in range [1, 100]")
+        return value
+
+
+class ActiveLearningDataCollector(BaseModel, StepInterface):
+    type: Literal["ActiveLearningDataCollector"]
+    name: str
+    image: str
+    predictions: str
+    target_dataset: str
+    target_dataset_api_key: Optional[str] = Field(default=None)
+    disable_active_learning: Union[bool, str] = Field(default=False)
+    active_learning_configuration: Optional[
+        Union[EnabledActiveLearningConfiguration, DisabledActiveLearningConfiguration]
+    ] = Field(default=None)
+
+    @field_validator("image")
+    @classmethod
+    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    @field_validator("predictions")
+    @classmethod
+    def predictions_must_hold_selector(cls, value: Any) -> str:
+        if not is_selector(selector_or_value=value):
+            raise ValueError("`predictions` field can only contain selector values")
+        return value
+
+    @field_validator("target_dataset")
+    @classmethod
+    def validate_target_dataset_field(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="target_dataset", allowed_types=[str]
+        )
+        return value
+
+    @field_validator("target_dataset_api_key")
+    @classmethod
+    def validate_target_dataset_api_key_field(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value,
+            field_name="target_dataset_api_key",
+            allowed_types=[bool, type(None)],
+        )
+        return value
+
+    @field_validator("disable_active_learning")
+    @classmethod
+    def validate_boolean_flags_or_selectors(cls, value: Any) -> Union[str, bool]:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="disable_active_learning", allowed_types=[bool]
+        )
+        return value
+
+    def get_type(self) -> str:
+        return self.type
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "image",
+            "predictions",
+            "target_dataset",
+            "target_dataset_api_key",
+            "disable_active_learning",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return set()
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        selector = getattr(self, field_name)
+        if not is_selector(selector_or_value=selector):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        if field_name == "predictions":
+            input_step_type = input_step.get_type()
+            expected_last_selector_chunk = (
+                ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS.get(input_step_type)
+            )
+            if expected_last_selector_chunk is None:
+                raise ExecutionGraphError(
+                    f"Attempted to validate predictions selector of {self.name} step, but input step of type: "
+                    f"{input_step_type} does match by type."
+                )
+            if get_last_selector_chunk(selector) != expected_last_selector_chunk:
+                raise ExecutionGraphError(
+                    f"It is only allowed to refer to {input_step_type} step output named {expected_last_selector_chunk}. "
+                    f"Reference that was found: {selector}"
+                )
+            input_step_image = getattr(input_step, "image", self.image)
+            if input_step_image != self.image:
+                raise ExecutionGraphError(
+                    f"ActiveLearningDataCollector step refers to input step that uses reference to different image. "
+                    f"ActiveLearningDataCollector step image: {self.image}. Input step (of type {input_step_image}) "
+                    f"uses {input_step_image}."
+                )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "target_dataset",
+                "target_dataset_api_key",
+                "disable_active_learning",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+        elif field_name in {"disable_active_learning"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"target_dataset"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"target_dataset_api_key"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str],
+                value=value,
                 error=VariableTypeError,
             )

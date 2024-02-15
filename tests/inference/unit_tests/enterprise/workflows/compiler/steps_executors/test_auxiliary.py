@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors import auxiliary
 from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
     aggregate_field_values,
@@ -125,6 +126,7 @@ async def test_run_condition_step() -> None:
         outputs_lookup={"$steps.step_0": {"top": "cat"}},
         model_manager=MagicMock(),
         api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # then
@@ -132,92 +134,6 @@ async def test_run_condition_step() -> None:
         "$steps.step_0": {"top": "cat"}
     }, "Output lookup must not be modified"
     assert next_step == "$steps.step_2"
-
-
-@pytest.mark.asyncio
-async def test_run_detection_filter_step_when_single_image_detections_given() -> None:
-    # given
-    step = DetectionFilter.parse_obj(
-        {
-            "type": "DetectionFilter",
-            "name": "step_2",
-            "predictions": "$steps.step_1.predictions",
-            "filter_definition": {
-                "type": "CompoundDetectionFilterDefinition",
-                "left": {
-                    "type": "DetectionFilterDefinition",
-                    "field_name": "class_name",
-                    "operator": "equal",
-                    "reference_value": "car",
-                },
-                "operator": "and",
-                "right": {
-                    "type": "DetectionFilterDefinition",
-                    "field_name": "confidence",
-                    "operator": "greater_or_equal_than",
-                    "reference_value": 0.5,
-                },
-            },
-        }
-    )
-    detections = [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p1",
-            "detection_id": "one",
-            "class_name": "car",
-            "confidence": 0.2,
-        },
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p2",
-            "detection_id": "two",
-            "class_name": "car",
-            "confidence": 0.5,
-        },
-    ]
-
-    # when
-    next_step, outputs_lookup = await run_detection_filter(
-        step=step,
-        runtime_parameters={},
-        outputs_lookup={
-            "$steps.step_1": {
-                "predictions": detections,
-                "image": {"height": 100, "width": 100},
-            }
-        },
-        model_manager=MagicMock(),
-        api_key=None,
-    )
-
-    # then
-    assert next_step is None, "Next step should not be set here"
-    assert outputs_lookup["$steps.step_2"]["predictions"] == [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p2",
-            "detection_id": "two",
-            "class_name": "car",
-            "confidence": 0.5,
-        },
-    ], "Only second prediction should survive"
-    assert outputs_lookup["$steps.step_2"]["parent_id"] == [
-        "p2"
-    ], "Only second prediction should mark parent_id"
-    assert outputs_lookup["$steps.step_2"]["image"] == {
-        "height": 100,
-        "width": 100,
-    }, "image metadata must be copied from input"
 
 
 @pytest.mark.asyncio
@@ -301,14 +217,22 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
             "$steps.step_1": {
                 "predictions": detections,
                 "image": [{"height": 100, "width": 100}] * 2,
+                "prediction_type": ["object-detection"] * 2,
             }
         },
         model_manager=MagicMock(),
         api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # then
     assert next_step is None, "Next step should not be set here"
+    assert (
+        outputs_lookup["$steps.step_2"][0]["prediction_type"] == "object-detection"
+    ), "Prediction type must be preserved"
+    assert (
+        outputs_lookup["$steps.step_2"][1]["prediction_type"] == "object-detection"
+    ), "Prediction type must be preserved"
     assert outputs_lookup["$steps.step_2"][0]["predictions"] == [
         {
             "x": 10,

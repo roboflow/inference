@@ -215,5 +215,5 @@ def is_prediction_registration_forbidden(
         roboflow_image_id is None
         or persist_predictions is False
         or prediction.get("is_stub", False) is True
-        or len(prediction.get("predictions", [])) == 0
+        or (len(prediction.get("predictions", [])) == 0 and "top" not in prediction)
     )

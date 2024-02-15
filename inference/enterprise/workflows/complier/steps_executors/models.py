@@ -27,7 +27,6 @@ from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
-    DETECTION_ID_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
@@ -54,6 +53,14 @@ from inference.enterprise.workflows.entities.steps import (
     StepInterface,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+MODEL_TYPE2PREDICTION_TYPE = {
+    "ClassificationModel": "classification",
+    "MultiLabelClassificationModel": "classification",
+    "ObjectDetectionModel": "object-detection",
+    "InstanceSegmentationModel": "instance-segmentation",
+    "KeypointsDetectionModel": "keypoint-detection",
+}
 
 
 async def run_roboflow_model_step(
@@ -93,8 +100,10 @@ async def run_roboflow_model_step(
             outputs_lookup=outputs_lookup,
             api_key=api_key,
         )
-    if issubclass(type(image), list) and len(image) == 1:
-        image = image[0]
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type=MODEL_TYPE2PREDICTION_TYPE[step.get_type()],
+    )
     if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
         serialised_result = attach_parent_info(
             image=image, results=serialised_result, nested_key=None
@@ -110,14 +119,14 @@ async def run_roboflow_model_step(
 
 
 async def get_roboflow_model_predictions_locally(
-    image: Union[dict, List[dict]],
+    image: List[dict],
     model_id: str,
     step: RoboflowModel,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-) -> Union[dict, List[dict]]:
+) -> List[dict]:
     request_constructor = MODEL_TYPE2REQUEST_CONSTRUCTOR[step.type]
     request = request_constructor(
         step=step,
@@ -134,9 +143,7 @@ async def get_roboflow_model_predictions_locally(
     if issubclass(type(result), list):
         serialised_result = [e.dict(by_alias=True, exclude_none=True) for e in result]
     else:
-        serialised_result = result.dict(by_alias=True, exclude_none=True)
-    if issubclass(type(serialised_result), list) and len(serialised_result) == 1:
-        serialised_result = serialised_result[0]
+        serialised_result = [result.dict(by_alias=True, exclude_none=True)]
     return serialised_result
 
 
@@ -252,13 +259,13 @@ MODEL_TYPE2REQUEST_CONSTRUCTOR = {
 
 
 async def get_roboflow_model_predictions_from_remote_api(
-    image: Union[dict, List[dict]],
+    image: List[dict],
     model_id: str,
     step: RoboflowModel,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     api_key: Optional[str],
-) -> Union[dict, List[dict]]:
+) -> List[dict]:
     api_url = resolve_model_api_url(step=step)
     client = InferenceHTTPClient(
         api_url=api_url,
@@ -272,48 +279,14 @@ async def get_roboflow_model_predictions_from_remote_api(
         outputs_lookup=outputs_lookup,
     )
     client.configure(inference_configuration=configuration)
-    if issubclass(type(image), dict):
-        inference_input = image["value"]
-    else:
-        inference_input = [i["value"] for i in image]
+    inference_input = [i["value"] for i in image]
     results = await client.infer_async(
         inference_input=inference_input,
         model_id=model_id,
     )
-    # just for now, until we have hosted inference deployed with new version
-    return _inject_detection_id_if_remote_api_does_not_provide_one(
-        results=results,
-        step_type=step.type,
-    )
-
-
-def _inject_detection_id_if_remote_api_does_not_provide_one(
-    results: Union[List[dict], dict],
-    step_type: str,
-) -> Union[List[dict], dict]:
-    if step_type not in {
-        "ObjectDetectionModel",
-        "InstanceSegmentationModel",
-        "KeypointsDetectionModel",
-    }:
-        return results
-    if issubclass(type(results), dict):
-        results["predictions"] = _inject_detection_id_to_predictions(
-            predictions=results["predictions"]
-        )
-        return results
-    for result in results:
-        result["predictions"] = _inject_detection_id_to_predictions(
-            predictions=result["predictions"]
-        )
+    if not issubclass(type(results), list):
+        return [results]
     return results
-
-
-def _inject_detection_id_to_predictions(predictions: List[dict]) -> List[dict]:
-    for prediction in predictions:
-        if DETECTION_ID_KEY not in prediction:
-            prediction[DETECTION_ID_KEY] = str(uuid4())
-    return predictions
 
 
 def construct_http_client_configuration_for_classification_step(
@@ -428,8 +401,6 @@ async def run_ocr_model_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    if not issubclass(type(image), list):
-        image = [image]
     if step_execution_mode is StepExecutionMode.LOCAL:
         serialised_result = await get_ocr_predictions_locally(
             image=image,
@@ -442,13 +413,14 @@ async def run_ocr_model_step(
             image=image,
             api_key=api_key,
         )
-    if len(serialised_result) == 1:
-        serialised_result = serialised_result[0]
-        image = image[0]
     serialised_result = attach_parent_info(
         image=image,
         results=serialised_result,
         nested_key=None,
+    )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="ocr",
     )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
@@ -520,8 +492,6 @@ async def run_clip_comparison_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    if not issubclass(type(image), list):
-        image = [image]
     if step_execution_mode is StepExecutionMode.LOCAL:
         serialised_result = await get_clip_comparison_locally(
             image=image,
@@ -536,13 +506,14 @@ async def run_clip_comparison_step(
             text=text,
             api_key=api_key,
         )
-    if len(serialised_result) == 1:
-        serialised_result = serialised_result[0]
-        image = image[0]
     serialised_result = attach_parent_info(
         image=image,
         results=serialised_result,
         nested_key=None,
+    )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="embeddings-comparison",
     )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
@@ -621,21 +592,27 @@ def load_core_model(
     return core_model_id
 
 
+def attach_prediction_type_info(
+    results: List[Dict[str, Any]],
+    prediction_type: str,
+    key: str = "prediction_type",
+) -> List[Dict[str, Any]]:
+    for result in results:
+        result[key] = prediction_type
+    return results
+
+
 def attach_parent_info(
-    image: Union[Dict[str, Any], List[Dict[str, Any]]],
-    results: Union[Dict[str, Any], List[Dict[str, Any]]],
+    image: List[Dict[str, Any]],
+    results: List[Dict[str, Any]],
     nested_key: Optional[str] = "predictions",
-) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-    if issubclass(type(image), list):
-        return [
-            attach_parent_info_to_image_detections(
-                image=i, predictions=p, nested_key=nested_key
-            )
-            for i, p in zip(image, results)
-        ]
-    return attach_parent_info_to_image_detections(
-        image=image, predictions=results, nested_key=nested_key
-    )
+) -> List[Dict[str, Any]]:
+    return [
+        attach_parent_info_to_image_detections(
+            image=i, predictions=p, nested_key=nested_key
+        )
+        for i, p in zip(image, results)
+    ]
 
 
 def attach_parent_info_to_image_detections(
@@ -652,18 +629,11 @@ def attach_parent_info_to_image_detections(
 
 
 def anchor_detections_in_parent_coordinates(
-    image: Union[Dict[str, Any], List[Dict[str, Any]]],
-    serialised_result: Union[Dict[str, Any], List[Dict[str, Any]]],
+    image: List[Dict[str, Any]],
+    serialised_result: List[Dict[str, Any]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
-) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-    if issubclass(type(image), dict):
-        return anchor_image_detections_in_parent_coordinates(
-            image=image,
-            serialised_result=serialised_result,
-            image_metadata_key=image_metadata_key,
-            detections_key=detections_key,
-        )
+) -> List[Dict[str, Any]]:
     return [
         anchor_image_detections_in_parent_coordinates(
             image=i,

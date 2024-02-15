@@ -58,23 +58,37 @@ def prepare_active_learning_configuration(
         f"project: {project_metadata.dataset_id} of type: {project_metadata.dataset_type}. "
         f"AL configuration: {project_metadata.active_learning_configuration}"
     )
-    sampling_methods = initialize_sampling_methods(
-        sampling_strategies_configs=project_metadata.active_learning_configuration[
-            "sampling_strategies"
-        ],
+    return initialise_active_learning_configuration(
+        project_metadata=project_metadata,
     )
-    target_workspace_id = project_metadata.active_learning_configuration.get(
-        "target_workspace", project_metadata.workspace_id
+
+
+def prepare_active_learning_configuration_inplace(
+    api_key: str,
+    model_id: str,
+    active_learning_configuration: Optional[dict],
+) -> Optional[ActiveLearningConfiguration]:
+    if (
+        active_learning_configuration is None
+        or active_learning_configuration.get("enabled", False) is False
+    ):
+        return None
+    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    workspace_id = get_roboflow_workspace(api_key=api_key)
+    dataset_type = get_roboflow_dataset_type(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
     )
-    target_dataset_id = project_metadata.active_learning_configuration.get(
-        "target_project", project_metadata.dataset_id
+    project_metadata = RoboflowProjectMetadata(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        workspace_id=workspace_id,
+        dataset_type=dataset_type,
+        active_learning_configuration=active_learning_configuration,
     )
-    return ActiveLearningConfiguration.init(
-        roboflow_api_configuration=project_metadata.active_learning_configuration,
-        sampling_methods=sampling_methods,
-        workspace_id=target_workspace_id,
-        dataset_id=target_dataset_id,
-        model_id=model_id,
+    return initialise_active_learning_configuration(
+        project_metadata=project_metadata,
     )
 
 
@@ -143,6 +157,29 @@ def parse_cached_roboflow_project_metadata(
         raise ActiveLearningConfigurationDecodingError(
             f"Failed to initialise Active Learning configuration. Cause: {str(error)}"
         ) from error
+
+
+def initialise_active_learning_configuration(
+    project_metadata: RoboflowProjectMetadata,
+) -> ActiveLearningConfiguration:
+    sampling_methods = initialize_sampling_methods(
+        sampling_strategies_configs=project_metadata.active_learning_configuration[
+            "sampling_strategies"
+        ],
+    )
+    target_workspace_id = project_metadata.active_learning_configuration.get(
+        "target_workspace", project_metadata.workspace_id
+    )
+    target_dataset_id = project_metadata.active_learning_configuration.get(
+        "target_project", project_metadata.dataset_id
+    )
+    return ActiveLearningConfiguration.init(
+        roboflow_api_configuration=project_metadata.active_learning_configuration,
+        sampling_methods=sampling_methods,
+        workspace_id=target_workspace_id,
+        dataset_id=target_dataset_id,
+        model_id=f"{project_metadata.dataset_id}/{project_metadata.version_id}",
+    )
 
 
 def initialize_sampling_methods(
