@@ -15,6 +15,7 @@ RUN yum update -y && yum install -y \
     gcc \
     mesa-libGL \
     pango \
+    wget \
     && yum clean all
 
 COPY requirements/requirements.clip.txt \
@@ -45,6 +46,9 @@ RUN pip3 install \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
+
+WORKDIR /root/.cache/clip
+RUN wget https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
