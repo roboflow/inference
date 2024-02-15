@@ -21,6 +21,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.cogvlm.txt \
+    requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     ./
 
@@ -35,6 +36,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
+    -r requirements.yolo_world.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
