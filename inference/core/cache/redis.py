@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import pickle
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -177,3 +178,14 @@ class RedisCache(BaseCache):
         if expire is not None:
             l.extend(expire)
         return l
+
+    def set_numpy(self, key: str, value: Any, expire: float = None):
+        serialized_value = pickle.dumps(value)
+        self.set(key, serialized_value, expire=expire)
+
+    def get_numpy(self, key: str) -> Any:
+        serialized_value = self.get(key)
+        if serialized_value is not None:
+            return pickle.loads(serialized_value)
+        else:
+            return None

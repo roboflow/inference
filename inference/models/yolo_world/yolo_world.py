@@ -1,3 +1,4 @@
+import hashlib
 import os
 import urllib.request
 from time import perf_counter
@@ -5,19 +6,19 @@ from typing import Any
 
 from ultralytics import YOLO
 
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.cache import cache
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
 from inference.core.env import MODEL_CACHE_DIR
+from inference.core.models.defaults import DEFAULT_CONFIDENCE
 from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.utils.hash import get_string_list_hash
 from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
-from inference.core.models.defaults import (
-    DEFAULT_CONFIDENCE,
-)
 
 
 class YOLOWorld(RoboflowCoreModel):
@@ -27,7 +28,7 @@ class YOLOWorld(RoboflowCoreModel):
         model: The GroundingDINO model.
     """
 
-    def __init__(self, *args, model_id="yolo_world/s", **kwargs):
+    def __init__(self, *args, model_id="yolo_world/l", **kwargs):
         """Initializes the YOLO-World model.
 
         Args:
@@ -38,6 +39,7 @@ class YOLOWorld(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
+        self.class_names = None
 
     def preproc_image(self, image: Any):
         """Preprocesses an image.
@@ -82,14 +84,17 @@ class YOLOWorld(RoboflowCoreModel):
         image = self.preproc_image(image)
         img_dims = image.shape
 
-        self.model.set_classes(text)
+        if text is not None and text != self.class_names:
+            self.set_classes(text)
+        if self.class_names is None:
+            raise ValueError(
+                "Class names not set and not provided in the request. Must set class names before inference or provide them via the argument `text`."
+            )
         results = self.model.predict(
             image,
             conf=confidence,
             verbose=False,
         )[0]
-
-        self.class_names = text
 
         t2 = perf_counter() - t1
 
@@ -117,6 +122,22 @@ class YOLOWorld(RoboflowCoreModel):
             time=t2,
         )
         return responses
+
+    def set_classes(self, text: list):
+        """Set the class names for the model.
+
+        Args:
+            text (list): The class names.
+        """
+        text_hash = get_string_list_hash(text)
+        cached_embeddings = cache.get_numpy(text_hash)
+        if cached_embeddings is not None:
+            self.model.model.txt_feats = cached_embeddings
+            self.model.model.model[-1].nc = len(text)
+        else:
+            self.model.set_classes(text)
+            cache.set_numpy(text_hash, self.model.model.txt_feats, expire=300)
+        self.class_names = text
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

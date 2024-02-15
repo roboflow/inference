@@ -3,7 +3,6 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, List, Optional, Union
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
@@ -44,6 +43,7 @@ from inference.core.entities.requests.workflows import (
     WorkflowInferenceRequest,
     WorkflowSpecificationInferenceRequest,
 )
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
