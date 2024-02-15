@@ -9,20 +9,29 @@ from inference.enterprise.workflows.entities.inputs import (
     InferenceParameter,
 )
 from inference.enterprise.workflows.entities.steps import (
+    ActiveLearningBatchingStrategy,
+    ActiveLearningDataCollector,
     AggregationMode,
+    ClassesBasedSampling,
     ClassificationModel,
+    CloseToThresholdSampling,
     Condition,
     Crop,
     DetectionFilter,
     DetectionFilterDefinition,
     DetectionOffset,
+    DetectionsBasedSampling,
     DetectionsConsensus,
+    DisabledActiveLearningConfiguration,
+    EnabledActiveLearningConfiguration,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
+    LimitDefinition,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
     Operator,
+    RandomSamplingConfig,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -2329,3 +2338,753 @@ def test_detections_consensus_validate_field_binding_for_required_objects_when_v
     )
 
     # then - no error
+
+
+def test_validate_al_data_collector_when_valid_input_given() -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+
+    # when
+    result = ActiveLearningDataCollector.parse_obj(specification)
+
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=None,
+    )
+
+
+def test_validate_al_data_collector_when_valid_input_with_disabled_al_config_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "active_learning_configuration": {"enabled": False},
+    }
+
+    # when
+    result = ActiveLearningDataCollector.parse_obj(specification)
+
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=DisabledActiveLearningConfiguration(
+            enabled=False
+        ),
+    )
+
+
+def test_validate_al_data_collector_when_valid_input_with_enabled_al_config_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "active_learning_configuration": {
+            "enabled": True,
+            "persist_predictions": True,
+            "sampling_strategies": [
+                {
+                    "type": "random",
+                    "name": "a",
+                    "traffic_percentage": 0.6,
+                    "limits": [{"type": "daily", "value": 100}],
+                },
+                {
+                    "type": "close_to_threshold",
+                    "name": "b",
+                    "probability": 0.7,
+                    "threshold": 0.5,
+                    "epsilon": 0.25,
+                    "tags": ["some"],
+                    "limits": [{"type": "daily", "value": 200}],
+                },
+                {
+                    "type": "classes_based",
+                    "name": "c",
+                    "probability": 0.8,
+                    "selected_class_names": ["a", "b", "c"],
+                    "limits": [{"type": "daily", "value": 300}],
+                },
+                {
+                    "type": "detections_number_based",
+                    "name": "d",
+                    "probability": 0.9,
+                    "more_than": 3,
+                    "less_than": 5,
+                    "limits": [{"type": "daily", "value": 400}],
+                },
+            ],
+            "batching_strategy": {
+                "batches_name_prefix": "my_batches",
+                "recreation_interval": "monthly",
+            },
+        },
+    }
+
+    # when
+    result = ActiveLearningDataCollector.parse_obj(specification)
+
+    # then
+    assert result == ActiveLearningDataCollector(
+        type="ActiveLearningDataCollector",
+        name="some",
+        image="$inputs.image",
+        predictions="$steps.detection.predictions",
+        target_dataset="some",
+        target_dataset_api_key=None,
+        disable_active_learning=False,
+        active_learning_configuration=EnabledActiveLearningConfiguration(
+            enabled=True,
+            persist_predictions=True,
+            sampling_strategies=[
+                RandomSamplingConfig(
+                    type="random",
+                    name="a",
+                    traffic_percentage=0.6,
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=100)],
+                ),
+                CloseToThresholdSampling(
+                    type="close_to_threshold",
+                    name="b",
+                    probability=0.7,
+                    threshold=0.5,
+                    epsilon=0.25,
+                    max_batch_images=None,
+                    only_top_classes=True,
+                    minimum_objects_close_to_threshold=1,
+                    selected_class_names=None,
+                    tags=["some"],
+                    limits=[LimitDefinition(type="daily", value=200)],
+                ),
+                ClassesBasedSampling(
+                    type="classes_based",
+                    name="c",
+                    probability=0.8,
+                    selected_class_names=["a", "b", "c"],
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=300)],
+                ),
+                DetectionsBasedSampling(
+                    type="detections_number_based",
+                    name="d",
+                    probability=0.9,
+                    more_than=3,
+                    less_than=5,
+                    selected_class_names=None,
+                    tags=[],
+                    limits=[LimitDefinition(type="daily", value=400)],
+                ),
+            ],
+            batching_strategy=ActiveLearningBatchingStrategy(
+                batches_name_prefix="my_batches",
+                recreation_interval="monthly",
+            ),
+            tags=[],
+            max_image_size=None,
+            jpeg_compression_level=95,
+        ),
+    )
+
+
+@pytest.mark.parametrize("image_selector", [1, None, "some", 1.3, True])
+def test_validate_al_data_collector_image_field_when_field_does_not_hold_selector(
+    image_selector: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": image_selector,
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = ActiveLearningDataCollector.parse_obj(specification)
+
+
+@pytest.mark.parametrize("predictions_selector", [1, None, "some", 1.3, True])
+def test_validate_al_data_collector_predictions_field_when_field_does_not_hold_selector(
+    predictions_selector: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": predictions_selector,
+        "target_dataset": "some",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = ActiveLearningDataCollector.parse_obj(specification)
+
+
+@pytest.mark.parametrize("target_dataset", [1, None, 1.3, True])
+def test_validate_al_data_collector_target_dataset_field_when_field_contains_invalid_value(
+    target_dataset: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": target_dataset,
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = ActiveLearningDataCollector.parse_obj(specification)
+
+
+@pytest.mark.parametrize("target_dataset_api_key", [1, 1.3, True])
+def test_validate_al_data_collector_target_dataset_api_key_field_when_field_contains_invalid_value(
+    target_dataset_api_key: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "target_dataset_api_key": target_dataset_api_key,
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = ActiveLearningDataCollector.parse_obj(specification)
+
+
+@pytest.mark.parametrize("disable_active_learning", ["some", 1.3])
+def test_validate_al_data_collector_disable_active_learning_field_when_field_contains_invalid_value(
+    disable_active_learning: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+        "disable_active_learning": disable_active_learning,
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = ActiveLearningDataCollector.parse_obj(specification)
+
+
+def test_al_data_collector_validate_field_selector_when_field_does_not_hold_selector() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="target_dataset",
+            input_step=ObjectDetectionModel(
+                type="ObjectDetectionModel",
+                name="some",
+                image="$inputs.image",
+                model_id="some/1",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_invalid_step() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="predictions",
+            input_step=Crop(
+                type="Crop",
+                name="some",
+                image="$inputs.image",
+                detections="$steps.detection.predictions",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_invalid_output_of_detection_step() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.image",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="predictions",
+            input_step=ObjectDetectionModel(
+                type="ObjectDetectionModel",
+                name="some",
+                image="$inputs.image",
+                model_id="some/1",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_invalid_output_of_classification_step() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="predictions",
+            input_step=ClassificationModel(
+                type="ClassificationModel",
+                name="some",
+                image="$inputs.image",
+                model_id="some/1",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_valid_output_of_classification_step() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.top",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_selector(
+        field_name="predictions",
+        input_step=ClassificationModel(
+            type="ClassificationModel",
+            name="some",
+            image="$inputs.image",
+            model_id="some/1",
+        ),
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_step_bounded_in_different_image() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="predictions",
+            input_step=ObjectDetectionModel(
+                type="ObjectDetectionModel",
+                name="some",
+                image="$inputs.image2",
+                model_id="some/1",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_prediction_field_refers_to_step_which_cannot_be_verified_against_image_ref_correctness() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_selector(
+        field_name="predictions",
+        input_step=DetectionFilter(
+            type="DetectionFilter",
+            name="detection",
+            predictions="$steps.det.predictions",
+            filter_definition=DetectionFilterDefinition(
+                type="DetectionFilterDefinition",
+                field_name="confidence",
+                operator="greater_than",
+                reference_value=0.3,
+            ),
+        ),
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_field_selector_when_image_field_does_not_refer_image() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name="image",
+            input_step=ObjectDetectionModel(
+                type="ObjectDetectionModel",
+                name="some",
+                image="$inputs.image2",
+                model_id="some/1",
+            ),
+        )
+
+
+def test_al_data_collector_validate_field_selector_when_image_field_refers_image() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_selector(
+        field_name="image",
+        input_step=InferenceImage(
+            type="InferenceImage",
+            name="some",
+        ),
+    )
+
+    # then - NO ERROR
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["target_dataset", "target_dataset_api_key", "disable_active_learning"],
+)
+def test_al_data_collector_validate_fields_that_can_only_accept_inference_parameter_when_invalid_input_is_provided(
+    field_name: str,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "some",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(
+            field_name=field_name,
+            input_step=InferenceImage(
+                type="InferenceImage",
+                name="some",
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["target_dataset", "target_dataset_api_key", "disable_active_learning"],
+)
+def test_al_data_collector_validate_fields_that_can_only_accept_inference_parameter_when_valid_input_is_provided(
+    field_name: str,
+) -> None:
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_selector(
+        field_name=field_name,
+        input_step=InferenceParameter(
+            type="InferenceParameter",
+            name="some",
+        ),
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_image_binding_when_provided_value_is_valid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="image", value={"type": "url", "value": "https://some.com/image.jpg"}
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_image_binding_when_provided_value_is_invalid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(field_name="image", value="invalid")
+
+
+def test_al_data_collector_validate_disable_al_flag_binding_when_provided_value_is_valid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="disable_active_learning",
+        value=True,
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_disable_al_flag_binding_when_provided_value_is_invalid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(
+            field_name="disable_active_learning",
+            value="some",
+        )
+
+
+def test_al_data_collector_validate_target_dataset_binding_when_provided_value_is_valid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="target_dataset",
+        value="some",
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_target_dataset_binding_when_provided_value_is_invalid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(
+            field_name="target_dataset",
+            value=None,
+        )
+
+
+def test_al_data_collector_validate_target_dataset_api_key_binding_when_provided_value_is_valid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="target_dataset_api_key",
+        value="some",
+    )
+
+    # then - NO ERROR
+
+
+def test_al_data_collector_validate_target_dataset_api_key_binding_when_provided_value_is_invalid() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "ActiveLearningDataCollector",
+        "name": "some",
+        "image": "$inputs.image",
+        "predictions": "$steps.detection.predictions",
+        "target_dataset": "$inputs.some",
+        "target_dataset_api_key": "$inputs.other",
+        "disable_active_learning": "$inputs.value",
+    }
+    step = ActiveLearningDataCollector.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(
+            field_name="target_dataset_api_key",
+            value=None,
+        )

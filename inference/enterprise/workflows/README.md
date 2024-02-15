@@ -261,6 +261,7 @@ input parameter
 * `confidence` - confidence of prediction
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `classification` model
 
 #### `MultiLabelClassificationModel`
 This step represents inference from multi-label classification model.
@@ -281,6 +282,7 @@ input parameter
 * `predicted_classes` - top classes
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `classification` model
 
 #### `ObjectDetectionModel`
 This step represents inference from object detection model.
@@ -309,6 +311,7 @@ input parameter. Default: `0.3`.
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `object-detection` model
 
 #### `KeypointsDetectionModel`
 This step represents inference from keypoints detection model.
@@ -339,6 +342,7 @@ input parameter
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `keypoint-detection` model
 
 #### `InstanceSegmentationModel`
 This step represents inference from instance segmentation model.
@@ -370,6 +374,7 @@ input parameter
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `instance-segmentation` model
 
 #### `OCRModel`
 This step represents inference from OCR model.
@@ -384,6 +389,7 @@ This step represents inference from OCR model.
 * `result` - details of predictions
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `ocr` model
 
 #### `Crop`
 This step produces **dynamic** crops based on detections from detections-based model.
@@ -466,6 +472,7 @@ This let user define recursive structure of filters.
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting parent model type
 
 #### `DetectionOffset`
 This step is responsible for applying fixed offset on width and height of detections.
@@ -484,6 +491,7 @@ This step is responsible for applying fixed offset on width and height of detect
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting parent model type
 
 
 #### `AbsoluteStaticCrop` and `RelativeStaticCrop`
@@ -596,6 +604,56 @@ of multi-step pipelines (can be `undefined` if all sources of predictions give n
 objects specified in config are present
 * `presence_confidence` - for each input image, for each present class - aggregated confidence indicating presence
 of objects
+* `prediction_type` - denoting `object-detection` prediction (as this format is effective even if other detections 
+models are combined)
+
+#### `ActiveLearningDataCollector`
+Step that is supposed to be a solution for anyone who wants to collect data and predictions that flow through the 
+`workflows`. The block is build on the foundations of Roboflow Active Learning capabilities implemented in 
+[`active_learning` module](../../core/active_learning/README.md) - so all the capabilities should be preserved.
+There are **very important** considerations regarding collecting data with AL at the `workflows` level and in 
+scope of specific models. Read `important notes` section to discover nuances.
+General use-cases for this block:
+* grab data and predictions from single model / ensemble of models
+* posting the data in different project that the origin of models used in `workflow` - in particular **one may now use
+open models - like `yolov8n-640` and start sampling data to their own project!**
+* defining multiple different sampling strategies for different `workflows` (step allows to provide custom config of AL
+data collection - so you are not bounded to configuration of AL at the project level - and multiple instances of 
+configs can co-exist)
+
+##### Step parameters
+* `type`: must be `ActiveLearningDataCollector` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `predictions` - selector pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (then use `$steps.<det_step_name>.predictions`)
+or outputs of classification [`ClassificationModel`] (then use `$steps.<cls_step_name>.top`) (required)
+* `target_dataset` - name of Roboflow dataset / project to be used as target for collected data (required)
+* `target_dataset_api_key` - optional API key to be used for data registration. This may help in a scenario when data
+are to be registered cross-workspaces. If not provided - the API key from a request would be used to register data (
+applicable for Universe models predictions to be saved in private workspaces and for models that were trained in the same 
+workspace (not necessarily within the same project)).
+* `disable_active_learning` - boolean flag that can be also reference to input - to arbitrarily disable data collection
+for specific request - overrides all AL config. (optional, default: `False`)
+* `active_learning_configuration` - optional configuration of Active Learning data sampling in the exact format provided
+in [`active_learning` docs](../../core/active_learning/README.md)
+
+##### Step outputs
+No outputs are declared - step is supposed to cause side effect in form of data sampling and registration. 
+
+##### Important notes
+* this block is implemented in non-async way - which means that in certain cases it can block event loop causing
+parallelization not feasible. This is not the case when running in `inference` HTTP container. At Roboflow 
+hosted platform - registration cannot be executed as background task - so its duration must be added into expected 
+latency
+* **important :exclamation:** be careful in enabling / disabling AL at the level of steps - remember that when 
+predicting from each model, `inference` HTTP API tries to get Active Learning config from the project that model
+belongs to and register datapoint. To prevent that from happening - model steps can be provided with 
+`disable_active_learning=True` parameter. Then the only place where AL registration happens is `ActiveLearningDataCollector`.
+* **important :exclamation:** be careful with names of sampling strategies if you define Active Learning configuration - 
+you should keep them unique not only within a single config, but globally in project - otherwise limits accounting may
+not work well
 
 ## Different modes of execution
 Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps

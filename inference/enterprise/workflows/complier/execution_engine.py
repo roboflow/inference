@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
 import networkx as nx
+from fastapi import BackgroundTasks
 from networkx import DiGraph
 
 from inference.core import logger
@@ -15,7 +16,11 @@ from inference.enterprise.workflows.complier.flow_coordinator import (
 from inference.enterprise.workflows.complier.runtime_input_validator import (
     prepare_runtime_parameters,
 )
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
 from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
+    run_active_learning_data_collector,
     run_condition_step,
     run_crop_step,
     run_detection_filter,
@@ -61,6 +66,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "RelativeStaticCrop": run_static_crop_step,
     "ClipComparison": run_clip_comparison_step,
     "DetectionsConsensus": run_detections_consensus_step,
+    "ActiveLearningDataCollector": run_active_learning_data_collector,
 }
 
 
@@ -68,6 +74,8 @@ async def execute_graph(
     execution_graph: DiGraph,
     runtime_parameters: Dict[str, Any],
     model_manager: ModelManager,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks] = None,
     api_key: Optional[str] = None,
     max_concurrent_steps: int = 1,
     step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
@@ -101,6 +109,8 @@ async def execute_graph(
             model_manager=model_manager,
             api_key=api_key,
             step_execution_mode=step_execution_mode,
+            active_learning_middleware=active_learning_middleware,
+            background_tasks=background_tasks,
         )
     return construct_response(
         execution_graph=execution_graph, outputs_lookup=outputs_lookup
@@ -116,6 +126,8 @@ async def execute_steps(
     model_manager: ModelManager,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks],
 ) -> Set[str]:
     """outputs_lookup is mutated while execution, only independent steps may be run together"""
     logger.info(f"Executing steps: {steps}. Execution mode: {step_execution_mode}")
@@ -132,6 +144,8 @@ async def execute_steps(
                 model_manager=model_manager,
                 api_key=api_key,
                 step_execution_mode=step_execution_mode,
+                active_learning_middleware=active_learning_middleware,
+                background_tasks=background_tasks,
             )
             for step in steps_batch
         ]
@@ -149,6 +163,8 @@ async def safe_execute_step(
     model_manager: ModelManager,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks],
 ) -> Set[str]:
     try:
         return await execute_step(
@@ -159,6 +175,8 @@ async def safe_execute_step(
             model_manager=model_manager,
             api_key=api_key,
             step_execution_mode=step_execution_mode,
+            active_learning_middleware=active_learning_middleware,
+            background_tasks=background_tasks,
         )
     except Exception as error:
         raise ExecutionEngineError(
@@ -176,11 +194,17 @@ async def execute_step(
     model_manager: ModelManager,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks],
 ) -> Set[str]:
     logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
     nodes_to_discard = set()
     step_definition = execution_graph.nodes[step]["definition"]
     executor = STEP_TYPE2EXECUTOR_MAPPING[step_definition.type]
+    additional_args = {}
+    if step_definition.type == "ActiveLearningDataCollector":
+        additional_args["active_learning_middleware"] = active_learning_middleware
+        additional_args["background_tasks"] = background_tasks
     next_step, outputs_lookup = await executor(
         step=step_definition,
         runtime_parameters=runtime_parameters,
@@ -188,6 +212,7 @@ async def execute_step(
         model_manager=model_manager,
         api_key=api_key,
         step_execution_mode=step_execution_mode,
+        **additional_args,
     )
     if is_condition_step(execution_graph=execution_graph, node=step):
         if execution_graph.nodes[step]["definition"].step_if_true == next_step:

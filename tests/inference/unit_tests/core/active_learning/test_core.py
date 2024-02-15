@@ -739,7 +739,7 @@ def test_is_prediction_registration_forbidden_when_prediction_should_be_rejected
     )
 
     # then
-    assert result is True
+    assert result is False
 
 
 def test_is_prediction_registration_forbidden_when_prediction_should_be_registered() -> (
@@ -754,3 +754,31 @@ def test_is_prediction_registration_forbidden_when_prediction_should_be_register
 
     # then
     assert result is False
+
+
+def test_is_prediction_registration_forbidden_when_classification_output_only_with_top_category_provided() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"top": "cat"},
+        persist_predictions=True,
+        roboflow_image_id="some+id",
+    )
+
+    # then
+    assert result is False
+
+
+def test_is_prediction_registration_forbidden_when_detection_output_without_predictions_provided() -> (
+    None
+):
+    # when
+    result = is_prediction_registration_forbidden(
+        prediction={"predictions": []},
+        persist_predictions=True,
+        roboflow_image_id="some+id",
+    )
+
+    # then
+    assert result is True
