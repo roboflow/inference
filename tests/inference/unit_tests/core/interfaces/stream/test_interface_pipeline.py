@@ -24,7 +24,7 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
     lock_state_transition,
 )
-from inference.core.interfaces.stream.entities import ObjectDetectionInferenceConfig
+from inference.core.interfaces.stream.entities import ModelConfig
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
@@ -152,7 +152,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(
+    inference_config = ModelConfig.init(
         confidence=0.5, iou_threshold=0.5
     )
     predictions_queue = Queue(maxsize=512)
@@ -195,7 +195,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
         predictions.append((video_frame, prediction))
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(
+    inference_config = ModelConfig.init(
         confidence=0.5, iou_threshold=0.5
     )
     predictions_queue = Queue(maxsize=512)
@@ -242,7 +242,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
         raise Exception()
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(
+    inference_config = ModelConfig.init(
         confidence=0.5, iou_threshold=0.5
     )
     predictions_queue = Queue(maxsize=512)
@@ -314,7 +314,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
     prediction_handler = partial(multi_sink, sinks=[on_prediction, al_sink])
 
     status_update_handlers = [watchdog.on_status_update]
-    inference_config = ObjectDetectionInferenceConfig.init(
+    inference_config = ModelConfig.init(
         confidence=0.5, iou_threshold=0.5
     )
     predictions_queue = Queue(maxsize=512)

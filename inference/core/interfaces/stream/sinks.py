@@ -37,6 +37,9 @@ def render_boxes(
     to draw bounding boxes and resizes prediction to 1280x720 (keeping aspect ratio and adding black padding).
     One may configure default behaviour, for instance to display latency and throughput statistics.
 
+    This sink is only partially compatible with stubs and classification models (it will not fail,
+    although predictions will not be displayed).
+
     Args:
         predictions (dict): Roboflow object detection predictions with Bounding Boxes
         video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
@@ -87,9 +90,9 @@ def render_boxes(
         image = annotator.annotate(
             scene=video_frame.image.copy(), detections=detections, labels=labels
         )
-    except KeyError:
+    except (TypeError, KeyError):
         logger.warning(
-            f"Used `render_boxes()` sink, but predictions that were provided do not match the expected format "
+            f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected format "
             f"of object detection prediction that could be accepted by `supervision.Detection.from_roboflow(...)"
         )
         image = video_frame.image.copy()
