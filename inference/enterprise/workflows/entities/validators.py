@@ -144,6 +144,24 @@ def validate_field_has_given_type(
         )
 
 
+def validate_field_is_dict_of_strings(
+    value: Any,
+    field_name: str,
+    error: Type[Exception] = ValueError,
+) -> None:
+    if not issubclass(type(value), dict):
+        raise error(f"`{field_name}` field is expected to be dict.")
+    for key, key_value in value.items():
+        if not issubclass(type(key), str):
+            raise error(
+                f"`{field_name}` field holds dict which has key={key} that is not string."
+            )
+        if not issubclass(type(key_value), str):
+            raise error(
+                f"`{field_name}` field holds dict which has key={key} that holds non-string value: {key_value}."
+            )
+
+
 def validate_image_biding(value: Any, field_name: str = "image") -> None:
     try:
         if not issubclass(type(value), list):

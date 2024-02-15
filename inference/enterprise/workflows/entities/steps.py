@@ -17,6 +17,7 @@ from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
+    validate_field_is_dict_of_strings,
     validate_field_is_empty_or_selector_or_list_of_string,
     validate_field_is_in_range_zero_one_or_empty_or_selector,
     validate_field_is_list_of_selectors,
@@ -1377,3 +1378,257 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
                 value=value,
                 error=VariableTypeError,
             )
+
+
+SUPPORTED_LMMS = {"gpt_4v", "cog_vlm"}
+
+
+class LLMModel(BaseModel, StepInterface):
+    type: Literal["LLMModel"]
+    name: str
+    image: str
+    prompt: str
+    model_type: str
+    remote_api_key: Optional[str] = Field(default=None)
+    json_output: Optional[str, Dict[str, str]] = Field(default=None)
+
+    @field_validator("image")
+    @classmethod
+    def image_must_only_hold_selectors(cls, value: Any) -> str:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="prompt", allowed_types=[str]
+        )
+        return value
+
+    @field_validator("model_type")
+    @classmethod
+    def validate_model_type(cls, value: Any) -> str:
+        validate_field_is_selector_or_one_of_values(
+            value=value,
+            field_name="model_type",
+            selected_values=SUPPORTED_LMMS,
+        )
+        return value
+
+    @field_validator("remote_api_key")
+    @classmethod
+    def validate_remote_api_key(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
+        )
+        return value
+
+    @field_validator("json_output")
+    @classmethod
+    def validate_remote_api_key(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="json_output", allowed_types=[type(None), dict]
+        )
+        if not issubclass(type(value), dict):
+            return value
+        validate_field_is_dict_of_strings(
+            value=value,
+            field_name="json_output",
+        )
+        return value
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "image",
+            "prompt",
+            "model_type",
+            "remote_api_key",
+            "json_output",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return {"raw_response", "structured_response"}
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        selector = getattr(self, field_name)
+        if not is_selector(selector_or_value=selector):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "prompt",
+                "model_type",
+                "remote_api_key",
+                "json_output",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+        elif field_name == "prompt":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "model_type":
+            validate_field_is_one_of_selected_values(
+                field_name=field_name,
+                selected_values=SUPPORTED_LMMS,
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "remote_api_key":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str, type(None)],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "json_output":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[type(None), dict],
+                value=value,
+                error=VariableTypeError,
+            )
+            if value is None:
+                return None
+            validate_field_is_dict_of_strings(
+                value=value,
+                field_name="json_output",
+                error=VariableTypeError,
+            )
+
+    def get_type(self) -> str:
+        return self.type
+
+
+class LLMModelForClassification(BaseModel, StepInterface):
+    type: Literal["LLMModelForClassification"]
+    name: str
+    image: str
+    model_type: str
+    classes: Union[List[str], str]
+    remote_api_key: Optional[str] = Field(default=None)
+
+    @field_validator("image")
+    @classmethod
+    def image_must_only_hold_selectors(cls, value: Any) -> str:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    @field_validator("model_type")
+    @classmethod
+    def validate_model_type(cls, value: Any) -> str:
+        validate_field_is_selector_or_one_of_values(
+            value=value,
+            field_name="model_type",
+            selected_values=SUPPORTED_LMMS,
+        )
+        return value
+
+    @field_validator("classes")
+    @classmethod
+    def validate_classes(cls, value: Any) -> Union[List[str], str]:
+        if is_selector(selector_or_value=value):
+            return value
+        validate_field_is_list_of_string(
+            value=value,
+            field_name="model_type",
+        )
+        return value
+
+    @field_validator("remote_api_key")
+    @classmethod
+    def validate_remote_api_key(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
+        )
+        return value
+
+    def get_input_names(self) -> Set[str]:
+        return {
+            "image",
+            "model_type",
+            "classes",
+            "remote_api_key",
+        }
+
+    def get_output_names(self) -> Set[str]:
+        return {"top", "confidence", "parent_id"}
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        selector = getattr(self, field_name)
+        if not is_selector(selector_or_value=selector):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={
+                "model_type",
+                "classes",
+                "remote_api_key",
+            },
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+        elif field_name == "model_type":
+            validate_field_is_one_of_selected_values(
+                field_name=field_name,
+                selected_values=SUPPORTED_LMMS,
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "remote_api_key":
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[str, type(None)],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name == "classes":
+            validate_field_is_list_of_string(
+                field_name=field_name,
+                value=value,
+                error=VariableTypeError,
+            )
+
+    def get_type(self) -> str:
+        return self.type
+
+
+class LLMModelForDetection(LLMModelForClassification):
+    type: Literal["LLMModelForDetection"]
+
+    def get_output_names(self) -> Set[str]:
+        return {"predictions", "parent_id", "image"}
+
+    def get_type(self) -> str:
+        return self.type
