@@ -1,24 +1,19 @@
-import hashlib
-import os
-import urllib.request
 from time import perf_counter
 from typing import Any
 
 from ultralytics import YOLO
 
 from inference.core.cache import cache
-from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.defaults import DEFAULT_CONFIDENCE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.hash import get_string_list_hash
-from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
+from inference.core.utils.image_utils import load_image_rgb
 
 
 class YOLOWorld(RoboflowCoreModel):

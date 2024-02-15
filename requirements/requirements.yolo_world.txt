@@ -1,1 +1,3 @@
 ultralytics>=8.1.14
+dill==0.3.8
+rf-clip==1.0
