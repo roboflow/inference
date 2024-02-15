@@ -68,6 +68,37 @@ def test_render_boxes_completes_successfully() -> None:
     ), "capture_image() should be called against resized image dictated by default parameter"
 
 
+def test_render_boxes_completes_successfully_despite_malformed_predictions() -> None:
+    # given
+    video_frame = VideoFrame(
+        image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
+        frame_id=1,
+        frame_timestamp=datetime.now(),
+    )
+    predictions = {"top": "cat", "predictions": {"class": "cat", "confidence": 0.8}}
+    captured_images = []
+
+    def capture_image(image: np.ndarray) -> None:
+        captured_images.append(image)
+
+    # when
+    render_boxes(
+        video_frame=video_frame,
+        predictions=predictions,
+        on_frame_rendered=capture_image,
+    )
+
+    # then
+    assert (
+        len(captured_images) == 1
+    ), "One capture_image() side effect expected after rendering"
+    assert captured_images[0].shape == (
+        720,
+        1280,
+        3,
+    ), "capture_image() should be called against resized image dictated by default parameter"
+
+
 def test_udp_sends_data_through_socket() -> None:
     # given
     socket = MagicMock()

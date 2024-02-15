@@ -21,12 +21,14 @@ ObjectDetectionPrediction = dict
 
 
 @dataclass(frozen=True)
-class ObjectDetectionInferenceConfig:
+class ModelConfig:
     class_agnostic_nms: Optional[bool]
     confidence: Optional[float]
     iou_threshold: Optional[float]
     max_candidates: Optional[int]
     max_detections: Optional[int]
+    mask_decode_mode: Optional[str]
+    tradeoff_factor: Optional[float]
 
     @classmethod
     def init(
@@ -36,7 +38,9 @@ class ObjectDetectionInferenceConfig:
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
-    ) -> "ObjectDetectionInferenceConfig":
+        mask_decode_mode: Optional[str] = None,
+        tradeoff_factor: Optional[float] = None,
+    ) -> "ModelConfig":
         if class_agnostic_nms is None:
             class_agnostic_nms = safe_env_to_type(
                 variable_name=CLASS_AGNOSTIC_NMS_ENV,
@@ -67,12 +71,14 @@ class ObjectDetectionInferenceConfig:
                 default_value=DEFAULT_MAX_DETECTIONS,
                 type_constructor=int,
             )
-        return ObjectDetectionInferenceConfig(
+        return ModelConfig(
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
             iou_threshold=iou_threshold,
             max_candidates=max_candidates,
             max_detections=max_detections,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
         )
 
     def to_postprocessing_params(self) -> Dict[str, Union[bool, float, int]]:
@@ -83,6 +89,8 @@ class ObjectDetectionInferenceConfig:
             "iou_threshold",
             "max_candidates",
             "max_detections",
+            "mask_decode_mode",
+            "tradeoff_factor",
         ]:
             result[field] = getattr(self, field, None)
         return {name: value for name, value in result.items() if value is not None}
