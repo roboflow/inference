@@ -7,10 +7,14 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple, U
 from uuid import uuid4
 
 import numpy as np
+from fastapi import BackgroundTasks
 
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
@@ -37,6 +41,7 @@ from inference.enterprise.workflows.complier.utils import (
 )
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
+    ActiveLearningDataCollector,
     AggregationMode,
     BinaryOperator,
     CompoundDetectionFilterDefinition,
@@ -49,6 +54,7 @@ from inference.enterprise.workflows.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
+from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import ExecutionGraphError
 
 OPERATORS = {
@@ -79,7 +85,7 @@ async def run_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
@@ -91,9 +97,6 @@ async def run_crop_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-    if not issubclass(type(image), list):
-        image = [image]
-        detections = [detections]
     decoded_images = [load_image(e) for e in image]
     decoded_images = [
         i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
@@ -146,7 +149,7 @@ async def run_condition_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     left_value = resolve_parameter(
         selector_or_value=step.left,
@@ -169,7 +172,7 @@ async def run_detection_filter(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     predictions = resolve_parameter(
         selector_or_value=step.predictions,
@@ -185,32 +188,28 @@ async def run_detection_filter(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     filter_callable = build_filter_callable(definition=step.filter_definition)
     result_detections, result_parent_id = [], []
-    nested = False
     for prediction in predictions:
-        if issubclass(type(prediction), list):
-            nested = True  # assuming that we either have all nested or none
-            filtered_predictions = [
-                deepcopy(p) for p in prediction if filter_callable(p)
-            ]
-            result_detections.append(filtered_predictions)
-            result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
-        elif filter_callable(prediction):
-            result_detections.append(deepcopy(prediction))
-            result_parent_id.append(prediction[PARENT_ID_KEY])
+        filtered_predictions = [deepcopy(p) for p in prediction if filter_callable(p)]
+        result_detections.append(filtered_predictions)
+        result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
     step_selector = construct_step_selector(step_name=step.name)
-    if nested:
-        outputs_lookup[step_selector] = [
-            {"predictions": d, PARENT_ID_KEY: p, "image": i}
-            for d, p, i in zip(result_detections, result_parent_id, images_meta)
-        ]
-    else:
-        outputs_lookup[step_selector] = {
-            "predictions": result_detections,
-            PARENT_ID_KEY: result_parent_id,
-            "image": images_meta,
-        }
+    outputs_lookup[step_selector] = [
+        {"predictions": d, PARENT_ID_KEY: p, "image": i, "prediction_type": pt}
+        for d, p, i, pt in zip(
+            result_detections, result_parent_id, images_meta, predictions_type
+        )
+    ]
     return None, outputs_lookup
 
 
@@ -236,7 +235,7 @@ async def run_detection_offset_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     detections = resolve_parameter(
         selector_or_value=step.predictions,
@@ -252,6 +251,15 @@ async def run_detection_offset_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
     offset_x = resolve_parameter(
         selector_or_value=step.offset_x,
         runtime_parameters=runtime_parameters,
@@ -263,35 +271,20 @@ async def run_detection_offset_step(
         outputs_lookup=outputs_lookup,
     )
     result_detections, result_parent_id = [], []
-    nested = False
     for detection in detections:
-        if issubclass(type(detection), list):
-            nested = True  # assuming that we either have all nested or none
-            offset_detections = [
-                offset_detection(detection=d, offset_x=offset_x, offset_y=offset_y)
-                for d in detection
-            ]
-            result_detections.append(offset_detections)
-            result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
-        else:
-            result_detections.append(
-                offset_detection(
-                    detection=detection, offset_x=offset_x, offset_y=offset_y
-                )
-            )
-            result_parent_id.append(detection[PARENT_ID_KEY])
-    step_selector = construct_step_selector(step_name=step.name)
-    if nested:
-        outputs_lookup[step_selector] = [
-            {"predictions": d, PARENT_ID_KEY: p, "image": i}
-            for d, p, i in zip(result_detections, result_parent_id, images_meta)
+        offset_detections = [
+            offset_detection(detection=d, offset_x=offset_x, offset_y=offset_y)
+            for d in detection
         ]
-    else:
-        outputs_lookup[step_selector] = {
-            "predictions": result_detections,
-            PARENT_ID_KEY: result_parent_id,
-            "image": images_meta,
-        }
+        result_detections.append(offset_detections)
+        result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
+    step_selector = construct_step_selector(step_name=step.name)
+    outputs_lookup[step_selector] = [
+        {"predictions": d, PARENT_ID_KEY: p, "image": i, "prediction_type": pt}
+        for d, p, i, pt in zip(
+            result_detections, result_parent_id, images_meta, predictions_type
+        )
+    ]
     return None, outputs_lookup
 
 
@@ -312,16 +305,13 @@ async def run_static_crop_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     image = get_image(
         step=step,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
-
-    if not issubclass(type(image), list):
-        image = [image]
     decoded_images = [load_image(e) for e in image]
     decoded_images = [
         i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
@@ -410,7 +400,7 @@ async def run_detections_consensus_step(
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
     api_key: Optional[str],
-    step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
+    step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     resolve_parameter_closure = partial(
         resolve_parameter,
@@ -418,6 +408,7 @@ async def run_detections_consensus_step(
         outputs_lookup=outputs_lookup,
     )
     all_predictions = [resolve_parameter_closure(p) for p in step.predictions]
+    # all_predictions has shape (n_consensus_input, bs, img_predictions)
     if len(all_predictions) < 1:
         raise ExecutionGraphError(
             f"Consensus step requires at least one source of predictions."
@@ -432,19 +423,16 @@ async def run_detections_consensus_step(
     )
     images_meta = resolve_parameter_closure(images_meta_selector)
     batch_size = batch_sizes[0]
-    if batch_size == 1:
-        all_predictions = [[e] for e in all_predictions]
-        images_meta = [images_meta]
     results = []
     for batch_index in range(batch_size):
-        batch_predictions = [e[batch_index] for e in all_predictions]
+        batch_element_predictions = [e[batch_index] for e in all_predictions]
         (
             parent_id,
             object_present,
             presence_confidence,
             consensus_detections,
         ) = resolve_batch_consensus(
-            predictions=batch_predictions,
+            predictions=batch_element_predictions,
             required_votes=resolve_parameter_closure(step.required_votes),
             class_aware=resolve_parameter_closure(step.class_aware),
             iou_threshold=resolve_parameter_closure(step.iou_threshold),
@@ -462,16 +450,15 @@ async def run_detections_consensus_step(
                 "object_present": object_present,
                 "presence_confidence": presence_confidence,
                 "image": images_meta[batch_index],
+                "prediction_type": "object-detection",
             }
         )
-    if batch_size == 1:
-        results = results[0]
     outputs_lookup[construct_step_selector(step_name=step.name)] = results
     return None, outputs_lookup
 
 
 def get_and_validate_batch_sizes(
-    all_predictions: List[Union[List[dict], List[List[dict]]]],
+    all_predictions: List[List[List[dict]]],
     step_name: str,
 ) -> List[int]:
     batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
@@ -482,16 +469,8 @@ def get_and_validate_batch_sizes(
     return batch_sizes
 
 
-def get_predictions_batch_sizes(
-    all_predictions: List[Union[List[dict], List[List[dict]]]]
-) -> List[int]:
-    return [get_batch_size(predictions=predictions) for predictions in all_predictions]
-
-
-def get_batch_size(predictions: Union[List[dict], List[List[dict]]]) -> int:
-    if len(predictions) == 0 or issubclass(type(predictions[0]), dict):
-        return 1
-    return len(predictions)
+def get_predictions_batch_sizes(all_predictions: List[List[List[dict]]]) -> List[int]:
+    return [len(predictions) for predictions in all_predictions]
 
 
 def all_batch_sizes_equal(batch_sizes: List[int]) -> bool:
@@ -871,3 +850,67 @@ def aggregate_field_values(
 ) -> float:
     values = [d[field] for d in detections]
     return AGGREGATION_MODE2FIELD_AGGREGATOR[aggregation_mode](values)
+
+
+async def run_active_learning_data_collector(
+    step: ActiveLearningDataCollector,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+    active_learning_middleware: WorkflowsActiveLearningMiddleware,
+    background_tasks: Optional[BackgroundTasks],
+) -> Tuple[NextStepReference, OutputsLookup]:
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    images_meta_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="image",
+    )
+    images_meta = resolve_parameter_closure(images_meta_selector)
+    prediction_type_selector = construct_selector_pointing_step_output(
+        selector=step.predictions,
+        new_output="prediction_type",
+    )
+    predictions_type = resolve_parameter(
+        selector_or_value=prediction_type_selector,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    prediction_type = set(predictions_type)
+    if len(prediction_type) > 1:
+        raise ExecutionGraphError(
+            f"Active Learning data collection step requires only single prediction "
+            f"type to be part of ingest. Detected: {prediction_type}."
+        )
+    prediction_type = next(iter(prediction_type))
+    predictions = resolve_parameter_closure(step.predictions)
+    predictions_output_name = get_last_selector_chunk(step.predictions)
+    target_dataset = resolve_parameter_closure(step.target_dataset)
+    target_dataset_api_key = resolve_parameter_closure(step.target_dataset_api_key)
+    disable_active_learning = resolve_parameter_closure(step.disable_active_learning)
+    active_learning_compatible_predictions = [
+        {"image": image_meta, predictions_output_name: prediction}
+        for image_meta, prediction in zip(images_meta, predictions)
+    ]
+    active_learning_middleware.register(
+        # this should actually be asyncio, but that requires a lot of backend components redesign
+        dataset_name=target_dataset,
+        images=image,
+        predictions=active_learning_compatible_predictions,
+        api_key=target_dataset_api_key or api_key,
+        active_learning_disabled_for_request=disable_active_learning,
+        prediction_type=prediction_type,
+        background_tasks=background_tasks,
+        active_learning_configuration=step.active_learning_configuration,
+    )
+    return None, outputs_lookup

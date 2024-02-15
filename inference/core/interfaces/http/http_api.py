@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import logger
+from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -128,6 +129,9 @@ from inference.core.roboflow_api import (
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
     RuntimePayloadError,
@@ -298,6 +302,9 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
+            cache=cache,
+        )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -322,6 +329,7 @@ class HttpInterface(BaseInterface):
         async def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
+            background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             result = await compile_and_execute_async(
@@ -331,6 +339,8 @@ class HttpInterface(BaseInterface):
                 api_key=workflow_request.api_key,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 step_execution_mode=step_execution_mode,
+                active_learning_middleware=self.workflows_active_learning_middleware,
+                background_tasks=background_tasks,
             )
             outputs = serialise_workflow_result(
                 result=result,
@@ -669,6 +679,7 @@ class HttpInterface(BaseInterface):
                 workspace_name: str,
                 workflow_name: str,
                 workflow_request: WorkflowInferenceRequest,
+                background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
@@ -678,6 +689,7 @@ class HttpInterface(BaseInterface):
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
             @app.post(
@@ -689,6 +701,7 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = {
                     "specification": workflow_request.specification
@@ -696,6 +709,7 @@ class HttpInterface(BaseInterface):
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
         if CORE_MODELS_ENABLED:

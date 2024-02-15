@@ -1,5 +1,7 @@
 from typing import Any, Dict, Generator, Iterable, List, TypeVar, Union
 
+import numpy as np
+
 from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
 from inference.enterprise.workflows.complier.utils import (
     get_step_selector_from_its_output,
@@ -8,6 +10,7 @@ from inference.enterprise.workflows.complier.utils import (
 )
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
+    ActiveLearningDataCollector,
     ClipComparison,
     Crop,
     OCRModel,
@@ -31,10 +34,11 @@ def get_image(
         AbsoluteStaticCrop,
         RelativeStaticCrop,
         ClipComparison,
+        ActiveLearningDataCollector,
     ],
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
-) -> Any:
+) -> List[Dict[str, Union[str, np.ndarray]]]:
     if is_input_selector(selector_or_value=step.image):
         return runtime_parameters[get_last_selector_chunk(selector=step.image)]
     if is_step_output_selector(selector_or_value=step.image):
