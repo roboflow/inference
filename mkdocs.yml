@@ -25,6 +25,7 @@ extra:
 
 extra_css:
   - styles.css
+  - styles/cookbooks.css
 
 nav:
   - Inference: index.md
@@ -81,6 +82,7 @@ nav:
       - Grounding DINO (Object Detection): foundation/grounding_dino.md
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
+  - Cookbooks: cookbooks.md
 
 theme:
   name: 'material'
@@ -111,6 +113,7 @@ plugins:
           paths: [.]
   - search
   - swagger-ui-tag
+  - mkdocs-jupyter
   - social:
       cards_layout_dir: docs/layouts
       cards_layout: custom
@@ -136,3 +139,4 @@ markdown_extensions:
 extra_javascript:
   - "https://widget.kapa.ai/kapa-widget.bundle.js"
   - "javascript/init_kapa_widget.js"
+  - "javascript/cookbooks.js"
