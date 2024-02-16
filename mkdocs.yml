@@ -5,7 +5,7 @@ site_description: Scalable, on-device computer vision deployment.
 repo_name: roboflow/inference
 repo_url: https://github.com/roboflow/inference
 edit_uri: https://github.com/roboflow/inference/tree/main/docs
-copyright: Roboflow 2023. All rights reserved.
+copyright: Roboflow 2024. All rights reserved.
 
 extra:
   social:
@@ -100,8 +100,6 @@ theme:
     - navigation.prune
     - navigation.footer
     - navigation.tracking
-    - navigation.instant
-    - navigation.instant.progress
     - navigation.indexes
     - navigation.sections
     - content.code.copy
