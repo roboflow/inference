@@ -1140,6 +1140,7 @@ ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
     "DetectionFilter": "predictions",
     "DetectionsConsensus": "predictions",
     "DetectionOffset": "predictions",
+    "YoloWorld": "predictions",
     "ClassificationModel": "top",
 }
 
@@ -1377,3 +1378,104 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
                 value=value,
                 error=VariableTypeError,
             )
+
+
+class YoloWorld(BaseModel, StepInterface):
+    type: Literal["YoloWorld"]
+    name: str
+    image: str
+    class_names: Union[str, List[str]]
+    version: Optional[str] = Field(default="l")
+    confidence: Union[Optional[float], str] = Field(default=0.4)
+
+    @field_validator("image")
+    @classmethod
+    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    @field_validator("class_names")
+    @classmethod
+    def validate_class_names(cls, value: Any) -> Union[str, List[str]]:
+        if is_selector(selector_or_value=value):
+            return value
+        if issubclass(type(value), list):
+            validate_field_is_list_of_string(value=value, field_name="class_names")
+            return value
+        raise ValueError(
+            "`class_names` field given must be selector or list of strings"
+        )
+
+    @field_validator("version")
+    @classmethod
+    def validate_model_version(cls, value: Any) -> Optional[str]:
+        validate_field_is_selector_or_one_of_values(
+            value=value,
+            selected_values={None, "s", "m", "l"},
+            field_name="version",
+        )
+        return value
+
+    @field_validator("confidence")
+    @classmethod
+    def field_must_be_selector_or_number_from_zero_to_one(
+        cls, value: Any
+    ) -> Union[Optional[float], str]:
+        if value is None:
+            return None
+        validate_field_is_in_range_zero_one_or_empty_or_selector(
+            value=value, field_name="confidence"
+        )
+        return value
+
+    def get_input_names(self) -> Set[str]:
+        return {"image", "class_names", "version", "confidence"}
+
+    def get_output_names(self) -> Set[str]:
+        return {"predictions", "parent_id", "image", "prediction_type"}
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        selector = getattr(self, field_name)
+        if not is_selector(selector_or_value=selector):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+        validate_selector_is_inference_parameter(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+            applicable_fields={"class_names", "version", "confidence"},
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+        elif field_name == "class_names":
+            validate_field_is_list_of_string(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+        elif field_name == "version":
+            validate_field_is_one_of_selected_values(
+                value=value,
+                field_name=field_name,
+                selected_values={None, "s", "m", "l"},
+                error=VariableTypeError,
+            )
+        elif field_name == "confidence":
+            validate_value_is_empty_or_number_in_range_zero_one(
+                value=value,
+                field_name=field_name,
+                error=VariableTypeError,
+            )
+
+    def get_type(self) -> str:
+        return self.type

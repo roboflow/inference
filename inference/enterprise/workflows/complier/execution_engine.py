@@ -35,6 +35,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     run_clip_comparison_step,
     run_ocr_model_step,
     run_roboflow_model_step,
+    run_yolo_world_model_step,
 )
 from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
@@ -67,6 +68,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "ClipComparison": run_clip_comparison_step,
     "DetectionsConsensus": run_detections_consensus_step,
     "ActiveLearningDataCollector": run_active_learning_data_collector,
+    "YoloWorld": run_yolo_world_model_step,
 }
 
 
