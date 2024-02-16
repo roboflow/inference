@@ -1430,7 +1430,7 @@ class YoloWorld(BaseModel, StepInterface):
         return value
 
     def get_input_names(self) -> Set[str]:
-        return {"image", "class_names", "model_version", "confidence"}
+        return {"image", "class_names", "version", "confidence"}
 
     def get_output_names(self) -> Set[str]:
         return {"predictions", "parent_id", "image", "prediction_type"}
@@ -1452,7 +1452,7 @@ class YoloWorld(BaseModel, StepInterface):
             step_type=self.type,
             field_name=field_name,
             input_step=input_step,
-            applicable_fields={"class_names", "model_version", "confidence"},
+            applicable_fields={"class_names", "version", "confidence"},
         )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
