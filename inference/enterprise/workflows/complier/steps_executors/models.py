@@ -51,7 +51,8 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     RoboflowModel,
-    StepInterface, YoloWorld,
+    StepInterface,
+    YoloWorld,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -427,28 +428,23 @@ async def run_yolo_world_model_step(
             api_key=api_key,
         )
     else:
-        serialised_result = await get_roboflow_model_predictions_from_remote_api(
+        serialised_result = await get_yolo_world_predictions_from_remote_api(
             image=image,
-            model_id=model_id,
+            class_names=class_names,
+            model_version=model_version,
+            confidence=confidence,
             step=step,
-            runtime_parameters=runtime_parameters,
-            outputs_lookup=outputs_lookup,
             api_key=api_key,
         )
     serialised_result = attach_prediction_type_info(
         results=serialised_result,
-        prediction_type=MODEL_TYPE2PREDICTION_TYPE[step.get_type()],
+        prediction_type="object-detection",
     )
-    if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
-        serialised_result = attach_parent_info(
-            image=image, results=serialised_result, nested_key=None
-        )
-    else:
-        serialised_result = attach_parent_info(image=image, results=serialised_result)
-        serialised_result = anchor_detections_in_parent_coordinates(
-            image=image,
-            serialised_result=serialised_result,
-        )
+    serialised_result = attach_parent_info(image=image, results=serialised_result)
+    serialised_result = anchor_detections_in_parent_coordinates(
+        image=image,
+        serialised_result=serialised_result,
+    )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
 
@@ -469,14 +465,14 @@ async def get_yolo_world_predictions_locally(
             confidence=confidence,
             text=class_names,
         )
-        doctr_model_id = load_core_model(
+        yolo_world_model_id = load_core_model(
             model_manager=model_manager,
             inference_request=inference_request,
             core_model="yolo_world",
             api_key=api_key,
         )
         result = await model_manager.infer_from_request(
-            doctr_model_id, inference_request
+            yolo_world_model_id, inference_request
         )
         serialised_result.append(result.dict())
     return serialised_result
@@ -495,26 +491,27 @@ async def get_yolo_world_predictions_from_remote_api(
         api_url=api_url,
         api_key=api_key,
     )
+    configuration = InferenceConfiguration(
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    )
+    client.configure(inference_configuration=configuration)
     if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         client.select_api_v0()
+    image_batches = list(
+        make_batches(
+            iterable=image,
+            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        )
+    )
     serialised_result = []
-    for single_image in image:
-        inference_request = YOLOWorldInferenceRequest(
-            image=single_image,
-            yolo_world_version_id=model_version,
+    for single_batch in image_batches:
+        batch_results = await client.infer_from_yolo_world_async(
+            inference_input=[i["value"] for i in single_batch],
+            class_names=class_names,
+            model_version=model_version,
             confidence=confidence,
-            text=class_names,
         )
-        doctr_model_id = load_core_model(
-            model_manager=model_manager,
-            inference_request=inference_request,
-            core_model="yolo_world",
-            api_key=api_key,
-        )
-        result = await model_manager.infer_from_request(
-            doctr_model_id, inference_request
-        )
-        serialised_result.append(result.dict())
+        serialised_result.extend(batch_results)
     return serialised_result
 
 
@@ -817,5 +814,3 @@ def resolve_model_api_url(step: StepInterface) -> str:
     if WORKFLOWS_REMOTE_API_TARGET != "hosted":
         return LOCAL_INFERENCE_API_URL
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
-
-

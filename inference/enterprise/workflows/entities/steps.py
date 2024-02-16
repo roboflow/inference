@@ -1396,15 +1396,15 @@ class YoloWorld(BaseModel, StepInterface):
 
     @field_validator("class_names")
     @classmethod
-    def validate_class_names(
-            cls, value: Any
-    ) -> Union[str, List[str]]:
+    def validate_class_names(cls, value: Any) -> Union[str, List[str]]:
         if is_selector(selector_or_value=value):
             return value
         if issubclass(type(value), list):
             validate_field_is_list_of_string(value=value, field_name="class_names")
         elif not issubclass(type(value), str):
-            raise ValueError("`class_names` field given must be string or list of strings")
+            raise ValueError(
+                "`class_names` field given must be string or list of strings"
+            )
         return value
 
     @field_validator("model_version")
@@ -1430,12 +1430,10 @@ class YoloWorld(BaseModel, StepInterface):
         return value
 
     def get_input_names(self) -> Set[str]:
-        return {
-            "image", "class_names", "model_version", "confidence"
-        }
+        return {"image", "class_names", "model_version", "confidence"}
 
     def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
+        return {"predictions", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None

@@ -34,7 +34,8 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
 from inference.enterprise.workflows.complier.steps_executors.models import (
     run_clip_comparison_step,
     run_ocr_model_step,
-    run_roboflow_model_step, run_yolo_world_model_step,
+    run_roboflow_model_step,
+    run_yolo_world_model_step,
 )
 from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches

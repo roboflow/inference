@@ -22,7 +22,8 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    RelativeStaticCrop, YoloWorld,
+    RelativeStaticCrop,
+    YoloWorld,
 )
 
 InputType = Annotated[

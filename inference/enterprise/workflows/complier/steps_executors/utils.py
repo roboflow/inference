@@ -15,7 +15,8 @@ from inference.enterprise.workflows.entities.steps import (
     Crop,
     OCRModel,
     RelativeStaticCrop,
-    RoboflowModel, YoloWorld,
+    RoboflowModel,
+    YoloWorld,
 )
 from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
