@@ -92,7 +92,6 @@ theme:
   font:
     text: Roboto
     code: Roboto Mono
-  custom_dir: 'custom_theme'
   features:
     - navigation.top
     - navigation.tabs
@@ -103,6 +102,19 @@ theme:
     - navigation.indexes
     - navigation.sections
     - content.code.copy
+  
+  palette:
+  - scheme: default
+    primary: 'custom'
+    toggle:
+      icon: material/brightness-7
+      name: Switch to dark mode
+
+  - scheme: slate
+    primary: 'custom'
+    toggle:
+      icon: material/brightness-4
+      name: Switch to light mode
 
 plugins:
   - mkdocstrings:
