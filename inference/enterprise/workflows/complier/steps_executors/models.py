@@ -409,7 +409,7 @@ async def run_yolo_world_model_step(
         outputs_lookup=outputs_lookup,
     )
     model_version = resolve_parameter(
-        selector_or_value=step.model_version,
+        selector_or_value=step.version,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )

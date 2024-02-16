@@ -1385,7 +1385,7 @@ class YoloWorld(BaseModel, StepInterface):
     name: str
     image: str
     class_names: Union[str, List[str]]
-    model_version: Optional[str] = Field(default="l")
+    version: Optional[str] = Field(default="l", alias="model_version")
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @field_validator("image")
@@ -1407,7 +1407,7 @@ class YoloWorld(BaseModel, StepInterface):
             )
         return value
 
-    @field_validator("model_version")
+    @field_validator("version")
     @classmethod
     def validate_model_version(cls, value: Any) -> Optional[str]:
         validate_field_is_selector_or_one_of_values(
@@ -1464,10 +1464,10 @@ class YoloWorld(BaseModel, StepInterface):
                 field_name=field_name,
                 error=VariableTypeError,
             )
-        elif field_name == "model_version":
+        elif field_name == "version":
             validate_field_is_one_of_selected_values(
                 value=value,
-                field_name=field_name,
+                field_name="model_version",
                 selected_values={None, "s", "m", "l"},
                 error=VariableTypeError,
             )
@@ -1477,3 +1477,6 @@ class YoloWorld(BaseModel, StepInterface):
                 field_name=field_name,
                 error=VariableTypeError,
             )
+
+    def get_type(self) -> str:
+        return self.type
