@@ -12,6 +12,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     HOSTED_CORE_MODEL_URL,
@@ -417,12 +418,11 @@ async def run_yolo_world_model_step(
         outputs_lookup=outputs_lookup,
     )
     if step_execution_mode is StepExecutionMode.LOCAL:
-        serialised_result = await get_roboflow_model_predictions_locally(
+        serialised_result = await get_yolo_world_predictions_locally(
             image=image,
-            model_id=model_id,
-            step=step,
-            runtime_parameters=runtime_parameters,
-            outputs_lookup=outputs_lookup,
+            class_names=class_names,
+            model_version=model_version,
+            confidence=confidence,
             model_manager=model_manager,
             api_key=api_key,
         )
@@ -455,40 +455,24 @@ async def run_yolo_world_model_step(
 
 async def get_yolo_world_predictions_locally(
     image: List[dict],
-    model_id: str,
-    step: RoboflowModel,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
+    class_names: List[str],
+    model_version: Optional[str],
+    confidence: Optional[float],
     model_manager: ModelManager,
     api_key: Optional[str],
 ) -> List[dict]:
-    request_constructor = MODEL_TYPE2REQUEST_CONSTRUCTOR[step.type]
-    request = request_constructor(
-        step=step,
-        image=image,
-        api_key=api_key,
-        runtime_parameters=runtime_parameters,
-        outputs_lookup=outputs_lookup,
-    )
-    model_manager.add_model(
-        model_id=model_id,
-        api_key=api_key,
-    )
-    result = await model_manager.infer_from_request(model_id=model_id, request=request)
-    if issubclass(type(result), list):
-        serialised_result = [e.dict(by_alias=True, exclude_none=True) for e in result]
-    else:
-        serialised_result = [result.dict(by_alias=True, exclude_none=True)]
-
     serialised_result = []
     for single_image in image:
-        inference_request = DoctrOCRInferenceRequest(
+        inference_request = YOLOWorldInferenceRequest(
             image=single_image,
+            yolo_world_version_id=model_version,
+            confidence=confidence,
+            text=class_names,
         )
         doctr_model_id = load_core_model(
             model_manager=model_manager,
             inference_request=inference_request,
-            core_model="doctr",
+            core_model="yolo_world",
             api_key=api_key,
         )
         result = await model_manager.infer_from_request(
@@ -496,6 +480,41 @@ async def get_yolo_world_predictions_locally(
         )
         serialised_result.append(result.dict())
     return serialised_result
+
+
+async def get_yolo_world_predictions_from_remote_api(
+    image: List[dict],
+    class_names: List[str],
+    model_version: Optional[str],
+    confidence: Optional[float],
+    step: YoloWorld,
+    api_key: Optional[str],
+) -> List[dict]:
+    api_url = resolve_model_api_url(step=step)
+    client = InferenceHTTPClient(
+        api_url=api_url,
+        api_key=api_key,
+    )
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+        client.select_api_v0()
+    serialised_result = []
+    for single_image in image:
+        inference_request = YOLOWorldInferenceRequest(
+            image=single_image,
+            yolo_world_version_id=model_version,
+            confidence=confidence,
+            text=class_names,
+        )
+        doctr_model_id = load_core_model(
+            model_manager=model_manager,
+            inference_request=inference_request,
+            core_model="yolo_world",
+            api_key=api_key,
+        )
+        result = await model_manager.infer_from_request(
+            doctr_model_id, inference_request
+        )
+        serialised_result.append(result.dict())
     return serialised_result
 
 

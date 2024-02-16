@@ -1380,12 +1380,12 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             )
 
 
-class YoloWorld:
+class YoloWorld(BaseModel, StepInterface):
     type: Literal["YoloWorld"]
     name: str
     image: str
     class_names: Union[str, List[str]]
-    model_version: Optional[str] = Field(default=None)
+    model_version: Optional[str] = Field(default="l")
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @field_validator("image")
