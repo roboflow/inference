@@ -164,3 +164,9 @@ class MemoryCache(BaseCache):
         # refresh the lock
         self.set(key, lock, expire=expire)
         return lock
+
+    def set_numpy(self, key: str, value: Any, expire: float = None):
+        return self.set(key, value, expire=expire)
+
+    def get_numpy(self, key: str):
+        return self.get(key)
