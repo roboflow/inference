@@ -46,7 +46,7 @@ class YOLOWorld(RoboflowCoreModel):
             np.array: The preprocessed image.
         """
         np_image = load_image_rgb(image)
-        return np_image
+        return np_image[:, :, ::-1]
 
     def infer_from_request(
         self,

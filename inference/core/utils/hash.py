@@ -10,6 +10,6 @@ def get_string_list_hash(text: list) -> str:
     Returns:
         str: The hash of the list of strings.
     """
-    text_string = ", ".join(text)
+    text_string = ", ".join([f"{idx}:{t}" for idx, t in enumerate(text)])
     text_hash = hashlib.md5(text_string.encode("utf-8")).hexdigest()
     return text_hash
