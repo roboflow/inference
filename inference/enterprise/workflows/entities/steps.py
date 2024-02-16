@@ -1385,7 +1385,7 @@ class YoloWorld(BaseModel, StepInterface):
     name: str
     image: str
     class_names: Union[str, List[str]]
-    version: Optional[str] = Field(default="l", alias="model_version")
+    version: Optional[str] = Field(default="l")
     confidence: Union[Optional[float], str] = Field(default=0.4)
 
     @field_validator("image")
@@ -1401,11 +1401,10 @@ class YoloWorld(BaseModel, StepInterface):
             return value
         if issubclass(type(value), list):
             validate_field_is_list_of_string(value=value, field_name="class_names")
-        elif not issubclass(type(value), str):
-            raise ValueError(
-                "`class_names` field given must be string or list of strings"
-            )
-        return value
+            return value
+        raise ValueError(
+            "`class_names` field given must be selector or list of strings"
+        )
 
     @field_validator("version")
     @classmethod
@@ -1413,7 +1412,7 @@ class YoloWorld(BaseModel, StepInterface):
         validate_field_is_selector_or_one_of_values(
             value=value,
             selected_values={None, "s", "m", "l"},
-            field_name="model_version",
+            field_name="version",
         )
         return value
 
@@ -1467,7 +1466,7 @@ class YoloWorld(BaseModel, StepInterface):
         elif field_name == "version":
             validate_field_is_one_of_selected_values(
                 value=value,
-                field_name="model_version",
+                field_name=field_name,
                 selected_values={None, "s", "m", "l"},
                 error=VariableTypeError,
             )
