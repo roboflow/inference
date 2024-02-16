@@ -50,7 +50,7 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     RoboflowModel,
-    StepInterface,
+    StepInterface, YoloWorld,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -388,6 +388,117 @@ MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR = {
 }
 
 
+async def run_yolo_world_model_step(
+    step: YoloWorld,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    class_names = resolve_parameter(
+        selector_or_value=step.class_names,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    model_version = resolve_parameter(
+        selector_or_value=step.model_version,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    confidence = resolve_parameter(
+        selector_or_value=step.confidence,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    if step_execution_mode is StepExecutionMode.LOCAL:
+        serialised_result = await get_roboflow_model_predictions_locally(
+            image=image,
+            model_id=model_id,
+            step=step,
+            runtime_parameters=runtime_parameters,
+            outputs_lookup=outputs_lookup,
+            model_manager=model_manager,
+            api_key=api_key,
+        )
+    else:
+        serialised_result = await get_roboflow_model_predictions_from_remote_api(
+            image=image,
+            model_id=model_id,
+            step=step,
+            runtime_parameters=runtime_parameters,
+            outputs_lookup=outputs_lookup,
+            api_key=api_key,
+        )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type=MODEL_TYPE2PREDICTION_TYPE[step.get_type()],
+    )
+    if step.type in {"ClassificationModel", "MultiLabelClassificationModel"}:
+        serialised_result = attach_parent_info(
+            image=image, results=serialised_result, nested_key=None
+        )
+    else:
+        serialised_result = attach_parent_info(image=image, results=serialised_result)
+        serialised_result = anchor_detections_in_parent_coordinates(
+            image=image,
+            serialised_result=serialised_result,
+        )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def get_yolo_world_predictions_locally(
+    image: List[dict],
+    model_id: str,
+    step: RoboflowModel,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> List[dict]:
+    request_constructor = MODEL_TYPE2REQUEST_CONSTRUCTOR[step.type]
+    request = request_constructor(
+        step=step,
+        image=image,
+        api_key=api_key,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    model_manager.add_model(
+        model_id=model_id,
+        api_key=api_key,
+    )
+    result = await model_manager.infer_from_request(model_id=model_id, request=request)
+    if issubclass(type(result), list):
+        serialised_result = [e.dict(by_alias=True, exclude_none=True) for e in result]
+    else:
+        serialised_result = [result.dict(by_alias=True, exclude_none=True)]
+
+    serialised_result = []
+    for single_image in image:
+        inference_request = DoctrOCRInferenceRequest(
+            image=single_image,
+        )
+        doctr_model_id = load_core_model(
+            model_manager=model_manager,
+            inference_request=inference_request,
+            core_model="doctr",
+            api_key=api_key,
+        )
+        result = await model_manager.infer_from_request(
+            doctr_model_id, inference_request
+        )
+        serialised_result.append(result.dict())
+    return serialised_result
+    return serialised_result
+
+
 async def run_ocr_model_step(
     step: OCRModel,
     runtime_parameters: Dict[str, Any],
@@ -687,3 +798,5 @@ def resolve_model_api_url(step: StepInterface) -> str:
     if WORKFLOWS_REMOTE_API_TARGET != "hosted":
         return LOCAL_INFERENCE_API_URL
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
+
+
