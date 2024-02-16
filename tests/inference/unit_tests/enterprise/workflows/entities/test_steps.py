@@ -32,7 +32,8 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     Operator,
-    RandomSamplingConfig, YoloWorld,
+    RandomSamplingConfig,
+    YoloWorld,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -3134,7 +3135,9 @@ def test_yolo_world_step_image_validation_when_invalid_image_given(value: Any) -
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
-def test_yolo_world_step_image_validation_when_invalid_class_names_given(value: Any) -> None:
+def test_yolo_world_step_image_validation_when_invalid_class_names_given(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3176,7 +3179,9 @@ def test_yolo_world_step_image_validation_when_valid_class_names_given() -> None
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
-def test_yolo_world_step_image_validation_when_invalid_version_given(value: Any) -> None:
+def test_yolo_world_step_image_validation_when_invalid_version_given(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3219,7 +3224,9 @@ def test_yolo_world_step_image_validation_when_valid_version_given(value: Any) -
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], 3, 1.1, -0.1])
-def test_yolo_world_step_image_validation_when_invalid_confidence_given(value: Any) -> None:
+def test_yolo_world_step_image_validation_when_invalid_confidence_given(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3236,7 +3243,9 @@ def test_yolo_world_step_image_validation_when_invalid_confidence_given(value: A
 
 
 @pytest.mark.parametrize("value", [None, 0.3, 1.0, 0.0])
-def test_yolo_world_step_image_validation_when_valid_confidence_given(value: Any) -> None:
+def test_yolo_world_step_image_validation_when_valid_confidence_given(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3316,7 +3325,9 @@ def test_yolo_world_step_image_selector_validation_when_invalid_image_given() ->
         step.validate_field_selector(field_name="image", input_step=inpt_step)
 
 
-def test_yolo_world_step_inference_parameter_selector_validation_when_valid_input_given() -> None:
+def test_yolo_world_step_inference_parameter_selector_validation_when_valid_input_given() -> (
+    None
+):
     # given
     specification = {
         "type": "YoloWorld",
@@ -3335,7 +3346,9 @@ def test_yolo_world_step_inference_parameter_selector_validation_when_valid_inpu
     # then - no error expected
 
 
-def test_yolo_world_step_inference_parameter_selector_validation_when_invalid_input_given() -> None:
+def test_yolo_world_step_inference_parameter_selector_validation_when_invalid_input_given() -> (
+    None
+):
     # given
     specification = {
         "type": "YoloWorld",
@@ -3367,8 +3380,7 @@ def test_yolo_world_step_image_binding_validation_when_input_is_valid() -> None:
 
     # when
     step.validate_field_binding(
-        field_name="image",
-        value={"type": "url", "value": "https://some/image.jpg"}
+        field_name="image", value={"type": "url", "value": "https://some/image.jpg"}
     )
 
     # then - no error
@@ -3388,14 +3400,13 @@ def test_yolo_world_step_image_binding_validation_when_input_is_invalid() -> Non
 
     # when
     with pytest.raises(VariableTypeError):
-        step.validate_field_binding(
-            field_name="image",
-            value="invalid"
-        )
+        step.validate_field_binding(field_name="image", value="invalid")
 
 
 @pytest.mark.parametrize("value", [None, "s", "l", "m"])
-def test_yolo_world_step_version_binding_validation_when_input_is_valid(value: Optional[str]) -> None:
+def test_yolo_world_step_version_binding_validation_when_input_is_valid(
+    value: Optional[str],
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3417,7 +3428,9 @@ def test_yolo_world_step_version_binding_validation_when_input_is_valid(value: O
 
 
 @pytest.mark.parametrize("value", ["some", 1, True])
-def test_yolo_world_step_version_binding_validation_when_input_is_invalid(value: Optional[str]) -> None:
+def test_yolo_world_step_version_binding_validation_when_input_is_invalid(
+    value: Optional[str],
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3459,7 +3472,9 @@ def test_yolo_world_step_class_names_binding_validation_when_input_is_valid() ->
 
 
 @pytest.mark.parametrize("value", ["some", 1, True, [1, "a"]])
-def test_yolo_world_step_class_names_binding_validation_when_input_is_invalid(value: Optional[str]) -> None:
+def test_yolo_world_step_class_names_binding_validation_when_input_is_invalid(
+    value: Optional[str],
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3473,14 +3488,13 @@ def test_yolo_world_step_class_names_binding_validation_when_input_is_invalid(va
 
     # when
     with pytest.raises(VariableTypeError):
-        step.validate_field_binding(
-            field_name="class_names",
-            value=value
-        )
+        step.validate_field_binding(field_name="class_names", value=value)
 
 
 @pytest.mark.parametrize("value", [None, 0.0, 0.3, 1.0])
-def test_yolo_world_step_confidence_binding_validation_when_input_is_valid(value: Optional[float]) -> None:
+def test_yolo_world_step_confidence_binding_validation_when_input_is_valid(
+    value: Optional[float],
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",
@@ -3502,7 +3516,9 @@ def test_yolo_world_step_confidence_binding_validation_when_input_is_valid(value
 
 
 @pytest.mark.parametrize("value", ["some", -1, -0.1, 1.1])
-def test_yolo_world_step_confidence_binding_validation_when_input_is_invalid(value: Optional[float]) -> None:
+def test_yolo_world_step_confidence_binding_validation_when_input_is_invalid(
+    value: Optional[float],
+) -> None:
     # given
     specification = {
         "type": "YoloWorld",

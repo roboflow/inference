@@ -400,7 +400,7 @@ This step produces **dynamic** crops based on detections from detections-based m
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
 * `detections`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (required)
 
 ##### Step outputs:
 * `crops` - `image` cropped based on `detections`
@@ -430,7 +430,7 @@ This step is responsible for filtering detections based predictions based on con
 * `type`: must be `DetectionFilter` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `DetectionOffset`, `YoloWorld`] (required)
 * `filter_definition`: definition of the filter (required)
 
 Filter definition can be either `DetectionFilterDefinition`
@@ -482,7 +482,7 @@ This step is responsible for applying fixed offset on width and height of detect
 * `type`: must be `DetectionOffset` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `DetectionOffset`, `YoloWorld`] (required)
 * `offset_x`: reference to input parameter of integer value for detection width offset (required)
 * `offset_y`: reference to input parameter of integer value for detection height offset (required)
 
@@ -568,7 +568,7 @@ In the case of `class_aware=False`:
 * `type`: must be `DetectionsConsensus` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: list of selectors pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required, must contain at least 2 elements)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (required, must contain at least 2 elements)
 * `required_votes`: number of models that must agree on the detection - integer or selector pointing at
 `InferenceParameter` (required)
 * `class_aware`: flag deciding if class names are taken into account when finding overlapping bounding boxes
@@ -627,7 +627,7 @@ configs can co-exist)
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
 * `predictions` - selector pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (then use `$steps.<det_step_name>.predictions`)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (then use `$steps.<det_step_name>.predictions`)
 or outputs of classification [`ClassificationModel`] (then use `$steps.<cls_step_name>.top`) (required)
 * `target_dataset` - name of Roboflow dataset / project to be used as target for collected data (required)
 * `target_dataset_api_key` - optional API key to be used for data registration. This may help in a scenario when data
@@ -654,6 +654,29 @@ belongs to and register datapoint. To prevent that from happening - model steps 
 * **important :exclamation:** be careful with names of sampling strategies if you define Active Learning configuration - 
 you should keep them unique not only within a single config, but globally in project - otherwise limits accounting may
 not work well
+
+#### `YoloWorld`
+This `workflows` block is supposed to bring [Yolo World model](https://blog.roboflow.com/what-is-yolo-world/) to the
+`workflows` world! You can use it in a very similar way as other object detection models within `workflows`.
+
+##### Step parameters
+* `type`: must be `YoloWorld` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `class_names` - must be reference to parameter or list of strings with names of classes to be detected - Yolo World 
+model makes it possible to predict across classes that you pass in the runtime - so in each request to `workflows` you 
+may detect different objects without model retraining. (required)
+* `version` - allows to specify model version. It is optional parameter, but when value is given it must be one of 
+[`s`, `m`, `l`]
+* `confidence` - optional parameter to specify confidence threshold. If given - must be number in range `[0.0, 1.0]`
+
+##### Step outputs
+* `predictions` - details of predictions
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* `prediction_type` - denoting `keypoint-detection` model
 
 ## Different modes of execution
 Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps
