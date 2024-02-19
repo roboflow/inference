@@ -1,7 +1,3 @@
-!!! warning
-
-    This model is not yet available in Inference. Check back later for updates.
-
 <a href="https://github.com/IDEA-Research/GroundingDINO" target="_blank">Grounding DINO</a> is a zero-shot object detection model.
 
 You can use Grounding DINO to identify objects in images and videos using arbitrary text prompts.
@@ -17,7 +13,21 @@ To use Grounding DINO effectively, we recommend experimenting with the model to 
 Create a new Python file called `app.py` and add the following code:
 
 ```python
+from inference.models.grounding_dino import GroundingDINO
 
+model = GroundingDINO(api_key="")
+
+results = model.infer(
+    {
+        "image": {
+            "type": "url",
+            "value": "https://media.roboflow.com/fruit.png",
+        },
+        "text": ["apple"]
+    }
+)
+
+print(results.json())
 ```
 
 In this code, we load Grounding DINO, run Grounding DINO on an image, and annotate the image with the predictions from the model.
@@ -39,6 +49,4 @@ Then, run the Python script you have created:
 python app.py
 ```
 
-The results of Grounding DINO model will be displayed in a new window:
-
-![]()
+The predictions from your model will be printed to the console.
