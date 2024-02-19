@@ -33,7 +33,7 @@ from inference.core.interfaces.camera.video_source import (
     VideoSource,
 )
 from inference.core.interfaces.stream.entities import (
-    ObjectDetectionInferenceConfig,
+    ModelConfig,
     ObjectDetectionPrediction,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
@@ -72,6 +72,8 @@ class InferencePipeline:
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
+        mask_decode_mode: Optional[str] = "accurate",
+        tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
     ) -> "InferencePipeline":
         """
@@ -87,6 +89,9 @@ class InferencePipeline:
         are handled by separate threads.
 
         Given that reference to stream is passed and connectivity is lost - it attempts to re-connect with delay.
+
+        Since version 0.9.11 it works not only for object detection models but is also compatible with stubs,
+        classification, instance-segmentation and keypoint-detection models.
 
         Args:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
@@ -124,6 +129,10 @@ class InferencePipeline:
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
+            mask_decode_mode: (Optional[str]): Parameter of model post-processing. If not given - model "accurate" is
+                used. Applicable for instance segmentation models
+            tradeoff_factor (Optional[float]): Parameter of model post-processing. If not 0.0 - model default is used.
+                Applicable for instance segmentation models
             active_learning_enabled (Optional[bool]): Flag to enable / disable Active Learning middleware (setting it
                 true does not guarantee any data to be collected, as data collection is controlled by Roboflow backend -
                 it just enables middleware intercepting predictions). If not given, env variable
@@ -146,12 +155,14 @@ class InferencePipeline:
             api_key = API_KEY
         if status_update_handlers is None:
             status_update_handlers = []
-        inference_config = ObjectDetectionInferenceConfig.init(
+        inference_config = ModelConfig.init(
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
             iou_threshold=iou_threshold,
             max_candidates=max_candidates,
             max_detections=max_detections,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
         )
         model = get_roboflow_model(model_id=model_id, api_key=api_key)
         if watchdog is None:
@@ -214,7 +225,7 @@ class InferencePipeline:
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
-        inference_config: ObjectDetectionInferenceConfig,
+        inference_config: ModelConfig,
         active_learning_middleware: Union[
             NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
         ],
@@ -294,18 +305,17 @@ class InferencePipeline:
                     frame_timestamp=video_frame.frame_timestamp,
                     frame_id=video_frame.frame_id,
                 )
+                postprocessing_args = self._inference_config.to_postprocessing_params()
                 predictions = self._model.postprocess(
                     predictions,
                     preprocessing_metadata,
-                    class_agnostic_nms=self._inference_config.class_agnostic_nms,
-                    confidence=self._inference_config.confidence,
-                    iou_threshold=self._inference_config.iou_threshold,
-                    max_candidates=self._inference_config.max_candidates,
-                    max_detections=self._inference_config.max_detections,
-                )[0].dict(
-                    by_alias=True,
-                    exclude_none=True,
+                    **postprocessing_args,
                 )
+                if issubclass(type(predictions), list):
+                    predictions = predictions[0].dict(
+                        by_alias=True,
+                        exclude_none=True,
+                    )
                 self._watchdog.on_model_prediction_ready(
                     frame_timestamp=video_frame.frame_timestamp,
                     frame_id=video_frame.frame_id,

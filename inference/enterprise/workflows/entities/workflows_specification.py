@@ -23,6 +23,7 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     RelativeStaticCrop,
+    YoloWorld,
 )
 
 InputType = Annotated[
@@ -45,6 +46,7 @@ StepType = Annotated[
         AbsoluteStaticCrop,
         DetectionsConsensus,
         ActiveLearningDataCollector,
+        YoloWorld,
     ],
     Field(discriminator="type"),
 ]

@@ -118,7 +118,7 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=True)
+        responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
 

@@ -999,6 +999,73 @@ class InferenceHTTPClient:
             expected_format=self.__inference_configuration.output_visualisation_format,
         )
 
+    @wrap_errors
+    def infer_from_yolo_world(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        class_names: List[str],
+        model_version: Optional[str] = None,
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["text"] = class_names
+        if model_version is not None:
+            payload["yolo_world_version_id"] = model_version
+        if confidence is not None:
+            payload["confidence"] = confidence
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+        return [r.json() for r in responses]
+
+    @wrap_errors_async
+    async def infer_from_yolo_world_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        class_names: List[str],
+        model_version: Optional[str] = None,
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["text"] = class_names
+        if model_version is not None:
+            payload["yolo_world_version_id"] = model_version
+        if confidence is not None:
+            payload["confidence"] = confidence
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        return await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+
     def _post_images(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],

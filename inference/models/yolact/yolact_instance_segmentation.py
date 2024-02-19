@@ -128,7 +128,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
         predictions: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
-    ) -> Any:
+    ) -> List[InstanceSegmentationInferenceResponse]:
         loc_data = np.float32(predictions[0])
         conf_data = np.float32(predictions[1])
         mask_data = np.float32(predictions[2])
@@ -210,18 +210,20 @@ class YOLACT(OnnxRoboflowInferenceModel):
                 batch_preds.append(preds)
         else:
             batch_preds.append([])
-
+        img_dims = preprocess_return_metadata["img_dims"]
+        responses = self.make_response(batch_preds, img_dims, **kwargs)
         if kwargs["return_image_dims"]:
-            return batch_preds, preprocess_return_metadata["img_dims"]
+            return responses, preprocess_return_metadata["img_dims"]
         else:
-            return batch_preds
+            return responses
 
     def make_response(
         self,
-        predictions,
-        img_dims,
+        predictions: List[List[dict]],
+        img_dims: List[Tuple[int, int]],
         class_filter: List[str] = None,
-    ):
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
         """
         Constructs a list of InstanceSegmentationInferenceResponse objects based on the provided predictions
         and image dimensions, optionally filtering by class name.

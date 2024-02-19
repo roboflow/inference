@@ -12,6 +12,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     HOSTED_CORE_MODEL_URL,
@@ -51,6 +52,7 @@ from inference.enterprise.workflows.entities.steps import (
     OCRModel,
     RoboflowModel,
     StepInterface,
+    YoloWorld,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -386,6 +388,131 @@ MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR = {
     "InstanceSegmentationModel": construct_http_client_configuration_for_segmentation_step,
     "KeypointsDetectionModel": construct_http_client_configuration_for_keypoints_detection_step,
 }
+
+
+async def run_yolo_world_model_step(
+    step: YoloWorld,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    class_names = resolve_parameter(
+        selector_or_value=step.class_names,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    model_version = resolve_parameter(
+        selector_or_value=step.version,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    confidence = resolve_parameter(
+        selector_or_value=step.confidence,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    if step_execution_mode is StepExecutionMode.LOCAL:
+        serialised_result = await get_yolo_world_predictions_locally(
+            image=image,
+            class_names=class_names,
+            model_version=model_version,
+            confidence=confidence,
+            model_manager=model_manager,
+            api_key=api_key,
+        )
+    else:
+        serialised_result = await get_yolo_world_predictions_from_remote_api(
+            image=image,
+            class_names=class_names,
+            model_version=model_version,
+            confidence=confidence,
+            step=step,
+            api_key=api_key,
+        )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="object-detection",
+    )
+    serialised_result = attach_parent_info(image=image, results=serialised_result)
+    serialised_result = anchor_detections_in_parent_coordinates(
+        image=image,
+        serialised_result=serialised_result,
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def get_yolo_world_predictions_locally(
+    image: List[dict],
+    class_names: List[str],
+    model_version: Optional[str],
+    confidence: Optional[float],
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> List[dict]:
+    serialised_result = []
+    for single_image in image:
+        inference_request = YOLOWorldInferenceRequest(
+            image=single_image,
+            yolo_world_version_id=model_version,
+            confidence=confidence,
+            text=class_names,
+        )
+        yolo_world_model_id = load_core_model(
+            model_manager=model_manager,
+            inference_request=inference_request,
+            core_model="yolo_world",
+            api_key=api_key,
+        )
+        result = await model_manager.infer_from_request(
+            yolo_world_model_id, inference_request
+        )
+        serialised_result.append(result.dict())
+    return serialised_result
+
+
+async def get_yolo_world_predictions_from_remote_api(
+    image: List[dict],
+    class_names: List[str],
+    model_version: Optional[str],
+    confidence: Optional[float],
+    step: YoloWorld,
+    api_key: Optional[str],
+) -> List[dict]:
+    api_url = resolve_model_api_url(step=step)
+    client = InferenceHTTPClient(
+        api_url=api_url,
+        api_key=api_key,
+    )
+    configuration = InferenceConfiguration(
+        max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    )
+    client.configure(inference_configuration=configuration)
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+        client.select_api_v0()
+    image_batches = list(
+        make_batches(
+            iterable=image,
+            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        )
+    )
+    serialised_result = []
+    for single_batch in image_batches:
+        batch_results = await client.infer_from_yolo_world_async(
+            inference_input=[i["value"] for i in single_batch],
+            class_names=class_names,
+            model_version=model_version,
+            confidence=confidence,
+        )
+        serialised_result.extend(batch_results)
+    return serialised_result
 
 
 async def run_ocr_model_step(

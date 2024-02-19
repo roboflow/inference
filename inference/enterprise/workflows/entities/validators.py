@@ -226,6 +226,7 @@ def validate_selector_holds_detections(
         "DetectionFilter",
         "DetectionsConsensus",
         "DetectionOffset",
+        "YoloWorld",
     }:
         raise InvalidStepInputDetected(
             f"Step step with name {step_name} cannot take as an input predictions from {input_step.get_type()}. "

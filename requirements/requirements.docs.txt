@@ -8,3 +8,4 @@ cairosvg
 mkdocs-gen-files
 mkdocs-literate-nav
 mkdocs-macros-plugin
+mkdocs-jupyter

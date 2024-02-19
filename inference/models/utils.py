@@ -178,6 +178,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models import YOLOWorld
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld
+except:
+    pass
+
 
 def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
