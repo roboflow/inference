@@ -1481,17 +1481,30 @@ class YoloWorld(BaseModel, StepInterface):
         return self.type
 
 
-SUPPORTED_LMMS = {"gpt_4v", "cog_vlm"}
+GPT_4V_MODEL_TYPE = "gpt_4v"
+COG_VLM_MODEL_TYPE = "cog_vlm"
+SUPPORTED_LMMS = {GPT_4V_MODEL_TYPE, COG_VLM_MODEL_TYPE}
 
 
-class LLMModel(BaseModel, StepInterface):
-    type: Literal["LLMModel"]
+class LMMConfig(BaseModel):
+    max_tokens: Optional[int] = Field(default=None)
+    temperature: Optional[float] = Field(default=None)
+    gpt_image_detail: Literal["low", "high", "auto"] = Field(
+        default="auto",
+        description="To be used for GPT-4V only.",
+    )
+    gpt_model_version: str = Field(default="gpt-4-vision-preview")
+
+
+class LMM(BaseModel, StepInterface):
+    type: Literal["LMM"]
     name: str
     image: str
     prompt: str
     model_type: str
+    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
     remote_api_key: Optional[str] = Field(default=None)
-    json_output: Optional[str, Dict[str, str]] = Field(default=None)
+    json_output: Optional[Union[str, Dict[str, str]]] = Field(default=None)
 
     @field_validator("image")
     @classmethod
@@ -1549,7 +1562,7 @@ class LLMModel(BaseModel, StepInterface):
         }
 
     def get_output_names(self) -> Set[str]:
-        return {"raw_response", "structured_response"}
+        return {"raw_output", "structured_output"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1619,12 +1632,13 @@ class LLMModel(BaseModel, StepInterface):
         return self.type
 
 
-class LLMModelForClassification(BaseModel, StepInterface):
-    type: Literal["LLMModelForClassification"]
+class LMMForClassification(BaseModel, StepInterface):
+    type: Literal["LMMForClassification"]
     name: str
     image: str
     model_type: str
     classes: Union[List[str], str]
+    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
     remote_api_key: Optional[str] = Field(default=None)
 
     @field_validator("image")
@@ -1671,7 +1685,7 @@ class LLMModelForClassification(BaseModel, StepInterface):
         }
 
     def get_output_names(self) -> Set[str]:
-        return {"top", "confidence", "parent_id"}
+        return {"raw_output", "top", "parent_id"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1720,16 +1734,6 @@ class LLMModelForClassification(BaseModel, StepInterface):
                 value=value,
                 error=VariableTypeError,
             )
-
-    def get_type(self) -> str:
-        return self.type
-
-
-class LLMModelForDetection(LLMModelForClassification):
-    type: Literal["LLMModelForDetection"]
-
-    def get_output_names(self) -> Set[str]:
-        return {"predictions", "parent_id", "image"}
 
     def get_type(self) -> str:
         return self.type

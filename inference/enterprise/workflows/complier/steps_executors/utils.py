@@ -9,10 +9,12 @@ from inference.enterprise.workflows.complier.utils import (
     is_step_output_selector,
 )
 from inference.enterprise.workflows.entities.steps import (
+    LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
     ClipComparison,
     Crop,
+    LMMForClassification,
     OCRModel,
     RelativeStaticCrop,
     RoboflowModel,
@@ -37,6 +39,8 @@ def get_image(
         ClipComparison,
         ActiveLearningDataCollector,
         YoloWorld,
+        LMM,
+        LMMForClassification,
     ],
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,

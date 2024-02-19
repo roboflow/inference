@@ -33,6 +33,8 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
 )
 from inference.enterprise.workflows.complier.steps_executors.models import (
     run_clip_comparison_step,
+    run_lmm_for_classification_step,
+    run_lmm_step,
     run_ocr_model_step,
     run_roboflow_model_step,
     run_yolo_world_model_step,
@@ -69,6 +71,8 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "DetectionsConsensus": run_detections_consensus_step,
     "ActiveLearningDataCollector": run_active_learning_data_collector,
     "YoloWorld": run_yolo_world_model_step,
+    "LMM": run_lmm_step,
+    "LMMForClassification": run_lmm_for_classification_step,
 }
 
 
