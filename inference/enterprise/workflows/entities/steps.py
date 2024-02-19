@@ -1142,6 +1142,7 @@ ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
     "DetectionsConsensus": "predictions",
     "DetectionOffset": "predictions",
     "ClassificationModel": "top",
+    "LMMForClassification": "top",
 }
 
 
@@ -1487,8 +1488,7 @@ SUPPORTED_LMMS = {GPT_4V_MODEL_TYPE, COG_VLM_MODEL_TYPE}
 
 
 class LMMConfig(BaseModel):
-    max_tokens: Optional[int] = Field(default=None)
-    temperature: Optional[float] = Field(default=None)
+    max_tokens: int = Field(default=450)
     gpt_image_detail: Literal["low", "high", "auto"] = Field(
         default="auto",
         description="To be used for GPT-4V only.",
@@ -1501,7 +1501,7 @@ class LMM(BaseModel, StepInterface):
     name: str
     image: str
     prompt: str
-    model_type: str
+    lmm_type: str
     lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
     remote_api_key: Optional[str] = Field(default=None)
     json_output: Optional[Union[str, Dict[str, str]]] = Field(default=None)
@@ -1520,12 +1520,12 @@ class LMM(BaseModel, StepInterface):
         )
         return value
 
-    @field_validator("model_type")
+    @field_validator("lmm_type")
     @classmethod
-    def validate_model_type(cls, value: Any) -> str:
+    def validate_lmm_type(cls, value: Any) -> str:
         validate_field_is_selector_or_one_of_values(
             value=value,
-            field_name="model_type",
+            field_name="lmm_type",
             selected_values=SUPPORTED_LMMS,
         )
         return value
@@ -1540,7 +1540,7 @@ class LMM(BaseModel, StepInterface):
 
     @field_validator("json_output")
     @classmethod
-    def validate_remote_api_key(cls, value: Any) -> str:
+    def validate_json_output(cls, value: Any) -> str:
         validate_field_is_selector_or_has_given_type(
             value=value, field_name="json_output", allowed_types=[type(None), dict]
         )
@@ -1556,13 +1556,13 @@ class LMM(BaseModel, StepInterface):
         return {
             "image",
             "prompt",
-            "model_type",
+            "lmm_type",
             "remote_api_key",
             "json_output",
         }
 
     def get_output_names(self) -> Set[str]:
-        return {"raw_output", "structured_output"}
+        return {"raw_output", "structured_output", "image", "parent_id"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1583,7 +1583,7 @@ class LMM(BaseModel, StepInterface):
             input_step=input_step,
             applicable_fields={
                 "prompt",
-                "model_type",
+                "lmm_type",
                 "remote_api_key",
                 "json_output",
             },
@@ -1599,7 +1599,7 @@ class LMM(BaseModel, StepInterface):
                 value=value,
                 error=VariableTypeError,
             )
-        elif field_name == "model_type":
+        elif field_name == "lmm_type":
             validate_field_is_one_of_selected_values(
                 field_name=field_name,
                 selected_values=SUPPORTED_LMMS,
@@ -1636,7 +1636,7 @@ class LMMForClassification(BaseModel, StepInterface):
     type: Literal["LMMForClassification"]
     name: str
     image: str
-    model_type: str
+    lmm_type: str
     classes: Union[List[str], str]
     lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
     remote_api_key: Optional[str] = Field(default=None)
@@ -1647,12 +1647,12 @@ class LMMForClassification(BaseModel, StepInterface):
         validate_image_is_valid_selector(value=value)
         return value
 
-    @field_validator("model_type")
+    @field_validator("lmm_type")
     @classmethod
-    def validate_model_type(cls, value: Any) -> str:
+    def validate_lmm_type(cls, value: Any) -> str:
         validate_field_is_selector_or_one_of_values(
             value=value,
-            field_name="model_type",
+            field_name="lmm_type",
             selected_values=SUPPORTED_LMMS,
         )
         return value
@@ -1664,7 +1664,7 @@ class LMMForClassification(BaseModel, StepInterface):
             return value
         validate_field_is_list_of_string(
             value=value,
-            field_name="model_type",
+            field_name="classes",
         )
         return value
 
@@ -1679,13 +1679,13 @@ class LMMForClassification(BaseModel, StepInterface):
     def get_input_names(self) -> Set[str]:
         return {
             "image",
-            "model_type",
+            "lmm_type",
             "classes",
             "remote_api_key",
         }
 
     def get_output_names(self) -> Set[str]:
-        return {"raw_output", "top", "parent_id"}
+        return {"raw_output", "top", "parent_id", "image", "prediction_type"}
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1705,7 +1705,7 @@ class LMMForClassification(BaseModel, StepInterface):
             field_name=field_name,
             input_step=input_step,
             applicable_fields={
-                "model_type",
+                "lmm_type",
                 "classes",
                 "remote_api_key",
             },
@@ -1714,7 +1714,7 @@ class LMMForClassification(BaseModel, StepInterface):
     def validate_field_binding(self, field_name: str, value: Any) -> None:
         if field_name == "image":
             validate_image_biding(value=value)
-        elif field_name == "model_type":
+        elif field_name == "lmm_type":
             validate_field_is_one_of_selected_values(
                 field_name=field_name,
                 selected_values=SUPPORTED_LMMS,
