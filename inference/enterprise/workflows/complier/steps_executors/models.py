@@ -488,7 +488,7 @@ async def get_yolo_world_predictions_locally(
         result = await model_manager.infer_from_request(
             yolo_world_model_id, inference_request
         )
-        serialised_result.append(result.dict())
+        serialised_result.append(result.dict(by_alias=True, exclude_none=True))
     return serialised_result
 
 

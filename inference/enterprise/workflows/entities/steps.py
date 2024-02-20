@@ -1550,6 +1550,13 @@ class LMM(BaseModel, StepInterface):
             value=value,
             field_name="json_output",
         )
+        output_names = {"raw_output", "structured_output", "image", "parent_id"}
+        for key in value.keys():
+            if key in output_names:
+                raise ValueError(
+                    f"`json_output` specified for `LMM` step defines field (`{key}`) that collide with step "
+                    f"output names: {output_names} which is forbidden."
+                )
         return value
 
     def get_input_names(self) -> Set[str]:
@@ -1630,6 +1637,13 @@ class LMM(BaseModel, StepInterface):
                 field_name="json_output",
                 error=VariableTypeError,
             )
+            output_names = {"raw_output", "structured_output", "image", "parent_id"}
+            for key in value.keys():
+                if key in output_names:
+                    raise VariableTypeError(
+                        f"`json_output` injected for `LMM` step {self.name} defines field (`{key}`) that collide "
+                        f"with step output names: {output_names} which is forbidden."
+                    )
 
     def get_type(self) -> str:
         return self.type
