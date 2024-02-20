@@ -1,9 +1,12 @@
 import json
+import time
 from unittest import mock
 from unittest.mock import MagicMock, AsyncMock
 
 import numpy as np
 import pytest
+from openai.types.chat import ChatCompletion, ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
@@ -15,6 +18,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     construct_http_client_configuration_for_segmentation_step,
     resolve_model_api_url, try_parse_json, try_parse_lmm_output_to_json,
     get_cogvlm_generations_from_remote_api, get_cogvlm_generations_locally, run_cog_vlm_prompting,
+    execute_gpt_4v_request,
 )
 from inference.enterprise.workflows.entities.steps import (
     ClassificationModel,
@@ -23,7 +27,7 @@ from inference.enterprise.workflows.entities.steps import (
     KeypointsDetectionModel,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
-    OCRModel,
+    OCRModel, LMMConfig,
 )
 
 
@@ -648,3 +652,42 @@ async def test_run_cog_vlm_prompting_when_remote_execution_chosen_and_no_expecte
         {"content": "Response 3: 42", "image": {"width": 168, "height": 194}}
     ]
     assert result[1] == [{}, {}, {}], "No meaningful parsed response expected"
+
+
+@pytest.mark.asyncio
+async def test_execute_gpt_4v_request() -> None:
+    # given
+    client = AsyncMock()
+    client.chat.completions.create.return_value = ChatCompletion(
+        id="38",
+        choices=[
+            Choice(
+                finish_reason="stop",
+                index=0,
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content="This is content from GPT",
+                )
+            )
+        ],
+        created=int(time.time()),
+        model="gpt-4-vision-preview",
+        object="chat.completion",
+    )
+
+    # when
+    result = await execute_gpt_4v_request(
+        client=client,
+        image={"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
+        prompt="My prompt",
+        lmm_config=LMMConfig(gpt_image_detail="low", max_tokens=120)
+    )
+
+    # then
+    assert result == {"content": "This is content from GPT", "image": {"width": 168, "height": 192}}
+    call_kwargs = client.chat.completions.create.call_args[1]
+    assert call_kwargs["model"] == "gpt-4-vision-preview"
+    assert call_kwargs["max_tokens"] == 120
+    assert len(call_kwargs["messages"]) == 1, "Only single message is expected to be prompted"
+    assert call_kwargs["messages"][0]["content"][0]["text"] == "My prompt", "Text prompt is expected to be injected without modification"
+    assert call_kwargs["messages"][0]["content"][1]["image_url"]["detail"] == "low", "Image details level expected to be set to `low` as in LMMConfig"
