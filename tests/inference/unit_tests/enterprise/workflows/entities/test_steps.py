@@ -30,6 +30,7 @@ from inference.enterprise.workflows.entities.steps import (
     KeypointsDetectionModel,
     LimitDefinition,
     LMMConfig,
+    LMMForClassification,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
@@ -3633,7 +3634,7 @@ def test_lmm_step_validation_when_prompt_is_invalid(value: Any) -> None:
 
 
 @pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
-def test_lmm_step_validation_when_prompt_valid(value: Any) -> None:
+def test_lmm_step_validation_when_lmm_type_valid(value: Any) -> None:
     # given
     specification = {
         "type": "LMM",
@@ -3661,7 +3662,7 @@ def test_lmm_step_validation_when_prompt_valid(value: Any) -> None:
 
 
 @pytest.mark.parametrize("value", ["some", None])
-def test_lmm_step_validation_when_prompt_invalid(value: Any) -> None:
+def test_lmm_step_validation_when_lmm_type_invalid(value: Any) -> None:
     # given
     specification = {
         "type": "LMM",
@@ -4130,3 +4131,488 @@ def test_lmm_step_validation_of_json_output_field_binding_when_invalid_input_pro
     # when
     with pytest.raises(VariableTypeError):
         step.validate_field_binding(field_name="json_output", value=value)
+
+
+def test_llm_for_classification_step_validation_when_valid_input_given() -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classification_classes",
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    result = LMMForClassification.parse_obj(specification)
+
+    # then
+    assert result == LMMForClassification(
+        type="LMMForClassification",
+        name="step_3",
+        image="$steps.step_2.crops",
+        lmm_type="$inputs.lmm_type",
+        classes="$inputs.classification_classes",
+        lmm_config=LMMConfig(),
+        remote_api_key="$inputs.open_ai_key",
+    )
+
+
+@pytest.mark.parametrize("value", [1, "some", [], True])
+def test_llm_for_classification_step_validation_when_invalid_image_given(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": value,
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classification_classes",
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = LMMForClassification.parse_obj(specification)
+
+
+@pytest.mark.parametrize("value", [1, "some", [], True])
+def test_llm_for_classification_step_validation_when_invalid_image_given(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": value,
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classification_classes",
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = LMMForClassification.parse_obj(specification)
+
+
+@pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
+def test_llm_for_classification_step_validation_when_lmm_type_valid(value: Any) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": value,
+        "classes": "$inputs.classification_classes",
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    result = LMMForClassification.parse_obj(specification)
+
+    assert result == LMMForClassification(
+        type="LMMForClassification",
+        name="step_3",
+        image="$steps.step_2.crops",
+        lmm_type=value,
+        classes="$inputs.classification_classes",
+        lmm_config=LMMConfig(),
+        remote_api_key="$inputs.open_ai_key",
+    )
+
+
+@pytest.mark.parametrize("value", ["some", None])
+def test_llm_for_classification_step_validation_when_lmm_type_invalid(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": value,
+        "classes": "$inputs.classification_classes",
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = LMMForClassification.parse_obj(specification)
+
+
+@pytest.mark.parametrize("value", ["$inputs.classes", ["a"], ["a", "b"]])
+def test_llm_for_classification_step_validation_when_classes_field_valid(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": value,
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    result = LMMForClassification.parse_obj(specification)
+
+    assert result == LMMForClassification(
+        type="LMMForClassification",
+        name="step_3",
+        image="$steps.step_2.crops",
+        lmm_type="gpt_4v",
+        classes=value,
+        lmm_config=LMMConfig(),
+        remote_api_key="$inputs.open_ai_key",
+    )
+
+
+@pytest.mark.parametrize("value", ["some", None, [], [1, 2]])
+def test_llm_for_classification_step_validation_when_lmm_type_invalid(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": value,
+        "remote_api_key": "$inputs.open_ai_key",
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = LMMForClassification.parse_obj(specification)
+
+
+@pytest.mark.parametrize("value", ["$inputs.api_key", "some", None])
+def test_llm_for_classification_step_validation_when_remote_api_key_field_valid(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": ["a", "b"],
+        "remote_api_key": value,
+    }
+
+    # when
+    result = LMMForClassification.parse_obj(specification)
+
+    assert result == LMMForClassification(
+        type="LMMForClassification",
+        name="step_3",
+        image="$steps.step_2.crops",
+        lmm_type="gpt_4v",
+        classes=["a", "b"],
+        lmm_config=LMMConfig(),
+        remote_api_key=value,
+    )
+
+
+@pytest.mark.parametrize("value", [[], 1])
+def test_llm_for_classification_step_validation_when_lmm_type_invalid(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": ["a", "b"],
+        "remote_api_key": value,
+    }
+
+    # when
+    with pytest.raises(ValidationError):
+        _ = LMMForClassification.parse_obj(specification)
+
+
+def test_llm_for_classification_step_validation_of_field_selector_when_field_is_not_selector() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": ["a", "b"],
+        "remote_api_key": "xx",
+    }
+    step = LMMForClassification.parse_obj(specification)
+    input_step = InferenceParameter(type="InferenceParameter", name="some")
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(field_name="lmm_type", input_step=input_step)
+
+
+def test_llm_for_classification_step_validation_of_field_selector_when_valid_image_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": ["a", "b"],
+        "remote_api_key": "xx",
+    }
+    step = LMMForClassification.parse_obj(specification)
+    input_step = InferenceImage(type="InferenceImage", name="some")
+
+    # when
+    step.validate_field_selector(field_name="image", input_step=input_step)
+
+    # then - no error
+
+
+def test_llm_for_classification_step_validation_of_field_selector_when_invalid_image_given() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "gpt_4v",
+        "classes": ["a", "b"],
+        "remote_api_key": "xx",
+    }
+    step = LMMForClassification.parse_obj(specification)
+    input_step = InferenceParameter(type="InferenceParameter", name="some")
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(field_name="image", input_step=input_step)
+
+
+@pytest.mark.parametrize(
+    "field", ["lmm_type", "classes", "remote_api_key", "remote_api_key"]
+)
+def test_lmm_for_classification_step_validation_of_field_that_should_hold_inference_parameter_when_valid_value_provided(
+    field: str,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+    input_step = InferenceParameter(type="InferenceParameter", name="some")
+
+    # when
+    step.validate_field_selector(field_name=field, input_step=input_step)
+
+    # then - no error
+
+
+@pytest.mark.parametrize(
+    "field", ["lmm_type", "classes", "remote_api_key", "remote_api_key"]
+)
+def test_lmm_for_classification_step_validation_of_field_that_should_hold_inference_parameter_when_invalid_value_provided(
+    field: str,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+    input_step = InferenceImage(type="InferenceImage", name="some")
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        step.validate_field_selector(field_name=field, input_step=input_step)
+
+
+def test_lmm_for_classification_step_validation_of_image_field_binding_when_valid_input_provided() -> (
+    None
+):
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="image", value={"type": "url", "value": "https://some/image.jpg"}
+    )
+
+    # then - no error
+
+
+@pytest.mark.parametrize("value", ["some", 1, True, []])
+def test_lmm_for_classification_step_validation_of_image_field_binding_when_invalid_input_provided(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(field_name="image", value=value)
+
+
+@pytest.mark.parametrize("value", ["cog_vlm", "gpt_4v"])
+def test_lmm_for_classification_step_validation_of_lmm_type_field_binding_when_valid_input_provided(
+    value: str,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="lmm_type",
+        value=value,
+    )
+
+    # then - no error
+
+
+@pytest.mark.parametrize("value", [None, "some", [], 1, {}])
+def test_lmm_for_classification_step_validation_of_lmm_type_field_binding_when_invalid_input_provided(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(field_name="lmm_type", value=value)
+
+
+@pytest.mark.parametrize("value", ["cog_vlm", None])
+def test_lmm_for_classification_step_validation_of_remote_api_key_field_binding_when_valid_input_provided(
+    value: str,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="remote_api_key",
+        value=value,
+    )
+
+    # then - no error
+
+
+@pytest.mark.parametrize("value", [[], 1, {}])
+def test_lmm_for_classification_step_validation_of_remote_api_key_field_binding_when_invalid_input_provided(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(field_name="remote_api_key", value=value)
+
+
+@pytest.mark.parametrize("value", [["a", "b"]])
+def test_lmm_for_classification_step_validation_of_classes_field_binding_when_valid_input_provided(
+    value: str,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    step.validate_field_binding(
+        field_name="classes",
+        value=value,
+    )
+
+    # then - no error
+
+
+@pytest.mark.parametrize("value", [[], ["a", 1], 1, {}, "some", None])
+def test_lmm_for_classification_step_validation_of_classes_field_binding_when_invalid_input_provided(
+    value: Any,
+) -> None:
+    # given
+    specification = {
+        "type": "LMMForClassification",
+        "name": "step_3",
+        "image": "$steps.step_2.crops",
+        "lmm_type": "$inputs.lmm_type",
+        "classes": "$inputs.classes",
+        "remote_api_key": "$inputs.remote_api_key",
+    }
+    step = LMMForClassification.parse_obj(specification)
+
+    # when
+    with pytest.raises(VariableTypeError):
+        step.validate_field_binding(field_name="classes", value=value)

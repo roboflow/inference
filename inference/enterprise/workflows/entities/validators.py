@@ -115,10 +115,15 @@ def validate_field_is_one_of_selected_values(
     selected_values: set,
     error: Type[Exception] = ValueError,
 ) -> None:
-    if value not in selected_values:
+    try:
+        if value not in selected_values:
+            raise error(
+                f"Value of field `{field_name}` must be in {selected_values}. Found: {value}"
+            )
+    except TypeError as check_error:
         raise error(
-            f"Value of field `{field_name}` must be in {selected_values}. Found: {value}"
-        )
+            f"Value of field `{field_name}` must be in {selected_values}. Found: {value} which is not comparable"
+        ) from check_error
 
 
 def validate_field_is_selector_or_has_given_type(

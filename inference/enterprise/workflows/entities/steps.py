@@ -1683,6 +1683,10 @@ class LMMForClassification(BaseModel, StepInterface):
             value=value,
             field_name="classes",
         )
+        if len(value) == 0:
+            raise ValueError(
+                "`classes` field needs to be non empty list of strings or selector."
+            )
         return value
 
     @field_validator("remote_api_key")
@@ -1751,6 +1755,10 @@ class LMMForClassification(BaseModel, StepInterface):
                 value=value,
                 error=VariableTypeError,
             )
+            if len(value) == 0:
+                raise VariableTypeError(
+                    f"Cannot bind empty list of classes to `classes` field of {self.name} step."
+                )
 
     def get_type(self) -> str:
         return self.type
