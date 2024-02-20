@@ -1,7 +1,7 @@
 import json
 import time
 from unittest import mock
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
@@ -16,18 +16,23 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     construct_http_client_configuration_for_detection_step,
     construct_http_client_configuration_for_keypoints_detection_step,
     construct_http_client_configuration_for_segmentation_step,
-    resolve_model_api_url, try_parse_json, try_parse_lmm_output_to_json,
-    get_cogvlm_generations_from_remote_api, get_cogvlm_generations_locally, run_cog_vlm_prompting,
     execute_gpt_4v_request,
+    get_cogvlm_generations_from_remote_api,
+    get_cogvlm_generations_locally,
+    resolve_model_api_url,
+    run_cog_vlm_prompting,
+    try_parse_json,
+    try_parse_lmm_output_to_json,
 )
 from inference.enterprise.workflows.entities.steps import (
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
+    LMMConfig,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
-    OCRModel, LMMConfig,
+    OCRModel,
 )
 
 
@@ -317,47 +322,65 @@ def test_try_parse_json_when_input_is_not_json_parsable() -> None:
     # when
     result = try_parse_json(
         content="for sure not a valid JSON",
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        expected_output={"field_a": "my field", "field_b": "other_field"},
     )
 
     # then
-    assert result == {"field_a": "not_detected", "field_b": "not_detected"}, "No field detected is expected output"
+    assert result == {
+        "field_a": "not_detected",
+        "field_b": "not_detected",
+    }, "No field detected is expected output"
 
 
-def test_try_parse_json_when_input_is_json_parsable_and_some_fields_are_missing() -> None:
+def test_try_parse_json_when_input_is_json_parsable_and_some_fields_are_missing() -> (
+    None
+):
     # when
     result = try_parse_json(
         content=json.dumps({"field_a": "XXX", "field_c": "additional_field"}),
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        expected_output={"field_a": "my field", "field_b": "other_field"},
     )
 
     # then
-    assert result == {"field_a": "XXX", "field_b": "not_detected"}, "field_a must be extracted, `field_b` is missing and field_c should be ignored"
+    assert result == {
+        "field_a": "XXX",
+        "field_b": "not_detected",
+    }, "field_a must be extracted, `field_b` is missing and field_c should be ignored"
 
 
-def test_try_parse_json_when_input_is_json_parsable_and_all_values_are_delivered() -> None:
+def test_try_parse_json_when_input_is_json_parsable_and_all_values_are_delivered() -> (
+    None
+):
     # when
     result = try_parse_json(
         content=json.dumps({"field_a": "XXX", "field_b": "YYY"}),
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        expected_output={"field_a": "my field", "field_b": "other_field"},
     )
 
     # then
-    assert result == {"field_a": "XXX", "field_b": "YYY"}, "Both fields must be detected with values specified in content"
+    assert result == {
+        "field_a": "XXX",
+        "field_b": "YYY",
+    }, "Both fields must be detected with values specified in content"
 
 
 def test_try_parse_lmm_output_to_json_when_no_json_to_be_found_in_input() -> None:
     # when
     result = try_parse_lmm_output_to_json(
         output="for sure not a valid JSON",
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        expected_output={"field_a": "my field", "field_b": "other_field"},
     )
 
     # then
-    assert result == {"field_a": "not_detected", "field_b": "not_detected"}, "No field detected is expected output"
+    assert result == {
+        "field_a": "not_detected",
+        "field_b": "not_detected",
+    }, "No field detected is expected output"
 
 
-def test_try_parse_lmm_output_to_json_when_single_json_markdown_block_with_linearised_document_found() -> None:
+def test_try_parse_lmm_output_to_json_when_single_json_markdown_block_with_linearised_document_found() -> (
+    None
+):
     # given
     output = """
 This is some comment produced by LLM
@@ -368,15 +391,16 @@ This is some comment produced by LLM
 """.strip()
     # when
     result = try_parse_lmm_output_to_json(
-        output=output,
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        output=output, expected_output={"field_a": "my field", "field_b": "other_field"}
     )
 
     # then
     assert result == {"field_a": 1, "field_b": 37}
 
 
-def test_try_parse_lmm_output_to_json_when_single_json_markdown_block_with_multi_line_document_found() -> None:
+def test_try_parse_lmm_output_to_json_when_single_json_markdown_block_with_multi_line_document_found() -> (
+    None
+):
     # given
     output = """
 This is some comment produced by LLM
@@ -390,15 +414,16 @@ This is some comment produced by LLM
 """.strip()
     # when
     result = try_parse_lmm_output_to_json(
-        output=output,
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        output=output, expected_output={"field_a": "my field", "field_b": "other_field"}
     )
 
     # then
     assert result == {"field_a": 1, "field_b": 37}
 
 
-def test_try_parse_lmm_output_to_json_when_single_json_without_markdown_spotted() -> None:
+def test_try_parse_lmm_output_to_json_when_single_json_without_markdown_spotted() -> (
+    None
+):
     # given
     output = """
 {
@@ -408,15 +433,16 @@ def test_try_parse_lmm_output_to_json_when_single_json_without_markdown_spotted(
 """.strip()
     # when
     result = try_parse_lmm_output_to_json(
-        output=output,
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        output=output, expected_output={"field_a": "my field", "field_b": "other_field"}
     )
 
     # then
     assert result == {"field_a": 1, "field_b": 37}
 
 
-def test_try_parse_lmm_output_to_json_when_multiple_json_markdown_blocks_with_linearised_document_found() -> None:
+def test_try_parse_lmm_output_to_json_when_multiple_json_markdown_blocks_with_linearised_document_found() -> (
+    None
+):
     # given
     output = """
 This is some comment produced by LLM
@@ -432,15 +458,16 @@ some other comment
 """.strip()
     # when
     result = try_parse_lmm_output_to_json(
-        output=output,
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        output=output, expected_output={"field_a": "my field", "field_b": "other_field"}
     )
 
     # then
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-def test_try_parse_lmm_output_to_json_when_multiple_json_markdown_blocks_with_multi_line_document_found() -> None:
+def test_try_parse_lmm_output_to_json_when_multiple_json_markdown_blocks_with_multi_line_document_found() -> (
+    None
+):
     # given
     output = """
 This is some comment produced by LLM
@@ -462,8 +489,7 @@ Some other comment
 """.strip()
     # when
     result = try_parse_lmm_output_to_json(
-        output=output,
-        expected_output={"field_a": "my field", "field_b": "other_field"}
+        output=output, expected_output={"field_a": "my field", "field_b": "other_field"}
     )
 
     # then
@@ -471,12 +497,8 @@ Some other comment
 
 
 @pytest.mark.asyncio
-@mock.patch.object(
-    models, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2
-)
-@mock.patch.object(
-    models, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted"
-)
+@mock.patch.object(models, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
+@mock.patch.object(models, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
 @mock.patch.object(models.InferenceHTTPClient, "init")
 async def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock: MagicMock,
@@ -486,7 +508,7 @@ async def test_get_cogvlm_generations_from_remote_api(
     client_mock.prompt_cogvlm_async.side_effect = [
         {"response": "Response 1: 42"},
         {"response": "Response 2: 42"},
-        {"response": "Response 3: 42"}
+        {"response": "Response 3: 42"},
     ]
     inference_client_init_mock.return_value = client_mock
 
@@ -495,17 +517,17 @@ async def test_get_cogvlm_generations_from_remote_api(
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
-            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)}
+            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)},
         ],
         prompt="What is the meaning of life?",
-        api_key="some"
+        api_key="some",
     )
 
     # then
     assert result == [
         {"content": "Response 1: 42", "image": {"width": 168, "height": 192}},
         {"content": "Response 2: 42", "image": {"width": 168, "height": 193}},
-        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}}
+        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}},
     ]
 
 
@@ -525,24 +547,26 @@ async def test_get_cogvlm_generations_locally() -> None:
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
-            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)}
+            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)},
         ],
         prompt="What is the meaning of life?",
         model_manager=model_manager,
-        api_key="some"
+        api_key="some",
     )
 
     # then
     assert result == [
         {"content": "Response 1: 42", "image": {"width": 168, "height": 192}},
         {"content": "Response 2: 42", "image": {"width": 168, "height": 193}},
-        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}}
+        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}},
     ]
 
 
 @pytest.mark.asyncio
 @mock.patch.object(models, "load_core_model", MagicMock())
-async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_no_expected_output_structure() -> None:
+async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_no_expected_output_structure() -> (
+    None
+):
     # given
     model_manager = AsyncMock()
     model_manager.model_manager.side_effect = [
@@ -556,7 +580,7 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_no_expected
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
-            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)}
+            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)},
         ],
         prompt="What is the meaning of life?",
         expected_output=None,
@@ -570,14 +594,16 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_no_expected
     assert result[0] == [
         {"content": "Response 1: 42", "image": {"width": 168, "height": 192}},
         {"content": "Response 2: 42", "image": {"width": 168, "height": 193}},
-        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}}
+        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}},
     ]
     assert result[1] == [{}, {}, {}], "No meaningful parsed response expected"
 
 
 @pytest.mark.asyncio
 @mock.patch.object(models, "load_core_model", MagicMock())
-async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_json_output_structure_expected() -> None:
+async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_json_output_structure_expected() -> (
+    None
+):
     # given
     model_manager = AsyncMock()
     model_manager.model_manager.side_effect = [
@@ -591,7 +617,7 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_json_output
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
-            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)}
+            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)},
         ],
         prompt="What is the meaning of life?",
         expected_output={"value": "field with answer"},
@@ -605,18 +631,18 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_json_output
     assert result[0] == [
         {"content": json.dumps({"value": 42}), "image": {"width": 168, "height": 192}},
         {"content": json.dumps({"value": 43}), "image": {"width": 168, "height": 193}},
-        {"content": json.dumps({"value": 44}), "image": {"width": 168, "height": 194}}
+        {"content": json.dumps({"value": 44}), "image": {"width": 168, "height": 194}},
     ]
-    assert result[1] == [{"value": 42}, {"value": 43}, {"value": 44}], "Parsed objects expected"
+    assert result[1] == [
+        {"value": 42},
+        {"value": 43},
+        {"value": 44},
+    ], "Parsed objects expected"
 
 
 @pytest.mark.asyncio
-@mock.patch.object(
-    models, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2
-)
-@mock.patch.object(
-    models, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted"
-)
+@mock.patch.object(models, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
+@mock.patch.object(models, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
 @mock.patch.object(models.InferenceHTTPClient, "init")
 async def test_run_cog_vlm_prompting_when_remote_execution_chosen_and_no_expected_output_structure(
     inference_client_init_mock: MagicMock,
@@ -626,7 +652,7 @@ async def test_run_cog_vlm_prompting_when_remote_execution_chosen_and_no_expecte
     client_mock.prompt_cogvlm_async.side_effect = [
         {"response": "Response 1: 42"},
         {"response": "Response 2: 42"},
-        {"response": "Response 3: 42"}
+        {"response": "Response 3: 42"},
     ]
     inference_client_init_mock.return_value = client_mock
 
@@ -635,7 +661,7 @@ async def test_run_cog_vlm_prompting_when_remote_execution_chosen_and_no_expecte
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
-            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)}
+            {"type": "numpy_object", "value": np.zeros((194, 168, 3), dtype=np.uint8)},
         ],
         prompt="What is the meaning of life?",
         expected_output=None,
@@ -649,7 +675,7 @@ async def test_run_cog_vlm_prompting_when_remote_execution_chosen_and_no_expecte
     assert result[0] == [
         {"content": "Response 1: 42", "image": {"width": 168, "height": 192}},
         {"content": "Response 2: 42", "image": {"width": 168, "height": 193}},
-        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}}
+        {"content": "Response 3: 42", "image": {"width": 168, "height": 194}},
     ]
     assert result[1] == [{}, {}, {}], "No meaningful parsed response expected"
 
@@ -667,7 +693,7 @@ async def test_execute_gpt_4v_request() -> None:
                 message=ChatCompletionMessage(
                     role="assistant",
                     content="This is content from GPT",
-                )
+                ),
             )
         ],
         created=int(time.time()),
@@ -678,16 +704,28 @@ async def test_execute_gpt_4v_request() -> None:
     # when
     result = await execute_gpt_4v_request(
         client=client,
-        image={"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
+        image={
+            "type": "numpy_object",
+            "value": np.zeros((192, 168, 3), dtype=np.uint8),
+        },
         prompt="My prompt",
-        lmm_config=LMMConfig(gpt_image_detail="low", max_tokens=120)
+        lmm_config=LMMConfig(gpt_image_detail="low", max_tokens=120),
     )
 
     # then
-    assert result == {"content": "This is content from GPT", "image": {"width": 168, "height": 192}}
+    assert result == {
+        "content": "This is content from GPT",
+        "image": {"width": 168, "height": 192},
+    }
     call_kwargs = client.chat.completions.create.call_args[1]
     assert call_kwargs["model"] == "gpt-4-vision-preview"
     assert call_kwargs["max_tokens"] == 120
-    assert len(call_kwargs["messages"]) == 1, "Only single message is expected to be prompted"
-    assert call_kwargs["messages"][0]["content"][0]["text"] == "My prompt", "Text prompt is expected to be injected without modification"
-    assert call_kwargs["messages"][0]["content"][1]["image_url"]["detail"] == "low", "Image details level expected to be set to `low` as in LMMConfig"
+    assert (
+        len(call_kwargs["messages"]) == 1
+    ), "Only single message is expected to be prompted"
+    assert (
+        call_kwargs["messages"][0]["content"][0]["text"] == "My prompt"
+    ), "Text prompt is expected to be injected without modification"
+    assert (
+        call_kwargs["messages"][0]["content"][1]["image_url"]["detail"] == "low"
+    ), "Image details level expected to be set to `low` as in LMMConfig"
