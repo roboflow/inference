@@ -192,8 +192,5 @@ def get_model(model_id, api_key=API_KEY, **kwargs):
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
 
 
-@deprecated(
-    "`get_roboflow_model` is deprecated and will be removed in `inference-1.0.0`, use `get_model` instead."
-)
 def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
