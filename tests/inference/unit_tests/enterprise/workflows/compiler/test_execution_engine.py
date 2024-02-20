@@ -253,13 +253,13 @@ def test_construct_response_when_wildcard_selector_used_and_parent_coordinates_s
             {
                 "predictions_parent_coordinates": ["a", "b", "c"],
                 "predictions": ["a", "b"],
-                "other": "value1"
+                "other": "value1",
             },
             {
                 "predictions_parent_coordinates": ["d", "e", "f"],
                 "predictions": ["g", "h"],
-                "other": "value2"
-            }
+                "other": "value2",
+            },
         ],
     }
 
@@ -270,7 +270,7 @@ def test_construct_response_when_wildcard_selector_used_and_parent_coordinates_s
     assert result == {
         "my_field": [
             {"predictions": ["a", "b", "c"], "other": "value1"},
-            {"predictions": ["d", "e", "f"], "other": "value2"}
+            {"predictions": ["d", "e", "f"], "other": "value2"},
         ]
     }
 
@@ -295,13 +295,13 @@ def test_construct_response_when_wildcard_selector_used_and_own_coordinates_syst
             {
                 "predictions_parent_coordinates": ["a", "b", "c"],
                 "predictions": ["a", "b"],
-                "other": "value1"
+                "other": "value1",
             },
             {
                 "predictions_parent_coordinates": ["d", "e", "f"],
                 "predictions": ["g", "h"],
-                "other": "value2"
-            }
+                "other": "value2",
+            },
         ],
     }
 
@@ -312,6 +312,6 @@ def test_construct_response_when_wildcard_selector_used_and_own_coordinates_syst
     assert result == {
         "my_field": [
             {"predictions": ["a", "b"], "other": "value1"},
-            {"predictions": ["g", "h"], "other": "value2"}
+            {"predictions": ["g", "h"], "other": "value2"},
         ]
     }

@@ -259,11 +259,13 @@ def test_get_steps_output_selectors() -> None:
     assert result == {
         "$steps.my_crop.crops",
         "$steps.my_crop.parent_id",
+        "$steps.my_crop.*",
         "$steps.my_model.image",
         "$steps.my_model.predictions",
         "$steps.my_model.parent_id",
         "$steps.my_model.prediction_type",
-    }, "Each step output must be prefixed with $steps. and name of step. Crop step defines `crops` and `parent_id` outputs, object detection defines `image`, `predictions` and `parent_id`"
+        "$steps.my_model.*",
+    }, "Each step output must be prefixed with $steps. and name of step. Crop step defines `crops` and `parent_id` outputs, object detection defines `image`, `predictions` and `parent_id`. Additionally, widlcard output must be registered!"
 
 
 def test_get_steps_input_selectors() -> None:

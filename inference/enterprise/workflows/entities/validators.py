@@ -166,6 +166,8 @@ def validate_image_biding(value: Any, field_name: str = "image") -> None:
     try:
         if not issubclass(type(value), list):
             value = [value]
+        if len(value) == 0:
+            raise VariableTypeError(f"Parameter `{field_name}` must not be empty.")
         for e in value:
             InferenceRequestImage.model_validate(e)
     except (ValueError, ValidationError) as error:
