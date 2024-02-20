@@ -1562,7 +1562,10 @@ class LMM(BaseModel, StepInterface):
         }
 
     def get_output_names(self) -> Set[str]:
-        return {"raw_output", "structured_output", "image", "parent_id"}
+        outputs = {"raw_output", "structured_output", "image", "parent_id"}
+        if issubclass(type(self.json_output), dict):
+            outputs.update(self.json_output.keys())
+        return outputs
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
