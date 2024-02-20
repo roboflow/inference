@@ -1007,6 +1007,7 @@ async def execute_gpt_4v_request(
     prompt: str,
     lmm_config: LMMConfig,
 ) -> Dict[str, str]:
+    print(image, flush=True)
     loaded_image, _ = load_image(image)
     image_metadata = {"width": loaded_image.shape[1], "height": loaded_image.shape[0]}
     base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
