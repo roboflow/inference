@@ -32,6 +32,8 @@ def decode_workflow_outputs(
                 value=value,
                 expected_format=expected_format,
             )
+        elif issubclass(type(value), dict):
+            value = decode_workflow_outputs(workflow_outputs=value, expected_format=expected_format)
         elif issubclass(type(value), list):
             value = decode_workflow_output_list(
                 elements=value,
@@ -50,6 +52,13 @@ def decode_workflow_output_list(
         if is_workflow_image(value=element):
             element = decode_workflow_output_image(
                 value=element,
+                expected_format=expected_format,
+            )
+        elif issubclass(type(element), dict):
+            element = decode_workflow_outputs(workflow_outputs=element, expected_format=expected_format)
+        elif issubclass(type(element), list):
+            element = decode_workflow_output_list(
+                elements=element,
                 expected_format=expected_format,
             )
         result.append(element)
