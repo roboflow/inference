@@ -1071,8 +1071,7 @@ async def get_cogvlm_generations_locally(
 ) -> List[Dict[str, Any]]:
     serialised_result = []
     for single_image in image:
-        print(image, flush=True)
-        loaded_image, _ = load_image(image)
+        loaded_image, _ = load_image(single_image)
         image_metadata = {
             "width": loaded_image.shape[1],
             "height": loaded_image.shape[0],
