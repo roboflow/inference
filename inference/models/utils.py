@@ -7,6 +7,7 @@ from inference.core.models.stubs import (
     ObjectDetectionModelStub,
 )
 from inference.core.registries.roboflow import get_model_type
+from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
     VitClassification,
@@ -186,6 +187,13 @@ except:
     pass
 
 
-def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
+def get_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+
+
+@deprecated(
+    "`get_roboflow_model` is deprecated and will be removed in `inference-1.0.0`, use `get_model` instead."
+)
+def get_roboflow_model(*args, **kwargs):
+    return get_model(*args, **kwargs)
