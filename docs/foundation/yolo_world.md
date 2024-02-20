@@ -14,34 +14,80 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
 Create a new Python file called `app.py` and add the following code:
 
-```python
-import cv2
-import supervision as sv
+=== "Inference Python Library"
 
-from inference.models.yolo_world.yolo_world import YOLOWorld
+    ```python
+    import cv2
+    import supervision as sv
 
-image = cv2.imread("image.jpeg")
+    from inference.models.yolo_world.yolo_world import YOLOWorld
 
-model = YOLOWorld(model_id="yolo_world/l")
-classes = ["person", "backpack", "dog", "eye", "nose", "ear", "tongue"]
-results = model.infer("image.jpeg", text=classes, confidence=0.03)
+    image = cv2.imread("image.jpeg")
 
-detections = sv.Detections.from_inference(results)
+    model = YOLOWorld(model_id="yolo_world/l")
+    classes = ["person", "backpack", "dog", "eye", "nose", "ear", "tongue"]
+    results = model.infer("image.jpeg", text=classes, confidence=0.03)
 
-bounding_box_annotator = sv.BoundingBoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+    detections = sv.Detections.from_inference(results)
 
-labels = [classes[class_id] for class_id in detections.class_id]
+    bounding_box_annotator = sv.BoundingBoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
 
-annotated_image = bounding_box_annotator.annotate(
-    scene=image, detections=detections
-)
-annotated_image = label_annotator.annotate(
-    scene=annotated_image, detections=detections, labels=labels
-)
+    labels = [classes[class_id] for class_id in detections.class_id]
 
-sv.plot_image(annotated_image)
-```
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections
+    )
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections, labels=labels
+    )
+
+    sv.plot_image(annotated_image)
+    ```
+
+=== "Inference Server API ()"
+
+    ```python
+    import cv2
+    import supervision as sv
+
+    from inference_sdk import InferenceHTTPClient
+
+    client = InferenceHTTPClient(
+        api_url="http://127.0.0.1:9001",
+        api_key="XXX"
+    )
+
+    result = client.infer_from_yolo_world(
+        inference_input=["https://media.roboflow.com/dog.jpeg"],
+        class_names=["person", "backpack", "dog", "eye", "nose", "ear", "tongue"],
+        model_version="l",
+        confidence=0.1,
+    )
+
+    detections = sv.Detections.from_inference(results)
+
+    bounding_box_annotator = sv.BoundingBoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
+
+    labels = [classes[class_id] for class_id in detections.class_id]
+
+    annotated_image = bounding_box_annotator.annotate(
+        scene=image, detections=detections
+    )
+    annotated_image = label_annotator.annotate(
+        scene=annotated_image, detections=detections, labels=labels
+    )
+
+    sv.plot_image(annotated_image)
+    ```
+
+
+    Run the following command to set your API key in your coding environment:
+
+    ```
+    export ROBOFLOW_API_KEY=<your api key>
+    ```
 
 In this code, we load YOLO-World, run YOLO-World on an image, and annotate the image with the predictions from the model.
 
