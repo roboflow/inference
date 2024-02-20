@@ -232,3 +232,86 @@ def test_construct_response_when_expected_step_property_is_missing() -> None:
     # when
     with pytest.raises(WorkflowsCompilerRuntimeError):
         _ = construct_response(execution_graph=graph, outputs_lookup=outputs_lookup)
+
+
+def test_construct_response_when_wildcard_selector_used_and_parent_coordinates_system_selected() -> (
+    None
+):
+    # given
+    graph = nx.DiGraph()
+    graph.add_node(
+        "$outputs.other",
+        kind=OUTPUT_NODE_KIND,
+        definition=JsonField(
+            type="JsonField",
+            name="my_field",
+            selector="$steps.a.*",
+        ),
+    )
+    outputs_lookup = {
+        "$steps.a": [
+            {
+                "predictions_parent_coordinates": ["a", "b", "c"],
+                "predictions": ["a", "b"],
+                "other": "value1"
+            },
+            {
+                "predictions_parent_coordinates": ["d", "e", "f"],
+                "predictions": ["g", "h"],
+                "other": "value2"
+            }
+        ],
+    }
+
+    # when
+    result = construct_response(execution_graph=graph, outputs_lookup=outputs_lookup)
+
+    # then
+    assert result == {
+        "my_field": [
+            {"predictions": ["a", "b", "c"], "other": "value1"},
+            {"predictions": ["d", "e", "f"], "other": "value2"}
+        ]
+    }
+
+
+def test_construct_response_when_wildcard_selector_used_and_own_coordinates_system_selected() -> (
+    None
+):
+    # given
+    graph = nx.DiGraph()
+    graph.add_node(
+        "$outputs.other",
+        kind=OUTPUT_NODE_KIND,
+        definition=JsonField(
+            type="JsonField",
+            name="my_field",
+            selector="$steps.a.*",
+            coordinates_system=CoordinatesSystem.OWN,
+        ),
+    )
+    outputs_lookup = {
+        "$steps.a": [
+            {
+                "predictions_parent_coordinates": ["a", "b", "c"],
+                "predictions": ["a", "b"],
+                "other": "value1"
+            },
+            {
+                "predictions_parent_coordinates": ["d", "e", "f"],
+                "predictions": ["g", "h"],
+                "other": "value2"
+            }
+        ],
+    }
+
+    # when
+    result = construct_response(execution_graph=graph, outputs_lookup=outputs_lookup)
+
+    # then
+    assert result == {
+        "my_field": [
+            {"predictions": ["a", "b"], "other": "value1"},
+            {"predictions": ["g", "h"], "other": "value2"}
+        ]
+    }

@@ -254,34 +254,25 @@ def construct_response(
     result = {}
     for node in output_nodes:
         node_definition = execution_graph.nodes[node]["definition"]
-        fallback_selector = None
         node_selector = node_definition.selector
-        if node_definition.coordinates_system is CoordinatesSystem.PARENT:
-            fallback_selector = node_selector
-            node_selector = f"{node_selector}{PARENT_COORDINATES_SUFFIX}"
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node_selector
         )
         step_field = get_last_selector_chunk(selector=node_selector)
-        fallback_step_field = (
-            None
-            if fallback_selector is None
-            else get_last_selector_chunk(selector=fallback_selector)
-        )
         step_result = outputs_lookup.get(step_selector)
         if step_result is not None:
             if issubclass(type(step_result), list):
                 step_result = extract_step_result_from_list(
                     result=step_result,
                     step_field=step_field,
-                    fallback_step_field=fallback_step_field,
+                    coordinates_system=node_definition.coordinates_system,
                     step_selector=step_selector,
                 )
             else:
                 step_result = extract_step_result_from_dict(
                     result=step_result,
                     step_field=step_field,
-                    fallback_step_field=fallback_step_field,
+                    coordinates_system=node_definition.coordinates_system,
                     step_selector=step_selector,
                 )
         result[execution_graph.nodes[node]["definition"].name] = step_result
@@ -291,14 +282,14 @@ def construct_response(
 def extract_step_result_from_list(
     result: List[Dict[str, Any]],
     step_field: str,
-    fallback_step_field: Optional[str],
+    coordinates_system: CoordinatesSystem,
     step_selector: str,
 ) -> List[Any]:
     return [
         extract_step_result_from_dict(
             result=element,
             step_field=step_field,
-            fallback_step_field=fallback_step_field,
+            coordinates_system=coordinates_system,
             step_selector=step_selector,
         )
         for element in result
@@ -308,12 +299,50 @@ def extract_step_result_from_list(
 def extract_step_result_from_dict(
     result: Dict[str, Any],
     step_field: str,
-    fallback_step_field: Optional[str],
+    coordinates_system: CoordinatesSystem,
     step_selector: str,
 ) -> Any:
-    step_result = result.get(step_field, result.get(fallback_step_field))
+    if step_field == "*":
+        return extract_step_result_from_dict_using_wildcard(
+            result=result,
+            coordinates_system=coordinates_system,
+        )
+    key_in_parents_coordinates = get_key_in_parents_coordinates(key=step_field)
+    if (
+        coordinates_system is CoordinatesSystem.PARENT
+        and key_in_parents_coordinates in result
+    ):
+        step_field = key_in_parents_coordinates
+    step_result = result.get(step_field)
     if step_result is None:
         raise WorkflowsCompilerRuntimeError(
-            f"Cannot find neither field {step_field} nor {fallback_step_field} in result of step {step_selector}"
+            f"Cannot find neither field {step_field} in result of step {step_selector}"
         )
     return step_result
+
+
+def extract_step_result_from_dict_using_wildcard(
+    result: Dict[str, Any],
+    coordinates_system: CoordinatesSystem,
+) -> Dict[str, Any]:
+    all_keys_without_parent_suffix = {
+        key for key in result.keys() if not key.endswith(PARENT_COORDINATES_SUFFIX)
+    }
+    keys_to_be_extracted = {
+        (
+            (key, key)
+            if (
+                get_key_in_parents_coordinates(key=key) not in result
+                or coordinates_system is CoordinatesSystem.OWN
+            )
+            else (key, get_key_in_parents_coordinates(key=key))
+        )
+        for key in all_keys_without_parent_suffix
+    }
+    return {
+        key_alias: result[result_key] for key_alias, result_key in keys_to_be_extracted
+    }
+
+
+def get_key_in_parents_coordinates(key: str) -> str:
+    return f"{key}{PARENT_COORDINATES_SUFFIX}"

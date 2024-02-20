@@ -75,6 +75,9 @@ MODEL_TYPE2PREDICTION_TYPE = {
     "KeypointsDetectionModel": "keypoint-detection",
 }
 
+NOT_DETECTED_VALUE = "not_detected"
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
+
 
 async def run_roboflow_model_step(
     step: RoboflowModel,
@@ -844,12 +847,9 @@ async def run_lmm_step(
     remote_api_key = resolve_parameter_closure(step.remote_api_key)
     json_output = resolve_parameter_closure(step.json_output)
     if json_output is not None:
-        descriptions = "\n".join(
-            f"- `{key}`: {value}" for key, value in json_output.items()
-        )
         prompt = (
-            f"{prompt}\n\nYour response must be in JSON format with all of the following keys "
-            f"provided: {json_output.keys()}. Description of each field:\n{descriptions}"
+            f"{prompt}\n\nVALID response format is JSON:\n"
+            f"{json.dumps(json_output, indent=4)}"
         )
     if lmm_type == GPT_4V_MODEL_TYPE:
         raw_output, structured_output = await run_gpt_4v_llm_prompting(
@@ -857,13 +857,13 @@ async def run_lmm_step(
             prompt=prompt,
             remote_api_key=remote_api_key,
             lmm_config=step.lmm_config,
-            parse_json=json_output is not None,
+            expected_output=json_output,
         )
     else:
         raw_output, structured_output = await run_cog_vlm_prompting(
             image=image,
             prompt=prompt,
-            parse_json=json_output is not None,
+            expected_output=json_output,
             model_manager=model_manager,
             api_key=api_key,
             step_execution_mode=step_execution_mode,
@@ -873,6 +873,7 @@ async def run_lmm_step(
             "raw_output": raw["content"],
             "image": raw["image"],
             "structured_output": structured,
+            **structured,
         }
         for raw, structured in zip(raw_output, structured_output)
     ]
@@ -909,7 +910,7 @@ async def run_lmm_for_classification_step(
     prompt = (
         f"You are supposed to perform image classification task. You are given image that should be "
         f"assigned one of the following classes: {classes}. "
-        f"Your response must be JSON in format: {{\"top\": \"some_class\"}}"
+        f'Your response must be JSON in format: {{"top": "some_class"}}'
     )
     if lmm_type == GPT_4V_MODEL_TYPE:
         raw_output, structured_output = await run_gpt_4v_llm_prompting(
@@ -917,13 +918,13 @@ async def run_lmm_for_classification_step(
             prompt=prompt,
             remote_api_key=remote_api_key,
             lmm_config=step.lmm_config,
-            parse_json=True,
+            expected_output={"top": "name of the class"},
         )
     else:
         raw_output, structured_output = await run_cog_vlm_prompting(
             image=image,
             prompt=prompt,
-            parse_json=True,
+            expected_output={"top": "name of the class"},
             model_manager=model_manager,
             api_key=api_key,
             step_execution_mode=step_execution_mode,
@@ -950,8 +951,8 @@ async def run_gpt_4v_llm_prompting(
     prompt: str,
     remote_api_key: Optional[str],
     lmm_config: LMMConfig,
-    parse_json: bool,
-) -> Tuple[List[Dict[str, str]], List[Optional[dict]]]:
+    expected_output: Optional[Dict[str, str]],
+) -> Tuple[List[Dict[str, str]], List[dict]]:
     if remote_api_key is None:
         raise ExecutionGraphError(
             f"Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
@@ -962,9 +963,12 @@ async def run_gpt_4v_llm_prompting(
         prompt=prompt,
         lmm_config=lmm_config,
     )
-    if parse_json is False:
-        return results, [None for _ in range(len(results))]
-    parsed_output = [try_parse_lmm_json_output(output=r["content"]) for r in results]
+    if expected_output is None:
+        return results, [{} for _ in range(len(results))]
+    parsed_output = [
+        try_parse_lmm_json_output(output=r["content"], expected_output=expected_output)
+        for r in results
+    ]
     return results, parsed_output
 
 
@@ -1033,11 +1037,11 @@ async def execute_gpt_4v_request(
 async def run_cog_vlm_prompting(
     image: List[Dict[str, Any]],
     prompt: str,
-    parse_json: bool,
+    expected_output: Optional[Dict[str, str]],
     model_manager: ModelManager,
     api_key: Optional[str],
     step_execution_mode: StepExecutionMode,
-) -> Tuple[List[Dict[str, Any]], List[Optional[dict]]]:
+) -> Tuple[List[Dict[str, Any]], List[dict]]:
     if step_execution_mode is StepExecutionMode.LOCAL:
         cogvlm_generations = await get_cogvlm_generations_locally(
             image=image,
@@ -1051,10 +1055,14 @@ async def run_cog_vlm_prompting(
             prompt=prompt,
             api_key=api_key,
         )
-    if parse_json is False:
-        return cogvlm_generations, [None for _ in range(len(cogvlm_generations))]
+    if expected_output is None:
+        return cogvlm_generations, [{} for _ in range(len(cogvlm_generations))]
     parsed_output = [
-        try_parse_lmm_json_output(output=r["content"]) for r in cogvlm_generations
+        try_parse_lmm_json_output(
+            output=r["content"],
+            expected_output=expected_output,
+        )
+        for r in cogvlm_generations
     ]
     return cogvlm_generations, parsed_output
 
@@ -1139,24 +1147,26 @@ async def get_cogvlm_generations_from_remote_api(
     return results
 
 
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
-
-
-def try_parse_lmm_json_output(output: str) -> Union[list, dict]:
+def try_parse_lmm_json_output(
+    output: str, expected_output: Dict[str, str]
+) -> Union[list, dict]:
     json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(output)
     if len(json_blocks_found) == 0:
-        return try_parse_json(output)
+        return try_parse_json(output, expected_output=expected_output)
     result = []
     for json_block in json_blocks_found:
-        result.append(try_parse_json(content=json_block))
+        result.append(
+            try_parse_json(content=json_block, expected_output=expected_output)
+        )
     return result if len(result) > 1 else result[0]
 
 
-def try_parse_json(content: str) -> Optional[Union[list, dict]]:
+def try_parse_json(content: str, expected_output: Dict[str, str]) -> dict:
     try:
-        return json.loads(content)
+        data = json.loads(content)
+        return {key: data.get(key, NOT_DETECTED_VALUE) for key in expected_output}
     except Exception:
-        return None
+        return {key: NOT_DETECTED_VALUE for key in expected_output}
 
 
 def resolve_model_api_url(step: StepInterface) -> str:
