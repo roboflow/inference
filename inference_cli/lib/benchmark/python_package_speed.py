@@ -11,7 +11,7 @@ from inference_cli.lib.benchmark.results_gathering import ResultsCollector
 from inference_cli.lib.exceptions import InferencePackageMissingError
 
 try:
-    from inference import get_roboflow_model
+    from inference import get_model
     from inference.core.models.base import Model
     from inference.core.registries.roboflow import get_model_type
 except Exception as error:
@@ -49,7 +49,7 @@ def run_python_package_speed_benchmark(
         f"Inference will be executed with the following parameters: {inference_configuration}"
     )
     model_type = get_model_type(model_id, api_key=api_key)
-    model = get_roboflow_model(model_id=model_id, api_key=api_key)
+    model = get_model(model_id=model_id, api_key=api_key)
     model_batch_size = getattr(model, "batch_size", None)
     input_height = getattr(model, "img_size_h", None)
     input_width = getattr(model, "img_size_w", None)

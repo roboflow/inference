@@ -42,7 +42,7 @@ from inference.core.interfaces.stream.watchdog import (
     PipelineWatchDog,
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
-from inference.models.utils import get_roboflow_model
+from inference.models.utils import get_model
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -164,7 +164,7 @@ class InferencePipeline:
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
         )
-        model = get_roboflow_model(model_id=model_id, api_key=api_key)
+        model = get_model(model_id=model_id, api_key=api_key)
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         status_update_handlers.append(watchdog.on_status_update)

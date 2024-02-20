@@ -25,14 +25,14 @@ Then, any command you run within that same terminal session will have access to 
 When using Inference within python, your Roboflow API key can be set via keyword arguments
 
 ```python
-from inference.models.utils import get_roboflow_model
+from inference.models.utils import get_model
 
-model = get_roboflow_model(model_id="...", api_key="YOUR ROBOFLOW API KEY")
+model = get_model(model_id="...", api_key="YOUR ROBOFLOW API KEY")
 ```
 
 !!! Hint
 
-    If you set your API key in your environment, you do not have to pass it as a keyword argument: `model = get_roboflow_model(model_id="...")`
+    If you set your API key in your environment, you do not have to pass it as a keyword argument: `model = get_model(model_id="...")`
 
 ### HTTP Request Payload
 
