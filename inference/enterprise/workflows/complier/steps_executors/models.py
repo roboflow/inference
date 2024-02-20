@@ -848,9 +848,8 @@ async def run_lmm_step(
             f"- `{key}`: {value}" for key, value in json_output.items()
         )
         prompt = (
-            f"{prompt}\n\nYou are supposed to provide output in JSON format withing markdown "
-            f"```json ``` block. The schema must contain the following keys: {json_output.keys()}. "
-            f"Description of each field:\n{descriptions}"
+            f"{prompt}\n\nYour response must be in JSON format with all of the following keys "
+            f"provided: {json_output.keys()}. Description of each field:\n{descriptions}"
         )
     if lmm_type == GPT_4V_MODEL_TYPE:
         raw_output, structured_output = await run_gpt_4v_llm_prompting(
@@ -909,11 +908,8 @@ async def run_lmm_for_classification_step(
     classes = resolve_parameter_closure(step.classes)
     prompt = (
         f"You are supposed to perform image classification task. You are given image that should be "
-        f"assigned one of the following classes: {classes}. Result should be provided in JSON format, "
-        f"within Markdown block: ```json ```. Expected response format: \n"
-        f"```json\n"
-        f'{{"top": "some_class"}}'
-        f"```"
+        f"assigned one of the following classes: {classes}. "
+        f"Your response must be JSON in format: {{\"top\": \"some_class\"}}"
     )
     if lmm_type == GPT_4V_MODEL_TYPE:
         raw_output, structured_output = await run_gpt_4v_llm_prompting(
