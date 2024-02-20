@@ -966,7 +966,9 @@ async def run_gpt_4v_llm_prompting(
     if expected_output is None:
         return results, [{} for _ in range(len(results))]
     parsed_output = [
-        try_parse_lmm_json_output(output=r["content"], expected_output=expected_output)
+        try_parse_lmm_output_to_json(
+            output=r["content"], expected_output=expected_output
+        )
         for r in results
     ]
     return results, parsed_output
@@ -1058,7 +1060,7 @@ async def run_cog_vlm_prompting(
     if expected_output is None:
         return cogvlm_generations, [{} for _ in range(len(cogvlm_generations))]
     parsed_output = [
-        try_parse_lmm_json_output(
+        try_parse_lmm_output_to_json(
             output=r["content"],
             expected_output=expected_output,
         )
@@ -1090,7 +1092,7 @@ async def get_cogvlm_generations_locally(
             core_model="cogvlm",
             api_key=api_key,
         )
-        result = await model_manager.infer_from_request(
+        result = await model_manager.model_manager(
             yolo_world_model_id, inference_request
         )
         serialised_result.append(
@@ -1112,7 +1114,7 @@ async def get_cogvlm_generations_from_remote_api(
             f"Chosen remote execution of CogVLM model in Roboflow Hosted API mode, but remote execution "
             f"is only possible for self-hosted option."
         )
-    client = InferenceHTTPClient(
+    client = InferenceHTTPClient.init(
         api_url=LOCAL_INFERENCE_API_URL,
         api_key=api_key,
     )
@@ -1147,7 +1149,7 @@ async def get_cogvlm_generations_from_remote_api(
     return results
 
 
-def try_parse_lmm_json_output(
+def try_parse_lmm_output_to_json(
     output: str, expected_output: Dict[str, str]
 ) -> Union[list, dict]:
     json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(output)

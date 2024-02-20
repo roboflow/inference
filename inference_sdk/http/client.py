@@ -116,6 +116,15 @@ def wrap_errors_async(function: callable) -> callable:
 
 
 class InferenceHTTPClient:
+
+    @classmethod
+    def init(
+        cls,
+        api_url: str,
+        api_key: Optional[str] = None,
+    ) -> "InferenceHTTPClient":
+        return cls(api_url=api_url, api_key=api_key)
+
     def __init__(
         self,
         api_url: str,
