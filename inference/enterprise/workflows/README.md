@@ -726,7 +726,8 @@ do not require additional API key for CogVLM calls.
 or reference to `InferenceParameter` with such dict. This field is used to instruct model on expected output 
 format. One may not specify field names: `["raw_output", "structured_output", "image", "parent_id"]`, due to the
 fact that keys from `json_output` dict will be registered as block outputs (to be referred by other blocks) and
-cannot collide with basic outputs of that block.
+cannot collide with basic outputs of that block. Additional outputs **will only be registered if defined in-place, 
+not via `InferenceParameter`).
 
 ##### Step outputs
 * `raw_output` - raw output of LMM for each input image
