@@ -34,7 +34,7 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
     classes = ["person", "backpack", "dog", "eye", "nose", "ear", "tongue"]
     results = model.infer("image.jpeg", text=classes, confidence=0.03)
 
-    detections = sv.Detections.from_inference(results)
+    detections = sv.Detections.from_inference(results[0])
 
     bounding_box_annotator = sv.BoundingBoxAnnotator()
     label_annotator = sv.LabelAnnotator()
