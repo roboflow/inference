@@ -18,10 +18,10 @@ Then, use it to infer on an image with a public computer vision model:
 
 ```python
 # import utility function for loading roboflow models
-from inference import get_roboflow_model
+from inference import get_model
 
 # load a yolov8x model pre-trained on coco with input size 1280x1280
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 
 # use the model's infer(...) method to get predictions
 results = model.infer("people-walking.jpg")
@@ -31,11 +31,11 @@ results = model.infer("people-walking.jpg")
 
 Let's break our example down step by step:
 
-**`from inference import get_roboflow_model`**
+**`from inference import get_model`**
 
 First, we import a utility function which will help us load a computer vision model from Roboflow.
 
-**`model = get_roboflow_model(model_id="yolov8x-1280")`**
+**`model = get_model(model_id="yolov8x-1280")`**
 
 Next, we load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`. You can find your models project name and version number <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">in the Roboflow App</a>. You can also browse public models that are ready to use on <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. In this example, we are using a special model ID that is an alias of <a href="https://universe.roboflow.com/microsoft/coco/model/13" target="_blank">a COCO pretrained model on Roboflow Universe</a>. You can see the list of model aliases [here](../../reference_pages/model_aliases).
 

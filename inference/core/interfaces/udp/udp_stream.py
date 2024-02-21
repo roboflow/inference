@@ -37,7 +37,7 @@ from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
 from inference.core.registries.roboflow import get_model_type
 from inference.core.version import __version__
-from inference.models.utils import get_roboflow_model
+from inference.models.utils import get_model
 
 
 class UdpStream(BaseInterface):
@@ -104,7 +104,7 @@ class UdpStream(BaseInterface):
                 f"the key."
             )
 
-        self.model = get_roboflow_model(self.model_id, self.api_key)
+        self.model = get_model(self.model_id, self.api_key)
         self.task_type = get_model_type(model_id=self.model_id, api_key=self.api_key)[0]
         self.active_learning_middleware = NullActiveLearningMiddleware()
         if ACTIVE_LEARNING_ENABLED:
