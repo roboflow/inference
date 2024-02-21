@@ -89,7 +89,7 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
         confidence=0.1,
     )
 
-    detections = sv.Detections.from_inference(results)
+    detections = sv.Detections.from_inference(results[0])
 
     bounding_box_annotator = sv.BoundingBoxAnnotator()
     label_annotator = sv.LabelAnnotator()
