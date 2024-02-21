@@ -321,7 +321,7 @@ def test_construct_graph_when_detections_consensus_block_is_used() -> None:
     assert result.has_edge(
         "$steps.step_3", "$outputs.predictions"
     ), "Step 3 must be connected to predictions output"
-    assert len(result.edges) == 5, "10 edges in total should be created"
+    assert len(result.edges) == 5, "5 edges in total should be created"
 
 
 def test_verify_each_node_reach_at_least_one_output_when_all_steps_are_connected_to_inputs_and_outputs() -> (
@@ -760,3 +760,99 @@ def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph
     # when
     with pytest.raises(InvalidStepInputDetected):
         _ = prepare_execution_graph(workflow_specification=workflow_specification)
+
+
+def test_prepare_execution_graph_when_lmm_with_yolo_world_is_used_along_with_wildcard_output_selector() -> (
+    None
+):
+    # given
+    workflow_specification = WorkflowSpecificationV1.parse_obj(
+        {
+            "version": "1.0",
+            "inputs": [
+                {"type": "InferenceImage", "name": "image"},
+                {"type": "InferenceParameter", "name": "detection_classes"},
+                {"type": "InferenceParameter", "name": "classification_classes"},
+                {"type": "InferenceParameter", "name": "open_ai_key"},
+                {"type": "InferenceParameter", "name": "lmm_type"},
+            ],
+            "steps": [
+                {
+                    "type": "YoloWorld",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "class_names": "$inputs.detection_classes",
+                    "confidence": 0.005,
+                },
+                {
+                    "type": "Crop",
+                    "name": "step_2",
+                    "image": "$inputs.image",
+                    "detections": "$steps.step_1.predictions",
+                },
+                {
+                    "type": "LMMForClassification",
+                    "name": "step_3",
+                    "image": "$steps.step_2.crops",
+                    "lmm_type": "$inputs.lmm_type",
+                    "classes": "$inputs.classification_classes",
+                    "remote_api_key": "$inputs.open_ai_key",
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "characters_detections",
+                    "selector": "$steps.step_1.*",
+                },
+                {"type": "JsonField", "name": "crops", "selector": "$steps.step_2.*"},
+                {
+                    "type": "JsonField",
+                    "name": "llm_output",
+                    "selector": "$steps.step_3.*",
+                },
+                {"type": "JsonField", "name": "top", "selector": "$steps.step_3.top"},
+            ],
+        }
+    )
+
+    # when
+    result = prepare_execution_graph(workflow_specification=workflow_specification)
+
+    # then
+    assert result.has_edge(
+        "$inputs.image", "$steps.step_1"
+    ), "Image must be connected to YoloWorld block"
+    assert result.has_edge(
+        "$inputs.image", "$steps.step_2"
+    ), "Image must be connected to crop block"
+    assert result.has_edge(
+        "$inputs.detection_classes", "$steps.step_1"
+    ), "detection_classes must be connected to YoloWorld block"
+    assert result.has_edge(
+        "$steps.step_1", "$steps.step_2"
+    ), "YoloWorld block must be connected to crop step"
+    assert result.has_edge(
+        "$steps.step_2", "$steps.step_3"
+    ), "Crop block must be connected to LMM block"
+    assert result.has_edge(
+        "$inputs.lmm_type", "$steps.step_3"
+    ), "lmm_type must be connected to LMM block"
+    assert result.has_edge(
+        "$inputs.classification_classes", "$steps.step_3"
+    ), "classification_classes must be connected to LMM block"
+    assert result.has_edge(
+        "$inputs.open_ai_key", "$steps.step_3"
+    ), "open_ai_key must be connected to LMM block"
+    assert result.has_edge(
+        "$steps.step_1", "$outputs.characters_detections"
+    ), "characters_detections must hold YoloWorld model output"
+    assert result.has_edge(
+        "$steps.step_2", "$outputs.crops"
+    ), "crops must hold Crop step output"
+    assert result.has_edge(
+        "$steps.step_3", "$outputs.llm_output"
+    ), "llm_output must hold (wildcard) LMM block output"
+    assert result.has_edge(
+        "$steps.step_3", "$outputs.top"
+    ), "top must hold (specific) LMM block output"

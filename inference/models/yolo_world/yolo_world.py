@@ -23,6 +23,8 @@ class YOLOWorld(RoboflowCoreModel):
         model: The GroundingDINO model.
     """
 
+    task_type = "object-detection"
+
     def __init__(self, *args, model_id="yolo_world/l", **kwargs):
         """Initializes the YOLO-World model.
 

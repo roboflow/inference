@@ -115,10 +115,15 @@ def validate_field_is_one_of_selected_values(
     selected_values: set,
     error: Type[Exception] = ValueError,
 ) -> None:
-    if value not in selected_values:
+    try:
+        if value not in selected_values:
+            raise error(
+                f"Value of field `{field_name}` must be in {selected_values}. Found: {value}"
+            )
+    except TypeError as check_error:
         raise error(
-            f"Value of field `{field_name}` must be in {selected_values}. Found: {value}"
-        )
+            f"Value of field `{field_name}` must be in {selected_values}. Found: {value} which is not comparable"
+        ) from check_error
 
 
 def validate_field_is_selector_or_has_given_type(
@@ -144,10 +149,30 @@ def validate_field_has_given_type(
         )
 
 
+def validate_field_is_dict_of_strings(
+    value: Any,
+    field_name: str,
+    error: Type[Exception] = ValueError,
+) -> None:
+    if not issubclass(type(value), dict):
+        raise error(f"`{field_name}` field is expected to be dict.")
+    for key, key_value in value.items():
+        if not issubclass(type(key), str):
+            raise error(
+                f"`{field_name}` field holds dict which has key={key} that is not string."
+            )
+        if not issubclass(type(key_value), str):
+            raise error(
+                f"`{field_name}` field holds dict which has key={key} that holds non-string value: {key_value}."
+            )
+
+
 def validate_image_biding(value: Any, field_name: str = "image") -> None:
     try:
         if not issubclass(type(value), list):
             value = [value]
+        if len(value) == 0:
+            raise VariableTypeError(f"Parameter `{field_name}` must not be empty.")
         for e in value:
             InferenceRequestImage.model_validate(e)
     except (ValueError, ValidationError) as error:

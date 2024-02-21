@@ -1,10 +1,15 @@
 import asyncio
+import base64
+import json
+import re
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
-from uuid import uuid4
+
+from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
+from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -24,6 +29,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
@@ -43,10 +49,14 @@ from inference.enterprise.workflows.complier.steps_executors.utils import (
 )
 from inference.enterprise.workflows.complier.utils import construct_step_selector
 from inference.enterprise.workflows.entities.steps import (
+    GPT_4V_MODEL_TYPE,
+    LMM,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
+    LMMConfig,
+    LMMForClassification,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
@@ -54,6 +64,7 @@ from inference.enterprise.workflows.entities.steps import (
     StepInterface,
     YoloWorld,
 )
+from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 MODEL_TYPE2PREDICTION_TYPE = {
@@ -63,6 +74,9 @@ MODEL_TYPE2PREDICTION_TYPE = {
     "InstanceSegmentationModel": "instance-segmentation",
     "KeypointsDetectionModel": "keypoint-detection",
 }
+
+NOT_DETECTED_VALUE = "not_detected"
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
 
 
 async def run_roboflow_model_step(
@@ -474,7 +488,7 @@ async def get_yolo_world_predictions_locally(
         result = await model_manager.infer_from_request(
             yolo_world_model_id, inference_request
         )
-        serialised_result.append(result.dict())
+        serialised_result.append(result.dict(by_alias=True, exclude_none=True))
     return serialised_result
 
 
@@ -808,6 +822,353 @@ ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
     "OCRModel": HOSTED_CORE_MODEL_URL,
     "ClipComparison": HOSTED_CORE_MODEL_URL,
 }
+
+
+async def run_lmm_step(
+    step: LMM,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    prompt = resolve_parameter_closure(step.prompt)
+    lmm_type = resolve_parameter_closure(step.lmm_type)
+    remote_api_key = resolve_parameter_closure(step.remote_api_key)
+    json_output = resolve_parameter_closure(step.json_output)
+    if json_output is not None:
+        prompt = (
+            f"{prompt}\n\nVALID response format is JSON:\n"
+            f"{json.dumps(json_output, indent=4)}"
+        )
+    if lmm_type == GPT_4V_MODEL_TYPE:
+        raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            image=image,
+            prompt=prompt,
+            remote_api_key=remote_api_key,
+            lmm_config=step.lmm_config,
+            expected_output=json_output,
+        )
+    else:
+        raw_output, structured_output = await run_cog_vlm_prompting(
+            image=image,
+            prompt=prompt,
+            expected_output=json_output,
+            model_manager=model_manager,
+            api_key=api_key,
+            step_execution_mode=step_execution_mode,
+        )
+    serialised_result = [
+        {
+            "raw_output": raw["content"],
+            "image": raw["image"],
+            "structured_output": structured,
+            **structured,
+        }
+        for raw, structured in zip(raw_output, structured_output)
+    ]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def run_lmm_for_classification_step(
+    step: LMMForClassification,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    resolve_parameter_closure = partial(
+        resolve_parameter,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    lmm_type = resolve_parameter_closure(step.lmm_type)
+    remote_api_key = resolve_parameter_closure(step.remote_api_key)
+    classes = resolve_parameter_closure(step.classes)
+    prompt = (
+        f"You are supposed to perform image classification task. You are given image that should be "
+        f"assigned one of the following classes: {classes}. "
+        f'Your response must be JSON in format: {{"top": "some_class"}}'
+    )
+    if lmm_type == GPT_4V_MODEL_TYPE:
+        raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            image=image,
+            prompt=prompt,
+            remote_api_key=remote_api_key,
+            lmm_config=step.lmm_config,
+            expected_output={"top": "name of the class"},
+        )
+    else:
+        raw_output, structured_output = await run_cog_vlm_prompting(
+            image=image,
+            prompt=prompt,
+            expected_output={"top": "name of the class"},
+            model_manager=model_manager,
+            api_key=api_key,
+            step_execution_mode=step_execution_mode,
+        )
+    serialised_result = [
+        {"raw_output": raw["content"], "image": raw["image"], "top": structured["top"]}
+        for raw, structured in zip(raw_output, structured_output)
+    ]
+    serialised_result = attach_parent_info(
+        image=image,
+        results=serialised_result,
+        nested_key=None,
+    )
+    serialised_result = attach_prediction_type_info(
+        results=serialised_result,
+        prediction_type="classification",
+    )
+    outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
+    return None, outputs_lookup
+
+
+async def run_gpt_4v_llm_prompting(
+    image: List[Dict[str, Any]],
+    prompt: str,
+    remote_api_key: Optional[str],
+    lmm_config: LMMConfig,
+    expected_output: Optional[Dict[str, str]],
+) -> Tuple[List[Dict[str, str]], List[dict]]:
+    if remote_api_key is None:
+        raise ExecutionGraphError(
+            f"Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
+        )
+    results = await execute_gpt_4v_requests(
+        image=image,
+        remote_api_key=remote_api_key,
+        prompt=prompt,
+        lmm_config=lmm_config,
+    )
+    if expected_output is None:
+        return results, [{} for _ in range(len(results))]
+    parsed_output = [
+        try_parse_lmm_output_to_json(
+            output=r["content"], expected_output=expected_output
+        )
+        for r in results
+    ]
+    return results, parsed_output
+
+
+async def execute_gpt_4v_requests(
+    image: List[dict],
+    remote_api_key: str,
+    prompt: str,
+    lmm_config: LMMConfig,
+) -> List[Dict[str, str]]:
+    client = AsyncOpenAI(api_key=remote_api_key)
+    results = []
+    images_batches = list(
+        make_batches(
+            iterable=image,
+            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        )
+    )
+    for image_batch in images_batches:
+        batch_coroutines = []
+        for image in image_batch:
+            coroutine = execute_gpt_4v_request(
+                client=client,
+                image=image,
+                prompt=prompt,
+                lmm_config=lmm_config,
+            )
+            batch_coroutines.append(coroutine)
+        batch_results = await asyncio.gather(*batch_coroutines)
+        results.extend(batch_results)
+    return results
+
+
+async def execute_gpt_4v_request(
+    client: AsyncOpenAI,
+    image: Dict[str, Any],
+    prompt: str,
+    lmm_config: LMMConfig,
+) -> Dict[str, str]:
+    loaded_image, _ = load_image(image)
+    image_metadata = {"width": loaded_image.shape[1], "height": loaded_image.shape[0]}
+    base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
+        "ascii"
+    )
+    response = await client.chat.completions.create(
+        model=lmm_config.gpt_model_version,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}",
+                            "detail": lmm_config.gpt_image_detail,
+                        },
+                    },
+                ],
+            }
+        ],
+        max_tokens=lmm_config.max_tokens,
+    )
+    return {"content": response.choices[0].message.content, "image": image_metadata}
+
+
+async def run_cog_vlm_prompting(
+    image: List[Dict[str, Any]],
+    prompt: str,
+    expected_output: Optional[Dict[str, str]],
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[List[Dict[str, Any]], List[dict]]:
+    if step_execution_mode is StepExecutionMode.LOCAL:
+        cogvlm_generations = await get_cogvlm_generations_locally(
+            image=image,
+            prompt=prompt,
+            model_manager=model_manager,
+            api_key=api_key,
+        )
+    else:
+        cogvlm_generations = await get_cogvlm_generations_from_remote_api(
+            image=image,
+            prompt=prompt,
+            api_key=api_key,
+        )
+    if expected_output is None:
+        return cogvlm_generations, [{} for _ in range(len(cogvlm_generations))]
+    parsed_output = [
+        try_parse_lmm_output_to_json(
+            output=r["content"],
+            expected_output=expected_output,
+        )
+        for r in cogvlm_generations
+    ]
+    return cogvlm_generations, parsed_output
+
+
+async def get_cogvlm_generations_locally(
+    image: List[dict],
+    prompt: str,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+) -> List[Dict[str, Any]]:
+    serialised_result = []
+    for single_image in image:
+        loaded_image, _ = load_image(single_image)
+        image_metadata = {
+            "width": loaded_image.shape[1],
+            "height": loaded_image.shape[0],
+        }
+        inference_request = CogVLMInferenceRequest(
+            image=single_image,
+            prompt=prompt,
+        )
+        yolo_world_model_id = load_core_model(
+            model_manager=model_manager,
+            inference_request=inference_request,
+            core_model="cogvlm",
+            api_key=api_key,
+        )
+        result = await model_manager.model_manager(
+            yolo_world_model_id, inference_request
+        )
+        serialised_result.append(
+            {
+                "content": result.response,
+                "image": image_metadata,
+            }
+        )
+    return serialised_result
+
+
+async def get_cogvlm_generations_from_remote_api(
+    image: List[dict],
+    prompt: str,
+    api_key: Optional[str],
+) -> List[Dict[str, Any]]:
+    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+        raise ExecutionGraphError(
+            f"Chosen remote execution of CogVLM model in Roboflow Hosted API mode, but remote execution "
+            f"is only possible for self-hosted option."
+        )
+    client = InferenceHTTPClient.init(
+        api_url=LOCAL_INFERENCE_API_URL,
+        api_key=api_key,
+    )
+    results = []
+    images_batches = list(
+        make_batches(
+            iterable=image,
+            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        )
+    )
+    for image_batch in images_batches:
+        batch_coroutines, batch_image_metadata = [], []
+        for image in image_batch:
+            loaded_image, _ = load_image(image)
+            image_metadata = {
+                "width": loaded_image.shape[1],
+                "height": loaded_image.shape[0],
+            }
+            batch_image_metadata.append(image_metadata)
+            coroutine = client.prompt_cogvlm_async(
+                visual_prompt=image["value"],
+                text_prompt=prompt,
+            )
+            batch_coroutines.append(coroutine)
+        batch_results = await asyncio.gather(*batch_coroutines)
+        results.extend(
+            [
+                {"content": br["response"], "image": bm}
+                for br, bm in zip(batch_results, batch_image_metadata)
+            ]
+        )
+    return results
+
+
+def try_parse_lmm_output_to_json(
+    output: str, expected_output: Dict[str, str]
+) -> Union[list, dict]:
+    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(output)
+    if len(json_blocks_found) == 0:
+        return try_parse_json(output, expected_output=expected_output)
+    result = []
+    for json_block in json_blocks_found:
+        result.append(
+            try_parse_json(content=json_block, expected_output=expected_output)
+        )
+    return result if len(result) > 1 else result[0]
+
+
+def try_parse_json(content: str, expected_output: Dict[str, str]) -> dict:
+    try:
+        data = json.loads(content)
+        return {key: data.get(key, NOT_DETECTED_VALUE) for key in expected_output}
+    except Exception:
+        return {key: NOT_DETECTED_VALUE for key in expected_output}
 
 
 def resolve_model_api_url(step: StepInterface) -> str:

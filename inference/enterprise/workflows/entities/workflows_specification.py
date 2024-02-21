@@ -8,6 +8,7 @@ from inference.enterprise.workflows.entities.inputs import (
 )
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.steps import (
+    LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
     ClassificationModel,
@@ -19,6 +20,7 @@ from inference.enterprise.workflows.entities.steps import (
     DetectionsConsensus,
     InstanceSegmentationModel,
     KeypointsDetectionModel,
+    LMMForClassification,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
@@ -47,6 +49,8 @@ StepType = Annotated[
         DetectionsConsensus,
         ActiveLearningDataCollector,
         YoloWorld,
+        LMM,
+        LMMForClassification,
     ],
     Field(discriminator="type"),
 ]
