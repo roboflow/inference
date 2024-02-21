@@ -38,6 +38,7 @@ from inference.enterprise.workflows.complier.steps_executors.utils import (
 from inference.enterprise.workflows.complier.utils import (
     construct_selector_pointing_step_output,
     construct_step_selector,
+    is_step_output_selector,
 )
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
@@ -54,7 +55,10 @@ from inference.enterprise.workflows.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
-from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
+from inference.enterprise.workflows.entities.validators import (
+    get_last_selector_chunk,
+    is_selector,
+)
 from inference.enterprise.workflows.errors import ExecutionGraphError
 
 OPERATORS = {
@@ -156,14 +160,42 @@ async def run_condition_step(
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    left_value = ensure_condition_step_operand_batch_size_is_one(
+        step_name=step.name,
+        selector_or_value=step.left,
+        value=left_value,
+    )
     right_value = resolve_parameter(
         selector_or_value=step.right,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )
+    right_value = ensure_condition_step_operand_batch_size_is_one(
+        step_name=step.name,
+        selector_or_value=step.right,
+        value=right_value,
+    )
     evaluation_result = OPERATORS[step.operator](left_value, right_value)
     next_step = step.step_if_true if evaluation_result else step.step_if_false
     return next_step, outputs_lookup
+
+
+def ensure_condition_step_operand_batch_size_is_one(
+    step_name: str,
+    selector_or_value: Any,
+    value: Any,
+) -> Any:
+    if is_step_output_selector(selector_or_value=selector_or_value) and issubclass(
+        type(value), list
+    ):
+        if len(value) != 1:
+            raise ExecutionGraphError(
+                f"During execution of condition step {step_name}, selector: {selector_or_value} was evaluated to "
+                f"list with {len(value)} elements, but Condition step only supports evaluation for "
+                f"batch size = 1."
+            )
+        value = value[0]
+    return value
 
 
 async def run_detection_filter(

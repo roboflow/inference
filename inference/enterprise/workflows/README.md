@@ -414,6 +414,11 @@ of multi-step pipelines
 This step is responsible for flow-control in execution graph based on the condition defined in its body.
 As for now, only capable to make conditions based on output of binary operators that takes two operands.
 
+**IMPORTANT NOTE:** `Condition` step is only capable to operate, when single image is provided to the 
+input of the `workflow` (or more precisely, both `left` and `right` if provided with reference, then
+the reference can only hold value for a result of operation made against single input). This is to 
+prevent situation when evaluation of condition for multiple images yield different execution paths.  
+
 ##### Step parameters
 * `type`: must be `Condition` (required)
 * `name`: must be unique within all steps - used as identifier (required)

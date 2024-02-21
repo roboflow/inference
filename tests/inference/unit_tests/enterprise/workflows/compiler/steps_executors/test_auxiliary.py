@@ -137,6 +137,125 @@ async def test_run_condition_step() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_condition_step_for_outputs_with_batch_size_1() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$inputs.some",
+        operator=Operator.EQUAL,
+        right="$steps.step_0.top",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "cat"},
+        outputs_lookup={"$steps.step_0": {"top": ["cat"]}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": ["cat"]}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_2"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_for_outputs_with_batch_size_1_and_compared_parameter_is_list_provided_in_runtime() -> (
+    None
+):
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.IN,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": [1, 2, 3]},
+        outputs_lookup={"$steps.step_0": {"top": [1]}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": [1]}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_2"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_for_outputs_with_batch_size_1_and_compared_parameter_is_list_provided_statically() -> (
+    None
+):
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.IN,
+        right=[5, 6],
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={},
+        outputs_lookup={"$steps.step_0": {"top": [1]}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": [1]}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_3"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_for_outputs_with_not_allowed_batch_size() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.IN,
+        right=[5, 6],
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    with pytest.raises(ExecutionGraphError):
+        _ = await run_condition_step(
+            step=step,
+            runtime_parameters={},
+            outputs_lookup={"$steps.step_0": {"top": [1, 2]}},
+            model_manager=MagicMock(),
+            api_key=None,
+            step_execution_mode=StepExecutionMode.LOCAL,
+        )
+
+
+@pytest.mark.asyncio
 async def test_run_detection_filter_step_when_batch_detections_given() -> None:
     # given
     step = DetectionFilter.parse_obj(
