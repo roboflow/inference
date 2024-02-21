@@ -30,7 +30,6 @@ from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,
 )
-from inference.core.utils.roboflow import get_model_id_chunks
 
 TYPE2SAMPLING_INITIALIZERS = {
     "random": initialize_random_sampling,
@@ -42,13 +41,17 @@ ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE = 900  # 15 min
 
 
 def prepare_active_learning_configuration(
-    api_key: str,
+    target_dataset_api_key: str,
+    target_dataset: str,
     model_id: str,
+    model_api_key: str,
     cache: BaseCache,
 ) -> Optional[ActiveLearningConfiguration]:
     project_metadata = get_roboflow_project_metadata(
-        api_key=api_key,
+        target_dataset_api_key=target_dataset_api_key,
+        target_dataset=target_dataset,
         model_id=model_id,
+        model_api_key=model_api_key,
         cache=cache,
     )
     if not project_metadata.active_learning_configuration.get("enabled", False):
@@ -60,12 +63,15 @@ def prepare_active_learning_configuration(
     )
     return initialise_active_learning_configuration(
         project_metadata=project_metadata,
+        model_id=model_id,
     )
 
 
 def prepare_active_learning_configuration_inplace(
-    api_key: str,
+    target_dataset_api_key: str,
+    target_dataset: str,
     model_id: str,
+    model_api_key: str,
     active_learning_configuration: Optional[dict],
 ) -> Optional[ActiveLearningConfiguration]:
     if (
@@ -73,63 +79,73 @@ def prepare_active_learning_configuration_inplace(
         or active_learning_configuration.get("enabled", False) is False
     ):
         return None
-    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    workspace_id = get_roboflow_workspace(api_key=api_key)
+    workspace_id = get_roboflow_workspace(api_key=target_dataset_api_key)
     dataset_type = get_roboflow_dataset_type(
-        api_key=api_key,
+        api_key=target_dataset_api_key,
         workspace_id=workspace_id,
-        dataset_id=dataset_id,
+        dataset_id=target_dataset,
     )
+    model_type = dataset_type
+    if not model_id.startswith(target_dataset):
+        model_type = get_model_type(model_id=model_id, api_key=model_api_key)
+    if model_type != dataset_type:
+        logger.warning(
+            f"Attempted to registrate predictions from model {model_id} (type: {model_type}) "
+            f"into dataset {target_dataset} (of type {dataset_type})"
+        )
+        return None
     project_metadata = RoboflowProjectMetadata(
-        dataset_id=dataset_id,
-        version_id=version_id,
+        dataset_id=target_dataset,
         workspace_id=workspace_id,
         dataset_type=dataset_type,
         active_learning_configuration=active_learning_configuration,
     )
     return initialise_active_learning_configuration(
         project_metadata=project_metadata,
+        model_id=model_id,
     )
 
 
 def get_roboflow_project_metadata(
-    api_key: str,
+    target_dataset_api_key: str,
+    target_dataset: str,
     model_id: str,
+    model_api_key: str,
     cache: BaseCache,
 ) -> RoboflowProjectMetadata:
     logger.info(f"Fetching active learning configuration.")
     config_cache_key = construct_cache_key_for_active_learning_config(
-        api_key=api_key, model_id=model_id
+        api_key=target_dataset_api_key,
+        target_dataset=target_dataset,
+        model_id=model_id,
     )
     cached_config = cache.get(config_cache_key)
     if cached_config is not None:
         logger.info("Found Active Learning configuration in cache.")
         return parse_cached_roboflow_project_metadata(cached_config=cached_config)
-    dataset_id, version_id = get_model_id_chunks(model_id=model_id)
-    workspace_id = get_roboflow_workspace(api_key=api_key)
+    workspace_id = get_roboflow_workspace(api_key=target_dataset_api_key)
     dataset_type = get_roboflow_dataset_type(
-        api_key=api_key,
+        api_key=target_dataset_api_key,
         workspace_id=workspace_id,
-        dataset_id=dataset_id,
+        dataset_id=target_dataset,
     )
-    try:
-        roboflow_api_configuration = get_roboflow_active_learning_configuration(
-            api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
+    model_type = dataset_type
+    if not model_id.startswith(target_dataset):
+        model_type = get_model_type(model_id=model_id, api_key=model_api_key)
+    if model_type != dataset_type:
+        logger.warning(
+            f"Attempted to registrate predictions from model {model_id} (type: {model_type}) "
+            f"into dataset {target_dataset} (of type {dataset_type})"
         )
-    except (RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError):
-        # currently backend returns HTTP 404 if dataset does not exist
-        # or workspace_id from api_key indicate that the owner is different,
-        # so in the situation when we query for Universe dataset.
-        # We want the owner of public dataset to be able to set AL configs
-        # and use them, but not other people. At this point it's known
-        # that HTTP 404 means not authorised (which will probably change
-        # in future iteration of backend) - so on both NotAuth and NotFound
-        # errors we assume that we simply cannot use AL with this model and
-        # this api_key.
         roboflow_api_configuration = {"enabled": False}
+    else:
+        roboflow_api_configuration = safe_get_roboflow_active_learning_configuration(
+            api_key=target_dataset_api_key,
+            workspace_id=workspace_id,
+            dataset_id=target_dataset,
+        )
     configuration = RoboflowProjectMetadata(
-        dataset_id=dataset_id,
-        version_id=version_id,
+        dataset_id=target_dataset,
         workspace_id=workspace_id,
         dataset_type=dataset_type,
         active_learning_configuration=roboflow_api_configuration,
@@ -142,25 +158,66 @@ def get_roboflow_project_metadata(
     return configuration
 
 
-def construct_cache_key_for_active_learning_config(api_key: str, model_id: str) -> str:
-    dataset_id = model_id.split("/")[0]
+def construct_cache_key_for_active_learning_config(
+    api_key: str, target_dataset: str, model_id: str
+) -> str:
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
-    return f"active_learning:configurations:{api_key_hash}:{dataset_id}"
+    return f"active_learning:configurations:{api_key_hash}:{target_dataset}:{model_id}"
 
 
 def parse_cached_roboflow_project_metadata(
     cached_config: dict,
 ) -> RoboflowProjectMetadata:
     try:
-        return RoboflowProjectMetadata(**cached_config)
+        return RoboflowProjectMetadata(
+            dataset_id=cached_config["dataset_id"],
+            workspace_id=cached_config["workspace_id"],
+            dataset_type=cached_config["dataset_type"],
+            active_learning_configuration=cached_config[
+                "active_learning_configuration"
+            ],
+        )
     except Exception as error:
         raise ActiveLearningConfigurationDecodingError(
             f"Failed to initialise Active Learning configuration. Cause: {str(error)}"
         ) from error
 
 
+def get_model_type(model_id: str, api_key: str) -> str:
+    model_dataset = model_id.split("/")[0]
+    model_workspace = get_roboflow_workspace(api_key=api_key)
+    return get_roboflow_dataset_type(
+        api_key=api_key,
+        workspace_id=model_workspace,
+        dataset_id=model_dataset,
+    )
+
+
+def safe_get_roboflow_active_learning_configuration(
+    api_key: str,
+    workspace_id: str,
+    dataset_id: str,
+) -> dict:
+    try:
+        return get_roboflow_active_learning_configuration(
+            api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
+        )
+    except (RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError):
+        # currently backend returns HTTP 404 if dataset does not exist
+        # or workspace_id from api_key indicate that the owner is different,
+        # so in the situation when we query for Universe dataset.
+        # We want the owner of public dataset to be able to set AL configs
+        # and use them, but not other people. At this point it's known
+        # that HTTP 404 means not authorised (which will probably change
+        # in future iteration of backend) - so on both NotAuth and NotFound
+        # errors we assume that we simply cannot use AL with this model and
+        # this api_key.
+        return {"enabled": False}
+
+
 def initialise_active_learning_configuration(
     project_metadata: RoboflowProjectMetadata,
+    model_id: str,
 ) -> ActiveLearningConfiguration:
     sampling_methods = initialize_sampling_methods(
         sampling_strategies_configs=project_metadata.active_learning_configuration[
@@ -178,7 +235,7 @@ def initialise_active_learning_configuration(
         sampling_methods=sampling_methods,
         workspace_id=target_workspace_id,
         dataset_id=target_dataset_id,
-        model_id=f"{project_metadata.dataset_id}/{project_metadata.version_id}",
+        model_id=model_id,
     )
 
 

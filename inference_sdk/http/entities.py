@@ -84,6 +84,8 @@ class InferenceConfiguration:
     client_downsizing_disabled: bool = False
     default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
     disable_active_learning: bool = False
+    active_learning_target_dataset: Optional[str] = None
+    active_learning_api_key: Optional[str] = None
     max_concurrent_requests: int = 1
     max_batch_size: int = 1
 
@@ -130,6 +132,8 @@ class InferenceConfiguration:
             ("stroke_width", "visualization_stroke_width"),
             ("visualize_predictions", "visualize_predictions"),
             ("disable_active_learning", "disable_active_learning"),
+            ("active_learning_target_dataset", "active_learning_target_dataset"),
+            ("active_learning_api_key", "active_learning_api_key"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -156,6 +160,8 @@ class InferenceConfiguration:
             ("visualize_predictions", "visualize_predictions"),
             ("stroke_width", "visualization_stroke_width"),
             ("disable_active_learning", "disable_active_learning"),
+            ("active_learning_target_dataset", "active_learning_target_dataset"),
+            ("active_learning_api_key", "active_learning_api_key"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -180,6 +186,8 @@ class InferenceConfiguration:
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),
             ("disable_active_learning", "disable_active_learning"),
+            ("active_learning_target_dataset", "active_learning_target_dataset"),
+            ("active_learning_api_key", "active_learning_api_key"),
         ]
         return get_non_empty_attributes(
             source_object=self,

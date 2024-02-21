@@ -103,6 +103,7 @@ def test_initialize_sampling_methods() -> None:
         )
 
 
+@mock.patch.object(configuration, "get_model_type")
 @mock.patch.object(configuration, "get_roboflow_active_learning_configuration")
 @mock.patch.object(configuration, "get_roboflow_dataset_type")
 @mock.patch.object(configuration, "get_roboflow_workspace")
@@ -110,6 +111,7 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
     get_roboflow_workspace_mock: MagicMock,
     get_roboflow_dataset_type_mock: MagicMock,
     get_roboflow_active_learning_configuration_mock: MagicMock,
+    get_model_type_mock: MagicMock,
 ) -> None:
     # given
     get_roboflow_workspace_mock.return_value = "my-workspace"
@@ -119,15 +121,16 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
 
     # when
     result = get_roboflow_project_metadata(
-        api_key="api-key",
+        target_dataset_api_key="api-key",
+        target_dataset="some",
         model_id="some/1",
+        model_api_key="api-key",
         cache=cache,
     )
 
     # then
     expected_configuration = RoboflowProjectMetadata(
         dataset_id="some",
-        version_id="1",
         workspace_id="my-workspace",
         dataset_type="object-detection",
         active_learning_configuration={"some": "config"},
@@ -136,7 +139,9 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
         result == expected_configuration
     ), "Returned configuration must contain values defined in mocks"
     api_key_hash = hashlib.md5(b"api-key").hexdigest()
-    assert cache.get(f"active_learning:configurations:{api_key_hash}:some") == asdict(
+    assert cache.get(
+        f"active_learning:configurations:{api_key_hash}:some:some/1"
+    ) == asdict(
         expected_configuration
     ), "Configuration (serialised to dict) must be saved in cache"
     get_roboflow_workspace_mock.assert_called_once_with(api_key="api-key")
@@ -150,6 +155,115 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
         workspace_id="my-workspace",
         dataset_id="some",
     )
+    get_model_type_mock.assert_not_called()
+
+
+@mock.patch.object(configuration, "get_model_type")
+@mock.patch.object(configuration, "get_roboflow_active_learning_configuration")
+@mock.patch.object(configuration, "get_roboflow_dataset_type")
+@mock.patch.object(configuration, "get_roboflow_workspace")
+def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_model_dataset_differs_from_target_dataset(
+    get_roboflow_workspace_mock: MagicMock,
+    get_roboflow_dataset_type_mock: MagicMock,
+    get_roboflow_active_learning_configuration_mock: MagicMock,
+    get_model_type_mock: MagicMock,
+) -> None:
+    # given
+    get_roboflow_workspace_mock.return_value = "my-workspace"
+    get_roboflow_dataset_type_mock.return_value = "object-detection"
+    get_model_type_mock.return_value = "object-detection"
+    get_roboflow_active_learning_configuration_mock.return_value = {"some": "config"}
+    cache = MemoryCache()
+
+    # when
+    result = get_roboflow_project_metadata(
+        target_dataset_api_key="api-key",
+        target_dataset="other",
+        model_id="some/1",
+        model_api_key="other-key",
+        cache=cache,
+    )
+
+    # then
+    expected_configuration = RoboflowProjectMetadata(
+        dataset_id="other",
+        workspace_id="my-workspace",
+        dataset_type="object-detection",
+        active_learning_configuration={"some": "config"},
+    )
+    assert (
+        result == expected_configuration
+    ), "Returned configuration must contain values defined in mocks"
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    assert cache.get(
+        f"active_learning:configurations:{api_key_hash}:other:some/1"
+    ) == asdict(
+        expected_configuration
+    ), "Configuration (serialised to dict) must be saved in cache"
+    get_roboflow_workspace_mock.assert_called_once_with(api_key="api-key")
+    get_roboflow_dataset_type_mock.assert_called_once_with(
+        api_key="api-key",
+        workspace_id="my-workspace",
+        dataset_id="other",
+    )
+    get_roboflow_active_learning_configuration_mock.assert_called_once_with(
+        api_key="api-key",
+        workspace_id="my-workspace",
+        dataset_id="other",
+    )
+    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="other-key")
+
+
+@mock.patch.object(configuration, "get_model_type")
+@mock.patch.object(configuration, "get_roboflow_active_learning_configuration")
+@mock.patch.object(configuration, "get_roboflow_dataset_type")
+@mock.patch.object(configuration, "get_roboflow_workspace")
+def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_missmatch_in_registration_types_encountered(
+    get_roboflow_workspace_mock: MagicMock,
+    get_roboflow_dataset_type_mock: MagicMock,
+    get_roboflow_active_learning_configuration_mock: MagicMock,
+    get_model_type_mock: MagicMock,
+) -> None:
+    # given
+    get_roboflow_workspace_mock.return_value = "my-workspace"
+    get_roboflow_dataset_type_mock.return_value = "object-detection"
+    get_model_type_mock.return_value = "instance-segmentation"
+    get_roboflow_active_learning_configuration_mock.return_value = {"some": "config"}
+    cache = MemoryCache()
+
+    # when
+    result = get_roboflow_project_metadata(
+        target_dataset_api_key="api-key",
+        target_dataset="other",
+        model_id="some/1",
+        model_api_key="other-key",
+        cache=cache,
+    )
+
+    # then
+    expected_configuration = RoboflowProjectMetadata(
+        dataset_id="other",
+        workspace_id="my-workspace",
+        dataset_type="object-detection",
+        active_learning_configuration={"enabled": False},
+    )
+    assert (
+        result == expected_configuration
+    ), "Returned configuration must contain values defined in mocks"
+    api_key_hash = hashlib.md5(b"api-key").hexdigest()
+    assert cache.get(
+        f"active_learning:configurations:{api_key_hash}:other:some/1"
+    ) == asdict(
+        expected_configuration
+    ), "Configuration (serialised to dict) must be saved in cache"
+    get_roboflow_workspace_mock.assert_called_once_with(api_key="api-key")
+    get_roboflow_dataset_type_mock.assert_called_once_with(
+        api_key="api-key",
+        workspace_id="my-workspace",
+        dataset_id="other",
+    )
+    get_roboflow_active_learning_configuration_mock.assert_not_called()
+    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="other-key")
 
 
 def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
@@ -157,10 +271,9 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
     cache = MemoryCache()
     api_key_hash = hashlib.md5(b"api-key").hexdigest()
     cache.set(
-        key=f"active_learning:configurations:{api_key_hash}:some",
+        key=f"active_learning:configurations:{api_key_hash}:other:some/1",
         value={
             "dataset_id": "some",
-            "version_id": "1",
             "workspace_id": "my-workspace",
             "dataset_type": "object-detection",
             "active_learning_configuration": {"some": "config"},
@@ -169,15 +282,16 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
 
     # when
     result = get_roboflow_project_metadata(
-        api_key="api-key",
+        target_dataset_api_key="api-key",
+        target_dataset="other",
         model_id="some/1",
+        model_api_key="other-key",
         cache=cache,
     )
 
     # then
     assert result == RoboflowProjectMetadata(
         dataset_id="some",
-        version_id="1",
         workspace_id="my-workspace",
         dataset_type="object-detection",
         active_learning_configuration={"some": "config"},
@@ -191,10 +305,9 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is
     cache = MemoryCache()
     api_key_hash = hashlib.md5(b"api-key").hexdigest()
     cache.set(
-        key=f"active_learning:configurations:{api_key_hash}:some",
+        key=f"active_learning:configurations:{api_key_hash}:other:some/1",
         value={
             "dataset_id": "some",
-            "version_id": "1",
             "workspace_id": "my-workspace",
             "dataset_type": "object-detection",
         },
@@ -203,8 +316,10 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is
     # when
     with pytest.raises(ActiveLearningConfigurationDecodingError):
         _ = get_roboflow_project_metadata(
-            api_key="api-key",
+            target_dataset_api_key="api-key",
+            target_dataset="other",
             model_id="some/1",
+            model_api_key="other-key",
             cache=cache,
         )
 
@@ -217,7 +332,6 @@ def test_prepare_active_learning_configuration_when_active_learning_disabled_by_
     cache = MemoryCache()
     get_roboflow_project_metadata_mock.return_value = RoboflowProjectMetadata(
         dataset_id="some",
-        version_id="1",
         workspace_id="my-workspace",
         dataset_type="object-detection",
         active_learning_configuration={"enabled": False},
@@ -225,8 +339,10 @@ def test_prepare_active_learning_configuration_when_active_learning_disabled_by_
 
     # when
     result = prepare_active_learning_configuration(
-        api_key="api-key",
+        target_dataset_api_key="api-key",
+        target_dataset="other",
         model_id="some/1",
+        model_api_key="other-key",
         cache=cache,
     )
 
@@ -242,7 +358,6 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
     cache = MemoryCache()
     get_roboflow_project_metadata_mock.return_value = RoboflowProjectMetadata(
         dataset_id="some",
-        version_id="1",
         workspace_id="my-workspace",
         dataset_type="object-detection",
         active_learning_configuration={
@@ -276,8 +391,10 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
 
     # when
     result = prepare_active_learning_configuration(
-        api_key="api-key",
+        target_dataset_api_key="api-key",
+        target_dataset="other",
         model_id="some/1",
+        model_api_key="other-key",
         cache=cache,
     )
 

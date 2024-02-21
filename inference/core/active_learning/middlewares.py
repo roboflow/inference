@@ -60,30 +60,45 @@ class NullActiveLearningMiddleware:
 class ActiveLearningMiddleware:
     @classmethod
     def init(
-        cls, api_key: str, model_id: str, cache: BaseCache
+        cls,
+        target_dataset_api_key: str,
+        target_dataset: str,
+        model_id: str,
+        model_api_key: str,
+        cache: BaseCache,
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
-            api_key=api_key,
+            target_dataset_api_key=target_dataset_api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
+            model_api_key=model_api_key,
             cache=cache,
         )
         return cls(
-            api_key=api_key,
+            api_key=target_dataset_api_key,
             configuration=configuration,
             cache=cache,
         )
 
     @classmethod
     def init_from_config(
-        cls, api_key: str, model_id: str, cache: BaseCache, config: Optional[dict]
+        cls,
+        target_dataset_api_key: str,
+        target_dataset: str,
+        model_id: str,
+        model_api_key: str,
+        cache: BaseCache,
+        config: Optional[dict],
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
-            api_key=api_key,
+            target_dataset_api_key=target_dataset_api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
+            model_api_key=model_api_key,
             active_learning_configuration=config,
         )
         return cls(
-            api_key=api_key,
+            api_key=target_dataset_api_key,
             configuration=configuration,
             cache=cache,
         )
@@ -176,19 +191,23 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     @classmethod
     def init(
         cls,
-        api_key: str,
+        target_dataset_api_key: str,
+        target_dataset: str,
         model_id: str,
+        model_api_key: str,
         cache: BaseCache,
         max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
-            api_key=api_key,
+            target_dataset_api_key=target_dataset_api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
+            model_api_key=model_api_key,
             cache=cache,
         )
         task_queue = Queue(max_queue_size)
         return cls(
-            api_key=api_key,
+            api_key=target_dataset_api_key,
             configuration=configuration,
             cache=cache,
             task_queue=task_queue,
@@ -197,20 +216,24 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     @classmethod
     def init_from_config(
         cls,
-        api_key: str,
+        target_dataset_api_key: str,
+        target_dataset: str,
         model_id: str,
+        model_api_key: str,
         cache: BaseCache,
         config: Optional[dict],
         max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
-            api_key=api_key,
+            target_dataset_api_key=target_dataset_api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
+            model_api_key=model_api_key,
             active_learning_configuration=config,
         )
         task_queue = Queue(max_queue_size)
         return cls(
-            api_key=api_key,
+            api_key=target_dataset_api_key,
             configuration=configuration,
             cache=cache,
             task_queue=task_queue,
