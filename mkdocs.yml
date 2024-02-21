@@ -82,6 +82,7 @@ nav:
       - Grounding DINO (Object Detection): foundation/grounding_dino.md
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
+      - YOLO-World (Object Detection): foundation/yolo_world.md
   - Cookbooks: cookbooks.md
 
 theme:
