@@ -12,9 +12,15 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
 ### How to Use YOLO-World
 
-Create a new Python file called `app.py` and add the following code:
-
 === "Inference Python Library"
+
+    Run the following command to set your API key in your coding environment:
+
+    ```
+    export ROBOFLOW_API_KEY=<your api key>
+    ```
+
+    Then, create a new Python file called `app.py` and add the following code:
 
     ```python
     import cv2
@@ -45,9 +51,27 @@ Create a new Python file called `app.py` and add the following code:
     sv.plot_image(annotated_image)
     ```
 
-=== "Inference Server API ()"
+=== "Inference Server HTTP API"
+
+    Run the following command to set your API key in your coding environment:
+
+    ```
+    export ROBOFLOW_API_KEY=<your api key>
+    ```
+
+    Then, you will need to set up an Inference server to use the YOLO World HTTP API.
+
+    To do this, run:
+
+    ```
+    pip install inference inference-sdk
+    inference server start
+    ```
+
+    Then, create a new Python file called `app.py` and add the following code:
 
     ```python
+    import os
     import cv2
     import supervision as sv
 
@@ -55,7 +79,7 @@ Create a new Python file called `app.py` and add the following code:
 
     client = InferenceHTTPClient(
         api_url="http://127.0.0.1:9001",
-        api_key="XXX"
+        api_key=os.environ["ROBOFLOW_API_KEY"]
     )
 
     result = client.infer_from_yolo_world(
@@ -80,13 +104,6 @@ Create a new Python file called `app.py` and add the following code:
     )
 
     sv.plot_image(annotated_image)
-    ```
-
-
-    Run the following command to set your API key in your coding environment:
-
-    ```
-    export ROBOFLOW_API_KEY=<your api key>
     ```
 
 In this code, we load YOLO-World, run YOLO-World on an image, and annotate the image with the predictions from the model.
