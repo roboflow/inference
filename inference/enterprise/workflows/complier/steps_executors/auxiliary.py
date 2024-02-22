@@ -140,6 +140,8 @@ def crop_image(
                 ORIGIN_COORDINATES_KEY: {
                     CENTER_X_KEY: detection["x"],
                     CENTER_Y_KEY: detection["y"],
+                    WIDTH_KEY: detection[WIDTH_KEY],
+                    HEIGHT_KEY: detection[HEIGHT_KEY],
                     ORIGIN_SIZE_KEY: origin_size,
                 },
             }
