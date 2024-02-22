@@ -21,6 +21,7 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.hosted.txt \
     requirements/_requirements.txt \
+    requirements/requirements.sdk.http.txt \
     ./
 
 RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
@@ -45,6 +46,8 @@ ENV CORE_MODEL_CLIP_ENABLED=false
 ENV CORE_MODEL_SAM_ENABLED=false
 ENV CORE_MODEL_GAZE_ENABLED=false
 ENV CORE_MODEL_DOCTR_ENABLED=false
+ENV CORE_MODEL_YOLO_WORLD_ENABLED=false
+ENV CORE_MODELS_ENABLED=false
 ENV LAMBDA=True
 ENV ALLOW_NUMPY_INPUT=False
 ENV INFERENCE_SERVER_ID=HostedInferenceLambda
