@@ -34,9 +34,11 @@ from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
+    HEIGHT_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
+    WIDTH_KEY,
 )
 from inference.enterprise.workflows.complier.steps_executors.types import (
     NextStepReference,
@@ -804,9 +806,11 @@ def anchor_image_detections_in_parent_coordinates(
         image[ORIGIN_COORDINATES_KEY][CENTER_X_KEY],
         image[ORIGIN_COORDINATES_KEY][CENTER_Y_KEY],
     )
+    parent_left_top_x = round(shift_x - image[ORIGIN_COORDINATES_KEY][WIDTH_KEY] / 2)
+    parent_left_top_y = round(shift_y - image[ORIGIN_COORDINATES_KEY][HEIGHT_KEY] / 2)
     for detection in serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
-        detection["x"] += shift_x
-        detection["y"] += shift_y
+        detection["x"] += parent_left_top_x
+        detection["y"] += parent_left_top_y
     serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]
