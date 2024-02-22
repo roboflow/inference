@@ -261,7 +261,6 @@ class InferencePipeline:
     def __init__(
         self,
         model: OnnxRoboflowInferenceModel,
-        process_frame_func: str,
         video_source: VideoSource,
         on_prediction: Callable[[ObjectDetectionPrediction, VideoFrame], None],
         max_fps: Optional[float],
@@ -272,6 +271,7 @@ class InferencePipeline:
         active_learning_middleware: Union[
             NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
         ],
+        process_frame_func: str = "_process_frame",
     ):
         self._model = model
         self._process_frame_func = self.__getattribute__(process_frame_func)
