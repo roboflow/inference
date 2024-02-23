@@ -1096,7 +1096,7 @@ async def get_cogvlm_generations_locally(
             core_model="cogvlm",
             api_key=api_key,
         )
-        result = await model_manager.model_manager(
+        result = await model_manager.infer_from_request(
             yolo_world_model_id, inference_request
         )
         serialised_result.append(
