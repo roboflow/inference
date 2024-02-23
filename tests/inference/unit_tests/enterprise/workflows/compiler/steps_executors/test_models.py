@@ -536,7 +536,7 @@ async def test_get_cogvlm_generations_from_remote_api(
 async def test_get_cogvlm_generations_locally() -> None:
     # given
     model_manager = AsyncMock()
-    model_manager.model_manager.side_effect = [
+    model_manager.infer_from_request.side_effect = [
         CogVLMResponse.parse_obj({"response": "Response 1: 42"}),
         CogVLMResponse.parse_obj({"response": "Response 2: 42"}),
         CogVLMResponse.parse_obj({"response": "Response 3: 42"}),
@@ -569,7 +569,7 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_no_expected
 ):
     # given
     model_manager = AsyncMock()
-    model_manager.model_manager.side_effect = [
+    model_manager.infer_from_request.side_effect = [
         CogVLMResponse.parse_obj({"response": "Response 1: 42"}),
         CogVLMResponse.parse_obj({"response": "Response 2: 42"}),
         CogVLMResponse.parse_obj({"response": "Response 3: 42"}),
@@ -606,7 +606,7 @@ async def test_run_cog_vlm_prompting_when_local_execution_chosen_and_json_output
 ):
     # given
     model_manager = AsyncMock()
-    model_manager.model_manager.side_effect = [
+    model_manager.infer_from_request.side_effect = [
         CogVLMResponse.parse_obj({"response": json.dumps({"value": 42})}),
         CogVLMResponse.parse_obj({"response": json.dumps({"value": 43})}),
         CogVLMResponse.parse_obj({"response": json.dumps({"value": 44})}),
