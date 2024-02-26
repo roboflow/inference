@@ -36,6 +36,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     run_lmm_for_classification_step,
     run_lmm_step,
     run_ocr_model_step,
+    run_qr_code_detection_step,
     run_roboflow_model_step,
     run_yolo_world_model_step,
 )
@@ -73,6 +74,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "YoloWorld": run_yolo_world_model_step,
     "LMM": run_lmm_step,
     "LMMForClassification": run_lmm_for_classification_step,
+    "QRCodeDetection": run_qr_code_detection_step,
 }
 
 
@@ -316,7 +318,7 @@ def extract_step_result_from_dict(
     step_result = result.get(step_field)
     if step_result is None:
         raise WorkflowsCompilerRuntimeError(
-            f"Cannot find neither field {step_field} in result of step {step_selector}"
+            f"Cannot find field {step_field} in result of step {step_selector}"
         )
     return step_result
 

@@ -156,6 +156,7 @@ inference_sdk/version.py
 !tests/inference/unit_tests/core/interfaces/assets/*.mp4
 !inference/enterprise/stream_management/assets/*.jpg
 !tests/inference/models_predictions_tests/assets/*.jpg
+!tests/inference/unit_tests/enterprise/workflows/assets/*.png
 tests/inference/models_predictions_tests/assets/*.zip
 !inference/enterprise/workflows/assets/*.jpg
 dev.py

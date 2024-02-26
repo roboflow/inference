@@ -5,7 +5,9 @@ import re
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
-
+import cv2
+import numpy as np
+from uuid import uuid4
 from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
@@ -62,6 +64,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection,
     RoboflowModel,
     StepInterface,
     YoloWorld,
@@ -1179,3 +1182,62 @@ def resolve_model_api_url(step: StepInterface) -> str:
     if WORKFLOWS_REMOTE_API_TARGET != "hosted":
         return LOCAL_INFERENCE_API_URL
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
+
+
+async def run_qr_code_detection_step(
+    step: QRCodeDetection,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    decoded_images = [load_image(e)[0] for e in image]
+    image_metadata = [{"width": img.shape[1], "height": img.shape[0]} for img in decoded_images]
+    image_parent_ids = [img["parent_id"] for img in image]
+    predictions = [
+        detect_qr_codes(
+            image=image,
+            parent_id=parent_id
+        )
+        for image, parent_id in zip(decoded_images, image_parent_ids)
+    ]
+    
+    outputs_lookup[construct_step_selector(step_name=step.name)] = {
+        "parent_id": image_parent_ids,
+        "predictions": predictions,
+        "image": image_metadata,
+    }
+    return None, outputs_lookup
+
+
+def detect_qr_codes(
+    image: np.ndarray,
+    parent_id: str
+) -> Dict[str, Union[str, np.ndarray]]:
+    detector = cv2.QRCodeDetector()
+    retval, detections, pointsList, _ = detector.detectAndDecodeMulti(image)
+    predictions = []
+    for data, points in zip(detections, pointsList):
+        width = points[2][0] - points[0][0]
+        height = points[2][1] - points[0][1]
+        predictions.append(
+            {
+                "parent_id": parent_id,
+                "class": "qr_code",
+                "class_id": 0,
+                "confidence": 1.0,
+                "x": points[0][0] + width / 2,
+                "y": points[0][1] + height / 2,
+                "width": width,
+                "height": height,
+                "detection_id": str(uuid4()),
+                "data": data,
+            }
+        )
+    return predictions
