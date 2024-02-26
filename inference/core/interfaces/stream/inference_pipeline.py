@@ -271,7 +271,7 @@ class InferencePipeline:
         active_learning_middleware: Union[
             NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
         ],
-        process_frame_func: str = "_process_frame",
+        process_frame_func: Callable = process_frame,
         top_k: Optional[int] = None,
     ):
         self._model = model
