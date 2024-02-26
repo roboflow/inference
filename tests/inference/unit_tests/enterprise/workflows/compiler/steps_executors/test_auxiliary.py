@@ -74,6 +74,8 @@ def test_crop_image() -> None:
     assert result[0]["origin_coordinates"] == {
         "center_x": 10,
         "center_y": 10,
+        "height": 20,
+        "width": 20,
         "origin_image_size": {"height": 1000, "width": 1000},
     }, "Appropriate origin coordinates must be attached"
     assert (
@@ -88,6 +90,8 @@ def test_crop_image() -> None:
     assert result[1]["origin_coordinates"] == {
         "center_x": 100,
         "center_y": 100,
+        "height": 40,
+        "width": 40,
         "origin_image_size": {"height": 1000, "width": 1000},
     }, "Appropriate origin coordinates must be attached"
     assert (
@@ -102,6 +106,8 @@ def test_crop_image() -> None:
     assert result[2]["origin_coordinates"] == {
         "center_x": 500,
         "center_y": 500,
+        "height": 100,
+        "width": 100,
         "origin_image_size": {"height": 1000, "width": 1000},
     }, "Appropriate origin coordinates must be attached"
 
