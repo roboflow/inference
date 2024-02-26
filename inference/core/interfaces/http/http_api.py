@@ -123,9 +123,7 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_workflow_result,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import (
-    get_workflow_specification,
-)
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode

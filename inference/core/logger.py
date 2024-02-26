@@ -4,6 +4,7 @@ import warnings
 from typing import Any
 
 from rich.logging import RichHandler
+from structlog.processors import CallsiteParameter
 
 from inference.core.env import LOG_LEVEL
 from inference.core.utils.environment import str2bool
@@ -13,9 +14,7 @@ if LOG_LEVEL == "ERROR" or LOG_LEVEL == "FATAL":
 
 
 def add_correlation(
-    logger: logging.Logger,
-    method_name: str,
-    event_dict: dict[str, Any]
+    logger: logging.Logger, method_name: str, event_dict: dict[str, Any]
 ) -> dict[str, Any]:
     from asgi_correlation_id import correlation_id
 
@@ -32,10 +31,16 @@ if str2bool(os.getenv("API_LOGGING_ENABLED", "False")):
         processors=[
             add_correlation,
             structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_log_level,
             structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            structlog.processors.CallsiteParameterAdder(
+                [
+                    CallsiteParameter.FILENAME,
+                    CallsiteParameter.FUNC_NAME,
+                    CallsiteParameter.LINENO,
+                ],
+            ),
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
