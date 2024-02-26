@@ -742,7 +742,6 @@ async def test_qr_code_detection() -> None:
         image="$inputs.image",
     )
 
-    #TODO mock the cv2 call rather than using a real image?
     image = cv2.imread("./tests/inference/unit_tests/enterprise/workflows/assets/qr.png")
     
     # when
@@ -777,4 +776,7 @@ async def test_qr_code_detection() -> None:
     assert(len(actual_image) == 1)
     assert(actual_image[0]["height"] == 1018)
     assert(actual_image[0]["width"] == 2470)
+
+    actual_prediction_type = result["$steps.some"]['prediction_type']
+    assert(actual_prediction_type == 'qrcode-detection')
     

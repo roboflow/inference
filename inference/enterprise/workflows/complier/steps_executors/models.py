@@ -1198,27 +1198,26 @@ async def run_qr_code_detection_step(
         outputs_lookup=outputs_lookup,
     )
     decoded_images = [load_image(e)[0] for e in image]
-    image_metadata = [{"width": img.shape[1], "height": img.shape[0]} for img in decoded_images]
+    image_metadata = [
+        {"width": img.shape[1], "height": img.shape[0]} for img in decoded_images
+    ]
     image_parent_ids = [img["parent_id"] for img in image]
     predictions = [
-        detect_qr_codes(
-            image=image,
-            parent_id=parent_id
-        )
+        detect_qr_codes(image=image, parent_id=parent_id)
         for image, parent_id in zip(decoded_images, image_parent_ids)
     ]
-    
+
     outputs_lookup[construct_step_selector(step_name=step.name)] = {
         "parent_id": image_parent_ids,
         "predictions": predictions,
         "image": image_metadata,
+        "prediction_type": "qrcode-detection",
     }
     return None, outputs_lookup
 
 
 def detect_qr_codes(
-    image: np.ndarray,
-    parent_id: str
+    image: np.ndarray, parent_id: str
 ) -> Dict[str, Union[str, np.ndarray]]:
     detector = cv2.QRCodeDetector()
     retval, detections, pointsList, _ = detector.detectAndDecodeMulti(image)

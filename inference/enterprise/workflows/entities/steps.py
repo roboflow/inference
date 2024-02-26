@@ -605,6 +605,7 @@ class BinaryOperator(Enum):
     OR = "or"
     AND = "and"
 
+
 class QRCodeDetection(BaseModel, StepInterface):
     type: Literal["QRCodeDetection"]
     name: str
