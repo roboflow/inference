@@ -39,7 +39,7 @@ class ActiveLearningManager(ModelManager):
         active_learning_disabled_for_request = getattr(
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
-        active_learning_api_key = request.active_learning_api_key or request.api_key
+        active_learning_api_key = getattr(request, "active_learning_api_key", None) or getattr(request, "api_key", None)
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
@@ -150,7 +150,7 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
         prediction = await super().infer_from_request(
             model_id=model_id, request=request, **kwargs
         )
-        active_learning_api_key = request.active_learning_api_key or request.api_key
+        active_learning_api_key = getattr(request, "active_learning_api_key", None) or getattr(request, "api_key", None)
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
