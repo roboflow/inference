@@ -28,5 +28,6 @@ COPY docker/config/device_manager.py device_manager.py
 ENV NUM_WORKERS=1
 ENV PORT=9101
 ENV HOST=0.0.0.0
+ENV API_LOGGING_ENABLED=True
 
 ENTRYPOINT uvicorn device_manager:app --workers $NUM_WORKERS --host $HOST --port $PORT

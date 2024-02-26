@@ -2,3 +2,5 @@ uvicorn[standard]<=0.22.0
 python-multipart<=0.0.6
 fastapi-cprofile<=0.0.2
 orjson>=3.9.10
+asgi_correlation_id>=4.3.1
+structlog>=24.1.0

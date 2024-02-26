@@ -4,6 +4,7 @@ from functools import partial, wraps
 from time import sleep
 from typing import Any, List, Optional, Union
 
+import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -123,7 +124,6 @@ from inference.core.interfaces.http.orjson_utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
-    get_roboflow_workspace,
     get_workflow_specification,
 )
 from inference.core.utils.notebooks import start_notebook
@@ -281,6 +281,7 @@ class HttpInterface(BaseInterface):
                 strip_dirs=False,
                 sort_by="cumulative",
             )
+        app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
         if METRICS_ENABLED:
 
