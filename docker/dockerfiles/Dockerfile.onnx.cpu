@@ -1,6 +1,7 @@
 FROM python:3.9 as base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
     ffmpeg \
@@ -16,6 +17,7 @@ RUN apt update -y && apt install -y \
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
+    requirements/requirements.vino.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
@@ -24,6 +26,7 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
+RUN if ["${TARGETPLATFORM}" == "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt fi
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \

@@ -17,7 +17,10 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
     requirements/_requirements.txt \
+    requirements/requirements.vino.txt \
     ./
+
+RUN if ["${TARGETPLATFORM}" == "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt fi
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
