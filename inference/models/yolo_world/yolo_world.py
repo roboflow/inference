@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any
+from typing import Any, Optional
 
 from ultralytics import YOLO
 
@@ -65,6 +65,7 @@ class YOLOWorld(RoboflowCoreModel):
         image: Any = None,
         text: list = None,
         confidence: float = DEFAULT_CONFIDENCE,
+        max_detections: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -96,6 +97,11 @@ class YOLOWorld(RoboflowCoreModel):
         t2 = perf_counter() - t1
 
         predictions = []
+        if max_detections is not None:
+            sorted_boxes = sorted(results.boxes, key=lambda x: x.conf, reverse=True)[
+                :max_detections
+            ]
+            results.boxes = sorted_boxes
         for i, box in enumerate(results.boxes):
             x, y, w, h = box.xywh.tolist()[0]
             class_id = int(box.cls)

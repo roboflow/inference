@@ -35,9 +35,7 @@ from inference.core.interfaces.stream.entities import (
     ObjectDetectionPrediction,
 )
 from inference.core.interfaces.stream.model_functions import (
-    init_yolo_world_model,
-    process_frame,
-    process_frame_yolo_world,
+    default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
@@ -60,14 +58,14 @@ CORE_MODEL_CONFIG = {"yolo-world": None}
 
 
 try:
-    from inference.models import YOLOWorld
+    from inference.core.interfaces.stream.model_functions import (
+        get_process_frame_func_yolo_world,
+    )
 
     CORE_MODEL_CONFIG["yolo_world"] = {
-        "model_class": YOLOWorld,
-        "process_frame_func": process_frame_yolo_world,
-        "init_model_func": init_yolo_world_model,
+        "get_process_frame_func": get_process_frame_func_yolo_world,
     }
-except:
+except ImportError:
     pass
 
 
@@ -75,9 +73,11 @@ class InferencePipeline:
     @classmethod
     def init(
         cls,
-        model_id: str,
         video_reference: Union[str, int],
-        on_prediction: Callable[[ObjectDetectionPrediction, VideoFrame], None],
+        model_id: Optional[str] = None,
+        on_prediction: Optional[
+            Callable[[ObjectDetectionPrediction, VideoFrame], None]
+        ] = None,
         api_key: Optional[str] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
@@ -92,7 +92,8 @@ class InferencePipeline:
         mask_decode_mode: Optional[str] = "accurate",
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
-        top_k: Optional[int] = None,
+        process_frame: Optional[Callable] = None,
+        classes: Optional[List[str]] = None,
         **kwargs,
     ) -> "InferencePipeline":
         """
@@ -158,8 +159,8 @@ class InferencePipeline:
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            top_k (Optional[int]): Sets the maximum number of predictions to be returned by the model. If not given,
-                no limit is set.
+            process_frame (Optional[Callable]): Function to be used for processing frames and returning predictions. If given, model_id is ignored.
+            classes (Optional[List[str]]): List of classes to be used for zero shot object detection models.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -185,21 +186,27 @@ class InferencePipeline:
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
         )
-        project, _ = model_id.split("/")
-        if project in CORE_MODEL_CONFIG:
+        if model_id is not None:
+            project, _ = model_id.split("/")
+        else:
+            project = None
+        if process_frame is not None:
+            process_frame_func = process_frame
+            model = None
+        elif model_id is not None and project in CORE_MODEL_CONFIG:
             if CORE_MODEL_CONFIG[project] is None:
                 raise ValueError(
                     f"Model {project} is not installed or not available in this environment"
                 )
-            ModelClass = CORE_MODEL_CONFIG[project]["model_class"]
-            process_frame_func = CORE_MODEL_CONFIG[project]["process_frame_func"]
-            model = ModelClass(api_key=api_key, model_id=model_id)
-            init_model_func = CORE_MODEL_CONFIG[project].get("init_model_func")
-            if init_model_func is not None:
-                model = init_model_func(model, **kwargs)
+            get_process_frame_func = CORE_MODEL_CONFIG[project][
+                "get_process_frame_func"
+            ]
+            model, process_frame_func = get_process_frame_func(
+                model_id=model_id, api_key=api_key, classes=classes
+            )
         else:
             model = get_model(model_id=model_id, api_key=api_key)
-            process_frame_func = process_frame
+            process_frame_func = partial(default_process_frame, model=model)
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         status_update_handlers.append(watchdog.on_status_update)
@@ -228,7 +235,7 @@ class InferencePipeline:
                 f"Active Learning middleware is not available for model {project} - forcing it to be disabled."
             )
             active_learning_enabled = False
-        if active_learning_enabled is True:
+        if active_learning_enabled is True and model_id is not None:
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,
                 model_id=model_id,
@@ -255,15 +262,12 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             inference_config=inference_config,
             active_learning_middleware=active_learning_middleware,
-            top_k=top_k,
         )
 
     def __init__(
         self,
-        model: OnnxRoboflowInferenceModel,
+        process_frame_func: Callable,
         video_source: VideoSource,
-        on_prediction: Callable[[ObjectDetectionPrediction, VideoFrame], None],
-        max_fps: Optional[float],
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
@@ -271,8 +275,11 @@ class InferencePipeline:
         active_learning_middleware: Union[
             NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
         ],
-        process_frame_func: Callable = process_frame,
-        top_k: Optional[int] = None,
+        model: Optional[OnnxRoboflowInferenceModel] = None,
+        on_prediction: Optional[
+            Callable[[ObjectDetectionPrediction, VideoFrame], None]
+        ] = None,
+        max_fps: Optional[float] = None,
     ):
         self._model = model
         self._process_frame_func = process_frame_func
@@ -289,10 +296,6 @@ class InferencePipeline:
         self._status_update_handlers = status_update_handlers
         self._inference_config = inference_config
         self._active_learning_middleware = active_learning_middleware
-        self._top_k = top_k
-
-    def _init_yolo_world_model(self, classes: List[str], **kwargs) -> None:
-        self._model.set_classes(classes)
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -339,19 +342,10 @@ class InferencePipeline:
         try:
             for video_frame in self._generate_frames():
                 predictions = self._process_frame_func(
-                    video_frame, self._model, self._inference_config, self._watchdog
+                    video_frame=video_frame,
+                    inference_config=self._inference_config,
+                    watchdog=self._watchdog,
                 )
-                if (
-                    predictions
-                    and self._top_k
-                    and len(predictions["predictions"]) > self._top_k
-                ):
-                    preds = sorted(
-                        predictions["predictions"],
-                        key=lambda x: x["confidence"],
-                        reverse=True,
-                    )
-                    predictions["predictions"] = preds[: self._top_k]
 
                 self._predictions_queue.put((predictions, video_frame))
                 send_inference_pipeline_status_update(
@@ -395,23 +389,23 @@ class InferencePipeline:
                 self._predictions_queue.task_done()
                 break
             predictions, video_frame = inference_results
-            try:
-                self._on_prediction(predictions, video_frame)
-            except Exception as error:
-                payload = {
-                    "error_type": error.__class__.__name__,
-                    "error_message": str(error),
-                    "error_context": "inference_results_dispatching",
-                }
-                send_inference_pipeline_status_update(
-                    severity=UpdateSeverity.ERROR,
-                    event_type=INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
-                    payload=payload,
-                    status_update_handlers=self._status_update_handlers,
-                )
-                logger.warning(f"Error in results dispatching - {error}")
-            finally:
-                self._predictions_queue.task_done()
+            if self._on_prediction is not None:
+                try:
+                    self._on_prediction(predictions, video_frame)
+                except Exception as error:
+                    payload = {
+                        "error_type": error.__class__.__name__,
+                        "error_message": str(error),
+                        "error_context": "inference_results_dispatching",
+                    }
+                    send_inference_pipeline_status_update(
+                        severity=UpdateSeverity.ERROR,
+                        event_type=INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
+                        payload=payload,
+                        status_update_handlers=self._status_update_handlers,
+                    )
+                    logger.warning(f"Error in results dispatching - {error}")
+            self._predictions_queue.task_done()
 
     def _generate_frames(
         self,
