@@ -24,6 +24,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection,
     RelativeStaticCrop,
     YoloWorld,
 )
@@ -46,6 +47,7 @@ StepType = Annotated[
         ClipComparison,
         RelativeStaticCrop,
         AbsoluteStaticCrop,
+        QRCodeDetection,
         DetectionsConsensus,
         ActiveLearningDataCollector,
         YoloWorld,

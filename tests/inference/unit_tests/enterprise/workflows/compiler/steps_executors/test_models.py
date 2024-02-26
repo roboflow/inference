@@ -4,6 +4,7 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
+import cv2
 import pytest
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
@@ -21,6 +22,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     get_cogvlm_generations_locally,
     resolve_model_api_url,
     run_cog_vlm_prompting,
+    run_qr_code_detection_step,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
@@ -33,6 +35,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection
 )
 
 
@@ -729,3 +732,51 @@ async def test_execute_gpt_4v_request() -> None:
     assert (
         call_kwargs["messages"][0]["content"][1]["image_url"]["detail"] == "low"
     ), "Image details level expected to be set to `low` as in LMMConfig"
+
+@pytest.mark.asyncio
+async def test_qr_code_detection() -> None:
+    # given
+    step = QRCodeDetection(
+        type="QRCodeDetection",
+        name="some",
+        image="$inputs.image",
+    )
+
+    image = cv2.imread("./tests/inference/unit_tests/enterprise/workflows/assets/qr.png")
+    
+    # when
+    _, result = await run_qr_code_detection_step(
+        step=step,
+        runtime_parameters={ "image": [{ "type": "numpy_object", "value": image, "parent_id": "$inputs.image" } ] },
+        outputs_lookup={},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    actual_parent_id = result["$steps.some"]['parent_id']
+    assert(actual_parent_id == ["$inputs.image"])
+    
+    actual_predictions = result["$steps.some"]["predictions"][0]
+    assert(len(actual_predictions) == 3)
+    for prediction in actual_predictions:
+        assert(prediction["class"] == "qr_code")
+        assert(prediction["class_id"] == 0)
+        assert(prediction["confidence"] == 1.0)
+        assert(prediction["x"] > 0)
+        assert(prediction["y"] > 0)
+        assert(prediction["width"] > 0)
+        assert(prediction["height"] > 0)
+        assert(prediction["detection_id"] is not None)
+        assert(prediction["data"] == 'https://www.qrfy.com/LEwG_Gj')
+        assert(prediction["parent_id"] == "$inputs.image")
+
+    actual_image = result["$steps.some"]["image"]
+    assert(len(actual_image) == 1)
+    assert(actual_image[0]["height"] == 1018)
+    assert(actual_image[0]["width"] == 2470)
+
+    actual_prediction_type = result["$steps.some"]['prediction_type']
+    assert(actual_prediction_type == 'qrcode-detection')
+    
