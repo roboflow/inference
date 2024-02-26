@@ -33,6 +33,7 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "cogvlm": ("llm", "cogvlm"),
+    "yolo_world": ("object-detection", "yolo-world"),
 }
 
 STUB_VERSION_ID = "0"

@@ -127,6 +127,14 @@ def test_serialise_workflow_result() -> None:
             },
         ],
         "fourth": "to_be_excluded",
+        "fifth": {
+            "some": "value",
+            "my_image": {
+                "type": "numpy_object",
+                "value": np_image,
+            },
+        },
+        "sixth": ["some", 1, [2, {"type": "numpy_object", "value": np_image}]],
     }
 
     # when
@@ -136,8 +144,8 @@ def test_serialise_workflow_result() -> None:
 
     # then
     assert (
-        len(result) == 3
-    ), "Size of dictionary must be 3, one field should be excluded"
+        len(result) == 5
+    ), "Size of dictionary must be 5, one field should be excluded"
     assert result["some"] == [{"detection": 1}], "Element must not change"
     assert (
         result["other"]["type"] == "base64"
@@ -148,3 +156,15 @@ def test_serialise_workflow_result() -> None:
     assert (
         result["third"][1]["type"] == "base64"
     ), "Type of this element must change due to serialisation"
+    assert (
+        result["fifth"]["some"] == "value"
+    ), "some key of fifth element is not to be changed"
+    assert (
+        result["fifth"]["my_image"]["type"] == "base64"
+    ), "my_image key of fifth element is to be serialised"
+    assert len(result["sixth"]) == 3, "Number of element in sixth list to be preserved"
+    assert result["sixth"][:2] == ["some", 1], "First two elements not to be changed"
+    assert result["sixth"][2][0] == 2, "First element of nested list not to be changed"
+    assert (
+        result["sixth"][2][1]["type"] == "base64"
+    ), "Second element of nested list to be serialised"

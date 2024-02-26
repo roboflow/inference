@@ -28,6 +28,11 @@ try:
 except:
     pass
 
+try:
+    from inference.models.yolo_world import YOLOWorld
+except:
+    pass
+
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection

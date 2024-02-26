@@ -232,7 +232,7 @@ Now, the structure of handlers has changed into:
 ```python
 import numpy as np
 
-def on_prediction(predictions video_frame) -> None:
+def on_prediction(predictions, video_frame) -> None:
     pass
 ```
 

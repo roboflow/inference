@@ -59,7 +59,7 @@ GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 
 # If true, this will store a non-verbose version of the inference request and repsonse in the cache
-TINY_CACHE = str2bool(os.getenv("TINY_CACHE", False))
+TINY_CACHE = str2bool(os.getenv("TINY_CACHE", True))
 
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
@@ -98,6 +98,11 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 # Flag to enable CogVLM core model, default is True
 CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
+
+# Flag to enable YOLO-World core model, default is True
+CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
+)
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)

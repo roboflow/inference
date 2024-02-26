@@ -127,9 +127,11 @@ def assembly_input_images(
                 for i, image in enumerate(runtime_parameters[definition.name])
             ]
         else:
-            runtime_parameters[definition.name] = assembly_input_image(
-                parameter=input_node, image=runtime_parameters[definition.name]
-            )
+            runtime_parameters[definition.name] = [
+                assembly_input_image(
+                    parameter=input_node, image=runtime_parameters[definition.name]
+                )
+            ]
     return runtime_parameters
 
 

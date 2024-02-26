@@ -34,7 +34,7 @@ from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.camera.camera import WebcamStream
 from inference.core.logger import logger
 from inference.core.registries.roboflow import get_model_type
-from inference.models.utils import get_roboflow_model
+from inference.models.utils import get_model
 
 
 class Stream(BaseInterface):
@@ -103,7 +103,7 @@ class Stream(BaseInterface):
 
         self.active_learning_middleware = NullActiveLearningMiddleware()
         if isinstance(model, str):
-            self.model = get_roboflow_model(model, self.api_key)
+            self.model = get_model(model, self.api_key)
             if ACTIVE_LEARNING_ENABLED:
                 self.active_learning_middleware = (
                     ThreadingActiveLearningMiddleware.init(

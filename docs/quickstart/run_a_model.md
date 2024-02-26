@@ -18,13 +18,13 @@ Create a new Python file called `app.py` and add the following code:
 
 ```python
 # import a utility function for loading Roboflow models
-from inference import get_roboflow_model
+from inference import get_model
 
 # define the image url to use for inference
 image = "https://media.roboflow.com/inference/people-walking.jpg"
 
 # load a pre-trained yolov8n model
-model = get_roboflow_model(model_id="yolov8n-640")
+model = get_model(model_id="yolov8n-640")
 
 # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
 results = model.infer(image)
@@ -42,7 +42,7 @@ Running inference is fun but it's not much to look at. Let's add some code to vi
 
 ```python
 # import a utility function for loading Roboflow models
-from inference import get_roboflow_model
+from inference import get_model
 # import supervision to visualize our results
 import supervision as sv
 # import cv2 to helo load our image
@@ -53,7 +53,7 @@ image_file = "people-walking.jpg"
 image = cv2.imread(image_file)
 
 # load a pre-trained yolov8n model
-model = get_roboflow_model(model_id="yolov8n-640")
+model = get_model(model_id="yolov8n-640")
 
 # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
 results = model.infer(image)

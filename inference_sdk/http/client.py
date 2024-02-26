@@ -116,6 +116,15 @@ def wrap_errors_async(function: callable) -> callable:
 
 
 class InferenceHTTPClient:
+
+    @classmethod
+    def init(
+        cls,
+        api_url: str,
+        api_key: Optional[str] = None,
+    ) -> "InferenceHTTPClient":
+        return cls(api_url=api_url, api_key=api_key)
+
     def __init__(
         self,
         api_url: str,
@@ -707,6 +716,37 @@ class InferenceHTTPClient:
         api_key_safe_raise_for_status(response=response)
         return response.json()
 
+    @wrap_errors_async
+    async def prompt_cogvlm_async(
+        self,
+        visual_prompt: ImagesReference,
+        text_prompt: str,
+        chat_history: Optional[List[Tuple[str, str]]] = None,
+    ) -> dict:
+        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
+        encoded_image = await load_static_inference_input_async(
+            inference_input=visual_prompt,
+        )
+        payload = {
+            "api_key": self.__api_key,
+            "model_id": "cogvlm",
+            "prompt": text_prompt,
+        }
+        payload = inject_images_into_payload(
+            payload=payload,
+            encoded_images=encoded_image,
+        )
+        if chat_history is not None:
+            payload["history"] = chat_history
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.__api_url}/llm/cogvlm",
+                json=payload,
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
     @wrap_errors
     def ocr_image(
         self,
@@ -997,6 +1037,73 @@ class InferenceHTTPClient:
         return decode_workflow_outputs(
             workflow_outputs=workflow_outputs,
             expected_format=self.__inference_configuration.output_visualisation_format,
+        )
+
+    @wrap_errors
+    def infer_from_yolo_world(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        class_names: List[str],
+        model_version: Optional[str] = None,
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["text"] = class_names
+        if model_version is not None:
+            payload["yolo_world_version_id"] = model_version
+        if confidence is not None:
+            payload["confidence"] = confidence
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+        return [r.json() for r in responses]
+
+    @wrap_errors_async
+    async def infer_from_yolo_world_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        class_names: List[str],
+        model_version: Optional[str] = None,
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        encoded_inference_inputs = await load_static_inference_input_async(
+            inference_input=inference_input,
+        )
+        payload = self.__initialise_payload()
+        payload["text"] = class_names
+        if model_version is not None:
+            payload["yolo_world_version_id"] = model_version
+        if confidence is not None:
+            payload["confidence"] = confidence
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
+        requests_data = prepare_requests_data(
+            url=url,
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=DEFAULT_HEADERS,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        return await execute_requests_packages_async(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
 
     def _post_images(

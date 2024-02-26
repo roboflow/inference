@@ -101,6 +101,8 @@ way to refer to specific elements. By convention, the following references are a
 Examples:
 * `$inputs.image` - reference to an input called `image`
 * `$steps.my_step.predictions` - reference to a step called `my_step` and its property `predictions`
+Additionally, defining **outputs**, it is allowed (since `v0.9.14`) to use wildcard selector
+(`${type_of_element}.{name_of_element}.*`) with intention to extract all properties of given step.
 
 In the code, we usually call references **selectors**.
 
@@ -261,6 +263,7 @@ input parameter
 * `confidence` - confidence of prediction
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `classification` model
 
 #### `MultiLabelClassificationModel`
 This step represents inference from multi-label classification model.
@@ -281,6 +284,7 @@ input parameter
 * `predicted_classes` - top classes
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `classification` model
 
 #### `ObjectDetectionModel`
 This step represents inference from object detection model.
@@ -309,6 +313,7 @@ input parameter. Default: `0.3`.
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `object-detection` model
 
 #### `KeypointsDetectionModel`
 This step represents inference from keypoints detection model.
@@ -339,6 +344,7 @@ input parameter
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `keypoint-detection` model
 
 #### `InstanceSegmentationModel`
 This step represents inference from instance segmentation model.
@@ -370,6 +376,7 @@ input parameter
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `instance-segmentation` model
 
 #### `OCRModel`
 This step represents inference from OCR model.
@@ -384,6 +391,7 @@ This step represents inference from OCR model.
 * `result` - details of predictions
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting `ocr` model
 
 #### `Crop`
 This step produces **dynamic** crops based on detections from detections-based model.
@@ -394,17 +402,39 @@ This step produces **dynamic** crops based on detections from detections-based m
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
 * `detections`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (required)
 
 ##### Step outputs:
 * `crops` - `image` cropped based on `detections`
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 
+#### `QRCodeDetection`
+This step represents inference from QR Code Detection.
+
+##### Step parameters
+* `type`: must be `QRCodeDetection` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+
+##### Step outputs:
+* `predictions` - details of predictions
+    * Note: `predictions.data` is a string which is populated with the data contents of the QR code.
+* `image` - size of input image, that `predictions` coordinates refers to
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* `prediction_type` - denoting `qrcode-detection` model
+
 
 #### `Condition`
 This step is responsible for flow-control in execution graph based on the condition defined in its body.
 As for now, only capable to make conditions based on output of binary operators that takes two operands.
+
+**IMPORTANT NOTE:** `Condition` step is only capable to operate, when single image is provided to the 
+input of the `workflow` (or more precisely, both `left` and `right` if provided with reference, then
+the reference can only hold value for a result of operation made against single input). This is to 
+prevent situation when evaluation of condition for multiple images yield different execution paths.  
 
 ##### Step parameters
 * `type`: must be `Condition` (required)
@@ -424,7 +454,7 @@ This step is responsible for filtering detections based predictions based on con
 * `type`: must be `DetectionFilter` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `DetectionOffset`, `YoloWorld`] (required)
 * `filter_definition`: definition of the filter (required)
 
 Filter definition can be either `DetectionFilterDefinition`
@@ -466,6 +496,7 @@ This let user define recursive structure of filters.
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting parent model type
 
 #### `DetectionOffset`
 This step is responsible for applying fixed offset on width and height of detections.
@@ -475,7 +506,7 @@ This step is responsible for applying fixed offset on width and height of detect
 * `type`: must be `DetectionOffset` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: reference to `predictions` output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `DetectionOffset`, `YoloWorld`] (required)
 * `offset_x`: reference to input parameter of integer value for detection width offset (required)
 * `offset_y`: reference to input parameter of integer value for detection height offset (required)
 
@@ -484,6 +515,7 @@ This step is responsible for applying fixed offset on width and height of detect
 * `image` - size of input image, that `predictions` coordinates refers to 
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
+* `prediction_type` - denoting parent model type
 
 
 #### `AbsoluteStaticCrop` and `RelativeStaticCrop`
@@ -560,7 +592,7 @@ In the case of `class_aware=False`:
 * `type`: must be `DetectionsConsensus` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `predictions`: list of selectors pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
-`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`] (required, must contain at least 2 elements)
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (required, must contain at least 2 elements)
 * `required_votes`: number of models that must agree on the detection - integer or selector pointing at
 `InferenceParameter` (required)
 * `class_aware`: flag deciding if class names are taken into account when finding overlapping bounding boxes
@@ -596,6 +628,178 @@ of multi-step pipelines (can be `undefined` if all sources of predictions give n
 objects specified in config are present
 * `presence_confidence` - for each input image, for each present class - aggregated confidence indicating presence
 of objects
+* `prediction_type` - denoting `object-detection` prediction (as this format is effective even if other detections 
+models are combined)
+
+#### `ActiveLearningDataCollector`
+Step that is supposed to be a solution for anyone who wants to collect data and predictions that flow through the 
+`workflows`. The block is build on the foundations of Roboflow Active Learning capabilities implemented in 
+[`active_learning` module](../../core/active_learning/README.md) - so all the capabilities should be preserved.
+There are **very important** considerations regarding collecting data with AL at the `workflows` level and in 
+scope of specific models. Read `important notes` section to discover nuances.
+General use-cases for this block:
+* grab data and predictions from single model / ensemble of models
+* posting the data in different project that the origin of models used in `workflow` - in particular **one may now use
+open models - like `yolov8n-640` and start sampling data to their own project!**
+* defining multiple different sampling strategies for different `workflows` (step allows to provide custom config of AL
+data collection - so you are not bounded to configuration of AL at the project level - and multiple instances of 
+configs can co-exist)
+
+##### Step parameters
+* `type`: must be `ActiveLearningDataCollector` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `predictions` - selector pointing to outputs of detections models output of the detections model: [`ObjectDetectionModel`, 
+`KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (then use `$steps.<det_step_name>.predictions`)
+or outputs of classification [`ClassificationModel`] (then use `$steps.<cls_step_name>.top`) (required)
+* `target_dataset` - name of Roboflow dataset / project to be used as target for collected data (required)
+* `target_dataset_api_key` - optional API key to be used for data registration. This may help in a scenario when data
+are to be registered cross-workspaces. If not provided - the API key from a request would be used to register data (
+applicable for Universe models predictions to be saved in private workspaces and for models that were trained in the same 
+workspace (not necessarily within the same project)).
+* `disable_active_learning` - boolean flag that can be also reference to input - to arbitrarily disable data collection
+for specific request - overrides all AL config. (optional, default: `False`)
+* `active_learning_configuration` - optional configuration of Active Learning data sampling in the exact format provided
+in [`active_learning` docs](../../core/active_learning/README.md)
+
+##### Step outputs
+No outputs are declared - step is supposed to cause side effect in form of data sampling and registration. 
+
+##### Important notes
+* this block is implemented in non-async way - which means that in certain cases it can block event loop causing
+parallelization not feasible. This is not the case when running in `inference` HTTP container. At Roboflow 
+hosted platform - registration cannot be executed as background task - so its duration must be added into expected 
+latency
+* **important :exclamation:** be careful in enabling / disabling AL at the level of steps - remember that when 
+predicting from each model, `inference` HTTP API tries to get Active Learning config from the project that model
+belongs to and register datapoint. To prevent that from happening - model steps can be provided with 
+`disable_active_learning=True` parameter. Then the only place where AL registration happens is `ActiveLearningDataCollector`.
+* **important :exclamation:** be careful with names of sampling strategies if you define Active Learning configuration - 
+you should keep them unique not only within a single config, but globally in project - otherwise limits accounting may
+not work well
+
+#### `YoloWorld`
+This `workflows` block is supposed to bring [Yolo World model](https://blog.roboflow.com/what-is-yolo-world/) to the
+`workflows` world! You can use it in a very similar way as other object detection models within `workflows`.
+
+**IMPORTANT:** This step for now only works in Python package and `inference` HTTP container hosted locally.
+Hosted Roboflow platform does not expose this model - hence you cannot use workflow with this step against
+`https://detect.roboflow.com` API and you cannot use it in combination with `remote` execution when remote
+target is set to `hosted` (applies for Python package and `inference` HTTP container).
+
+##### Step parameters
+* `type`: must be `YoloWorld` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `class_names` - must be reference to parameter or list of strings with names of classes to be detected - Yolo World 
+model makes it possible to predict across classes that you pass in the runtime - so in each request to `workflows` you 
+may detect different objects without model retraining. (required)
+* `version` - allows to specify model version. It is optional parameter, but when value is given it must be one of 
+[`s`, `m`, `l`]
+* `confidence` - optional parameter to specify confidence threshold. If given - must be number in range `[0.0, 1.0]`
+
+##### Step outputs
+* `predictions` - details of predictions
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* `prediction_type` - denoting `keypoint-detection` model
+
+#### `LMM`
+This block is to be used to include Large Multimodal Models into `workflows`. With this block in place, one may
+prompt both `GPT-4V` and `CogVLM` models and combine their outputs with other workflow components, effectively building
+powerful applications without single line of code written. 
+Block allows to specify structure of expected output, automatically inject the specification into prompt and 
+parse expected structure into block outputs that are accessible (and can be referred) by other `workflows` components.
+LMMs may occasionally produce non-parsable results according to specified output structure - in that cases, 
+outputs will be filled with `not_detected` value.
+
+##### Step parameters
+* `type`: must be `LMM` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `prompt`: must be string of reference to `InferenceParameter` - value holds unconstrained text prompt to LMM model 
+(required).   
+* `lmm_type`: must be string of reference to `InferenceParameter` - value holds the type of LMM model to be used - 
+allowed values: `gpt_4v` and `cog_vlm` (required)
+* `lmm_config`: (optional) structure that has the following schema:
+```json
+{
+  "max_tokens": 450,
+  "gpt_image_detail": "low",
+  "gpt_model_version": "gpt-4-vision-preview"
+}
+```
+to control inner details of LMM prompting. All parameters now are suited to control GPT API calls. Default for
+max tokens is `450`, `gpt_image_detail` default is `auto` (allowed values: `low`, `auto`, `high`), 
+`gpt_model_version` is `gpt-4-vision-preview`.
+* `remote_api_key` - optional string or reference to `InferenceParameter` that holds API key required to
+call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and
+do not require additional API key for CogVLM calls.
+* `json_output`: optional `dict[str, str]` (pointing expected output JSON field name to its description)
+or reference to `InferenceParameter` with such dict. This field is used to instruct model on expected output 
+format. One may not specify field names: `["raw_output", "structured_output", "image", "parent_id"]`, due to the
+fact that keys from `json_output` dict will be registered as block outputs (to be referred by other blocks) and
+cannot collide with basic outputs of that block. Additional outputs **will only be registered if defined in-place, 
+not via `InferenceParameter`).
+
+##### Step outputs
+* `raw_output` - raw output of LMM for each input image
+* `structured_output` - if `json_output` is specified, whole parsed dictionary for each input image will be placed in this field, 
+otherwise for each image, empty dict will be returned
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* for each of `json_output` - dedicated field will be created (with values provided image-major) - and those can be 
+referred as normal outputs (`$steps.{step_name}.{field_name}`).
+
+##### Important notes
+* `CogVLM` can only be used in `self-hosted` API - as Roboflow platform does not support such model. 
+Use `inference server start` on a machine with GPU to test that model.
+
+#### `LMMForClassification`
+This block is dedicated to use LMMs (both `GPT-4V` and `CogVLM` models) as zer-shot classification blocks - and make it
+possible to combine those with other `workflows` blocks as if LMM were classifier model - one may for instance 
+registered the outputs using `ActiveLearningDataCollector`.
+
+##### Step parameters
+* `type`: must be `LMM` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+* `lmm_type`: must be string of reference to `InferenceParameter` - value holds the type of LMM model to be used - 
+allowed values: `gpt_4v` and `cog_vlm` (required)
+* `classes` - non-empty list of class names (strings) or reference to `InferenceParameter` that holds this value. 
+Classes are presented to LMM in prompt and model is asked to produce structured classification output (required).
+* `remote_api_key` - optional string or reference to `InferenceParameter` that holds API key required to
+call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and
+do not require additional API key for CogVLM calls.
+* `lmm_config`: (optional) structure that has the following schema:
+```json
+{
+  "max_tokens": 450,
+  "gpt_image_detail": "low",
+  "gpt_model_version": "gpt-4-vision-preview"
+}
+```
+to control inner details of LMM prompting. All parameters now are suited to control GPT API calls. Default for
+max tokens is `450`, `gpt_image_detail` default is `auto` (allowed values: `low`, `auto`, `high`), 
+`gpt_model_version` is `gpt-4-vision-preview`.
+
+##### Step outputs
+* `raw_output` - raw output of LMM for each input image
+* `top` - name of predicted class for each image
+* `image` - size of input image, that `predictions` coordinates refers to 
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* `prediction_type` - type of prediction output: `classification`
+
+##### Important notes
+* `CogVLM` can only be used in `self-hosted` API - as Roboflow platform does not support such model. 
+Use `inference server start` on a machine with GPU to test that model.
 
 ## Different modes of execution
 Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps

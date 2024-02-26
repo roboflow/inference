@@ -102,3 +102,29 @@ class BaseCache:
         finally:
             logger.debug(f"Releasing lock at cache key: {key}")
             l.release()
+
+    def set_numpy(self, key: str, value: Any, expire: float = None):
+        """
+        Caches a numpy array.
+
+        Args:
+            key (str): The key to store the value.
+            value (Any): The value to store.
+            expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
+        raise NotImplementedError()
+
+    def get_numpy(self, key: str) -> Any:
+        """
+        Retrieves a numpy array from the cache.
+
+        Args:
+            key (str): The key of the value to retrieve.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
+        raise NotImplementedError()

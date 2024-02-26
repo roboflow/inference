@@ -54,6 +54,7 @@ def get_steps_output_selectors(steps: List[StepType]) -> Set[str]:
     for step in steps:
         for output_name in step.get_output_names():
             result.add(f"$steps.{step.name}.{output_name}")
+            result.add(f"$steps.{step.name}.*")
     return result
 
 

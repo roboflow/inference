@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import logger
+from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -42,6 +43,7 @@ from inference.core.entities.requests.workflows import (
     WorkflowInferenceRequest,
     WorkflowSpecificationInferenceRequest,
 )
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
@@ -76,6 +78,7 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
@@ -126,6 +129,9 @@ from inference.core.roboflow_api import (
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
     RuntimePayloadError,
@@ -296,6 +302,9 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
+            cache=cache,
+        )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -320,6 +329,7 @@ class HttpInterface(BaseInterface):
         async def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
+            background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             result = await compile_and_execute_async(
@@ -329,6 +339,8 @@ class HttpInterface(BaseInterface):
                 api_key=workflow_request.api_key,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 step_execution_mode=step_execution_mode,
+                active_learning_middleware=self.workflows_active_learning_middleware,
+                background_tasks=background_tasks,
             )
             outputs = serialise_workflow_result(
                 result=result,
@@ -417,6 +429,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The Grounding DINO model ID.
+        """
+
+        load_yolo_world_model = partial(load_core_model, core_model="yolo_world")
+        """Loads the YOLO World model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The YOLO World model ID.
         """
 
         @app.get(
@@ -656,6 +679,7 @@ class HttpInterface(BaseInterface):
                 workspace_name: str,
                 workflow_name: str,
                 workflow_request: WorkflowInferenceRequest,
+                background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
@@ -665,6 +689,7 @@ class HttpInterface(BaseInterface):
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
             @app.post(
@@ -676,6 +701,7 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
+                background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = {
                     "specification": workflow_request.specification
@@ -683,6 +709,7 @@ class HttpInterface(BaseInterface):
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
         if CORE_MODELS_ENABLED:
@@ -842,6 +869,49 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(grounding_dino_model_id, actor)
+                    return response
+
+            if CORE_MODEL_YOLO_WORLD_ENABLED:
+
+                @app.post(
+                    "/yolo_world/infer",
+                    response_model=ObjectDetectionInferenceResponse,
+                    summary="YOLO-World inference.",
+                    description="Run the YOLO-World zero-shot object detection model.",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                async def yolo_world_infer(
+                    inference_request: YOLOWorldInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Runs the YOLO-World zero-shot object detection model.
+
+                    Args:
+                        inference_request (YOLOWorldInferenceRequest): The request containing the image on which to run object detection.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        ObjectDetectionInferenceResponse: The object detection response.
+                    """
+                    logger.debug(f"Reached /yolo_world/infer")
+                    yolo_world_model_id = load_yolo_world_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        yolo_world_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(yolo_world_model_id, actor)
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:
