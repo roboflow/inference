@@ -11,7 +11,6 @@ from inference.enterprise.workflows.entities.steps import (
     LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
-    QRCodeDetection,
     ClassificationModel,
     ClipComparison,
     Condition,
@@ -25,6 +24,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection,
     RelativeStaticCrop,
     YoloWorld,
 )

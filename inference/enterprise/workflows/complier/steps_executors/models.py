@@ -5,9 +5,10 @@ import re
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
+
 import cv2
 import numpy as np
-from uuid import uuid4
 from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
