@@ -34,9 +34,7 @@ from inference.core.interfaces.stream.entities import (
     ModelConfig,
     ObjectDetectionPrediction,
 )
-from inference.core.interfaces.stream.model_functions import (
-    default_process_frame,
-)
+from inference.core.interfaces.stream.model_functions import default_process_frame
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
