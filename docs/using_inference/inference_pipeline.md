@@ -49,6 +49,43 @@ The `on_prediction` argument defines our sink (or a list of sinks).
 
 Here, we start and join the thread that processes the video stream.
 
+## Model ID
+
+The model ID parameter accepts any Roboflow model and some Core models. Currently, the following core models are supported in Inference Pipelines:
+
+- YOLOWorld (`yolo_world/s`,`yolo_world/m`,`yolo_world/l`) (Supported as of `inference==0.9.14`)
+
+{% include 'model_id.md' %}
+
+## Custom Inference Logic
+
+As of `inference==0.9.14`, Inference Pipelines support running custom inference logic. This means, instead of passing a model ID, you can pass a custom Callable. This Callable should accept and `VideoFrame` object and an `InferenceConfig` object and return a list of dictionaries.
+
+```python
+class MyModel:
+
+    def infer(
+        self
+        video_frame: VideoFrame,
+        inference_config: ModelConfig,
+    ) -> List[dict]:
+        # Run custom inference logic using the provided VideoFrame and ModelConfig arguments
+        # and return a list of dictionaries
+        predictions = self.model.predict(
+            video_frame.image,
+            **inference_config.to_postprocessing_params()
+        )
+        return predictions
+
+my_model = MyModel()
+
+pipeline = InferencePipeline.init(
+    process_frame=my_model.infer,
+    video_reference=0,
+    on_prediction=render_boxes,
+)
+```
+
 ## Video Reference
 
 Inference Pipelines can consume many different types of video streams.
@@ -139,6 +176,8 @@ The [Multi-Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#in
 #### `VideoFileSink(...)`
 
 The [Video File Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink) visualizes predictions, similar to the `render_boxes(...)` sink, however, instead of displaying the annotated frames, it saves them to a video file.
+
+## Custom Inference Logic
 
 ## Other Pipeline Configuration
 
