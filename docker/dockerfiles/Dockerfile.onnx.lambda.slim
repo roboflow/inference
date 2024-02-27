@@ -26,7 +26,7 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
     ./
 
-RUN if ["${TARGETPLATFORM}" == "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt fi
+RUN if ["${TARGETPLATFORM}" == "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
 RUN pip3 install \
