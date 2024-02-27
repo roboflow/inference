@@ -16,6 +16,8 @@ COPY requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.waf.txt \
     requirements/_requirements.txt \
+    requirements/requirements.cli.txt \
+    requirements/requirements.sdk.http.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
@@ -23,6 +25,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.waf.txt \
+    -r requirements.cli.txt \
+    -r requirements.sdk.http.txt \
     wheel>=0.38.0 \
     setuptools>=65.5.1 \
     --upgrade \
@@ -33,6 +37,11 @@ COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
+COPY inference_sdk inference_sdk
+COPY inference_cli inference_cli
+ENV PYTHONPATH=/app/
+
+
 COPY docker/config/gpu_http.py gpu_http.py
 
 ENV CORE_MODEL_CLIP_ENABLED=false
