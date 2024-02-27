@@ -5,14 +5,12 @@ import numpy as np
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
-from logging import Logger
-logger = Logger("yolov9")
 
 
 class YOLOv9ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
 
-    This class is responsible for performing object detection using the YOLOv5 model
+    This class is responsible for performing object detection using the YOLOv9 model
     with ONNX runtime.
 
     Attributes:
