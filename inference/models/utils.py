@@ -14,11 +14,11 @@ from inference.models import (
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
-    YOLOv9ObjectDetection,
     YOLOv7InstanceSegmentation,
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
+    YOLOv9ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
