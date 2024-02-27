@@ -1,6 +1,7 @@
 FROM python:3.9 as base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
     ffmpeg \
