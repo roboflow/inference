@@ -631,6 +631,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         return list(itertools.chain(*inference_results))
 
     def validate_model(self) -> None:
+        logger.debug("Starting model validation")
         if not self.load_weights:
             return
         try:
@@ -649,15 +650,21 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             raise ModelArtefactError(
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
+        logger.debug("Model validation finished")
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
-        return self.infer(test_image)
+        logger.debug(f"Running test inference. Image size: {test_image.shape}")
+        result = self.infer(test_image)
+        logger.debug(f"Test inference finished.")
+        return result
 
     def get_model_output_shape(self) -> Tuple[int, int, int]:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
+        logger.debug(f"Getting model output shape. Image size: {test_image.shape}")
         test_image, _ = self.preprocess(test_image)
         output = self.predict(test_image)[0]
+        logger.debug(f"Model output shape test finished.")
         return output.shape
 
     def validate_model_classes(self) -> None:
@@ -673,6 +680,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
+        logger.debug("Getting model artefacts")
         self.get_model_artifacts()
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
@@ -755,6 +763,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
+        logger.debug("Model initialisation finished.")
 
     def load_image(
         self,
