@@ -18,10 +18,7 @@ def assembly_latency_monitor_report(
 ) -> LatencyMonitorReport:
     return LatencyMonitorReport(
         frame_decoding_latency=frame_decoding_latency,
-        pre_processing_latency=0.0,
         inference_latency=0.0,
-        post_processing_latency=0.0,
-        model_latency=0.0,
         e2e_latency=0.0,
     )
 
@@ -225,26 +222,14 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
 
     # when
     first_frame_timestamp = datetime.now()
-    watchdog.on_model_preprocessing_started(
-        frame_timestamp=first_frame_timestamp, frame_id=1
-    )
     watchdog.on_model_inference_started(
-        frame_timestamp=first_frame_timestamp, frame_id=1
-    )
-    watchdog.on_model_postprocessing_started(
         frame_timestamp=first_frame_timestamp, frame_id=1
     )
     watchdog.on_model_prediction_ready(
         frame_timestamp=first_frame_timestamp, frame_id=1
     )
     second_frame_timestamp = datetime.now()
-    watchdog.on_model_preprocessing_started(
-        frame_timestamp=second_frame_timestamp, frame_id=2
-    )
     watchdog.on_model_inference_started(
-        frame_timestamp=second_frame_timestamp, frame_id=2
-    )
-    watchdog.on_model_postprocessing_started(
         frame_timestamp=second_frame_timestamp, frame_id=2
     )
     watchdog.on_model_prediction_ready(
@@ -278,27 +263,15 @@ def test_base_watchdog_gives_correct_report_when_not_all_events_are_in_series_re
 
     # when
     first_frame_timestamp = datetime.now()
-    watchdog.on_model_preprocessing_started(
-        frame_timestamp=first_frame_timestamp, frame_id=1
-    )
     watchdog.on_model_inference_started(
         frame_timestamp=first_frame_timestamp, frame_id=1
-    )
-    watchdog.on_model_postprocessing_started(
-        frame_timestamp=first_frame_timestamp, frame_id=2
     )
     watchdog.on_model_prediction_ready(
         frame_timestamp=first_frame_timestamp, frame_id=1
     )
     second_frame_timestamp = datetime.now()
-    watchdog.on_model_preprocessing_started(
-        frame_timestamp=second_frame_timestamp, frame_id=2
-    )
     watchdog.on_model_inference_started(
         frame_timestamp=second_frame_timestamp, frame_id=2
-    )
-    watchdog.on_model_postprocessing_started(
-        frame_timestamp=second_frame_timestamp, frame_id=3
     )
     watchdog.on_model_prediction_ready(
         frame_timestamp=second_frame_timestamp, frame_id=2
@@ -311,12 +284,6 @@ def test_base_watchdog_gives_correct_report_when_not_all_events_are_in_series_re
     max_average_e2e_latency = (
         end_of_emission_time - first_frame_timestamp
     ).total_seconds() / 2
-    assert (
-        result.latency_report.inference_latency is None
-    ), "As postprocessing_started event is faulty - should not be possible to determine inference latency"
-    assert (
-        result.latency_report.post_processing_latency is None
-    ), "As postprocessing_started event is faulty - should not be possible to determine post processing latency"
     assert (
         result.latency_report.e2e_latency <= max_average_e2e_latency
     ), "Latency cannot be larger than time passed in test"

@@ -6,6 +6,7 @@ from typing import Any, List, Optional, Tuple
 from unittest.mock import MagicMock
 
 import numpy as np
+from inference.core.interfaces.stream.model_functions import default_process_frame
 import pytest
 
 from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
@@ -94,29 +95,7 @@ class VideoSourceStub:
 
 
 class ModelStub:
-    def preprocess(self, image: np.ndarray) -> Tuple[np.ndarray, dict]:
-        return image, {}
-
-    def predict(self, image: np.ndarray) -> Tuple[np.ndarray, ...]:
-        return (image,)
-
-    def postprocess(
-        self,
-        predictions: Tuple[np.ndarray, ...],
-        preprocess_return_metadata: dict,
-        class_agnostic_nms: Optional[bool] = None,
-        confidence: Optional[float] = None,
-        iou_threshold: Optional[float] = None,
-        max_candidates: Optional[int] = None,
-        max_detections: Optional[int] = None,
-    ) -> List[List[float]]:
-        return self.make_response([], {})
-
-    def make_response(
-        self,
-        predictions: List[List[float]],
-        preprocess_return_metadata: dict,
-    ) -> List[ObjectDetectionInferenceResponse]:
+    def infer(self, image: Any, **kwargs) -> List[ObjectDetectionInferenceResponse]:
         return [
             ObjectDetectionInferenceResponse(
                 predictions=[
@@ -144,6 +123,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
 ) -> None:
     # given
     model = ModelStub()
+    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -155,6 +135,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
+        process_frame_func=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -185,6 +166,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
 ) -> None:
     # given
     model = ModelStub()
+    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=2)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -196,6 +178,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
+        process_frame_func=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -229,6 +212,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
 ) -> None:
     # given
     model = ModelStub()
+    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=1)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -241,6 +225,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
+        process_frame_func=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -275,6 +260,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
 ) -> None:
     # given
     model = ModelStub()
+    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -311,6 +297,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
+        process_frame_func=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=prediction_handler,

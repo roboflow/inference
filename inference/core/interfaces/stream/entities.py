@@ -106,10 +106,7 @@ class ModelActivityEvent:
 @dataclass(frozen=True)
 class LatencyMonitorReport:
     frame_decoding_latency: Optional[float] = None
-    pre_processing_latency: Optional[float] = None
     inference_latency: Optional[float] = None
-    post_processing_latency: Optional[float] = None
-    model_latency: Optional[float] = None
     e2e_latency: Optional[float] = None
 
 

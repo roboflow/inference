@@ -157,7 +157,7 @@ class InferencePipeline:
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            process_frame (Optional[Callable]): Function to be used for processing frames and returning predictions. If given, model_id is ignored.
+            process_frame (Optional[Callable]): Function to be used for processing frames and returning predictions. If given, model_id is ignored. Signature of process frame callable should be: `Callable[VideoFrame, ModelConfig]`.
             classes (Optional[List[str]]): List of classes to be used for zero shot object detection models.
 
         Other ENV variables involved in low-level configuration:
@@ -339,12 +339,18 @@ class InferencePipeline:
         logger.info(f"Inference thread started")
         try:
             for video_frame in self._generate_frames():
+                self._watchdog.on_model_inference_started(
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
+                )
                 predictions = self._process_frame_func(
                     video_frame=video_frame,
                     inference_config=self._inference_config,
-                    watchdog=self._watchdog,
                 )
-
+                self._watchdog.on_model_prediction_ready(
+                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_id=video_frame.frame_id,
+                )
                 self._predictions_queue.put((predictions, video_frame))
                 send_inference_pipeline_status_update(
                     severity=UpdateSeverity.DEBUG,
