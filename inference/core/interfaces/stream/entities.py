@@ -17,6 +17,7 @@ from inference.core.interfaces.camera.entities import StatusUpdate
 from inference.core.interfaces.camera.video_source import SourceMetadata
 from inference.core.utils.environment import safe_env_to_type, str2bool
 
+AnyPrediction = dict
 ObjectDetectionPrediction = dict
 
 

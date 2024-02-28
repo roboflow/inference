@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Tuple
 from unittest.mock import MagicMock
 
 import numpy as np
-from inference.core.interfaces.stream.model_functions import default_process_frame
+from inference.core.interfaces.stream.model_handlers.roboflow_models import default_process_frame
 import pytest
 
 from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
@@ -135,7 +135,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
-        process_frame_func=process_frame_func,
+        on_video_frame=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -178,7 +178,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
-        process_frame_func=process_frame_func,
+        on_video_frame=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -225,7 +225,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
-        process_frame_func=process_frame_func,
+        on_video_frame=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=on_prediction,
@@ -297,7 +297,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
-        process_frame_func=process_frame_func,
+        on_video_frame=process_frame_func,
         model=model,
         video_source=video_source,
         on_prediction=prediction_handler,

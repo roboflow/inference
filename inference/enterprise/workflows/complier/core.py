@@ -37,7 +37,10 @@ def compile_and_execute(
     step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
 ) -> dict:
     if loop is None:
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_event_loop()
+        except:
+            loop = asyncio.new_event_loop()
     return loop.run_until_complete(
         compile_and_execute_async(
             workflow_specification=workflow_specification,

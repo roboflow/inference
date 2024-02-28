@@ -64,25 +64,28 @@ As of `inference==0.9.14`, Inference Pipelines support running custom inference 
 ```python
 class MyModel:
 
-    def infer(
-        self
-        video_frame: VideoFrame,
-        inference_config: ModelConfig,
-    ) -> List[dict]:
-        # Run custom inference logic using the provided VideoFrame and ModelConfig arguments
-        # and return a list of dictionaries
-        predictions = self.model.predict(
-            video_frame.image,
-            **inference_config.to_postprocessing_params()
-        )
-        return predictions
+  def infer(
+          self
+    video_frame: VideoFrame
+
+  ,
+  inference_config: ModelConfig,
+  ) -> List[dict]:
+  # Run custom inference logic using the provided VideoFrame and ModelConfig arguments
+  # and return a list of dictionaries
+  predictions = self.model.predict(
+    video_frame.image,
+    **inference_config.to_postprocessing_params()
+  )
+  return predictions
+
 
 my_model = MyModel()
 
 pipeline = InferencePipeline.init(
-    process_frame=my_model.infer,
-    video_reference=0,
-    on_prediction=render_boxes,
+  on_frame_ready=my_model.infer,
+  video_reference=0,
+  on_prediction=render_boxes,
 )
 ```
 

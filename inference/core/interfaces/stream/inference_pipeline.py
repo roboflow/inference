@@ -5,6 +5,8 @@ from queue import Queue
 from threading import Thread
 from typing import Callable, Generator, List, Optional, Tuple, Union
 
+from fastapi import BackgroundTasks
+
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,
@@ -15,9 +17,11 @@ from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     API_KEY,
     DISABLE_PREPROC_AUTO_ORIENT,
+    MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
     RESTART_ATTEMPT_DELAY,
 )
+from inference.core.exceptions import CannotInitialiseModelError
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
@@ -30,18 +34,28 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
-from inference.core.interfaces.stream.entities import (
-    ModelConfig,
-    ObjectDetectionPrediction,
+from inference.core.interfaces.stream.entities import AnyPrediction, ModelConfig
+from inference.core.interfaces.stream.model_handlers.roboflow_models import (
+    default_process_frame,
 )
-from inference.core.interfaces.stream.model_functions import default_process_frame
+from inference.core.interfaces.stream.model_handlers.workflows import (
+    run_video_frame_through_workflow,
+)
+from inference.core.interfaces.stream.model_handlers.yolo_world import (
+    build_yolo_world_inference_function,
+)
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
 )
-from inference.core.models.roboflow import OnnxRoboflowInferenceModel
-from inference.models.utils import get_model
+from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
+)
+from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -52,20 +66,6 @@ INFERENCE_THREAD_FINISHED_EVENT = "INFERENCE_THREAD_FINISHED"
 INFERENCE_COMPLETED_EVENT = "INFERENCE_COMPLETED"
 INFERENCE_ERROR_EVENT = "INFERENCE_ERROR"
 
-CORE_MODEL_CONFIG = {"yolo-world": None}
-
-
-try:
-    from inference.core.interfaces.stream.model_functions import (
-        get_process_frame_func_yolo_world,
-    )
-
-    CORE_MODEL_CONFIG["yolo_world"] = {
-        "get_process_frame_func": get_process_frame_func_yolo_world,
-    }
-except ImportError:
-    pass
-
 
 class InferencePipeline:
     @classmethod
@@ -73,9 +73,7 @@ class InferencePipeline:
         cls,
         video_reference: Union[str, int],
         model_id: Optional[str] = None,
-        on_prediction: Optional[
-            Callable[[ObjectDetectionPrediction, VideoFrame], None]
-        ] = None,
+        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
         api_key: Optional[str] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
@@ -90,9 +88,6 @@ class InferencePipeline:
         mask_decode_mode: Optional[str] = "accurate",
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
-        process_frame: Optional[Callable] = None,
-        classes: Optional[List[str]] = None,
-        **kwargs,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from CV models against video stream.
@@ -115,7 +110,7 @@ class InferencePipeline:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
             video_reference (Union[str, int]): Reference of source to be used to make predictions against.
                 It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
-            on_prediction (Callable[ObjectDetectionPrediction, VideoFrame], None]): Function to be called
+            on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
                 Roboflow Object Detection prediction.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
@@ -157,8 +152,6 @@ class InferencePipeline:
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            process_frame (Optional[Callable]): Function to be used for processing frames and returning predictions. If given, model_id is ignored. Signature of process frame callable should be: `Callable[VideoFrame, ModelConfig]`.
-            classes (Optional[List[str]]): List of classes to be used for zero shot object detection models.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -184,27 +177,10 @@ class InferencePipeline:
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
         )
-        if model_id is not None:
-            project, _ = model_id.split("/")
-        else:
-            project = None
-        if process_frame is not None:
-            process_frame_func = process_frame
-            model = None
-        elif model_id is not None and project in CORE_MODEL_CONFIG:
-            if CORE_MODEL_CONFIG[project] is None:
-                raise ValueError(
-                    f"Model {project} is not installed or not available in this environment"
-                )
-            get_process_frame_func = CORE_MODEL_CONFIG[project][
-                "get_process_frame_func"
-            ]
-            model, process_frame_func = get_process_frame_func(
-                model_id=model_id, api_key=api_key, classes=classes
-            )
-        else:
-            model = get_model(model_id=model_id, api_key=api_key)
-            process_frame_func = partial(default_process_frame, model=model)
+        model = get_model(model_id=model_id, api_key=api_key)
+        on_video_frame = partial(
+            default_process_frame, model=model, inference_config=inference_config
+        )
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         status_update_handlers.append(watchdog.on_status_update)
@@ -228,12 +204,7 @@ class InferencePipeline:
                 f"Roboflow API key not given - Active Learning is forced to be disabled."
             )
             active_learning_enabled = False
-        if active_learning_enabled is True and project in CORE_MODEL_CONFIG:
-            logger.info(
-                f"Active Learning middleware is not available for model {project} - forcing it to be disabled."
-            )
-            active_learning_enabled = False
-        if active_learning_enabled is True and model_id is not None:
+        if active_learning_enabled is True:
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,
                 model_id=model_id,
@@ -249,38 +220,195 @@ class InferencePipeline:
                 "AL enabled - wrapping `on_prediction` with multi_sink() and active_learning_sink()"
             )
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
+        on_pipeline_start = active_learning_middleware.start_registration_thread
+        on_pipeline_end = active_learning_middleware.stop_registration_thread
         return cls(
-            model=model,
-            process_frame_func=process_frame_func,
+            on_video_frame=on_video_frame,
             video_source=video_source,
             on_prediction=on_prediction,
             max_fps=max_fps,
             predictions_queue=predictions_queue,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
-            inference_config=inference_config,
-            active_learning_middleware=active_learning_middleware,
+            on_pipeline_start=on_pipeline_start,
+            on_pipeline_end=on_pipeline_end,
+        )
+
+    # we shall prob. generalise to zero-shot models and possibly create aliases
+    # for easier use without knowledge of model ids
+    @classmethod
+    def init_with_yolo_world(
+        cls,
+        video_reference: Union[str, int],
+        model_size: str,
+        classes: List[str],
+        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        max_fps: Optional[Union[float, int]] = None,
+        watchdog: Optional[PipelineWatchDog] = None,
+        status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
+        source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
+        source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
+        class_agnostic_nms: Optional[bool] = None,
+        confidence: Optional[float] = None,
+        iou_threshold: Optional[float] = None,
+        max_candidates: Optional[int] = None,
+        max_detections: Optional[int] = None,
+    ) -> "InferencePipeline":
+        inference_config = ModelConfig.init(
+            class_agnostic_nms=class_agnostic_nms,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_candidates=max_candidates,
+            max_detections=max_detections,
+        )
+        try:
+            on_video_frame = build_yolo_world_inference_function(
+                model_id=f"yolo_world/{model_size}",
+                classes=classes,
+                inference_config=inference_config,
+            )
+        except ImportError as error:
+            raise CannotInitialiseModelError(
+                f"Could not initialise yolo_world/{model_size} due to lack of sufficient dependencies. "
+                f"Use pip install inference[yolo-world] to install missing dependencies and try again."
+            ) from error
+        if watchdog is None:
+            watchdog = NullPipelineWatchdog()
+        if status_update_handlers is None:
+            status_update_handlers = []
+        status_update_handlers.append(watchdog.on_status_update)
+        video_source = VideoSource.init(
+            video_reference=video_reference,
+            status_update_handlers=status_update_handlers,
+            buffer_filling_strategy=source_buffer_filling_strategy,
+            buffer_consumption_strategy=source_buffer_consumption_strategy,
+        )
+        watchdog.register_video_source(video_source=video_source)
+        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
+        return cls(
+            on_video_frame=on_video_frame,
+            video_source=video_source,
+            on_prediction=on_prediction,
+            max_fps=max_fps,
+            predictions_queue=predictions_queue,
+            watchdog=watchdog,
+            status_update_handlers=status_update_handlers,
+        )
+
+    @classmethod
+    def init_with_workflow(
+        cls,
+        video_reference: Union[str, int],
+        workflow_specification: dict,
+        api_key: Optional[str] = None,
+        image_input_name: str = "image",
+        workflows_parameters: Optional[dict] = None,
+        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        max_fps: Optional[Union[float, int]] = None,
+        watchdog: Optional[PipelineWatchDog] = None,
+        status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
+        source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
+        source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
+    ) -> "InferencePipeline":
+        workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
+            cache=cache,
+        )
+        model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+        model_manager = BackgroundTaskActiveLearningManager(
+            model_registry=model_registry, cache=cache
+        )
+        model_manager = WithFixedSizeCache(
+            model_manager,
+            max_size=MAX_ACTIVE_MODELS,
+        )
+        if api_key is None:
+            api_key = API_KEY
+        background_tasks = BackgroundTasks()
+        on_video_frame = partial(
+            run_video_frame_through_workflow,
+            workflow_specification=workflow_specification,
+            model_manager=model_manager,
+            image_input_name=image_input_name,
+            workflows_parameters=workflows_parameters,
+            api_key=api_key,
+            workflows_active_learning_middleware=workflows_active_learning_middleware,
+            background_tasks=background_tasks,
+        )
+        if watchdog is None:
+            watchdog = NullPipelineWatchdog()
+        if status_update_handlers is None:
+            status_update_handlers = []
+        status_update_handlers.append(watchdog.on_status_update)
+        video_source = VideoSource.init(
+            video_reference=video_reference,
+            status_update_handlers=status_update_handlers,
+            buffer_filling_strategy=source_buffer_filling_strategy,
+            buffer_consumption_strategy=source_buffer_consumption_strategy,
+        )
+        watchdog.register_video_source(video_source=video_source)
+        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
+        return cls(
+            on_video_frame=on_video_frame,
+            video_source=video_source,
+            predictions_queue=predictions_queue,
+            watchdog=watchdog,
+            status_update_handlers=status_update_handlers,
+            on_prediction=on_prediction,
+            max_fps=max_fps,
+        )
+
+    @classmethod
+    def init_with_custom_logic(
+        cls,
+        video_reference: Union[str, int],
+        on_video_frame: Callable[[VideoFrame], AnyPrediction],
+        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_pipeline_start: Optional[Callable[[], None]] = None,
+        on_pipeline_end: Optional[Callable[[], None]] = None,
+        max_fps: Optional[Union[float, int]] = None,
+        watchdog: Optional[PipelineWatchDog] = None,
+        status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
+        source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
+        source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
+    ) -> "InferencePipeline":
+        if watchdog is None:
+            watchdog = NullPipelineWatchdog()
+        if status_update_handlers is None:
+            status_update_handlers = []
+        status_update_handlers.append(watchdog.on_status_update)
+        video_source = VideoSource.init(
+            video_reference=video_reference,
+            status_update_handlers=status_update_handlers,
+            buffer_filling_strategy=source_buffer_filling_strategy,
+            buffer_consumption_strategy=source_buffer_consumption_strategy,
+        )
+        watchdog.register_video_source(video_source=video_source)
+        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
+        return cls(
+            on_video_frame=on_video_frame,
+            video_source=video_source,
+            predictions_queue=predictions_queue,
+            watchdog=watchdog,
+            status_update_handlers=status_update_handlers,
+            on_prediction=on_prediction,
+            max_fps=max_fps,
+            on_pipeline_start=on_pipeline_start,
+            on_pipeline_end=on_pipeline_end,
         )
 
     def __init__(
         self,
-        process_frame_func: Callable,
+        on_video_frame: Callable[[VideoFrame], AnyPrediction],
         video_source: VideoSource,
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
-        inference_config: ModelConfig,
-        active_learning_middleware: Union[
-            NullActiveLearningMiddleware, ThreadingActiveLearningMiddleware
-        ],
-        model: Optional[OnnxRoboflowInferenceModel] = None,
-        on_prediction: Optional[
-            Callable[[ObjectDetectionPrediction, VideoFrame], None]
-        ] = None,
+        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_pipeline_start: Optional[Callable[[], None]] = None,
+        on_pipeline_end: Optional[Callable[[], None]] = None,
         max_fps: Optional[float] = None,
     ):
-        self._model = model
-        self._process_frame_func = process_frame_func
+        self._on_video_frame = on_video_frame
         self._video_source = video_source
         self._on_prediction = on_prediction
         self._max_fps = max_fps
@@ -292,15 +420,15 @@ class InferencePipeline:
         self._stop = False
         self._camera_restart_ongoing = False
         self._status_update_handlers = status_update_handlers
-        self._inference_config = inference_config
-        self._active_learning_middleware = active_learning_middleware
+        self._on_pipeline_start = on_pipeline_start
+        self._on_pipeline_end = on_pipeline_end
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
         self._inference_thread = Thread(target=self._execute_inference)
         self._inference_thread.start()
-        if self._active_learning_middleware is not None:
-            self._active_learning_middleware.start_registration_thread()
+        if self._on_pipeline_start is not None:
+            self._on_pipeline_start()
         if use_main_thread:
             self._dispatch_inference_results()
         else:
@@ -327,8 +455,8 @@ class InferencePipeline:
         if self._dispatching_thread is not None:
             self._dispatching_thread.join()
             self._dispatching_thread = None
-        if self._active_learning_middleware is not None:
-            self._active_learning_middleware.stop_registration_thread()
+        if self._on_pipeline_end is not None:
+            self._on_pipeline_end()
 
     def _execute_inference(self) -> None:
         send_inference_pipeline_status_update(
@@ -343,10 +471,7 @@ class InferencePipeline:
                     frame_timestamp=video_frame.frame_timestamp,
                     frame_id=video_frame.frame_id,
                 )
-                predictions = self._process_frame_func(
-                    video_frame=video_frame,
-                    inference_config=self._inference_config,
-                )
+                predictions = self._on_video_frame(video_frame)
                 self._watchdog.on_model_prediction_ready(
                     frame_timestamp=video_frame.frame_timestamp,
                     frame_id=video_frame.frame_id,

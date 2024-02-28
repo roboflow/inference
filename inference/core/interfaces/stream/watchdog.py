@@ -76,9 +76,7 @@ class NullPipelineWatchdog(PipelineWatchDog):
 
 class LatencyMonitor:
     def __init__(self):
-        self._preprocessing_start_event: Optional[ModelActivityEvent] = None
         self._inference_start_event: Optional[ModelActivityEvent] = None
-        self._postprocessing_start_event: Optional[ModelActivityEvent] = None
         self._prediction_ready_event: Optional[ModelActivityEvent] = None
         self._reports: Deque[LatencyMonitorReport] = deque(maxlen=MAX_LATENCY_CONTEXT)
 
