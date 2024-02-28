@@ -104,6 +104,11 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
+# Flag to enable Grounded SAM core model, default is True
+CORE_MODEL_GROUNDED_SAM_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_GROUNDED_SAM_ENABLED", True)
+)
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

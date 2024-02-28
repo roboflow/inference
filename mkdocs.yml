@@ -83,6 +83,7 @@ nav:
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
       - YOLO-World (Object Detection): foundation/yolo_world.md
+      - Grounded SAM(Object Detection/Instance Segmentation): foundation/grounded_sam.md
   - Cookbooks: cookbooks.md
 
 theme:
@@ -103,7 +104,7 @@ theme:
     - navigation.indexes
     - navigation.sections
     - content.code.copy
-  
+
   palette:
   - scheme: default
     primary: 'custom'

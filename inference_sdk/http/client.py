@@ -226,6 +226,7 @@ class InferenceHTTPClient:
             )
             yield reference, frame, prediction
 
+    # Main call
     @wrap_errors
     def infer(
         self,
@@ -376,6 +377,7 @@ class InferenceHTTPClient:
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
+    # Wraps HTTP call
     def infer_from_api_v1(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -404,6 +406,7 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
             "model_id": model_id_to_be_used,
         }
+        # Endpoint
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
         payload.update(
             self.__inference_configuration.to_api_call_parameters(
