@@ -103,6 +103,8 @@ def test_to_api_call_parameters_for_api_v0() -> None:
         "disable_preproc_grayscale": True,
         "disable_preproc_static_crop": False,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }
 
 
@@ -123,6 +125,8 @@ def test_to_api_call_parameters_for_api_v1_classification() -> None:
         "disable_preproc_grayscale": True,
         "disable_preproc_static_crop": False,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }
 
 
@@ -149,4 +153,6 @@ def test_to_api_call_parameters_for_api_v1_object_detection() -> None:
         "visualize_predictions": False,
         "visualization_stroke_width": 1,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }
