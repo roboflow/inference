@@ -230,7 +230,7 @@ async def test_wrap_errors_async_when_unknown_error_occurs() -> None:
 def test_setting_configuration_statically() -> None:
     # given
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url="https://some.com")
-    configuration = InferenceConfiguration(visualize_labels=True)
+    configuration = InferenceConfiguration(visualize_labels=True, source="source-test")
 
     # when
     previous_configuration = http_client.inference_configuration

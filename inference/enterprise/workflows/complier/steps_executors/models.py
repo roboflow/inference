@@ -187,6 +187,7 @@ def construct_classification_request(
         image=image,
         confidence=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
+        source="workflow-execution",
     )
 
 
@@ -213,6 +214,7 @@ def construct_object_detection_request(
         iou_threshold=resolve(step.iou_threshold),
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
+        source="workflow-execution",
     )
 
 
@@ -241,6 +243,7 @@ def construct_instance_segmentation_request(
         max_candidates=resolve(step.max_candidates),
         mask_decode_mode=resolve(step.mask_decode_mode),
         tradeoff_factor=resolve(step.tradeoff_factor),
+        source="workflow-execution",
     )
 
 
@@ -268,6 +271,7 @@ def construct_keypoints_detection_request(
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
         keypoint_confidence=resolve(step.keypoint_confidence),
+        source="workflow-execution",
     )
 
 
