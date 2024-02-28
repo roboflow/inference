@@ -28,6 +28,8 @@ REFERENCE_IMAGE_CONFIGURATION = InferenceConfiguration(
     visualize_labels=True,
     iou_threshold=0.7,
     disable_active_learning=True,
+    source="config-test",
+    source_info="config-test-source-info",
 )
 
 
@@ -52,6 +54,29 @@ def test_get_non_empty_attributes() -> None:
     assert result == {
         "A": 0.5,
         "B": DEFAULT_IMAGE_EXTENSIONS,
+    }
+
+
+def test_source_attributes() -> None:
+    # given
+    reference_object = InferenceConfiguration(
+        source="source-test",
+        source_info="source-info-test",
+    )
+
+    # when
+    result = get_non_empty_attributes(
+        source_object=reference_object,
+        specification=[
+            ("source", "A"),
+            ("source_info", "B"),
+        ],
+    )
+
+    # then
+    assert result == {
+        "A": "source-test",
+        "B": "source-info-test",
     }
 
 
