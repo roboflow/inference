@@ -553,6 +553,8 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 The following fields are passed to API
 
@@ -571,6 +573,8 @@ The following fields are passed to API
 - `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 ### Classification model in `v1` mode:
 
@@ -589,6 +593,9 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 * `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
+
 ### Object detection model in `v1` mode:
 
 - `visualize_predictions`: flag to enable / disable visualisation
@@ -605,6 +612,8 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 ### Keypoints detection model in `v1` mode:
 
@@ -624,6 +633,8 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 ### Instance segmentation model in `v1` mode:
 
@@ -643,6 +654,8 @@ The following fields are passed to API
 - `tradeoff_factor`
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
+- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
+- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 ### Configuration of client
 
