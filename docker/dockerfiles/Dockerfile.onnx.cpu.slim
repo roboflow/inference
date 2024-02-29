@@ -14,6 +14,8 @@ RUN apt update -y && apt install -y \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
+RUN if ["${TARGETPLATFORM}" = "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt; fi
+
 COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
@@ -23,7 +25,6 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.sdk.http.txt \
     ./
 
-RUN if ["${TARGETPLATFORM}" = "linux/amd64"]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
