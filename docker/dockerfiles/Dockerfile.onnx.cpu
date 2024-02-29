@@ -1,7 +1,6 @@
 FROM python:3.9 as base
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
     ffmpeg \
@@ -45,6 +44,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     && rm -rf ~/.cache/pip
 
 FROM scratch
+ARG TARGETPLATFORM
+
 COPY --from=base / /
 
 WORKDIR /build
