@@ -44,7 +44,7 @@ def extract_frames(video_path, interval_minutes):
 def fetch_predictions(
     base_url, frames, timestamps, dataset_id, version_id, api_key, confidence=0.5
 ):
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    headers = {"Content-Type": "application/json"}
     df_rows = []
     for idx, frame in enumerate(frames):
         numpy_data = pickle.dumps(frame)

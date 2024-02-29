@@ -343,7 +343,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         res = requests.post(
             f"https://detect.roboflow.com/{project_id}/{model_version}?api_key={api_key}&confidence={confidence}&overlap={iou_thresh}",
             data=img_str,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         )
 
         predictions = res.json()
@@ -385,7 +385,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         res = requests.post(
             f"http://localhost:9001/{project_id}/{model_version}?api_key={api_key}&image_type=numpy",
             data=numpy_data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         )
 
         predictions = res.json()

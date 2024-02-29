@@ -82,7 +82,7 @@ def legacy_infer_with_base64_image(
                 ]
             ),
             data=img_str,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         ),
         "base64",
     )
