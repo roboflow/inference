@@ -42,6 +42,7 @@ from inference.core.env import (
     LAMBDA,
     MAX_BATCH_SIZE,
     MODEL_CACHE_DIR,
+    MODEL_VALIDATION_DISABLED,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
@@ -631,6 +632,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         return list(itertools.chain(*inference_results))
 
     def validate_model(self) -> None:
+        if MODEL_VALIDATION_DISABLED:
+            logger.debug("Model validation disabled.")
+            return None
         logger.debug("Starting model validation")
         if not self.load_weights:
             return
@@ -688,7 +692,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
             if not self.load_weights:
-                providers = ["CPUExecutionProvider"]
+                providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),

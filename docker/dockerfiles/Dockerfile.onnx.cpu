@@ -16,6 +16,7 @@ RUN apt update -y && apt install -y \
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
+    requirements/requirements.vino.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
@@ -43,12 +44,17 @@ RUN pip3 install --upgrade pip  && pip3 install \
     && rm -rf ~/.cache/pip
 
 FROM scratch
+ARG TARGETPLATFORM
+
 COPY --from=base / /
 
 WORKDIR /build
 COPY . .
 RUN make create_wheels
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
+
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
+
 
 WORKDIR /notebooks
 COPY examples/notebooks .
