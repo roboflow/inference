@@ -18,6 +18,7 @@ from inference.models import (
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
+    YOLOv9ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
@@ -37,6 +38,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov5v6m"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6l"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6x"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov9"): YOLOv9ObjectDetection,
     ("object-detection", "yolov8"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8s"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8n"): YOLOv8ObjectDetection,

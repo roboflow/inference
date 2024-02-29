@@ -128,6 +128,7 @@ Server in a container.
         ```
 
     **_Note:_** The Jetson images come with TensorRT dependencies. To use TensorRT acceleration with your model, pass an additional environment variable at runtime `-e ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider`. This can improve inference speed, however, this also incurs a costly startup expense when the model is loaded.
+    **_Note:_** On Windows and macOS, you may need to use `-p 9001:9001` instead of `--net=host` to expose the port to the host machine.
 
 You may add the flag `-e ROBOFLOW_API_KEY=<YOUR API KEY>` to your `docker run` command so that you do not need to provide a Roboflow API key in your requests. Substitute `<YOUR API KEY>` with your Roboflow API key. Learn how to retrieve your <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Roboflow API key here</a>.
 
