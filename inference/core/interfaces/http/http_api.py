@@ -1308,9 +1308,7 @@ class HttpInterface(BaseInterface):
                 else:
                     request_model_id = model_id
                 logger.debug(
-                    "State of model registry:",
-                    self.model_manager.describe_models(),
-                    flush=True,
+                    f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
                     request_model_id, api_key, model_id_alias=model_id
