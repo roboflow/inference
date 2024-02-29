@@ -25,6 +25,8 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.parallel.txt \
     requirements/requirements.vino.txt \
     requirements/_requirements.txt \
+    requirements/requirements.cli.txt \
+    requirements/requirements.sdk.http.txt \
     ./
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
@@ -39,6 +41,8 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.parallel.txt \
+    -r requirements.cli.txt \
+    -r requirements.sdk.http.txt \
     wheel>=0.38.0 \
     setuptools>=65.5.1 \
     --upgrade \
@@ -53,6 +57,8 @@ COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
+COPY inference_sdk inference_sdk
+COPY inference_cli inference_cli
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 
 ENV VERSION_CHECK_MODE=continuous
