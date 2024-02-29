@@ -52,7 +52,7 @@ COPY . .
 RUN make create_wheels
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl
 
-RUN if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
+RUN if [ "${TARGETPLATFORM}" -eq "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 
 
 WORKDIR /notebooks
