@@ -63,7 +63,7 @@ def test_speed():
                         ]
                     ),
                     data=img_str,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    headers={"Content-Type": "application/json"},
                 )
             try:
                 res.raise_for_status()
