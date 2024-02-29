@@ -90,6 +90,7 @@ from inference.core.env import (
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
     PROFILE,
+    PYINSTRUMENT_ENABLED,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -298,6 +299,47 @@ class HttpInterface(BaseInterface):
                 if response.status_code >= 400:
                     self.model_manager.num_errors += 1
                 return response
+
+        if PYINSTRUMENT_ENABLED:
+            # Differs from the CProfileMiddleware in that it profiles asyncio
+            # code more accurately by using statistical sampling.
+            from pyinstrument import Profiler
+            from pyinstrument.renderers.html import HTMLRenderer
+            from pyinstrument.renderers.speedscope import SpeedscopeRenderer
+
+            @app.middleware("http")
+            async def profile_request(request: Request, call_next):
+                """Middleware to profile requests using pyinstrument
+
+                Pass ?profile=true to any request to enable writing pyinstrument
+                profiles to:
+                - ./profile.html
+                - ./profile.speedscope.json
+
+                speedscope is a flamegraph visualization tool that can be used to
+                visualize the profile data. https://www.speedscope.app.
+
+                Args:
+                    request (Request): The incoming request.
+                    call_next (Callable): The next middleware or endpoint to call.
+
+                Returns:
+                    Response: The response from the next middleware or endpoint.
+                """
+                enabled = request.query_params.get("profile", False)
+                if not enabled:
+                    return await call_next(request)
+
+                with Profiler(interval=0.001, async_mode="enabled") as profiler:
+                    response = await call_next(request)
+
+                with open("./profile.html", "w") as f:
+                    f.write(HTMLRenderer().render(profiler.last_session))
+                with open("./profile.speedscope.json", "w") as f:
+                    f.write(SpeedscopeRenderer().render(profiler.last_session))
+
+                return response
+
 
         self.app = app
         self.model_manager = model_manager

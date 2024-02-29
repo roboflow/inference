@@ -239,6 +239,9 @@ PORT = int(os.getenv("PORT", 9001))
 # Profile flag, default is False
 PROFILE = str2bool(os.getenv("PROFILE", False))
 
+# Flag to enable pyinstrument profiling, default is False
+PYINSTRUMENT_ENABLED = str2bool(os.getenv("PYINSTRUMENT_ENABLED", False))
+
 # Redis host, default is None
 REDIS_HOST = os.getenv("REDIS_HOST", None)
 
