@@ -47,7 +47,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
             )
-            self.remove(to_remove_model_id)
+            super().remove(to_remove_model_id)
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
