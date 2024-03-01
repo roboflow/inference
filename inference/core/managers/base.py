@@ -251,6 +251,7 @@ class ModelManager:
             model_id (str): The identifier of the model.
         """
         try:
+            logger.debug(f"Removing model {model_id} from base model manager")
             self.check_for_model(model_id)
             self._models[model_id].clear_cache()
             del self._models[model_id]
