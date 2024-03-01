@@ -1,6 +1,7 @@
 from collections import deque
 from typing import List, Optional
 
+from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
@@ -22,7 +23,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
-    ):
+    ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
         Args:
@@ -32,21 +33,31 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
-        if model_id in self:
+        if queue_id in self:
+            logger.debug(
+                f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
+            )
             self._key_queue.remove(queue_id)
             self._key_queue.append(queue_id)
-            return
+            return None
 
-        should_pop = len(self) == self.max_size
-        if should_pop:
+        logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
+        while len(self) >= self.max_size:
             to_remove_model_id = self._key_queue.popleft()
+            logger.debug(
+                f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
+            )
             self.remove(to_remove_model_id)
-
+            logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
+        logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
         try:
             return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
         except Exception as error:
-            self._key_queue.remove(model_id)
+            logger.debug(
+                f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
+            )
+            self._key_queue.remove(queue_id)
             raise error
 
     def clear(self) -> None:
@@ -58,7 +69,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         try:
             self._key_queue.remove(model_id)
         except ValueError:
-            pass
+            logger.warning(
+                f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue"
+            )
         return super().remove(model_id)
 
     async def infer_from_request(
