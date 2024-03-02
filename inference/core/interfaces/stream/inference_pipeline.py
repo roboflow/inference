@@ -93,6 +93,7 @@ class InferencePipeline:
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
         top_k: Optional[int] = None,
+        video_source_properties: Optional[dict[str, float]] = None,
         **kwargs,
     ) -> "InferencePipeline":
         """
@@ -160,6 +161,9 @@ class InferencePipeline:
                 for this feature to be operational.
             top_k (Optional[int]): Sets the maximum number of predictions to be returned by the model. If not given,
                 no limit is set.
+            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
+                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -208,6 +212,7 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
@@ -388,9 +393,9 @@ class InferencePipeline:
 
     def _dispatch_inference_results(self) -> None:
         while True:
-            inference_results: Optional[Tuple[dict, VideoFrame]] = (
-                self._predictions_queue.get()
-            )
+            inference_results: Optional[
+                Tuple[dict, VideoFrame]
+            ] = self._predictions_queue.get()
             if inference_results is None:
                 self._predictions_queue.task_done()
                 break
