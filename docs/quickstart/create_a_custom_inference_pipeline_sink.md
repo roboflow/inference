@@ -54,8 +54,25 @@ def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     # print the frame ID of the video_frame object
     print(f"Frame ID: {video_frame.frame_id}")
 
+REGISTERED_ALIASES = {
+    "yolov8n-640": "coco/3",
+    "yolov8n-1280": "coco/9",
+    "yolov8m-640": "coco/8",
+    "yolov8x-1280": "coco/10",
+}
+
+
+# Function to resolve an alias to the actual model ID
+def resolve_roboflow_model_alias(model_id: str) -> str:
+    return REGISTERED_ALIASES.get(model_id, model_id)
+
+alias = "yolov8x-1280"
+
+# Resolve the alias to get the actual model ID
+model_name = resolve_roboflow_model_alias(alias)
+
 pipeline = InferencePipeline.init(
-    model_id="yolov8x-1280",
+    model_id=model_name,
     video_reference="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking.mp4",
     on_prediction=my_custom_sink,
 )
