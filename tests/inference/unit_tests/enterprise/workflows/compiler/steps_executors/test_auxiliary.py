@@ -262,6 +262,186 @@ async def test_run_condition_step_for_outputs_with_not_allowed_batch_size() -> N
 
 
 @pytest.mark.asyncio
+async def test_run_condition_step_when_string_prefix_to_be_matched_correctly() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_STARTS_WITH,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "cat"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_2"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_when_string_prefix_not_to_be_matched() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_STARTS_WITH,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "dog"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_3"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_when_string_postfix_to_be_matched_correctly() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_ENDS_WITH,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "persian"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_2"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_when_string_postfix_not_to_be_matched() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_ENDS_WITH,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "european"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_3"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_when_string_infix_to_be_matched_correctly() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_CONTAINS,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "t_p"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_2"
+
+
+@pytest.mark.asyncio
+async def test_run_condition_step_when_string_infix_not_to_be_matched_correctly() -> None:
+    # given
+    step = Condition(
+        type="Condition",
+        name="step_1",
+        left="$steps.step_0.top",
+        operator=Operator.STR_CONTAINS,
+        right="$inputs.some",
+        step_if_true="$steps.step_2",
+        step_if_false="$steps.step_3",
+    )
+
+    # when
+    next_step, outputs_lookup = await run_condition_step(
+        step=step,
+        runtime_parameters={"some": "t.p"},
+        outputs_lookup={"$steps.step_0": {"top": "cat_persian"}},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    assert outputs_lookup == {
+        "$steps.step_0": {"top": "cat_persian"}
+    }, "Output lookup must not be modified"
+    assert next_step == "$steps.step_3"
+
+
+@pytest.mark.asyncio
 async def test_run_detection_filter_step_when_batch_detections_given() -> None:
     # given
     step = DetectionFilter.parse_obj(

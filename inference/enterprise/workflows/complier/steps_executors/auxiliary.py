@@ -55,10 +55,7 @@ from inference.enterprise.workflows.entities.steps import (
     Operator,
     RelativeStaticCrop,
 )
-from inference.enterprise.workflows.entities.validators import (
-    get_last_selector_chunk,
-    is_selector,
-)
+from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import ExecutionGraphError
 
 OPERATORS = {
@@ -69,6 +66,9 @@ OPERATORS = {
     Operator.LOWER_OR_EQUAL_THAN: lambda a, b: a <= b,
     Operator.GREATER_OR_EQUAL_THAN: lambda a, b: a >= b,
     Operator.IN: lambda a, b: a in b,
+    Operator.STR_STARTS_WITH: lambda a, b: a.startswith(b),
+    Operator.STR_ENDS_WITH: lambda a, b: a.endswith(b),
+    Operator.STR_CONTAINS: lambda a, b: b in a,
 }
 
 BINARY_OPERATORS = {

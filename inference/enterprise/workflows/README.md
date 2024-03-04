@@ -441,8 +441,9 @@ prevent situation when evaluation of condition for multiple images yield differe
 * `name`: must be unique within all steps - used as identifier (required)
 * `left`: left operand of `operator`, can be actual value, reference to input or step output (required)
 * `right`: left operand of `operator`, can be actual value, reference to input or step output (required)
-* `operator`: one of `equal`, `not_equal`, `lower_than`, `greater_than`, `lower_or_equal_than`, `greater_or_equal_than`
-or `in` (required)
+* `operator`: one of `equal`, `not_equal`, `lower_than`, `greater_than`, `lower_or_equal_than`, `greater_or_equal_than`, 
+`in`, `str_starts_with` (meaning `left` ends with `right`), `str_ends_with` (meaning `left` starts with `right`), 
+`str_contains` (meaning `left` contains `right`) (required)
 * `step_if_true`: reference to the step that will be executed if condition is true (required)
 * `step_if_false`: reference to the step that will be executed if condition is false (required)
 
@@ -487,7 +488,18 @@ or `CompoundDetectionFilterDefinition`
 ```
 
 where `DetectionFilterDefinition` uses binary operator and the left operand is detection field pointed by `field_name`
-and right operand is `reference_value`.
+and right operand is `reference_value`. `"operaror"` can be filled with values:
+* `equal` (field value equal to `reference_value`)
+* `not_equal`
+* `lower_than`
+* `greater_than`
+* `lower_or_equal_than`
+* `greater_or_equal_than`
+* `in` (field value in range of `reference_value`)
+* `str_starts_with` (field value - string - starts from `reference_value`)
+* `str_ends_with` (field value - string - ends with `reference_value`)
+* `str_contains` (field value - string - contains substring pointed in `reference_value`)
+
 In case if `CompoundDetectionFilterDefinition`, logical operators `or`, `and` can be used to combine simple filters.
 This let user define recursive structure of filters.
 
