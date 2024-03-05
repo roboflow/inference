@@ -1,6 +1,7 @@
 from time import perf_counter
-from typing import Any
+from typing import Any, Optional
 
+import numpy as np
 from ultralytics import YOLO
 
 from inference.core.cache import cache
@@ -10,8 +11,14 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.models.defaults import DEFAULT_CONFIDENCE
+from inference.core.env import DEFAULT_CLASS_AGNOSTIC_NMS, DEFAULT_MAX_CANDIDATES
+from inference.core.models.defaults import (
+    DEFAULT_CONFIDENCE,
+    DEFAULT_IOU_THRESH,
+    DEFAUlT_MAX_DETECTIONS,
+)
 from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.hash import get_string_list_hash
 from inference.core.utils.image_utils import load_image_rgb
 
@@ -65,6 +72,10 @@ class YOLOWorld(RoboflowCoreModel):
         image: Any = None,
         text: list = None,
         confidence: float = DEFAULT_CONFIDENCE,
+        max_detections: Optional[int] = DEFAUlT_MAX_DETECTIONS,
+        iou_threshold: float = DEFAULT_IOU_THRESH,
+        max_candidates: int = DEFAULT_MAX_CANDIDATES,
+        class_agnostic_nms=DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ):
         """
@@ -95,20 +106,39 @@ class YOLOWorld(RoboflowCoreModel):
 
         t2 = perf_counter() - t1
 
+        if len(results) > 0:
+            bbox_array = np.array([box.xywh.tolist()[0] for box in results.boxes])
+            conf_array = np.array([[float(box.conf)] for box in results.boxes])
+            cls_array = np.array(
+                [self.get_cls_conf_array(int(box.cls)) for box in results.boxes]
+            )
+
+            pred_array = np.concatenate([bbox_array, conf_array, cls_array], axis=1)
+            pred_array = np.expand_dims(pred_array, axis=0)
+            pred_array = w_np_non_max_suppression(
+                pred_array,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                class_agnostic=class_agnostic_nms,
+                max_detections=max_detections,
+                max_candidate_detections=max_candidates,
+                box_format="xywh",
+            )[0]
+        else:
+            pred_array = []
         predictions = []
-        for i, box in enumerate(results.boxes):
-            x, y, w, h = box.xywh.tolist()[0]
-            class_id = int(box.cls)
+
+        for i, pred in enumerate(pred_array):
             predictions.append(
                 ObjectDetectionPrediction(
                     **{
-                        "x": x,
-                        "y": y,
-                        "width": w,
-                        "height": h,
-                        "confidence": float(box.conf),
-                        "class": self.class_names[class_id],
-                        "class_id": class_id,
+                        "x": (pred[0] + pred[2]) / 2,
+                        "y": (pred[1] + pred[3]) / 2,
+                        "width": pred[2] - pred[0],
+                        "height": pred[3] - pred[1],
+                        "confidence": pred[4],
+                        "class": self.class_names[int(pred[6])],
+                        "class_id": int(pred[6]),
                     }
                 )
             )
@@ -143,3 +173,8 @@ class YOLOWorld(RoboflowCoreModel):
             list: A list of required files for inference, e.g., ["model.pt"].
         """
         return ["yolo-world.pt"]
+
+    def get_cls_conf_array(self, class_id) -> list:
+        arr = [0] * len(self.class_names)
+        arr[class_id] = 1
+        return arr

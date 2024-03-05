@@ -131,6 +131,17 @@ async def run_roboflow_model_step(
             image=image, results=serialised_result, nested_key=None
         )
     else:
+        class_filter = resolve_parameter(
+            selector_or_value=step.class_filter,
+            runtime_parameters=runtime_parameters,
+            outputs_lookup=outputs_lookup,
+        )
+        # we need to filter-out classes here, to ensure consistent behaviour of external API usage
+        # as legacy endpoints to not support this functionality
+        serialised_result = filter_out_unwanted_classes(
+            serialised_result=serialised_result,
+            classes_to_accept=class_filter,
+        )
         serialised_result = attach_parent_info(image=image, results=serialised_result)
         serialised_result = anchor_detections_in_parent_coordinates(
             image=image,
@@ -138,6 +149,25 @@ async def run_roboflow_model_step(
         )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
+
+
+def filter_out_unwanted_classes(
+    serialised_result: List[Dict[str, Any]],
+    classes_to_accept: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    if classes_to_accept is None:
+        return serialised_result
+    classes_to_accept = set(classes_to_accept)
+    results = []
+    for image_result in serialised_result:
+        filtered_image_result = deepcopy(image_result)
+        filtered_image_result["predictions"] = []
+        for prediction in image_result["predictions"]:
+            if prediction["class"] not in classes_to_accept:
+                continue
+            filtered_image_result["predictions"].append(prediction)
+        results.append(filtered_image_result)
+    return results
 
 
 async def get_roboflow_model_predictions_locally(
