@@ -46,9 +46,6 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
-    WorkflowsActiveLearningMiddleware,
-)
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
@@ -404,25 +401,28 @@ class InferencePipeline:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
                 always if connection to stream is lost.
         """
-        workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
-            cache=cache,
-        )
-        model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-        model_manager = BackgroundTaskActiveLearningManager(
-            model_registry=model_registry, cache=cache
-        )
-        model_manager = WithFixedSizeCache(
-            model_manager,
-            max_size=MAX_ACTIVE_MODELS,
-        )
-        if api_key is None:
-            api_key = API_KEY
-        background_tasks = BackgroundTasks()
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 run_video_frame_through_workflow,
             )
+            from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+                WorkflowsActiveLearningMiddleware,
+            )
 
+            workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
+                cache=cache,
+            )
+            model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+            model_manager = BackgroundTaskActiveLearningManager(
+                model_registry=model_registry, cache=cache
+            )
+            model_manager = WithFixedSizeCache(
+                model_manager,
+                max_size=MAX_ACTIVE_MODELS,
+            )
+            if api_key is None:
+                api_key = API_KEY
+            background_tasks = BackgroundTasks()
             on_video_frame = partial(
                 run_video_frame_through_workflow,
                 workflow_specification=workflow_specification,
