@@ -38,9 +38,6 @@ from inference.core.interfaces.stream.entities import AnyPrediction, ModelConfig
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
-from inference.core.interfaces.stream.model_handlers.workflows import (
-    run_video_frame_through_workflow,
-)
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
@@ -421,16 +418,26 @@ class InferencePipeline:
         if api_key is None:
             api_key = API_KEY
         background_tasks = BackgroundTasks()
-        on_video_frame = partial(
-            run_video_frame_through_workflow,
-            workflow_specification=workflow_specification,
-            model_manager=model_manager,
-            image_input_name=image_input_name,
-            workflows_parameters=workflows_parameters,
-            api_key=api_key,
-            workflows_active_learning_middleware=workflows_active_learning_middleware,
-            background_tasks=background_tasks,
-        )
+        try:
+            from inference.core.interfaces.stream.model_handlers.workflows import (
+                run_video_frame_through_workflow,
+            )
+
+            on_video_frame = partial(
+                run_video_frame_through_workflow,
+                workflow_specification=workflow_specification,
+                model_manager=model_manager,
+                image_input_name=image_input_name,
+                workflows_parameters=workflows_parameters,
+                api_key=api_key,
+                workflows_active_learning_middleware=workflows_active_learning_middleware,
+                background_tasks=background_tasks,
+            )
+        except ImportError as error:
+            raise CannotInitialiseModelError(
+                f"Could not initialise workflow processing due to lack of dependencies required. "
+                f"Please provide an issue report under https://github.com/roboflow/inference/issues"
+            ) from error
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         if status_update_handlers is None:
