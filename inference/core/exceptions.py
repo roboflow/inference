@@ -180,3 +180,7 @@ class ActiveLearningConfigurationDecodingError(ActiveLearningError):
 
 class ActiveLearningConfigurationError(ActiveLearningError):
     pass
+
+
+class CannotInitialiseModelError(Exception):
+    pass

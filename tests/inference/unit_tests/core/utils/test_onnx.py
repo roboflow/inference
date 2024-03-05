@@ -16,4 +16,8 @@ def test_get_onnxruntime_execution_providers_when_valid_input_provided() -> None
     )
 
     # then
-    assert result == ["CUDAExecutionProvider", "OpenVINOExecutionProvider", "CPUExecutionProvider"]
+    assert result == [
+        "CUDAExecutionProvider",
+        "OpenVINOExecutionProvider",
+        "CPUExecutionProvider",
+    ]

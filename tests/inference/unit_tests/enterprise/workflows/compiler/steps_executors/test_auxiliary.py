@@ -412,7 +412,9 @@ async def test_run_condition_step_when_string_infix_to_be_matched_correctly() ->
 
 
 @pytest.mark.asyncio
-async def test_run_condition_step_when_string_infix_not_to_be_matched_correctly() -> None:
+async def test_run_condition_step_when_string_infix_not_to_be_matched_correctly() -> (
+    None
+):
     # given
     step = Condition(
         type="Condition",
