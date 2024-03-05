@@ -318,6 +318,7 @@ Inference Pipelines are highly configurable. Configurations include:
 - `max_fps`: Used to set the maximum rate of frame processing.
 - `confidence`: Confidence threshold used for inference.
 - `iou_threshold`: IoU threshold used for inference.
+- `video_source_properties`: Optional dictionary of properties to configure the video source, corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. See the [OpenCV Documentation](https://docs.opencv.org/4.x/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d) for a list of all possible properties.
 
 ```python
 from inference import InferencePipeline
@@ -326,6 +327,11 @@ pipeline = InferencePipeline.init(
     max_fps=10,
     confidence=0.75,
     iou_threshold=0.4,
+    video_source_properties={
+        "frame_width": 1920.0,
+        "frame_height": 1080.0,
+        "fps": 30.0,
+    },
 )
 ```
 
