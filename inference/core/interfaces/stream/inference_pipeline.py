@@ -41,9 +41,6 @@ from inference.core.interfaces.stream.model_handlers.roboflow_models import (
 from inference.core.interfaces.stream.model_handlers.workflows import (
     run_video_frame_through_workflow,
 )
-from inference.core.interfaces.stream.model_handlers.yolo_world import (
-    build_yolo_world_inference_function,
-)
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
@@ -262,6 +259,10 @@ class InferencePipeline:
             max_detections=max_detections,
         )
         try:
+            from inference.core.interfaces.stream.model_handlers.yolo_world import (
+                build_yolo_world_inference_function,
+            )
+
             on_video_frame = build_yolo_world_inference_function(
                 model_id=f"yolo_world/{model_size}",
                 classes=classes,
