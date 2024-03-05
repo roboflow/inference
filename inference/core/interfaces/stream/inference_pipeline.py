@@ -237,8 +237,8 @@ class InferencePipeline:
     def init_with_yolo_world(
         cls,
         video_reference: Union[str, int],
-        model_size: str,
         classes: List[str],
+        model_size: str = "s",
         on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
