@@ -14,6 +14,7 @@ from _io import _IOBase
 from PIL import Image
 from requests import RequestException
 
+from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import ALLOW_NUMPY_INPUT
 from inference.core.exceptions import (
@@ -78,6 +79,7 @@ def load_image(
             value, cv_imread_flags=cv_imread_flags
         )
     np_image = convert_gray_image_to_bgr(image=np_image)
+    logger.debug(f"Loaded inference image. Shape: {getattr(np_image, 'shape', None)}")
     return np_image, is_bgr
 
 
