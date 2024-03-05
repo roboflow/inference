@@ -251,6 +251,7 @@ class InferencePipeline:
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
+        video_source_properties: Optional[dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -292,6 +293,11 @@ class InferencePipeline:
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
+            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
+                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
+                will be used.
+                Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -335,6 +341,7 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
@@ -362,6 +369,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
+        video_source_properties: Optional[dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -397,6 +405,11 @@ class InferencePipeline:
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
                 Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
+                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
+                will be used.
+                Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -455,6 +468,7 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
@@ -481,6 +495,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
+        video_source_properties: Optional[dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -517,6 +532,11 @@ class InferencePipeline:
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
                 Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
+                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
+                will be used.
+                Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -538,6 +558,7 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
         )
         watchdog.register_video_source(video_source=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
