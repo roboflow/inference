@@ -24,7 +24,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     run_cog_vlm_prompting,
     run_qr_code_detection_step,
     try_parse_json,
-    try_parse_lmm_output_to_json,
+    try_parse_lmm_output_to_json, filter_out_unwanted_classes,
 )
 from inference.enterprise.workflows.entities.steps import (
     ClassificationModel,
@@ -779,4 +779,80 @@ async def test_qr_code_detection() -> None:
 
     actual_prediction_type = result["$steps.some"]['prediction_type']
     assert(actual_prediction_type == 'qrcode-detection')
-    
+
+
+def test_filter_out_unwanted_classes_when_empty_results_provided() -> None:
+    # when
+    result = filter_out_unwanted_classes(serialised_result=[], classes_to_accept=["a", "b"])
+
+    # then
+    assert result == []
+
+
+def test_filter_out_unwanted_classes_when_no_class_filter_provided() -> None:
+    # given
+    serialised_result = [
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": [
+                {"class": "a", "field": "b"},
+                {"class": "b", "field": "b"},
+            ]
+        }
+    ]
+
+    # when
+    result = filter_out_unwanted_classes(
+        serialised_result=serialised_result,
+        classes_to_accept=None,
+    )
+
+    # then
+    assert result == [
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": [
+                {"class": "a", "field": "b"},
+                {"class": "b", "field": "b"},
+            ]
+        }
+    ]
+
+
+def test_filter_out_unwanted_classes_when_there_are_classes_to_be_filtered_out() -> None:
+    # given
+    serialised_result = [
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": [
+                {"class": "a", "field": "b"},
+                {"class": "b", "field": "b"},
+            ]
+        },
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": [
+                {"class": "c", "field": "b"},
+            ]
+        }
+    ]
+
+    # when
+    result = filter_out_unwanted_classes(
+        serialised_result=serialised_result,
+        classes_to_accept=["b"],
+    )
+
+    # then
+    assert result == [
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": [
+                {"class": "b", "field": "b"},
+            ]
+        },
+        {
+            "image": {"height": 100, "width": 200},
+            "predictions": []
+        }
+    ]

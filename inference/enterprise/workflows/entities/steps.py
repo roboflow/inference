@@ -562,6 +562,9 @@ class Operator(Enum):
     LOWER_OR_EQUAL_THAN = "lower_or_equal_than"
     GREATER_OR_EQUAL_THAN = "greater_or_equal_than"
     IN = "in"
+    STR_STARTS_WITH = "str_starts_with"
+    STR_ENDS_WITH = "str_ends_with"
+    STR_CONTAINS = "str_contains"
 
 
 class Condition(BaseModel, StepInterface):
