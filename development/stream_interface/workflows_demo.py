@@ -36,7 +36,7 @@ def main() -> None:
         video_reference=os.environ["VIDEO_REFERENCE"],
         workflow_specification=workflow_specification,
         watchdog=watchdog,
-        on_prediction=console_sink,
+        on_prediction=workflows_sink,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()
@@ -62,7 +62,7 @@ def command_thread(pipeline: InferencePipeline, watchdog: PipelineWatchDog) -> N
             pipeline.resume_stream()
 
 
-def console_sink(
+def workflows_sink(
     predictions: dict,
     video_frame: VideoFrame,
 ) -> None:

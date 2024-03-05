@@ -2,10 +2,7 @@ from typing import Optional
 
 from fastapi import BackgroundTasks
 
-from inference.core.env import (
-    WORKFLOWS_MAX_CONCURRENT_STEPS,
-    WORKFLOWS_STEP_EXECUTION_MODE,
-)
+from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.complier.core import compile_and_execute
@@ -25,7 +22,6 @@ def run_video_frame_through_workflow(
     workflows_active_learning_middleware: WorkflowsActiveLearningMiddleware,
     background_tasks: Optional[BackgroundTasks],
 ) -> dict:
-    # step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
     step_execution_mode = StepExecutionMode.LOCAL
     if workflows_parameters is None:
         workflows_parameters = {}

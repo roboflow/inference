@@ -3,7 +3,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Thread
-from typing import Callable, Generator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 from fastapi import BackgroundTasks
 
@@ -69,7 +69,7 @@ class InferencePipeline:
     def init(
         cls,
         video_reference: Union[str, int],
-        model_id: Optional[str] = None,
+        model_id: str,
         on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
         api_key: Optional[str] = None,
         max_fps: Optional[Union[float, int]] = None,
@@ -87,8 +87,8 @@ class InferencePipeline:
         active_learning_enabled: Optional[bool] = None,
     ) -> "InferencePipeline":
         """
-        This class creates the abstraction for making inferences from CV models against video stream.
-        It allows to choose Object Detection model from Roboflow platform and run predictions against
+        This class creates the abstraction for making inferences from Roboflow models against video stream.
+        It allows to choose model from Roboflow platform and run predictions against
         video streams - just by the price of specifying which model to use and what to do with predictions.
 
         It allows to set the model post-processing parameters (via .init() or env) and intercept updates
@@ -109,7 +109,7 @@ class InferencePipeline:
                 It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
-                Roboflow Object Detection prediction.
+                Roboflow model prediction (different for specific types of models).
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
@@ -251,6 +251,57 @@ class InferencePipeline:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
     ) -> "InferencePipeline":
+        """
+        This class creates the abstraction for making inferences from YoloWorld against video stream.
+        The way of how `InferencePipeline` works is displayed in `InferencePipeline.init(...)` initializer
+        method.
+
+        Args:
+            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
+                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            classes (List[str]): List of classes to execute zero-shot detection against
+            model_size (str): version of model - to be chosen from `s`, `m`, `l`
+            on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
+                once prediction is ready - passing both decoded frame, their metadata and dict with standard
+                Roboflow Object Detection prediction.
+            max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
+                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
+                on single machine making tradeoff between number of frames and number of streams handled. Disabled
+                by default.
+            watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
+                inference pipeline - if not given null implementation (doing nothing) will be used.
+            status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
+                status updates of all elements of the pipeline. Should be used only if detailed inspection of
+                pipeline behaviour in time is needed. Please point out that handlers should be possible to be executed
+                fast - otherwise they will impair pipeline performance. All errors will be logged as warnings
+                without re-raising. Default: None.
+            source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
+                video stream decoding behaviour. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
+                video stream frames consumption. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
+                env variable "CLASS_AGNOSTIC_NMS" with default "False"
+            confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
+                env variable "CONFIDENCE" with default "0.5"
+            iou_threshold (Optional[float]): Parameter of model post-processing. If not given - value checked in
+                env variable "IOU_THRESHOLD" with default "0.5"
+            max_candidates (Optional[int]): Parameter of model post-processing. If not given - value checked in
+                env variable "MAX_CANDIDATES" with default "3000"
+            max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
+                env variable "MAX_DETECTIONS" with default "300"
+
+        Other ENV variables involved in low-level configuration:
+        * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
+        * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
+
+        Returns: Instance of InferencePipeline
+
+        Throws:
+            * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
+                always if connection to stream is lost.
+        """
         inference_config = ModelConfig.init(
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
@@ -303,7 +354,7 @@ class InferencePipeline:
         workflow_specification: dict,
         api_key: Optional[str] = None,
         image_input_name: str = "image",
-        workflows_parameters: Optional[dict] = None,
+        workflows_parameters: Optional[Dict[str, Any]] = None,
         on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
@@ -311,6 +362,51 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
     ) -> "InferencePipeline":
+        """
+        This class creates the abstraction for making inferences from given workflow against video stream.
+        The way of how `InferencePipeline` works is displayed in `InferencePipeline.init(...)` initializer
+        method.
+
+        Args:
+            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
+                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            workflow_specification (dict): Valid specification of workflow. See [workflow docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows)
+            api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
+                and "API_KEY" variables. API key, passed in some form is required.
+            image_input_name (str): Name of input image defined in `workflow_specification`. `InferencePipeline` will be
+                injecting video frames to workflow through that parameter name.
+            workflows_parameters (Optional[Dict[str, Any]]): Dictionary with additional parameters that can be
+                defined within `workflow_specification`.
+            on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
+                once prediction is ready - passing both decoded frame, their metadata and dict with workflow output.
+            max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
+                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
+                on single machine making tradeoff between number of frames and number of streams handled. Disabled
+                by default.
+            watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
+                inference pipeline - if not given null implementation (doing nothing) will be used.
+            status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
+                status updates of all elements of the pipeline. Should be used only if detailed inspection of
+                pipeline behaviour in time is needed. Please point out that handlers should be possible to be executed
+                fast - otherwise they will impair pipeline performance. All errors will be logged as warnings
+                without re-raising. Default: None.
+            source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
+                video stream decoding behaviour. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
+                video stream frames consumption. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+
+        Other ENV variables involved in low-level configuration:
+        * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
+        * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
+
+        Returns: Instance of InferencePipeline
+
+        Throws:
+            * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
+                always if connection to stream is lost.
+        """
         workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
             cache=cache,
         )
@@ -372,6 +468,52 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
     ) -> "InferencePipeline":
+        """
+        This class creates the abstraction for making inferences from given workflow against video stream.
+        The way of how `InferencePipeline` works is displayed in `InferencePipeline.init(...)` initialiser
+        method.
+
+        Args:
+            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
+                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            on_video_frame (Callable[[VideoFrame], AnyPrediction]): function supposed to make prediction (or do another
+                kind of custom processing according to your will). Accept `VideoFrame` object and is supposed
+                to return dictionary with results of any kind.
+            on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
+                once prediction is ready - passing both decoded frame, their metadata and dict with output from your
+                custom callable `on_video_frame(...)`. Logic here must be adjusted to the output of `on_video_frame`.
+            on_pipeline_start (Optional[Callable[[], None]]): Optional (parameter-free) function to be called
+                whenever pipeline starts
+            on_pipeline_end (Optional[Callable[[], None]]): Optional (parameter-free) function to be called
+                whenever pipeline ends
+            max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
+                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
+                on single machine making tradeoff between number of frames and number of streams handled. Disabled
+                by default.
+            watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
+                inference pipeline - if not given null implementation (doing nothing) will be used.
+            status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
+                status updates of all elements of the pipeline. Should be used only if detailed inspection of
+                pipeline behaviour in time is needed. Please point out that handlers should be possible to be executed
+                fast - otherwise they will impair pipeline performance. All errors will be logged as warnings
+                without re-raising. Default: None.
+            source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
+                video stream decoding behaviour. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+            source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
+                video stream frames consumption. By default - tweaked to the type of source given.
+                Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
+
+        Other ENV variables involved in low-level configuration:
+        * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
+        * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
+
+        Returns: Instance of InferencePipeline
+
+        Throws:
+            * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
+                always if connection to stream is lost.
+        """
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         if status_update_handlers is None:
