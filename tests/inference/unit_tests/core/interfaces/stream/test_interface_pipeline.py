@@ -6,7 +6,6 @@ from typing import Any, List, Optional, Tuple
 from unittest.mock import MagicMock
 
 import numpy as np
-from inference.core.interfaces.stream.model_handlers.roboflow_models import default_process_frame
 import pytest
 
 from inference.core.active_learning.middlewares import ThreadingActiveLearningMiddleware
@@ -27,6 +26,9 @@ from inference.core.interfaces.camera.video_source import (
 )
 from inference.core.interfaces.stream.entities import ModelConfig
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.model_handlers.roboflow_models import (
+    default_process_frame,
+)
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
@@ -123,7 +125,6 @@ def test_inference_pipeline_works_correctly_against_video_file(
 ) -> None:
     # given
     model = ModelStub()
-    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -133,18 +134,18 @@ def test_inference_pipeline_works_correctly_against_video_file(
 
     status_update_handlers = [watchdog.on_status_update]
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
+    process_frame_func = partial(
+        default_process_frame, model=model, inference_config=inference_config
+    )
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        model=model,
         video_source=video_source,
         on_prediction=on_prediction,
         max_fps=100,
         predictions_queue=predictions_queue,
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
-        inference_config=inference_config,
-        active_learning_middleware=None,
     )
 
     # when
@@ -166,7 +167,6 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
 ) -> None:
     # given
     model = ModelStub()
-    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=2)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -176,18 +176,18 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
 
     status_update_handlers = [watchdog.on_status_update]
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
+    process_frame_func = partial(
+        default_process_frame, model=model, inference_config=inference_config
+    )
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        model=model,
         video_source=video_source,
         on_prediction=on_prediction,
         max_fps=None,
         predictions_queue=predictions_queue,
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
-        inference_config=inference_config,
-        active_learning_middleware=None,
     )
 
     def stop() -> None:
@@ -212,7 +212,6 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
 ) -> None:
     # given
     model = ModelStub()
-    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=1)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -223,18 +222,19 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
 
     status_update_handlers = [watchdog.on_status_update]
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
+    process_frame_func = partial(
+        default_process_frame, model=model, inference_config=inference_config
+    )
+
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        model=model,
         video_source=video_source,
         on_prediction=on_prediction,
         max_fps=None,
         predictions_queue=predictions_queue,
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
-        inference_config=inference_config,
-        active_learning_middleware=None,
     )
 
     def stop() -> None:
@@ -260,7 +260,6 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
 ) -> None:
     # given
     model = ModelStub()
-    process_frame_func = partial(default_process_frame, model=model)
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
     predictions = []
@@ -295,18 +294,20 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
 
     status_update_handlers = [watchdog.on_status_update]
     inference_config = ModelConfig.init(confidence=0.5, iou_threshold=0.5)
+    process_frame_func = partial(
+        default_process_frame, model=model, inference_config=inference_config
+    )
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        model=model,
         video_source=video_source,
         on_prediction=prediction_handler,
         max_fps=100,
         predictions_queue=predictions_queue,
         watchdog=watchdog,
         status_update_handlers=status_update_handlers,
-        inference_config=inference_config,
-        active_learning_middleware=active_learning_middleware,
+        on_pipeline_start=lambda: active_learning_middleware.start_registration_thread(),
+        on_pipeline_end=lambda: active_learning_middleware.stop_registration_thread(),
     )
 
     # when
