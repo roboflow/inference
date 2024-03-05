@@ -117,6 +117,11 @@ class LatencyMonitor:
 
     def _generate_report(self) -> None:
         frame_decoding_latency = None
+        if self._inference_start_event is not None:
+            frame_decoding_latency = (
+                self._inference_start_event.event_timestamp
+                - self._inference_start_event.frame_decoding_timestamp
+            ).total_seconds()
         event_pairs = [
             (self._inference_start_event, self._prediction_ready_event),
         ]
