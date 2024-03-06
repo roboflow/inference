@@ -340,7 +340,6 @@ class HttpInterface(BaseInterface):
 
                 return response
 
-
         self.app = app
         self.model_manager = model_manager
         self.workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
