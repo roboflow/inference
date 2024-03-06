@@ -16,19 +16,26 @@
 
 [![version](https://badge.fury.io/py/inference.svg)](https://badge.fury.io/py/inference)
 [![downloads](https://img.shields.io/pypi/dm/inference)](https://pypistats.org/packages/inference)
+![docker pulls](https://img.shields.io/docker/pulls/roboflow/roboflow-inference-server-cpu)
 [![license](https://img.shields.io/pypi/l/inference)](https://github.com/roboflow/inference/blob/main/LICENSE.md)
+[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Roboflow/workflows)
+[![discord](https://img.shields.io/discord/1159501506232451173)](https://discord.gg/GbfgXGJ8Bk)
 
 </div>
 
 ## 👋 hello
 
-TODO
+Roboflow Inference is a powerful and versatile platform designed to simplify the deployment of computer vision models. It enables developers to easily run object detection, classification, and instance segmentation and utilize foundation models like CLIP and SAM, either through a Python-native package, a self-hosted inference server, or a fully managed API.
 
 ## 💻 install
+
+Inference package requires [**Python>=3.9**](https://www.python.org/).
 
 ```bash
 pip install inference
 ```
+
+Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
 
 ## 🔥 quickstart
 
@@ -48,11 +55,11 @@ TODO
 
 ## 📚 documentation
 
-TODO
+Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
 
-## 🗝️ license
+## © license
 
-The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its own licensing. Detailed information on the licenses of each model can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
+The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its own licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
 
 ## 🏆 contribution
 
@@ -150,69 +157,6 @@ The [`/examples`](https://github.com/roboflow/inference/tree/main/examples/) dir
 Check out Inference running on a video of a football game:
 
 https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
-
-## 💻 Why Inference?
-
-Inference provides a scalable method through which you can manage inferences for your vision projects.
-
-Inference is composed of:
-
-- Thousands of [pre-trained community models](https://universe.roboflow.com) that you can use as a starting point.
-
-- Foundation models like CLIP, SAM, and OCR.
-
-- A tight integration with [Supervision](https://roboflow.com/supervision).
-
-- An HTTP server, so you don’t have to reimplement things like image processing and prediction visualization on every project and you can scale your GPU infrastructure independently of your application code, and access your model from whatever language your app is written in.
-
-- Standardized APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
-
-- A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
-
-- Active Learning integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
-
-- Seamless interoperability with [Roboflow](https://roboflow.com) for creating datasets, training & deploying custom models.
-
-And more!
-
-### 📌 Use the Inference Server
-
-You can learn more about Roboflow Inference Docker Image build, pull and run in our [documentation](https://inference.roboflow.com/quickstart/docker/).
-
-- Run on x86 CPU:
-
-```bash
-docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
-```
-
-- Run on NVIDIA GPU:
-
-```bash
-docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
-```
-
-<details close>
-<summary>👉 more docker run options</summary>
-
-- Run on arm64 CPU:
-
-```bash
-docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
-```
-
-- Run on NVIDIA Jetson with JetPack `4.x`:
-
-```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
-```
-
-- Run on NVIDIA Jetson with JetPack `5.x`:
-
-```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
-```
-
-</details>
 
 ### Extras:
 
@@ -314,12 +258,6 @@ embeddings = model.embed_image(image_url)
 print(embeddings)
 ```
 
-## 🏗️ inference Process
-
-To standardize the inference process throughout all our models, Roboflow Inference has a structure for processing inference requests. The specifics can be found on each model's respective page, but overall it works like this for most models:
-
-<img width="900" alt="inference structure" src="https://github.com/stellasphere/inference/assets/29011058/abf69717-f852-4655-9e6e-dae19fc263dc">
-
 ## ✅ Supported Models
 
 ### Load from Roboflow
@@ -358,10 +296,6 @@ With a Roboflow Inference Enterprise License, you can access additional Inferenc
 - YOLOv5 and YOLOv8 commercial license
 
 To learn more, [contact the Roboflow team](https://roboflow.com/sales).
-
-## 📚 documentation
-
-Visit our [documentation](https://inference.roboflow.com) for usage examples and reference for Roboflow Inference.
 
 <br>
 
