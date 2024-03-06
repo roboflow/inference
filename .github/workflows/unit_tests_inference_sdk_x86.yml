@@ -1,4 +1,4 @@
-name: Unit tests for core components of inference SDK package
+name: [UNIT TESTS] inference SDK
 
 on:
   pull_request:
@@ -25,6 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.test.unit.txt
-      - name: 🧪 Unit Tests of Inference
+      - name: 🧪 Unit Tests of Inference SDK
         timeout-minutes: 30
         run: python -m pytest tests/inference_sdk/unit_tests

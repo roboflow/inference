@@ -1,4 +1,4 @@
-name: [UNIT TESTS] inference
+name: [INTEGRATION TESTS] inference CLI
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt
-      - name: 🧪 Unit Tests of Inference
+          pip install -r requirements/requirements.cli.txt -r requirements/requirements.test.unit.txt
+      - name: 🧪 Integration Tests of Inference CLI
         timeout-minutes: 30
-        run: python -m pytest tests/inference/unit_tests
+        run: python -m pytest tests/inference_cli/integration_tests

@@ -1,4 +1,4 @@
-name: [UNIT TESTS] inference
+name: [INTEGRATION TESTS] inference models
 
 on:
   pull_request:
@@ -25,6 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt
-      - name: 🧪 Unit Tests of Inference
-        timeout-minutes: 30
-        run: python -m pytest tests/inference/unit_tests
+      - name: 🧪 Integration Tests of Inference models
+        timeout-minutes: 45
+        run: MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests
