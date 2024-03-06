@@ -894,7 +894,7 @@ class VideoConsumer:
 
 
 def initialize_source_properties(
-    video: cv2.VideoCapture, properties: dict[str, float]
+    video: cv2.VideoCapture, properties: Dict[str, float]
 ) -> None:
     for property_id, value in properties.items():
         cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
