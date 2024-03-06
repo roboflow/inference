@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements/requirements.sdk.txt -r requirements/requirements.test.unit.txt
+          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements/requirements.sdk.txt -r requirements/requirements.test.unit.txt -r requirements/requirements/requirements.cli.txt
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
         run: python -m pytest tests/inference/unit_tests
