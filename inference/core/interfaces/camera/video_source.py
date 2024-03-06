@@ -145,7 +145,7 @@ class VideoSource:
         adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
