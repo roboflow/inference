@@ -1,7 +1,7 @@
 from typing import List, Literal, Union
-from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
