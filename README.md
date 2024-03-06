@@ -1,4 +1,26 @@
-![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
+<div align="center">
+  <p>
+    <a align="center" href="" target="https://inference.roboflow.com/">
+      <img
+        width="100%"
+        src="https://github.com/roboflow/inference/blob/main/banner.png"
+      >
+    </a>
+  </p>
+
+  <br>
+
+[notebooks](https://github.com/roboflow/notebooks) | [supervision](https://github.com/roboflow/supervision) | [autodistill](https://github.com/autodistill/autodistill) | [maestro](https://github.com/roboflow/multimodal-maestro)
+
+  <br>
+
+[![version](https://badge.fury.io/py/inference.svg)](https://badge.fury.io/py/inference)
+[![downloads](https://img.shields.io/pypi/dm/inference)](https://pypistats.org/packages/inference)
+[![license](https://img.shields.io/pypi/l/inference)](https://github.com/roboflow/inference/blob/main/LICENSE.md)
+
+</div>
+
+
 
 ## 🎬 pip install inference
 
@@ -322,17 +344,7 @@ Visit our [documentation](https://inference.roboflow.com) for usage examples and
 
 ## 🏆 contribution
 
-We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏
-
-## 💻 explore more Roboflow open source projects
-
-| Project                                                           | Description                                                                                                                                            |
-| :---------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [supervision](https://roboflow.com/supervision)                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
-| [Autodistill](https://github.com/autodistill/autodistill)         | Automatically label images for use in training computer vision models.                                                                                 |
-| [Inference](https://github.com/roboflow/inference) (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
-| [Notebooks](https://roboflow.com/notebooks)                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
-| [Collect](https://github.com/roboflow/roboflow-collect)           | Automated, intelligent data collection powered by CLIP.                                                                                                |
+We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏                                                             |
 
 <br>
 
