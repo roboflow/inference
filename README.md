@@ -20,7 +20,39 @@
 
 </div>
 
+## 👋 hello
 
+TODO
+
+## 💻 install
+
+```bash
+pip install inference
+```
+
+## 🔥 quickstart
+
+TODO
+
+## ⚙️ inference server
+
+TODO
+
+## ⏩ workflows
+
+TODO
+
+## 🧪 examples
+
+TODO
+
+## 📚 documentation
+
+TODO
+
+## 🏆 contribution
+
+We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏    
 
 ## 🎬 pip install inference
 
@@ -341,10 +373,6 @@ To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 ## 📚 documentation
 
 Visit our [documentation](https://inference.roboflow.com) for usage examples and reference for Roboflow Inference.
-
-## 🏆 contribution
-
-We would love your input to improve Roboflow Inference! Please see our [contributing guide](https://github.com/roboflow/inference/blob/master/CONTRIBUTING.md) to get started. Thank you to all of our contributors! 🙏                                                             |
 
 <br>
 
