@@ -1,4 +1,4 @@
-name: [INTEGRATION TESTS] inference models
+name: INTEGRATION TESTS - inference models
 
 on:
   pull_request:

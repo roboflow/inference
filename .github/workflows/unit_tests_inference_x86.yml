@@ -1,4 +1,4 @@
-name: [UNIT TESTS] inference
+name: UNIT TESTS - inference
 
 on:
   pull_request:

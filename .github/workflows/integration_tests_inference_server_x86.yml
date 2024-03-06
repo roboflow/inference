@@ -1,4 +1,4 @@
-name: [INTEGRATION TESTS] Inference Server CPU x86
+name: INTEGRATION TESTS - Inference Server CPU x86
 
 on:
   pull_request:

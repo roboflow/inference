@@ -1,4 +1,4 @@
-name: [INTEGRATION TESTS] inference CLI
+name: INTEGRATION TESTS - inference CLI
 
 on:
   pull_request:

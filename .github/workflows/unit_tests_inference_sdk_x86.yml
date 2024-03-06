@@ -1,4 +1,4 @@
-name: [UNIT TESTS] inference SDK
+name: UNIT TESTS - inference SDK
 
 on:
   pull_request:
