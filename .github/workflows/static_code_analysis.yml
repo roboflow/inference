@@ -1,0 +1,17 @@
+name: Static code analysis
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-dev-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install code analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements.code_analysis.txt
+      - name: Check code quality
+        run: |
+          make check_code_quality
