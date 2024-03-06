@@ -29,7 +29,7 @@ jobs:
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements/requirements.code_analysis.txt
+          python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
       - name: 🧹 Lint with flake8
         run: |
           make check_code_quality
