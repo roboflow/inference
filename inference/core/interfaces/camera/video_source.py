@@ -282,7 +282,7 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
-        video_source_properties: Optional[dict[str, float]],
+        video_source_properties: Optional[Dict[str, float]],
     ):
         self._stream_reference = stream_reference
         self._video: Optional[cv2.VideoCapture] = None
