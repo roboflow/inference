@@ -1,0 +1,29 @@
+name: Unit tests for core components of inference SDK package
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-dev-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: true
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/requirements.cli.txt
+      - name: 🧪 Unit Tests of Inference
+        timeout-minutes: 30
+        run: python -m pytest tests/inference_sdk/unit_tests
