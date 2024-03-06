@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, List, Optional, Protocol, Union
+from typing import Any, Callable, List, Optional, Protocol, Union, Dict
 
 import cv2
 import supervision as sv
