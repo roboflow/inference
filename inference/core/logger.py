@@ -1,7 +1,7 @@
 import logging
 import os
 import warnings
-from typing import Any
+from typing import Any, Dict
 
 from rich.logging import RichHandler
 from structlog.processors import CallsiteParameter
@@ -14,7 +14,7 @@ if LOG_LEVEL == "ERROR" or LOG_LEVEL == "FATAL":
 
 
 def add_correlation(
-    logger: logging.Logger, method_name: str, event_dict: dict[str, Any]
+    logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
 ) -> dict[str, Any]:
     from asgi_correlation_id import correlation_id
 
