@@ -43,6 +43,11 @@ execution, but there still may be needs to re-design those core modules if we fi
 Please report them in [GitHub issues](https://github.com/roboflow/inference/issues).
 
 ## How to define block manifest?
+
+!!! note
+    Package with blocks manifest is located [here](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows/entities)
+
+
 Block manifests are located [here](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/entities/steps.py) 
 in `inference` repository structure. Creating new one, you should start from:
 
@@ -259,7 +264,7 @@ class MyStep(BaseModel, StepInterface):
 
 ### Full implementation of manifest
 ```python
-from typing import Literal, Union, Any, List, Optional
+from typing import Literal, Union, Any, List, Optional, Set
 from pydantic import BaseModel, field_validator
 from inference.enterprise.workflows.entities.steps import StepInterface
 from inference.enterprise.workflows.entities.base import GraphNone
@@ -294,6 +299,12 @@ class MyStep(BaseModel, StepInterface):
     ) -> Union[Optional[float], str]:
         validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
         return value
+    
+    def get_input_names(self) -> Set[str]:
+        return {"image", "confidence"}
+
+    def get_output_names(self) -> Set[str]:
+        return {"prediction"}  # adjust this to the use-case
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -372,3 +383,129 @@ There are two important concepts that need to be discussed:
 
 * how to register step outputs in `outputs_lookup`
 
+### Resolution of parameters at block level
+
+!!! note
+    That's probably the most tedious and not needed element of block creation, as that could be fully resolved on the
+    executor side. We'll try to make that better in next iteration.
+
+!!! note
+    Package with blocks logic is located [here](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows/complier/steps_executors)
+
+In runtime, `runtime_parameters` and `outputs_lookup` holds actual values of parameters needed for execution, whereas
+`step` hold instance of block manifest entity, with combination of specific values and references at the fields level.
+To resolve all of those sources of data into values you should calculate results - you need to use helper functions:
+`resolve_parameter(...)` and `get_image(...)` - for images.
+
+Let's see how that would look like:
+
+```python
+from typing import Dict, Any, Optional, Tuple
+from inference.core.managers.base import ModelManager
+from inference.enterprise.workflows.complier.steps_executors.types import (
+    NextStepReference,
+    OutputsLookup,
+)
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.utils import (
+    get_image,
+    resolve_parameter,
+)
+
+async def run_my_step(
+    step: MyStep,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    images = get_image(   # image always is returned in list - single entry format {"type": "...", "value": "..."} matches image representation in `inference` server
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    confidence = resolve_parameter(
+        selector_or_value=step.confidence,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    ...
+```
+
+Then you need to make the processing (possibly including operations on `ModelManager` to get predictions from model).
+Representation of elements of `images` matches standard `inference` format - you can use `load_image(...)` function from 
+core of `inference` to get `np.array`.
+
+We shall now discuss the structure of `outputs_lookup`. It is dictionary that maps step name to it's output. Function
+should only add values under its step name, not modify existing values (which may lead to unexpected side effects). 
+Each block define outputs (via `get_output_names(...)`). As a value saved under step name you should place a dictionary,
+with keys being all elements of block manifest `get_output_names(...)` result. Under each of the key representing output 
+name you should save list of results - ordered by the order of images in the `image` list.
+
+Let's see how that would look like in practice:
+
+
+```python
+from typing import Dict, Any, Optional, Tuple
+from inference.core.managers.base import ModelManager
+from inference.enterprise.workflows.complier.steps_executors.types import (
+    NextStepReference,
+    OutputsLookup,
+)
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.utils import (
+    get_image,
+    resolve_parameter,
+)
+from inference.enterprise.workflows.complier.utils import construct_step_selector
+
+
+async def run_my_step(
+    step: MyStep,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    images = get_image(   # image always is returned in list - single entry format {"type": "...", "value": "..."} matches image representation in `inference` server
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    confidence = resolve_parameter(
+        selector_or_value=step.confidence,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    predictions = []
+    for single_image in images:
+        # ... make predictions, model
+        predictions.append({"top": "cat"})
+    outputs_lookup[construct_step_selector(step_name=step.name)] = {"prediction": predictions}
+    return None, outputs_lookup
+```
+
+## Registration of the step
+To make step ready to be used, you need to register block in [execution engine module](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/complier/execution_engine.py):
+
+```python
+STEP_TYPE2EXECUTOR_MAPPING = {
+    # ...,
+    "MyStep": run_my_step,
+}
+```
+
+and make changes in [workflow specification](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/entities/workflows_specification.py):
+```python
+StepType = Annotated[
+    Union[
+        # ...,
+        MyStep
+    ],
+    Field(discriminator="type"),
+]
+```
+
+At this point - your block should be ready to go!
