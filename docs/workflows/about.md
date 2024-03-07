@@ -14,5 +14,9 @@ You can build more advanced workflows for use on your own devices by writing a w
 
 In this section of documentation, we describe what you need to know to create workflows.
 
+Here is an example structure for a workflow you can build with Inference Workflows:
+
+![](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/assets/example_pipeline.jpg?raw=true)
+
 !!! note
     We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.

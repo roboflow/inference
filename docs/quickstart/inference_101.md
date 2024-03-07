@@ -10,6 +10,8 @@ Below, we talk about when you would want to use each method.
 
 ## Using the Python SDK (Images and Videos)
 
+![](https://media.roboflow.com/inference/python-integration.png)
+
 You can use the Python SDK to run models on images and videos directly using the Inference code, without using Docker.
 
 Any code example that imports from `inference.models` uses the model directly.
@@ -26,25 +28,26 @@ You can use the Python HTTP SDK to run models using Inference with Docker.
 
 Any code example that imports from `inference_sdk` uses the HTTP API.
 
-To use this method, you will need an Inference server running. You can set up and install and Inference server using:
+To use this method, you will need an Inference server running, or you can use the Roboflow endpoint for your model.
+
+### Self-Hosted Inference Server
+
+You can set up and install and Inference server using:
 
 ```bash
 pip install inference
 inference server start
 ```
 
-## Python HTTP SDK
+### Roboflow Hosted API
 
-You can use the Python HTTP SDK to run models using Inference with Docker.
-
-Any code example that imports from `inference_sdk` uses the HTTP API.
-
-To use this method, you will need an Inference server running. You can set up and install and Inference server using:
+First, run:
 
 ```bash
-pip install inference
-inference server start
+pip install inference inference-sdk
 ```
+
+Then, use your Roboflow hosted API endpoint to access your model. You can find this in the Deploy tab of your Roboflow model.
 
 ## HTTP SDK
 
@@ -52,12 +55,24 @@ You can deploy your model with Inference and Docker and use the API in any progr
 
 To use this method, you will need an Inference server running. You can set up and install and Inference server using:
 
+
+### Self-Hosted Inference Server
+
+You can set up and install and Inference server using:
+
 ```bash
 pip install inference
 inference server start
 ```
 
+### Roboflow Hosted API
+
+Use your Roboflow hosted API endpoint to access your model. You can find this in the Deploy tab of your Roboflow model.
+
 ## Benefits of Using Inference Over HTTP
+
+![](https://media.roboflow.com/inference/http-api.png)
+![](https://media.roboflow.com/inference/http-api-roboflow.png)
 
 You can run Inference directly from your codebase or using a HTTP microservice deployed with Docker.
 
