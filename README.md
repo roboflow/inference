@@ -31,11 +31,34 @@ Explore our enterprise [options](https://roboflow.com/sales) for advanced featur
 
 ## 💻 install
 
-Inference package requires [**Python>=3.9**](https://www.python.org/).
+Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/).
 
 ```bash
 pip install inference
 ```
+
+<details>
+<summary>👉 additional considerations</summary>
+
+<br>
+
+- hardware
+
+  Improve model performance in GPU-accelerated environments.
+  
+  ```bash
+  pip install inference-gpu
+  ```
+
+- models
+
+  Install model-specific dependencies, ensuring code compatibility and license compliance. Learn more about the [models](https://inference.roboflow.com/#extras) supported by Inference.
+
+  ```bash
+  pip install inference[yolo-world]
+  ```
+
+</details>
 
 Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
 
@@ -61,7 +84,7 @@ Visit our [documentation](https://inference.roboflow.com) to explore comprehensi
 
 ## © license
 
-The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its own licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
+The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
 
 ## 🏆 contribution
 
@@ -154,29 +177,7 @@ inference.Stream(
 
 The [`/examples`](https://github.com/roboflow/inference/tree/main/examples/) directory contains code samples for working with and extending `inference` including using foundation models like CLIP, HTTP and UDP clients, and an insights dashboard, along with community examples (PRs welcome)!
 
-## 🎥 Inference in action
 
-Check out Inference running on a video of a football game:
-
-https://github.com/roboflow/inference/assets/37276661/121ab5f4-5970-4e78-8052-4b40f2eec173
-
-### Extras:
-
-Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference.
-| extra | description |
-|:-------|:-------------------------------------------------|
-| `clip` | Ability to use the core `CLIP` model (by OpenAI) |
-| `gaze` | Ability to use the core `Gaze` model |
-| `http` | Ability to run the http interface |
-| `sam` | Ability to run the core `Segment Anything` model (by Meta AI) |
-
-**_Note:_** Both CLIP and Segment Anything require pytorch to run. These are included in their respective dependencies however pytorch installs can be highly environment dependent. See the [official pytorch install page](https://pytorch.org/get-started/locally/) for instructions specific to your enviornment.
-
-Example install with CLIP dependencies:
-
-```bash
-pip install "inference[clip]"
-```
 
 ## Inference Client
 
