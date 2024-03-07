@@ -39,6 +39,12 @@ The results of DocTR will appear in your terminal:
 {'result': '', 'time': 3.98263641900121, 'result': 'MSKU 0439215', 'time': 3.870879542999319}
 ```
 
+### Benchmarking
+
+We ran 100 inferences on an NVIDIA T4 GPU to benchmark the performance of DocTR.
+
+DocTR ran 100 inferences in 365.22 seconds (3.65 seconds per inference, on average).
+
 ## See Also
 
 - <a href="https://blog.roboflow.com/ocr-api/" target="_blank">How to detect text in images with OCR</a>

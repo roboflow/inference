@@ -28,19 +28,27 @@ extra_css:
   - styles/cookbooks.css
 
 nav:
-  - What is Inference?: index.md
-  - Deploy a Model:
-    - What Devices Can I Use?: quickstart/devices.md
-    - Configure Your API Key: quickstart/configure_api_key.md
-    - Fine-Tuned Models (Trained on or Uploaded to Roboflow):
-      - Run Your First Model: quickstart/run_a_model.md
-      - Run a Fine-Tuned Model: quickstart/explore_models.md
-      - Inference Notebook: inference_helpers/inference_landing_page/#inference-notebook
+  - Roboflow Inference:
+    - What is Inference?: index.md
+    - Enterprise Features: enterprise/enterprise.md
+    - Deploy a Model:
+      - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
+      - How Do I Run Inference?: quickstart/inference_101.md
+      - What Devices Can I Use?: quickstart/devices.md
+      - Retrieve Your API Key: quickstart/configure_api_key.md
+      - Collect Data Without a Model: quickstart/stubs.md
+      - Model Licenses: quickstart/licensing.md
+    - Inputs:
       - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-      - Create a Custom Sink for Inference Pipeline: quickstart/create_a_custom_inference_pipeline_sink.md
       - Predict Over UDP: quickstart/run_model_over_udp.md
-      - Collect Data Without a Model: quickstart/stubs.md
+    - Fine-Tuned Model:
+      - Roboflow Models: quickstart/explore_models.md
+      - YOLOv9: fine-tuned/yolov9.md
+      - YOLOv8: fine-tuned/yolov8.md
+      - YOLOv7: fine-tuned/yolov7.md
+      - YOLOv5: fine-tuned/yolov5.md
+      - YOLO-NAS: fine-tuned/yolo_nas.md
     - Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md
@@ -50,14 +58,41 @@ nav:
       - L2CS-Net (Gaze Detection): foundation/gaze.md
       - Segment Anything (Segmentation): foundation/sam.md
       - YOLO-World (Object Detection): foundation/yolo_world.md
+  - Workflows:
+    - What is a Workflow?: workflows/about.md
+    - How to Create and Run a Workflow: workflows/create_and_run.md
+    - Understanding Workflows: workflows/understanding.md
+    - Supported Blocks:
+      - Classify Objects (Single-Class): workflows/classify_objects.md
+      - Classify Objects (Multi-Class): workflows/classify_objects_multi.md
+      - Detect Objects: workflows/detect_objects.md
+      - Detect Keypoints: workflows/detect_keypoints.md
+      - Segment Object Instances: workflows/segment_objects.md
+      - Optical Character Recognition: workflows/ocr.md
+      - Detect QR Codes: workflows/detect_qr_codes.md
+      - Crop: workflows/crop.md
+      - Filter Detections: workflows/filter_detections.md
+      - Offset Detections: workflows/offset_detections.md
+      - Absolute Static and Relative Crop: workflows/absolute_static_crop.md
+      - Reach Consensus Between Models: workflows/reach_consensus.md
+      - Active Learning: workflows/active_learning.md
+      - Foundation Models:
+        - Use an LMM: workflows/use_lmm.md
+        - Use an LMM (Classification): workflows/use_lmm_classification.md
+        - Compare CLIP Vectors: workflows/compare_clip_vectors.md
+        - YOLO-World: workflows/yolo_world.md
+      - Advanced:
+        - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
-    - Ways to Use Inference:
-      - Inference 101: quickstart/inference_101.md
-      - Native Python API: using_inference/native_python_api.md
-      - HTTP API: using_inference/http_api.md
-      - Inference Pipeline: using_inference/inference_pipeline.md
-    - Advanced Usage:
-      - Active Learning: enterprise/active-learning/
+    - Inference Pipeline: using_inference/inference_pipeline.md
+    - Active Learning:
+      - Use Active Learning: enterprise/active-learning/active_learning.md
+      - Sampling Strategies:
+        - Random Sampling: enterprise/active-learning/random_sampling.md
+        - Detection Number: enterprise/active-learning/detection_number.md
+        - Close to Threshold Sampling: enterprise/active-learning/close_to_threshold_sampling.md
+        - Classes Based: enterprise/active-learning/classes_based.md
+    - Enterprise Features:
       - Parallel HTTP API: enterprise/parallel_processing.md
       - Stream Management API: enterprise/stream_management_api.md
     - Inference Helpers:
@@ -66,10 +101,6 @@ nav:
       - Inference SDK: inference_helpers/inference_sdk.md
     - Reference:
       - Inference API Reference: docs/reference/
-      - HTTP API Reference: api.md
-      - Model Aliases: reference_pages/model_aliases.md
-      - Model Licensing: quickstart/licensing.md
-      - Model Device Compatability: quickstart/compatability_matrix.md
       - Running With Docker: quickstart/docker.md
       - Docker Configuration Options: quickstart/docker_configuration_options.md
       - Contribute to Inference: contributing.md

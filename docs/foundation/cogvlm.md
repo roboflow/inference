@@ -68,6 +68,12 @@ The results of CogVLM will appear in your terminal:
 
 CogVLM successfully answered our question, noting there is a forklift close to the conveyor belt in the image.
 
+### Benchmarking
+
+We ran 100 inferences on an NVIDIA T4 GPU to benchmark the performance of CogVLM.
+
+CogVLM ran 100 inferences in 365.22 seconds (11.69 seconds per inference, on average).
+
 ## See Also
 
 - <a href="https://blog.roboflow.com/how-to-deploy-cogvlm/" target="_blank">How to deploy CogVLM</a>
