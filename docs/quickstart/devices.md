@@ -11,7 +11,7 @@ You can set up a server to use computer vision models with Inference on the foll
 - NVIDIA GPU
 - NVIDIA Jetson (JetPack 4.5.x, JetPack 4.6.x, JetPack 5.x)
 
-# Model Compatability
+## Model Compatability
 
 The table below shows on what devices you can deploy models supported by Inference.
 

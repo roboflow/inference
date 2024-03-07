@@ -11,6 +11,7 @@ if `model_manager` instance is capable of running parallel requests (only using 
 `inference.enterprise.parallel`).
 
 There are environmental variables that controls `workflows` behaviour:
+
 * `DISABLE_WORKFLOW_ENDPOINTS` - disabling workflows endpoints from HTTP API
 * `WORKFLOWS_STEP_EXECUTION_MODE` - with values `local` and `remote` allowed to control how `workflows` are executed
 in `inference` HTTP container

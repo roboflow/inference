@@ -11,6 +11,7 @@
 
 ## What elements make `workflows` block?
 Each `workflows` block has:
+
 * block manifest in form of `pydantic` entity - providing structure for JSON step definition and a logic to validate input
 * function to execute step logic with the following signature:
 
@@ -212,17 +213,9 @@ class MyStep(BaseModel, StepInterface):
         )
 ```
 
-Compiler is going to use `validate_field_selector(...)` only against detected selectors - so initial check should
-be done to catch corner-cases when it does not work and provide meaningful error message. In the next stage, 
-`validate_selector_holds_image(...)` that triggers if `field_name=image` by default is going to check if 
-`input_step` that was referred by the selector (and delivered to the method automatically by compiler) is 
-an element of the graph that holds image in their output (`InferenceImage` or step with image output).
-In final stage - `validate_selector_is_inference_parameter(...)` that triggers on field `confidence` will check 
-if the `input_step` is `InferenceParameter` which is the only `workflow` element supposed to provide static value 
-from user input in runtime.
+Compiler is going to use `validate_field_selector(...)` only against detected selectors - so initial check should be done to catch corner-cases when it does not work and provide meaningful error message. In the next stage, `validate_selector_holds_image(...)` that triggers if `field_name=image` by default is going to check if `input_step` that was referred by the selector (and delivered to the method automatically by compiler) is an element of the graph that holds image in their output (`InferenceImage` or step with image output). In final stage - `validate_selector_is_inference_parameter(...)` that triggers on field `confidence` will check  if the `input_step` is `InferenceParameter` which is the only `workflow` element supposed to provide static value from user input in runtime.
 
-Additional parameter, called `index` will only be filled by compiler if specific manifest field is a list of selectors,
-then validation will happen for each element separately.
+Additional parameter, called `index` will only be filled by compiler if specific manifest field is a list of selectors, then validation will happen for each element separately.
 
 #### Validation of input binding
 

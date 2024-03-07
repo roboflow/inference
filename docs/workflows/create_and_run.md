@@ -13,58 +13,96 @@ In this guide, we walk through how to create a basic workflow that completes thr
 
 1. Run a model to detect objects in an image.
 2. Crops each region.
-3. Runs a classification model to return a specific label for each cropped region.
+3. Runs OCR on each region.
 
-This is a common use case for workflows, where you have a model that can detect abstract objects (i.e. car parts) and a classification model that can identify specific features (i.e. car parts).
-
-You can use the guidance below as a template to learn the structure of workflows, or verbatim to create your own detect-then-classify workflows.
-
-## Understanding Workflow Specifications
-
-Workflow specification is defined via a JSON document in the following format:
-```json
-{
-  "specification": {
-    "version": "1.0",
-    "inputs": [],
-    "steps": [],
-    "outputs": []
-  }
-}
-```
-
-In general, we have three main elements of specification:
-* `inputs` - the section where we define all parameters that can be passed in the execution time by `inference` user
-* `steps` - the section where we define computation steps, their interconnections, connections to `inputs` and `outputs`
-* `outputs` - the section where we define all fields that needs to be rendered in the final result
-
-### How can we refer between elements of specification?
-To create a graph of computations, we need to define links between steps - in order to do it - we need to have a 
-way to refer to specific elements. By convention, the following references are allowed: 
-`${type_of_element}.{name_of_element}` and `${type_of_element}.{name_of_element}.{property}`.
-Examples:
-* `$inputs.image` - reference to an input called `image`
-* `$steps.my_step.predictions` - reference to a step called `my_step` and its property `predictions`
-Additionally, defining **outputs**, it is allowed (since `v0.9.14`) to use wildcard selector
-(`${type_of_element}.{name_of_element}.*`) with intention to extract all properties of given step.
-
-### How can we refer between elements of specification?
-To create a graph of computations, we need to define links between steps - in order to do it - we need to have a 
-way to refer to specific elements. By convention, the following references are allowed: 
-`${type_of_element}.{name_of_element}` and `${type_of_element}.{name_of_element}.{property}`.
-Examples:
-* `$inputs.image` - reference to an input called `image`
-* `$steps.my_step.predictions` - reference to a step called `my_step` and its property `predictions`
-Additionally, defining **outputs**, it is allowed (since `v0.9.14`) to use wildcard selector
-(`${type_of_element}.{name_of_element}.*`) with intention to extract all properties of given step.
+You can use the guidance below as a template to learn the structure of workflows, or verbatim to create your own detect-then-OCR workflows.
 
 ## Step #1: Define an Input
 
+Workflows require a specification to run. A specification takes the follwoing form:
+
+```python
+SPECIFICATION = {
+    "specification": {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [],
+        "outputs": []
+    }
+}
+```
+
+Within this structure, we need to define our:
+
+1. Model inputs
+2. The steps to run
+3. The expected output
+
+First, let's define our inputs.
+
+For this workflow, we will specify an image input:
+
+```json
+"steps": [
+    { "type": "InferenceImage", "name": "image" },   # definition of input image
+]
+```
+
 ## Step #2: Define Processing Steps
+
+Next, we need to define our processing steps. For this guide, we want to:
+
+1. Run a model to detect license plates.
+2. Crop each license plate.
+3. Run OCR on each license plate.
+
+We can define these steps as follows:
+
+```json
+"steps": [
+    {
+        "type": "ObjectDetectionModel",   # definition of object detection model
+        "name": "plates_detector",  
+        "image": "$inputs.image",  # linking input image into detection model
+        "model_id": "vehicle-registration-plates-trudk/2",  # pointing model to be used
+    },
+        {
+        "type": "DetectionOffset",  # DocTR model usually works better if there is slight padding around text to be detected - hence we are offseting predictions
+        "name": "offset",
+        "predictions": "$steps.plates_detector.predictions",  # reference to the object detection model output
+        "offset_x": 200,  # value of offset
+        "offset_y": 40,  # value of offset
+    },
+    {
+        "type": "Crop",   # we would like to run OCR against each and every plate detected - hece we are cropping inputr image using offseted predictions
+        "name": "cropping",
+        "image": "$inputs.image",  # we need to point image to crop
+        "detections": "$steps.offset.predictions",  # we need to point detections that will be used to crop image (in this case - we use offseted prediction)
+    },        
+    {
+        "type": "OCRModel",  # we define OCR model
+        "name": "step_ocr",
+        "image": "$steps.cropping.crops",  # OCR model as an input takes a reference to crops that were created based on detections
+    },
+],
+```
 
 ## Step #3: Define an Output
 
+Finally, we need to define the output for our workflow:
+
+```json
+"outputs": [
+    { "type": "JsonField", "name": "predictions", "selector": "$steps.plates_detector.predictions" },  # output with object detection model predictions
+    { "type": "JsonField", "name": "image", "selector": "$steps.plates_detector.image" },  # output with image metadata - required by `supervision`
+    { "type": "JsonField", "name": "recognised_plates", "selector": "$steps.step_ocr.result" },  # field that will retrieve OCR result
+    { "type": "JsonField", "name": "crops", "selector": "$steps.cropping.crops" },  # crops that were made based on plates detections - used here just to ease visualisation
+]   
+```
+
 ## Step #4: Run Your Workflow
+
+Now that we have our specification, we can run our workflow using the Inference SDK.
 
 === "Run Locally with Inference"
 
@@ -75,19 +113,35 @@ Additionally, defining **outputs**, it is allowed (since `v0.9.14`) to use wildc
     ```
 
     ```python
-    from inference_sdk import InferenceHTTPClient
+    from inference_sdk import InferenceHTTPClient, VisualisationResponseFormat, InferenceConfiguration
+    import supervision as sv
+    import cv2
+    from matplotlib import pyplot as plt
 
     client = InferenceHTTPClient(
         api_url="http://127.0.0.1:9001",
         api_key="YOUR_API_KEY"
     )
 
-    client.infer_from_workflow(
-        specification={},  # workflow specification goes here
-        images={},  # input images goes here
-        parameters={},  # input parameters other than image goes here
+    client.configure(
+        InferenceConfiguration(output_visualisation_format=VisualisationResponseFormat.NUMPY)
     )
+
+    license_plate_image_1 = cv2.imread("./images/license_plate_1.jpg")
+
+    license_plate_result_1 = client.infer_from_workflow(
+        specification=READING_PLATES_SPECIFICATION["specification"],
+        images={"image": license_plate_image_1},
+    )
+
+    plt.title(f"Recognised plate: {license_plate_result_1['recognised_plates']}")
+    plt.imshow(license_plate_result_1["crops"][0]["value"][:, :, ::-1])
+    plt.show()
     ```
+
+    Here are the results:
+
+    ![Recognised plate: "34 6511"](https://media.roboflow.com/inference/license_plate_1.png)
 
 === "Run in the Roboflow Cloud"
 
@@ -99,27 +153,25 @@ Additionally, defining **outputs**, it is allowed (since `v0.9.14`) to use wildc
         api_key="YOUR_API_KEY"
     )
 
-    client.infer_from_workflow(
-        specification={},  # workflow specification goes here
-        images={},  # input images goes here
-        parameters={},  # input parameters other than image goes here
+    client.configure(
+        InferenceConfiguration(output_visualisation_format=VisualisationResponseFormat.NUMPY)
     )
+
+    license_plate_image_1 = cv2.imread("./images/license_plate_1.jpg")
+
+    license_plate_result_1 = client.infer_from_workflow(
+        specification=READING_PLATES_SPECIFICATION["specification"],
+        images={"image": license_plate_image_1},
+    )
+
+    plt.title(f"Recognised plate: {license_plate_result_1['recognised_plates']}")
+    plt.imshow(license_plate_result_1["crops"][0]["value"][:, :, ::-1])
+    plt.show()
     ```
 
-=== "Integrate with SDK (Advanced)"
+    Here are the results:
 
-    ```python
-    from inference.enterprise.workflows.complier.core import compile_and_execute
-
-    IMAGE = ...
-    result = compile_and_execute(
-        workflow_specification={},
-        runtime_parameters={
-            "image": IMAGE,
-        },
-        api_key="YOUR_API_KEY",
-    )
-    ```
+    ![Recognised plate: "34 6511"](https://media.roboflow.com/inference/license_plate_1.png)
 
 ## Next Steps
 

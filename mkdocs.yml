@@ -31,18 +31,7 @@ nav:
   - Roboflow Inference:
     - What is Inference?: index.md
     - Enterprise Features: enterprise/enterprise.md
-    - Deploy a Model:
-      - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
-      - How Do I Run Inference?: quickstart/inference_101.md
-      - What Devices Can I Use?: quickstart/devices.md
-      - Retrieve Your API Key: quickstart/configure_api_key.md
-      - Collect Data Without a Model: quickstart/stubs.md
-      - Model Licenses: quickstart/licensing.md
-    - Inputs:
-      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-      - Predict Over UDP: quickstart/run_model_over_udp.md
-    - Fine-Tuned Model
+    - Supported Fine-Tuned Models:
       - From Roboflow: quickstart/explore_models.md
       - From Local Weights: models/from_local_weights.md
       - YOLOv9: fine-tuned/yolov9.md
@@ -50,6 +39,16 @@ nav:
       - YOLOv7: fine-tuned/yolov7.md
       - YOLOv5: fine-tuned/yolov5.md
       - YOLO-NAS: fine-tuned/yolo_nas.md
+    - Run a Model:
+      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
+      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+      - Predict Over UDP: quickstart/run_model_over_udp.md
+    - Deploy a Model:
+      - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
+      - How Do I Run Inference?: quickstart/inference_101.md
+      - What Devices Can I Use?: quickstart/devices.md
+      - Retrieve Your API Key: quickstart/configure_api_key.md
+      - Model Licenses: quickstart/licensing.md
     - Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md
@@ -83,6 +82,7 @@ nav:
         - Compare CLIP Vectors: workflows/compare_clip_vectors.md
         - YOLO-World: workflows/yolo_world.md
       - Advanced:
+        - Create a New Workflow Block: workflows/workflows_contribution.md
         - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
     - Inference Pipeline: using_inference/inference_pipeline.md
@@ -93,6 +93,7 @@ nav:
         - Detection Number: enterprise/active-learning/detection_number.md
         - Close to Threshold Sampling: enterprise/active-learning/close_to_threshold_sampling.md
         - Classes Based: enterprise/active-learning/classes_based.md
+      - Collect Data Without a Model: quickstart/stubs.md
     - Enterprise Features:
       - Parallel HTTP API: enterprise/parallel_processing.md
       - Stream Management API: enterprise/stream_management_api.md
