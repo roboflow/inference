@@ -25,13 +25,13 @@
 
 ## 👋 hello
 
-Roboflow Inference is an open-source, powerful, and versatile platform designed to simplify the deployment of computer vision models. It enables developers to easily run object detection, classification, and instance segmentation and utilize foundation models like CLIP and SAM through a Python-native package, a self-hosted inference server, or a fully managed API.
+Roboflow Inference is an open-source and versatile platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, and instance segmentation and utilize foundation models like [CLIP](https://inference.roboflow.com/foundation/clip), [Segment Anything](https://inference.roboflow.com/foundation/sam), and [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
-Explore our enterprise [options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
+Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
 ## 💻 install
 
-Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/).
+Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
 
 ```bash
 pip install inference
@@ -40,11 +40,10 @@ pip install inference
 <details>
 <summary>👉 additional considerations</summary>
 
-<br>
 
 - hardware
 
-  Improve model performance in GPU-accelerated environments.
+  Enhance model performance in GPU-accelerated environments by installing CUDA-compatible dependencies.
   
   ```bash
   pip install inference-gpu
@@ -52,7 +51,7 @@ pip install inference
 
 - models
 
-  Install model-specific dependencies, ensuring code compatibility and license compliance. Learn more about the [models](https://inference.roboflow.com/#extras) supported by Inference.
+  The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](https://inference.roboflow.com/#extras) supported by Inference.
 
   ```bash
   pip install inference[yolo-world]
@@ -60,11 +59,15 @@ pip install inference
 
 </details>
 
-Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
-
 ## 🔥 quickstart
 
-TODO
+```python
+from inference import get_model
+
+model = get_model(model_id="yolov8n-640")
+
+results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+```
 
 ## 📟 inference server
 
@@ -72,11 +75,19 @@ TODO
 
 ## ⏩ workflows
 
-TODO
+Test our [sample workflows](https://huggingface.co/spaces/Roboflow/workflows) on your data.
 
 ## 🧪 examples
 
 TODO
+
+## 🔑 keys
+
+Inference enables the deployment of a wide range of pre-trained and foundational models without an API key. To access thousands of fine-tuned models shared by the [Roboflow Universe](https://universe.roboflow.com/) community, [configure your](https://app.roboflow.com/settings/api) API key.
+
+```bash
+export ROBOFLOW_API_KEY=<YOUR_API_KEY>
+```
 
 ## 📚 documentation
 
