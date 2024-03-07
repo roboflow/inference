@@ -60,38 +60,6 @@ Inference Pipelines can consume many different types of video streams.
 - Video URL (string): Providing the path to a video URL is equivalent to providing a video file path and voids needing to first download the video.
 - RTSP URL (string): Providing an RTSP URL will result in the pipeline streaming frames from an RTSP stream as fast as possible, then running the `on_prediction` callback on the latest available frame.
 
-
-## How to use Yolo World model in `InferencePipeline`
-
-!!! Info
-    
-    **Breaking change!** There were versions: `0.9.14` and `0.9.15` where Yolo World was exposed
-    behind `InferencePipeline.init(...)` initializer that you needed to run with specific combination 
-    of parameters to alter default behavior of pipeline such that it runs against YoloWorld model. 
-    We decided to provide an explicit way of running this foundation model in `InferencePipeline` providing
-    a dedicated init function starting from version `0.9.16` 
-
-You can easily run predictions against `YoloWorld` model using `InferencePipeline`. There is a custom
-init method to ease handling that use-case:
-
-```python
-# import the InferencePipeline interface
-from inference import InferencePipeline
-# import a built-in sink called render_boxes (sinks are the logic that happens after inference)
-from inference.core.interfaces.stream.sinks import render_boxes
-
-pipeline = InferencePipeline.init_with_yolo_world(
-    video_reference="./your_video.mp4",
-    classes=["person", "dog", "car", "truck"],
-    model_size="s",
-    on_prediction=render_boxes,
-)
-# start the pipeline
-pipeline.start()
-# wait for the pipeline to finish
-pipeline.join()
-```
-
 ## How to provide a custom inference logic to `InferencePipeline`
 
 As of `inference>=0.9.16`, Inference Pipelines support running custom inference logic. This means, instead of passing 
@@ -277,39 +245,6 @@ For instance, Roboflow object-detection prediction contains the following keys:
 - `confidence`: The confidence value of the prediction (between 0 and 1)
 - `class`: The predicted class name
 - `class_id`: The predicted class ID
-
-**video_frame**
-
-The video frame is provided as a video frame object with attributes:
-
-- `image`: A numpy array containing the image pixels
-- `frame_id`: An integer of the frame ID, a monotonically increasing integer starting at 0 from the time the pipeline was started
-- `frame_timestamp`: A python datetime object of when the frame was captured
-
-### Built In Sinks
-
-Inference has [several sinks built in](../../docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
-
-#### `render_boxes(...)`
-
-The [render boxes sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
-It only works for Roboflow models that yields detection-based output (`object-detection`, `instance-segmentation`, `keypoint-detection`), yet not all details of predictions may be 
-displayed by default (like detected key-points).
-
-#### `UDPSink(...)`
-
-The [UDP sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
-It uses Python-default json serialisation - so predictions must be serializable, otherwise error will be thrown.  
-
-#### `multi_sink(...)`
-
-The [Multi-Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
-
-#### `VideoFileSink(...)`
-
-The [Video File Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink) visualizes predictions, similar to the `render_boxes(...)` sink, however, instead of displaying the annotated frames, it saves them to a video file.
-All constraints related to `render_boxes(...)` apply.
-
 
 ## Other Pipeline Configuration
 

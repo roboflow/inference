@@ -106,6 +106,37 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
     sv.plot_image(annotated_image)
     ```
 
+=== "Inference Pipeline (Video)"
+
+!!! Info
+    
+        **Breaking change!** There were versions: `0.9.14` and `0.9.15` where Yolo World was exposed
+        behind `InferencePipeline.init(...)` initializer that you needed to run with specific combination 
+        of parameters to alter default behavior of pipeline such that it runs against YoloWorld model. 
+        We decided to provide an explicit way of running this foundation model in `InferencePipeline` providing
+        a dedicated init function starting from version `0.9.16` 
+
+    You can easily run predictions against `YoloWorld` model using `InferencePipeline`. There is a custom
+    init method to ease handling that use-case:
+
+    ```python
+    # import the InferencePipeline interface
+    from inference import InferencePipeline
+    # import a built-in sink called render_boxes (sinks are the logic that happens after inference)
+    from inference.core.interfaces.stream.sinks import render_boxes
+
+    pipeline = InferencePipeline.init_with_yolo_world(
+        video_reference="./your_video.mp4",
+        classes=["person", "dog", "car", "truck"],
+        model_size="s",
+        on_prediction=render_boxes,
+    )
+    # start the pipeline
+    pipeline.start()
+    # wait for the pipeline to finish
+    pipeline.join()
+    ```
+
 In this code, we load YOLO-World, run YOLO-World on an image, and annotate the image with the predictions from the model.
 
 Above, replace:
@@ -122,3 +153,9 @@ python app.py
 The result from YOLO-World will be displayed in a new window.
 
 ![YOLO-World results](https://media.roboflow.com/yolo-world-dog.png)
+
+### Benchmarking
+
+We ran 100 inferences on an NVIDIA T4 GPU to benchmark the performance of YOLO-World.
+
+YOLO-World ran 100 inferences in 9.18 seconds (0.09 seconds per inference, on average).

@@ -10,6 +10,12 @@ To use Grounding DINO effectively, we recommend experimenting with the model to 
 
 ### How to Use Grounding DINO
 
+First, install the Inference Grounding DINO extension:
+
+```
+pip install "inference[grounding-dino]"
+```
+
 Create a new Python file called `app.py` and add the following code:
 
 ```python

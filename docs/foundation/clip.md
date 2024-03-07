@@ -183,6 +183,14 @@ print(result)
 
 The resulting number will be between 0 and 1. The higher the number, the more similar the image and text are.
 
+### Benchmarking
+
+We ran 100 inferences on an NVIDIA T4 GPU to benchmark the performance of CLIP.
+
+- CLIP Embed Images: 0.5 seconds per inference (59.55 seconds for 100 inferences).
+- CLIP Embed Text: 0.5 seconds per inference (51.52 seconds for 100 inferences).
+- CLIP Compare Image and Text: 0.58 seconds per inference (58.03 seconds for 100 inferences).
+
 ## See Also
 
 - <a href="https://blog.roboflow.com/openai-clip/" target="_blank">What is CLIP?</a>

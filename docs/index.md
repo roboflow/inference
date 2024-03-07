@@ -1,32 +1,13 @@
 ---
 hide:
-  - navigation
   - toc
 ---
 
-<style>
-  .md-typeset h1,
-  .md-content__button {
-    display: none;
-  }
-  @media screen and (min-width: 800px) {.md-content {
-    padding-left: 10%;
-    padding-right: 10%;
-  }}
-</style>
-
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-<a href="https://roboflow.com" target="_blank">Roboflow</a> Inference enables you to deploy computer vision models faster than ever.
+Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, and instance segmentation and utilize foundation models like [CLIP](https://inference.roboflow.com/foundation/clip), [Segment Anything](https://inference.roboflow.com/foundation/sam), and [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
-With a `pip install inference` and `inference server start`, you can start a server to run a fine-tuned model on images, videos, and streams.
-
-Inference supports running object detection, classification, instance segmentation, and foundation models (i.e. SAM, CLIP).
-
-You can <a href="https://github.com/roboflow/notebooks" target="_blank">train and deploy your own custom model</a> or use one of the 50,000+
-<a href="https://universe.roboflow.com" target="_blank">fine-tuned models shared by the Roboflow Universe community</a>.
-
-You can run Inference on an edge device like an NVIDIA Jetson, or on cloud computing platforms like AWS, GCP, and Azure.
+Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
 <a href="/quickstart/run_a_model/" class="button">Get started with our "Run your first model" guide</a>
 
@@ -52,174 +33,169 @@ Here is an example of a model running on a video using Inference:
   <source src="https://media.roboflow.com/football-video.mp4" type="video/mp4">
 </video>
 
-## 💻 Features
-
-Inference provides a scalable method through which you can use computer vision models.
-
-Inference is backed by:
-
-- A server, so you don’t have to reinvent the wheel when it comes to serving your model to disperate parts of your application.
-
-- Standard APIs for computer vision tasks, so switching out the model weights and architecture can be done independently of your application code.
-
-- Model architecture implementations, which implement the tensor parsing glue between images and predictions for supervised models that you've fine-tuned to perform custom tasks.
-
-- A model registry, so your code can be independent from your model weights & you don't have to re-build and re-deploy every time you want to iterate on your model weights.
-
-- Data management integrations, so you can collect more images of edge cases to improve your dataset & model the more it sees in the wild.
-
-And more!
-
-### 📌 Install pip vs Docker:
-
-- **pip**: Installs `inference` into your Python environment. Lightweight, good for Python-centric projects.
-- **Docker**: Packages `inference` with its environment. Ensures consistency across setups; ideal for scalable deployments.
 
 ## 💻 install
 
-### With ONNX CPU Runtime:
-
-For CPU powered inference:
+Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
 
 ```bash
 pip install inference
 ```
 
-or
+<details>
+<summary>👉 additional considerations</summary>
 
-```bash
-pip install inference-cpu
+  ### Hardware
+
+  Enhance model performance in GPU-accelerated environments by installing CUDA-compatible dependencies.
+  
+  ```bash
+  pip install inference-gpu
+  ```
+
+  ### Model-specific dependencies
+
+  The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](https://inference.roboflow.com/#extras) supported by Inference.
+
+  ```bash
+  pip install inference[yolo-world]
+  ```
+
+</details>
+
+## 🔥 quickstart
+
+Use Inference SDK to run models locally with just a few lines of code. The image input can be a URL, a numpy array, or a PIL image.
+
+```python
+from inference import get_model
+
+model = get_model(model_id="yolov8n-640")
+
+results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
 ```
 
-### With ONNX GPU Runtime:
+<details>
+<summary>👉 roboflow models</summary>
 
-If you have an NVIDIA GPU, you can accelerate your inference with:
+<br>
 
-```bash
-pip install inference-gpu
-```
+Set up your `ROBOFLOW_API_KEY` to access thousands of fine-tuned models shared by the [Roboflow Universe](https://universe.roboflow.com/) community and your custom model. Navigate to 🔑 keys section to learn more.
 
-### Without ONNX Runtime:
+```python
+from inference import get_model
 
-Roboflow Inference uses Onnxruntime as its core inference engine. Onnxruntime provides an array of different <a href="https://onnxruntime.ai/docs/execution-providers/" target="_blank">execution providers</a> that can optimize inference on differnt target devices. If you decide to install onnxruntime on your own, install inference with:
+model = get_model(model_id="soccer-players-5fuqs/1")
 
-```bash
-pip install inference-core
-```
-
-Alternatively, you can take advantage of some advanced execution providers using one of our published docker images.
-
-### Extras:
-
-Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
-
-| extra   | description                                                                                                     |
-| :------ | :-------------------------------------------------------------------------------------------------------------- |
-| `clip`  | Ability to use the core `CLIP` model (by OpenAI)                                                                |
-| `gaze`  | Ability to use the core `Gaze` model                                                                            |
-| `http`  | Ability to run the http interface                                                                               |
-| `sam`   | Ability to run the core `Segment Anything` model (by Meta AI)                                                   |
-| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>) |
-
-**_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
-
-Example install with CLIP dependencies:
-
-```bash
-pip install inference[clip]
-```
-
-## 🐋 docker
-
-You can learn more about Roboflow Inference Docker Image build, pull and run in our <a href="https://roboflow.github.io/inference/quickstart/docker/" target="_blank">documentation</a>.
-
-- Run on x86 CPU:
-
-```bash
-docker run -it --net=host roboflow/roboflow-inference-server-cpu:latest
-```
-
-- Run on NVIDIA GPU:
-
-```bash
-docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:latest
-```
-
-<details close>
-<summary>👉 more docker run options</summary>
-
-- Run on arm64 CPU:
-
-```bash
-docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
-```
-
-- Run on NVIDIA Jetson with JetPack `4.x`:
-
-```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
-```
-
-- Run on NVIDIA Jetson with JetPack `5.x`:
-
-```bash
-docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
+results = model.infer(
+    image="https://media.roboflow.com/inference/soccer.jpg",
+    confidence=0.5,
+    iou_threshold=0.5
+)
 ```
 
 </details>
 
-<br/>
+<details>
+<summary>👉 foundational models</summary>
 
-## 📟 CLI
 
-To use the CLI you will need python 3.7 or higher. To ensure you have the correct version of python, run `python --version` in your terminal. To install python, follow the instructions <a href="https://www.python.org/downloads/" target="_blank">here</a>.
+- [CLIP Embeddings](https://inference.roboflow.com/foundation/clip) - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
 
-After you have python installed, install the pypi package `inference-cli` or `inference`:
+  ```python
+  from inference.models import Clip
 
-```bash
-pip install inference-cli
+  model = Clip()
+
+  embeddings_text = clip.embed_text("a football match")
+  embeddings_image = model.embed_image("https://media.roboflow.com/inference/soccer.jpg")
+  ```
+
+- [Segment Anything](https://inference.roboflow.com/foundation/sam) - segment all objects visible in the image or only those associated with selected points or boxes.
+
+  ```python
+  from inference.models import SegmentAnything
+
+  model = SegmentAnything()
+
+  result = model.segment_image("https://media.roboflow.com/inference/soccer.jpg")
+  ```
+
+- [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) - an almost real-time zero-shot detector that enables the detection of any objects without any training.
+
+  ```python
+  from inference.models import YOLOWorld
+
+  model = YOLOWorld(model_id="yolo_world/l")
+  
+  result = model.infer(
+      image="https://media.roboflow.com/inference/dog.jpeg",
+      text=["person", "backpack", "dog", "eye", "nose", "ear", "tongue"],
+      confidence=0.03
+  )
+  ```
+
+</details>
+
+## 📟 inference server
+
+You can also run Inference as a microservice with Docker.
+
+### deploy server
+  
+  The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](https://inference.roboflow.com/quickstart/docker/#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
+
+  ```bash
+  inference server start
+  ```
+
+### run client
+  
+  Consume inference server predictions using the HTTP client available in the Inference SDK.
+
+  ```python
+  from inference_sdk import InferenceHTTPClient
+  
+  client = InferenceHTTPClient(
+      api_url="http://localhost:9001",
+      api_key=<ROBOFLOW_API_KEY>
+  )
+  with client.use_model(model_id="soccer-players-5fuqs/1"):
+      predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
+  ```
+  
+  If you're using the hosted API, change the local API URL to `https://detect.roboflow.com`. Accessing the hosted inference server and/or using any of the fine-tuned models require a `ROBOFLOW_API_KEY`. For further information, visit the 🔑 keys section.
+
+## 🎥 inference pipeline
+
+The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
+
+```python
+from inference import InferencePipeline
+from inference.core.interfaces.stream.sinks import render_boxes
+
+pipeline = InferencePipeline.init(
+    model_id="yolov8x-1280",
+    video_reference="https://media.roboflow.com/inference/people-walking.mp4",
+    on_prediction=render_boxes
+)
+
+pipeline.start()
+pipeline.join()
 ```
 
-From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md/#via-cli) for more information.
+## 🔑 keys
+
+Inference enables the deployment of a wide range of pre-trained and foundational models without an API key. To access thousands of fine-tuned models shared by the [Roboflow Universe](https://universe.roboflow.com/) community, [configure your](https://app.roboflow.com/settings/api) API key.
 
 ```bash
-inference server start
+export ROBOFLOW_API_KEY=<YOUR_API_KEY>
 ```
 
-CLI supports also stopping the server via:
+## 📚 documentation
 
-```bash
-inference server stop
-```
+Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
 
-To use the CLI to make inferences, first <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">find your project ID and model version number in Roboflow</a>.
+## © license
 
-See more detailed documentation on [HTTP Inference quickstart via CLI](./using_inference/http_api.md).
-
-```bash
-inference infer {image_path} \
-    --project-id {project_id} \
-    --model-version {model_version} \
-    --api-key {api_key}
-```
-
-## Enterprise License
-
-With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
-
-- Server cluster deployment
-- Device management
-- Active learning
-- YOLOv5 and YOLOv8 model sub-license
-
-To learn more, <a href="https://roboflow.com/sales" target="_blank">contact the Roboflow team</a>.
-
-## More Roboflow Open Source Projects
-
-| Project                                                                                      | Description                                                                                                                                            |
-| :------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a href="https://roboflow.com/supervision" target="_blank">supervision</a>                   | General-purpose utilities for use in computer vision projects, from predictions filtering and display to object tracking to model evaluation.          |
-| <a href="https://github.com/autodistill/autodistill" target="_blank">Autodistill</a>         | Automatically label images for use in training computer vision models.                                                                                 |
-| <a href="https://github.com/roboflow/inference" target="_blank">Inference</a> (this project) | An easy-to-use, production-ready inference server for computer vision supporting deployment of many popular model architectures and fine-tuned models. |
-| <a href="https://roboflow.com/notebooks" target="_blank">Notebooks</a>                       | Tutorials for computer vision tasks, from training state-of-the-art models to tracking objects to counting objects in a zone.                          |
-| <a href="https://github.com/roboflow/roboflow-collect" target="_blank">Collect</a>           | Automated, intelligent data collection powered by CLIP.                                                                                                |
+The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
