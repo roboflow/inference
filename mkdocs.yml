@@ -42,8 +42,9 @@ nav:
       - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - Predict Over UDP: quickstart/run_model_over_udp.md
-    - Fine-Tuned Model:
-      - Roboflow Models: quickstart/explore_models.md
+    - Fine-Tuned Model
+      - From Roboflow: quickstart/explore_models.md
+      - From Local Weights: models/from_local_weights.md
       - YOLOv9: fine-tuned/yolov9.md
       - YOLOv8: fine-tuned/yolov8.md
       - YOLOv7: fine-tuned/yolov7.md
