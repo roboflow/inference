@@ -22,3 +22,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/yolov5` |         <a href="https://github.com/ultralytics/yolov5/blob/master/LICENSE" target="_blank">AGPL-3.0</a>         |
 | `inference/models/yolov7` |          <a href="https://github.com/WongKinYiu/yolov7/blob/main/README.md" target="_blank">GPL-3.0</a>          |
 | `inference/models/yolov8` |      <a href="https://github.com/ultralytics/ultralytics/blob/master/LICENSE" target="_blank">AGPL-3.0</a>       |
+| `inference/models/yolov9` |      <a href="https://github.com/WongKinYiu/yolov9/blob/main/LICENSE.md" target="_blank">GPL-3.0</a>       |
+| `inference/models/yolo_world` |      <a href="https://github.com/AILab-CVC/YOLO-World/blob/master/LICENSE" target="_blank">GPL-3.0</a>       |
+| `inference/models/cogvlm` |      <a href="https://raw.githubusercontent.com/THUDM/CogVLM/main/LICENSE" target="_blank">Apache 2.0</a>       |
+| `inference/models/yolonas` |      <a href="https://github.com/Deci-AI/super-gradients/blob/master/LICENSE.YOLONAS.md" target="_blank">YOLO-NAS License</a>       |
