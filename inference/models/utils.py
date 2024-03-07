@@ -7,15 +7,18 @@ from inference.core.models.stubs import (
     ObjectDetectionModelStub,
 )
 from inference.core.registries.roboflow import get_model_type
+from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
     VitClassification,
+    YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
     YOLOv7InstanceSegmentation,
     YOLOv8Classification,
     YOLOv8InstanceSegmentation,
     YOLOv8ObjectDetection,
+    YOLOv9ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
@@ -35,6 +38,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov5v6m"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6l"): YOLOv5ObjectDetection,
     ("object-detection", "yolov5v6x"): YOLOv5ObjectDetection,
+    ("object-detection", "yolov9"): YOLOv9ObjectDetection,
     ("object-detection", "yolov8"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8s"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8n"): YOLOv8ObjectDetection,
@@ -42,6 +46,9 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov8m"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8l"): YOLOv8ObjectDetection,
     ("object-detection", "yolov8x"): YOLOv8ObjectDetection,
+    ("object-detection", "yolo_nas_s"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_m"): YOLONASObjectDetection,
+    ("object-detection", "yolo_nas_l"): YOLONASObjectDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
@@ -174,7 +181,18 @@ try:
 except:
     pass
 
+try:
+    from inference.models import YOLOWorld
 
-def get_roboflow_model(model_id, api_key=API_KEY, **kwargs):
+    ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld
+except:
+    pass
+
+
+def get_model(model_id, api_key=API_KEY, **kwargs):
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+
+
+def get_roboflow_model(*args, **kwargs):
+    return get_model(*args, **kwargs)

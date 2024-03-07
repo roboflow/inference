@@ -82,7 +82,7 @@ def legacy_infer_with_base64_image(
                 ]
             ),
             data=img_str,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         ),
         "base64",
     )
@@ -460,7 +460,12 @@ def test_detection(test, res_function):
     except Exception as e:
         raise Exception(f"Error in test {test['description']}: {e}")
 
+
 VISUALIZATION_TEST_PARAMS = [p for p in DETECTION_TEST_PARAMS if p[0]["type"] != "classification"]
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_VISUALISATION_TESTS", False)),
+    reason="Skipping visualisation test"
+)
 @pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
 def test_visualization(test, res_function):
     test = deepcopy(test)
@@ -510,6 +515,7 @@ def setup():
     except:
         success = False
 
+    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
@@ -521,7 +527,7 @@ def setup():
             success = True
         except:
             success = False
-        if waited > 30:
+        if waited > MAX_WAIT:
             raise Exception("Test server failed to start")
 
 

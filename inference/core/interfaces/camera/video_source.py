@@ -119,8 +119,7 @@ class SourceMetadata:
 
 
 class VideoSourceMethod(Protocol):
-    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None:
-        ...
+    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None: ...
 
 
 def lock_state_transition(
@@ -146,6 +145,7 @@ class VideoSource:
         adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
+        video_source_properties: Optional[dict[str, float]] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -250,6 +250,8 @@ class VideoSource:
                 processing, before adaptive mode can drop any frame
             maximum_adaptive_frames_dropped_in_row (int): Maximum number of frames dropped in row due to application of
                 adaptive strategy
+            video_source_properties (Optional[dict[str, float]]): Optional dictionary with video source properties
+                corresponding to OpenCV VideoCapture properties cv2.CAP_PROP_* to set values for the video source.
 
         Returns: Instance of `VideoSource` class
         """
@@ -270,6 +272,7 @@ class VideoSource:
             status_update_handlers=status_update_handlers,
             buffer_consumption_strategy=buffer_consumption_strategy,
             video_consumer=video_consumer,
+            video_source_properties=video_source_properties,
         )
 
     def __init__(
@@ -279,6 +282,7 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
+        video_source_properties: Optional[dict[str, float]],
     ):
         self._stream_reference = stream_reference
         self._video: Optional[cv2.VideoCapture] = None
@@ -292,6 +296,7 @@ class VideoSource:
         self._frames_buffering_allowed = True
         self._stream_consumption_thread: Optional[Thread] = None
         self._state_change_lock = Lock()
+        self._video_source_properties = video_source_properties or {}
 
     @lock_state_transition
     def restart(self, wait_on_frames_consumption: bool = True) -> None:
@@ -508,6 +513,9 @@ class VideoSource:
             raise SourceConnectionError(
                 f"Cannot connect to video source under reference: {self._stream_reference}"
             )
+        initialize_source_properties(
+            video=self._video, properties=self._video_source_properties
+        )
         self._source_properties = discover_source_properties(stream=self._video)
         self._video_consumer.reset(source_properties=self._source_properties)
         if self._source_properties.is_file:
@@ -627,11 +635,11 @@ class VideoSource:
 
         Example:
             ```python
-            >>> source = VideoSource.init(video_reference="./some.mp4")
-            >>> source.start()
+            source = VideoSource.init(video_reference="./some.mp4")
+            source.start()
 
-            >>> for frame in source:
-            >>>     pass
+            for frame in source:
+                 pass
             ```
         """
         try:
@@ -883,6 +891,14 @@ class VideoConsumer:
             buffer=buffer,
             decoding_pace_monitor=self._decoding_pace_monitor,
         )
+
+
+def initialize_source_properties(
+    video: cv2.VideoCapture, properties: dict[str, float]
+) -> None:
+    for property_id, value in properties.items():
+        cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
+        video.set(cv2_id, value)
 
 
 def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:

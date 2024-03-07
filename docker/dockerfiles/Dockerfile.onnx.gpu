@@ -21,6 +21,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.cogvlm.txt \
+    requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     ./
 
@@ -35,6 +36,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
+    -r requirements.yolo_world.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
@@ -46,7 +48,7 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
+RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
 
 WORKDIR /notebooks
 COPY examples/notebooks .
@@ -60,5 +62,8 @@ ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV API_LOGGING_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

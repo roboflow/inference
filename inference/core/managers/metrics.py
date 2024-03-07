@@ -1,4 +1,3 @@
-import json
 import platform
 import re
 import socket
@@ -11,7 +10,7 @@ from inference.core.version import __version__
 
 
 def get_model_metrics(
-    inverence_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
+    inference_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
 ) -> dict:
     """
     Gets the metrics for a given model between a specified time range.
@@ -30,7 +29,7 @@ def get_model_metrics(
     """
     now = time.time()
     inferences_with_times = cache.zrangebyscore(
-        f"inference:{inverence_server_id}:{model_id}", min=min, max=max, withscores=True
+        f"inference:{inference_server_id}:{model_id}", min=min, max=max, withscores=True
     )
     num_inferences = len(inferences_with_times)
     inference_times = []
@@ -46,7 +45,7 @@ def get_model_metrics(
         sum(inference_times) / len(inference_times) if len(inference_times) > 0 else 0
     )
     errors_with_times = cache.zrangebyscore(
-        f"error:{inverence_server_id}:{model_id}", min=min, max=max, withscores=True
+        f"error:{inference_server_id}:{model_id}", min=min, max=max, withscores=True
     )
     num_errors = len(errors_with_times)
     return {
@@ -56,7 +55,7 @@ def get_model_metrics(
     }
 
 
-def get_system_info():
+def get_system_info() -> dict:
     """Collects system information such as platform, architecture, hostname, IP address, MAC address, and processor details.
 
     Returns:
@@ -72,8 +71,31 @@ def get_system_info():
         info["ip_address"] = socket.gethostbyname(socket.gethostname())
         info["mac_address"] = ":".join(re.findall("..", "%012x" % uuid.getnode()))
         info["processor"] = platform.processor()
-        return json.dumps(info)
+        return info
     except Exception as e:
         logger.exception(e)
     finally:
         return info
+
+
+def get_inference_results_for_model(
+    inference_server_id: str, model_id: str, min: float = -1, max: float = float("inf")
+):
+    inferences_with_times = cache.zrangebyscore(
+        f"inference:{inference_server_id}:{model_id}", min=min, max=max, withscores=True
+    )
+    inference_results = []
+    for result, score in inferences_with_times:
+        # Don't send large image files
+        if result.get("request", {}).get("image"):
+            del result["request"]["image"]
+        responses = result.get("response")
+        if responses:
+            if not isinstance(responses, list):
+                responses = [responses]
+            for resp in responses:
+                if resp.get("image"):
+                    del resp["image"]
+        inference_results.append({"request_time": score, "inference": result})
+
+    return inference_results

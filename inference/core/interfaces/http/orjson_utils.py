@@ -37,7 +37,7 @@ def orjson_response(
     return ORJSONResponseBytes(content=content)
 
 
-def serialise_deployment_workflow_result(
+def serialise_workflow_result(
     result: Dict[str, Any],
     excluded_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
@@ -50,6 +50,8 @@ def serialise_deployment_workflow_result(
             continue
         if contains_image(element=value):
             value = serialise_image(image=value)
+        elif issubclass(type(value), dict):
+            value = serialise_dict(elements=value)
         elif issubclass(type(value), list):
             value = serialise_list(elements=value)
         serialised_result[key] = value
@@ -61,8 +63,25 @@ def serialise_list(elements: List[Any]) -> List[Any]:
     for element in elements:
         if contains_image(element=element):
             element = serialise_image(image=element)
+        elif issubclass(type(element), dict):
+            element = serialise_dict(elements=element)
+        elif issubclass(type(element), list):
+            element = serialise_list(elements=element)
         result.append(element)
     return result
+
+
+def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
+    serialised_result = {}
+    for key, value in elements.items():
+        if contains_image(element=value):
+            value = serialise_image(image=value)
+        elif issubclass(type(value), dict):
+            value = serialise_dict(elements=value)
+        elif issubclass(type(value), list):
+            value = serialise_list(elements=value)
+        serialised_result[key] = value
+    return serialised_result
 
 
 def contains_image(element: Any) -> bool:

@@ -3,6 +3,7 @@ from typing import Any, List, Tuple, Union
 
 import numpy as np
 
+from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
@@ -17,6 +18,9 @@ class BaseInference:
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data."""
         preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+        logger.debug(
+            f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
+        )
         predicted_arrays = self.predict(preproc_image, **kwargs)
         postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
 
@@ -34,7 +38,7 @@ class BaseInference:
         self,
         predictions: Tuple[np.ndarray, ...],
         preprocess_return_metadata: PreprocessReturnMetadata,
-        **kwargs
+        **kwargs,
     ) -> Any:
         raise NotImplementedError
 
@@ -118,7 +122,7 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=True)
+        responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
 

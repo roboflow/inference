@@ -8,6 +8,7 @@ from inference.core.active_learning.accounting import image_can_be_submitted_to_
 from inference.core.active_learning.batching import generate_batch_name
 from inference.core.active_learning.configuration import (
     prepare_active_learning_configuration,
+    prepare_active_learning_configuration_inplace,
 )
 from inference.core.active_learning.core import (
     execute_datapoint_registration,
@@ -65,6 +66,21 @@ class ActiveLearningMiddleware:
             api_key=api_key,
             model_id=model_id,
             cache=cache,
+        )
+        return cls(
+            api_key=api_key,
+            configuration=configuration,
+            cache=cache,
+        )
+
+    @classmethod
+    def init_from_config(
+        cls, api_key: str, model_id: str, cache: BaseCache, config: Optional[dict]
+    ) -> "ActiveLearningMiddleware":
+        configuration = prepare_active_learning_configuration_inplace(
+            api_key=api_key,
+            model_id=model_id,
+            active_learning_configuration=config,
         )
         return cls(
             api_key=api_key,
@@ -169,6 +185,28 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
             api_key=api_key,
             model_id=model_id,
             cache=cache,
+        )
+        task_queue = Queue(max_queue_size)
+        return cls(
+            api_key=api_key,
+            configuration=configuration,
+            cache=cache,
+            task_queue=task_queue,
+        )
+
+    @classmethod
+    def init_from_config(
+        cls,
+        api_key: str,
+        model_id: str,
+        cache: BaseCache,
+        config: Optional[dict],
+        max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
+    ) -> "ThreadingActiveLearningMiddleware":
+        configuration = prepare_active_learning_configuration_inplace(
+            api_key=api_key,
+            model_id=model_id,
+            active_learning_configuration=config,
         )
         task_queue = Queue(max_queue_size)
         return cls(

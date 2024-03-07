@@ -11,12 +11,12 @@ This example shows how to load a model, run inference, then display the results.
 Next, import a model:
 
 ```python
-from inference import get_roboflow_model
+from inference import get_model
 
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 ```
 
-The `get_roboflow_model` method is a utility function which will help us load a computer vision model from Roboflow. We load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`.
+The `get_model` method is a utility function which will help us load a computer vision model from Roboflow. We load a model by referencing its `model_id`. For Roboflow models, the model ID is a combination of a project name and a version number `f"{project_name}/{version_number}"`.
 
 !!! Hint
 
@@ -25,9 +25,9 @@ The `get_roboflow_model` method is a utility function which will help us load a 
 Next, we can run inference with our model by providing an input image:
 
 ```python
-from inference import get_roboflow_model
+from inference import get_model
 
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 
 results = model.infer("people-walking.jpg") # replace with path to your image
 ```
@@ -37,12 +37,12 @@ The results object is an [inference response object](../../docs/reference/infere
 Now, lets visualize the results using <a href="https://supervision.roboflow.com" target="_blank">Supervision</a>:
 
 ```python
-from inference import get_roboflow_model
+from inference import get_model
 import supervision as sv
 import cv2
 
 #Load model
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 
 #Load image with cv2
 image = cv2.imread("people-walking.jpg")
@@ -51,7 +51,7 @@ image = cv2.imread("people-walking.jpg")
 results = model.infer(image)
 
 #Load results into Supervision Detection API
-detections = sv.Detections.from_roboflow(
+detections = sv.Detections.from_inference(
     results[0].dict(by_alias=True, exclude_none=True)
 )
 
@@ -83,12 +83,12 @@ cv2.imwrite("people-walking-annotated.jpg", annotated_image)
 In the previous example, we saw that we can provide different image types to the `infer(...)` method. The `infer(...)` method accepts images in many forms including PIL images, OpenCV images (Numpy arrays), paths to local images, image URLs, and more. Under the hood, models use the `load_image(...)` method in the [`image_utils` module](../../docs/reference/inference/core/utils/image_utils/).
 
 ```python
-from inference import get_roboflow_model
+from inference import get_model
 
 import cv2
 from PIL import Image
 
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 
 image_url = "https://media.roboflow.com/inference/people-walking.jpg"
 local_image_file = "people-walking.jpg"
@@ -106,9 +106,9 @@ results = model.infer(image_url)
 The `infer(...)` method accepts [keyword arguments to set inference parameters](../../docs/reference/inference/core/models/object_detection_base/#inference.core.models.object_detection_base.ObjectDetectionBaseOnnxRoboflowInferenceModel.infer). The example below shows setting the confidence threshold and the IoU threshold.
 
 ```python
-from inference import get_roboflow_model
+from inference import get_model
 
-model = get_roboflow_model(model_id="yolov8x-1280")
+model = get_model(model_id="yolov8x-1280")
 
 results = model.infer("people-walking.jpg", confidence=0.75, iou_threshold=0.5)
 ```

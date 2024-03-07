@@ -12,8 +12,12 @@ def test_get_onnxruntime_execution_providers_when_empty_input_provided() -> None
 def test_get_onnxruntime_execution_providers_when_valid_input_provided() -> None:
     # when
     result = get_onnxruntime_execution_providers(
-        value="[CUDAExecutionProvider,'CPUExecutionProvider']",
+        value="[CUDAExecutionProvider,'OpenVINOExecutionProvider',CPUExecutionProvider]",
     )
 
     # then
-    assert result == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert result == [
+        "CUDAExecutionProvider",
+        "OpenVINOExecutionProvider",
+        "CPUExecutionProvider",
+    ]

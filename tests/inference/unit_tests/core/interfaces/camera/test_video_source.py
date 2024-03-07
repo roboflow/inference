@@ -3,7 +3,7 @@ from datetime import datetime
 from queue import Queue
 from threading import Thread
 from unittest import mock
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, call
 
 import cv2
 import numpy as np
@@ -1191,3 +1191,27 @@ def assembly_dummy_source_properties(is_file: bool, fps: float) -> SourcePropert
         is_file=is_file,
         fps=fps,
     )
+
+@patch('cv2.VideoCapture')
+def test_source_properties_initialized_on_video_source_using_string_values(mock_video_capture) -> None:
+    mock_video = MagicMock()
+    mock_video.retrieve.return_value = (False, None)
+    mock_video_capture.return_value = mock_video
+
+    # given
+    source = VideoSource.init(video_reference='', video_source_properties={
+        "frame_width": 1281,
+        "frame_height": 721,
+        "fps": 32.0
+    })
+    
+    # when
+    source.start()
+
+    # then
+    source._video.set.assert_has_calls([
+        call(cv2.CAP_PROP_FRAME_WIDTH, 1281),
+        call(cv2.CAP_PROP_FRAME_HEIGHT, 721),
+        call(cv2.CAP_PROP_FPS, 32.0)
+    ], any_order=True)
+

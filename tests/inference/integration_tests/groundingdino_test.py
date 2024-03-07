@@ -24,8 +24,6 @@ TESTS = [
             "text": ["apple"],
         },
         "expected_response": {
-            "visualization": None,
-            "frame_id": None,
             "time": 4.5613939999602735,
             "image": {"width": 950, "height": 796},
             "predictions": [
@@ -134,6 +132,16 @@ TESTS = [
 ]
 
 
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_GROUNDING_DINO_TEST", False)),
+    reason="Skipping grounding dino test",
+)
 @pytest.mark.parametrize("test", TESTS)
 def test_grounding_dino(test):
     payload = deepcopy(test["payload"])
@@ -165,7 +173,7 @@ def setup():
         success = True
     except:
         success = False
-
+    MAX_WAIT = int(os.getenv("MAX_WAIT", 30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
@@ -177,7 +185,7 @@ def setup():
             success = True
         except:
             success = False
-        if waited > 30:
+        if waited > MAX_WAIT:
             raise Exception("Test server failed to start")
 
 

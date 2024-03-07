@@ -9,6 +9,13 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
 from inference.core.logger import logger
+from inference.core.models.defaults import (
+    DEFAULT_CLASS_AGNOSTIC_NMS,
+    DEFAULT_CONFIDENCE,
+    DEFAULT_IOU_THRESH,
+    DEFAULT_MAX_CANDIDATES,
+    DEFAUlT_MAX_DETECTIONS,
+)
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.validate import (
@@ -17,17 +24,12 @@ from inference.core.models.utils.validate import (
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes
 
-DEFAULT_CONFIDENCE = 0.4
-DEFAULT_IOU_THRESH = 0.3
-DEFAULT_CLASS_AGNOSTIC_NMS = False
-DEFAUlT_MAX_DETECTIONS = 300
-DEFAULT_MAX_CANDIDATES = 3000
-
 
 class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""
 
     task_type = "object-detection"
+    box_format = "xywh"
 
     def infer(
         self,
@@ -173,6 +175,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             class_agnostic=class_agnostic_nms,
             max_detections=max_detections,
             max_candidate_detections=max_candidates,
+            box_format=self.box_format,
         )
 
         infer_shape = (self.img_size_h, self.img_size_w)

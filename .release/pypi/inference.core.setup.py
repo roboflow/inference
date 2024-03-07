@@ -60,15 +60,19 @@ setuptools.setup(
         "cpu": read_requirements("requirements/requirements.cpu.txt"),
         "gaze": read_requirements("requirements/requirements.gaze.txt"),
         "gpu": read_requirements("requirements/requirements.gpu.txt"),
+        "grounding-dino": read_requirements(
+            "requirements/requirements.groundingdino.txt"
+        ),
         "hosted": read_requirements("requirements/requirements.hosted.txt"),
         "http": read_requirements("requirements/requirements.http.txt"),
         "sam": read_requirements("requirements/requirements.sam.txt"),
         "waf": read_requirements("requirements/requirements.waf.txt"),
+        "yolo-world": read_requirements("requirements/requirements.yolo_world.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.9",
 )

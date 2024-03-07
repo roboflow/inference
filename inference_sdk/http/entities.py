@@ -84,6 +84,10 @@ class InferenceConfiguration:
     client_downsizing_disabled: bool = False
     default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
     disable_active_learning: bool = False
+    max_concurrent_requests: int = 1
+    max_batch_size: int = 1
+    source: Optional[str] = None
+    source_info: Optional[str] = None
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -128,6 +132,8 @@ class InferenceConfiguration:
             ("stroke_width", "visualization_stroke_width"),
             ("visualize_predictions", "visualize_predictions"),
             ("disable_active_learning", "disable_active_learning"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -139,6 +145,8 @@ class InferenceConfiguration:
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         for internal_name, external_name in parameters_specs:
             parameters[external_name] = getattr(self, internal_name)
@@ -154,6 +162,8 @@ class InferenceConfiguration:
             ("visualize_predictions", "visualize_predictions"),
             ("stroke_width", "visualization_stroke_width"),
             ("disable_active_learning", "disable_active_learning"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -178,6 +188,8 @@ class InferenceConfiguration:
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
             ("disable_preproc_static_crop", "disable_preproc_static_crop"),
             ("disable_active_learning", "disable_active_learning"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         return get_non_empty_attributes(
             source_object=self,

@@ -55,22 +55,22 @@ image = cv2.imread(image_file)
 
 #Configure client
 client = InferenceHTTPClient(
-    api_url="http://localhost:9001", # route for local inference server
+    api_url="https://detect.roboflow.com", # route for local inference server
     api_key=os.environ["ROBOFLOW_API_KEY"], # api key for your workspace
 )
 
 #Run inference
-results = client.infer(image, model_id=model_id)
+result = client.infer(image, model_id=model_id)
 
 #Load results into Supervision Detection API
-detections = sv.Detections.from_roboflow(results[0])
+detections = sv.Detections.from_inference(result)
 
 #Create Supervision annotators
 bounding_box_annotator = sv.BoundingBoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 #Extract labels array from inference results
-labels = [p['class'] for p in results[0]['predictions']]
+labels = [p['class'] for p in result['predictions']]
 
 #Apply results to image using Supervision annotators
 annotated_image = bounding_box_annotator.annotate(scene=image, detections=detections)
@@ -79,7 +79,8 @@ annotated_image = label_annotator.annotate(
 )
 
 #Write annotated image to file or display image
-cv2.imwrite("soccer-annotated.jpg", annotated_image)
+with sv.ImageSink(target_dir_path="./results/", overwrite=True) as sink:
+    sink.save_image(annotated_image)
 #or sv.plot_image(annotated_image)
 
 ```
@@ -294,7 +295,7 @@ There are two generations of routes in a Roboflow inference server. To see what 
         res = requests.post(
             f"https://detect.roboflow.com/{model_id}?api_key={api_key}",
             data=img_str,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         )
         ```
 
@@ -318,7 +319,7 @@ There are two generations of routes in a Roboflow inference server. To see what 
         res = requests.post(
             f"https://detect.roboflow.com/{model_id}?api_key={api_key}",
             data=numpy_data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/json"},
         )
         ```
 

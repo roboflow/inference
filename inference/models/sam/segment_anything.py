@@ -57,6 +57,7 @@ class SegmentAnything(RoboflowCoreModel):
             self.cache_file("decoder.onnx"),
             providers=[
                 "CUDAExecutionProvider",
+                "OpenVINOExecutionProvider",
                 "CPUExecutionProvider",
             ],
         )
@@ -296,9 +297,11 @@ class SegmentAnything(RoboflowCoreModel):
             "point_coords": point_coords.astype(np.float32),
             "point_labels": point_labels,
             "mask_input": mask_input.astype(np.float32),
-            "has_mask_input": np.zeros(1, dtype=np.float32)
-            if not has_mask_input
-            else np.ones(1, dtype=np.float32),
+            "has_mask_input": (
+                np.zeros(1, dtype=np.float32)
+                if not has_mask_input
+                else np.ones(1, dtype=np.float32)
+            ),
             "orig_im_size": np.array(original_image_size, dtype=np.float32),
         }
         masks, _, low_res_logits = self.ort_session.run(None, ort_inputs)

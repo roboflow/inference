@@ -24,7 +24,6 @@ from inference.core.exceptions import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     annotate_image_at_roboflow,
-    get_deployment_specification,
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
     get_roboflow_labeling_batches,
@@ -32,6 +31,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_model_type,
     get_roboflow_workspace,
+    get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
@@ -1687,7 +1687,7 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
 
 
 @mock.patch.object(roboflow_api.requests, "get")
-def test_get_deployment_specification_when_connection_error_occurs(
+def test_get_workflow_specification_when_connection_error_occurs(
     get_mock: MagicMock,
 ) -> None:
     # given
@@ -1695,28 +1695,28 @@ def test_get_deployment_specification_when_connection_error_occurs(
 
     # when
     with pytest.raises(RoboflowAPIConnectionError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
 
-def test_get_deployment_specification_when_wrong_api_key_used(
+def test_get_workflow_specification_when_wrong_api_key_used(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=401,
     )
 
     # when
     with pytest.raises(RoboflowAPINotAuthorizedError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1725,21 +1725,21 @@ def test_get_deployment_specification_when_wrong_api_key_used(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_not_found_returned(
+def test_get_workflow_specification_when_not_found_returned(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=404,
     )
 
     # when
     with pytest.raises(RoboflowAPINotNotFoundError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1748,21 +1748,21 @@ def test_get_deployment_specification_when_not_found_returned(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_internal_error_returned(
+def test_get_workflow_specification_when_internal_error_returned(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=500,
     )
 
     # when
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1771,21 +1771,21 @@ def test_get_deployment_specification_when_internal_error_returned(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_malformed_response_returned(
+def test_get_workflow_specification_when_malformed_response_returned(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         content=b"Not a JSON :)",
     )
 
     # when
     with pytest.raises(MalformedRoboflowAPIResponseError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1794,21 +1794,21 @@ def test_get_deployment_specification_when_malformed_response_returned(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_config_not_provided(
+def test_get_workflow_specification_when_config_not_provided(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={},
     )
 
     # when
     with pytest.raises(MalformedWorkflowResponseError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1817,21 +1817,21 @@ def test_get_deployment_specification_when_config_not_provided(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_config_not_parsable(
+def test_get_workflow_specification_when_config_not_parsable(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={"config": "Not a JSON"},
     )
 
     # when
     with pytest.raises(MalformedWorkflowResponseError):
-        _ = get_deployment_specification(
+        _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            deployment_name="some_deployment",
+            workflow_name="some_workflow",
         )
 
     # then
@@ -1840,14 +1840,14 @@ def test_get_deployment_specification_when_config_not_parsable(
     ), "API key must be given in query"
 
 
-def test_get_deployment_specification_when_valid_response_given(
+def test_get_workflow_specification_when_valid_response_given(
     requests_mock: Mocker,
 ) -> None:
     # given
     requests_mock.get(
-        url=wrap_url(f"{API_BASE_URL}/my_workspace/deployments/some_deployment"),
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
-            "deployment": {
+            "workflow": {
                 "owner": "50hbxrck9m8nKykOhCEq",
                 "name": "Thermal",
                 "url": "thermal",
@@ -1859,10 +1859,10 @@ def test_get_deployment_specification_when_valid_response_given(
     )
 
     # when
-    result = get_deployment_specification(
+    result = get_workflow_specification(
         api_key="my_api_key",
         workspace_id="my_workspace",
-        deployment_name="some_deployment",
+        workflow_name="some_workflow",
     )
 
     # then

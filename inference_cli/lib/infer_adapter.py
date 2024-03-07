@@ -33,10 +33,9 @@ from tqdm import tqdm
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.logger import CLI_LOGGER
-from inference_cli.lib.utils import dump_json
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+from inference_cli.lib.utils import dump_json, initialise_client
 from inference_sdk.http.utils.encoding import bytes_to_opencv_image
-from inference_sdk.http.utils.loaders import load_image_from_uri
+from inference_sdk.http.utils.loaders import load_image_from_string
 
 CONFIGS_DIR_PATH = os.path.abspath(
     os.path.join(
@@ -162,8 +161,8 @@ def infer_on_video(
         )
         return None
     client = initialise_client(
-        api_key=api_key,
         host=host,
+        api_key=api_key,
         model_configuration=model_configuration,
     )
     on_frame_visualise = None
@@ -224,8 +223,8 @@ def infer_on_directory(
         )
         return None
     client = initialise_client(
-        api_key=api_key,
         host=host,
+        api_key=api_key,
         model_configuration=model_configuration,
     )
     on_frame_visualise = None
@@ -269,8 +268,8 @@ def infer_on_image(
     model_configuration: Optional[str],
 ) -> None:
     client = initialise_client(
-        api_key=api_key,
         host=host,
+        api_key=api_key,
         model_configuration=model_configuration,
     )
     on_frame_visualise = None
@@ -281,7 +280,7 @@ def infer_on_image(
     prediction = client.infer(inference_input=input_reference, model_id=model_id)
     visualised = None
     if visualise:
-        frame_base64 = load_image_from_uri(uri=input_reference)[0]
+        frame_base64 = load_image_from_string(reference=input_reference)[0]
         frame_bytes = base64.b64decode(frame_base64)
         frame = bytes_to_opencv_image(payload=frame_bytes)
         visualised = on_frame_visualise(frame, prediction)
@@ -301,24 +300,6 @@ def infer_on_image(
                 visualisation=visualised,
                 output_location=output_location,
             )
-
-
-def initialise_client(
-    api_key: Optional[str],
-    host: str,
-    model_configuration: Optional[str],
-) -> InferenceHTTPClient:
-    if api_key is None:
-        api_key = ROBOFLOW_API_KEY
-    client = InferenceHTTPClient(
-        api_url=host,
-        api_key=api_key,
-    )
-    if model_configuration is not None:
-        raw_configuration = read_yaml_file(file_path=model_configuration)
-        config = InferenceConfiguration(**raw_configuration)
-        client.configure(inference_configuration=config)
-    return client
 
 
 def is_something_to_do(

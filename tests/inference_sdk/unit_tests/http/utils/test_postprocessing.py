@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageChops
 from requests import Response
 
-from inference_sdk.http.entities import VisualisationResponseFormat
+from inference_sdk.http.entities import ModelDescription, VisualisationResponseFormat
 from inference_sdk.http.utils import post_processing
 from inference_sdk.http.utils.post_processing import (
     adjust_bbox_coordinates_to_client_scaling_factor,
@@ -18,9 +18,12 @@ from inference_sdk.http.utils.post_processing import (
     adjust_points_coordinates_to_client_scaling_factor,
     adjust_prediction_to_client_scaling_factor,
     adjust_prediction_with_bbox_and_points_to_client_scaling_factor,
-    decode_deployment_output_image,
-    decode_deployment_outputs,
-    is_deployment_image,
+    combine_clip_embeddings,
+    combine_gaze_detections,
+    decode_workflow_output_image,
+    decode_workflow_outputs,
+    filter_model_descriptions,
+    is_workflow_image,
     response_contains_jpeg_image,
     transform_base64_visualisation,
 )
@@ -472,12 +475,12 @@ def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_agai
     assert result["predicted_classes"] == prediction["predicted_classes"]
 
 
-def test_is_deployment_image_when_deployment_image_given() -> None:
+def test_is_workflow_image_when_workflow_image_given() -> None:
     # given
     image = {"type": "base64", "value": "base64_image_here"}
 
     # when
-    result = is_deployment_image(value=image)
+    result = is_workflow_image(value=image)
 
     # then
     assert result is True
@@ -486,20 +489,20 @@ def test_is_deployment_image_when_deployment_image_given() -> None:
 @pytest.mark.parametrize(
     "value", [{"type": "url", "value": "https://some.com/image.jpg"}, "some", 3]
 )
-def test_is_deployment_image_when_not_a_deployment_image_given(value: Any) -> None:
+def test_is_workflow_image_when_not_a_workflow_image_given(value: Any) -> None:
     # when
-    result = is_deployment_image(value=value)
+    result = is_workflow_image(value=value)
 
     # then
     assert result is False
 
 
-def test_decode_deployment_output_image_when_base64_image_expected() -> None:
+def test_decode_workflow_output_image_image_when_base64_image_expected() -> None:
     # given
     value = {"type": "base64", "value": "base64_image_here"}
 
     # when
-    result = decode_deployment_output_image(
+    result = decode_workflow_output_image(
         value=value,
         expected_format=VisualisationResponseFormat.BASE64,
     )
@@ -512,14 +515,14 @@ def test_decode_deployment_output_image_when_base64_image_expected() -> None:
 
 
 @mock.patch.object(post_processing, "transform_base64_visualisation")
-def test_decode_deployment_output_image_when_numpy_image_expected(
+def test_decode_workflow_output_image_when_numpy_image_expected(
     transform_base64_visualisation_mock: MagicMock,
 ) -> None:
     # given
     value = {"type": "base64", "value": "base64_image_here"}
 
     # when
-    result = decode_deployment_output_image(
+    result = decode_workflow_output_image(
         value=value,
         expected_format=VisualisationResponseFormat.NUMPY,
     )
@@ -533,14 +536,14 @@ def test_decode_deployment_output_image_when_numpy_image_expected(
 
 
 @mock.patch.object(post_processing, "transform_base64_visualisation")
-def test_decode_deployment_output_image_when_pil_image_expected(
+def test_decode_workflow_output_image_when_pil_image_expected(
     transform_base64_visualisation_mock: MagicMock,
 ) -> None:
     # given
     value = {"type": "base64", "value": "base64_image_here"}
 
     # when
-    result = decode_deployment_output_image(
+    result = decode_workflow_output_image(
         value=value,
         expected_format=VisualisationResponseFormat.PILLOW,
     )
@@ -554,25 +557,139 @@ def test_decode_deployment_output_image_when_pil_image_expected(
 
 
 @mock.patch.object(post_processing, "transform_base64_visualisation", MagicMock())
-def test_decode_deployment_outputs() -> None:
+def test_decode_workflow_outputs() -> None:
     # given
-    deployment_outputs = {
+    workflow_outputs = {
         "some": "value",
         "other": {"type": "base64", "value": "base64_image_here"},
         "third": [1, {"type": "base64", "value": "base64_image_here"}],
+        "fourth": [1, [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}]],
     }
 
     # when
-    result = decode_deployment_outputs(
-        deployment_outputs=deployment_outputs,
+    result = decode_workflow_outputs(
+        workflow_outputs=workflow_outputs,
         expected_format=VisualisationResponseFormat.NUMPY,
     )
 
     # then
-    assert len(result) == 3, "Number of elements in dict cannot be altered"
+    assert len(result) == 4, "Number of elements in dict cannot be altered"
     assert result["some"] == "value", "This value must not be changed"
-    assert result["other"]["type"] == "numpy_object", "This element must be deserialize"
+    assert result["other"]["type"] == "numpy_object", "This element must be deserialized"
     assert result["third"][0] == 1, "This object cannot be mutated"
     assert (
         result["third"][1]["type"] == "numpy_object"
     ), "This element must be deserialize"
+    assert result["fourth"][0] == 1, "First element of `fourth` key not to be changed"
+    assert result["fourth"][1][0]["a"] == 2, "Nested dict key `a` not to be changed"
+    assert result["fourth"][1][0]["b"]["type"] == "numpy_object", "This element must be deserialized"
+
+
+def test_combine_gaze_detections_when_single_detections_given() -> None:
+    # when
+    result = combine_gaze_detections(detections={"predictions": []})
+
+    # then
+    assert result == {"predictions": []}
+
+
+def test_combine_gaze_detections_when_multiple_detections_given() -> None:
+    # when
+    result = combine_gaze_detections(
+        detections=[
+            [{"predictions": ["a"]}, {"predictions": ["b"]}],
+            {"predictions": ["c"]},
+        ]
+    )
+
+    # then
+    assert result == [
+        {"predictions": ["a"]},
+        {"predictions": ["b"]},
+        {"predictions": ["c"]},
+    ]
+
+
+def test_combine_clip_embeddings_when_single_response_given() -> None:
+    # given
+    embeddings = {"frame_id": "a", "embeddings": ["1", "2", "3"], "time": "some"}
+
+    # when
+    result = combine_clip_embeddings(embeddings=embeddings)
+
+    # then
+    assert result == [
+        {"frame_id": "a", "embeddings": ["1"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["2"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["3"], "time": "some"},
+    ], "Single response with 3 elements in batch should be unwrapped into three separate outputs"
+
+
+def test_combine_clip_embeddings_when_multiple_responses_given() -> None:
+    # given
+    embeddings = [
+        {"frame_id": "a", "embeddings": ["1", "2", "3"], "time": "some"},
+        {"frame_id": "b", "embeddings": ["4", "5"], "time": "other"},
+    ]
+
+    # when
+    result = combine_clip_embeddings(embeddings=embeddings)
+
+    # then
+    assert result == [
+        {"frame_id": "a", "embeddings": ["1"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["2"], "time": "some"},
+        {"frame_id": "a", "embeddings": ["3"], "time": "some"},
+        {"frame_id": "b", "embeddings": ["4"], "time": "other"},
+        {"frame_id": "b", "embeddings": ["5"], "time": "other"},
+    ], "Each embedding from each response should be unwrapped and results should be flattened at the end"
+
+
+def test_filter_model_descriptions_when_empty_input_given() -> None:
+    # when
+    result = filter_model_descriptions(descriptions=[], model_id="some/1")
+
+    # then
+    assert result is None
+
+
+def test_filter_model_descriptions_when_not_matching_input_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="other/1", task_type="object-detection"),
+        ModelDescription(model_id="some/2", task_type="object-detection"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result is None
+
+
+def test_filter_model_descriptions_when_input_with_single_match_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="other/1", task_type="object-detection"),
+        ModelDescription(model_id="some/1", task_type="object-detection"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="object-detection")
+
+
+def test_filter_model_descriptions_when_input_with_multiple_matches_given() -> None:
+    # given
+    descriptions = [
+        ModelDescription(model_id="some/1", task_type="object-detection"),
+        ModelDescription(model_id="some/1", task_type="object-detection*"),
+    ]
+
+    # when
+    result = filter_model_descriptions(descriptions=descriptions, model_id="some/1")
+
+    # then
+    assert result == ModelDescription(model_id="some/1", task_type="object-detection")

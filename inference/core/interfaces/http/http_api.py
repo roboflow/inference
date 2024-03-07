@@ -4,6 +4,7 @@ from functools import partial, wraps
 from time import sleep
 from typing import Any, List, Optional, Union
 
+import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import logger
+from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -19,10 +21,6 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.entities.requests.deployments import (
-    DeploymentsInferenceRequest,
-    DeploymentSpecificationInferenceRequest,
-)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -42,12 +40,16 @@ from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
 )
+from inference.core.entities.requests.workflows import (
+    WorkflowInferenceRequest,
+    WorkflowSpecificationInferenceRequest,
+)
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.deployments import DeploymentsInferenceResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -68,6 +70,7 @@ from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
 )
+from inference.core.entities.responses.workflows import WorkflowInferenceResponse
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
@@ -76,7 +79,9 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     METLO_KEY,
@@ -86,6 +91,8 @@ from inference.core.env import (
     NOTEBOOK_PORT,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -113,19 +120,22 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
-    serialise_deployment_workflow_result,
+    serialise_workflow_result,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import (
-    get_deployment_specification,
-    get_roboflow_workspace,
-)
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
-from inference.enterprise.deployments.complier.core import compile_and_execute_async
-from inference.enterprise.deployments.errors import (
-    DeploymentCompilerError,
-    RuntimePayloadError,
+from inference.enterprise.workflows.complier.core import compile_and_execute_async
+from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+    WorkflowsActiveLearningMiddleware,
 )
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineError,
+    RuntimePayloadError,
+    WorkflowsCompilerError,
+)
+from inference.models.aliases import resolve_roboflow_model_alias
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -177,7 +187,8 @@ def with_route_exceptions(route):
             ServiceConfigurationError,
             ModelArtefactError,
             MalformedWorkflowResponseError,
-            DeploymentCompilerError,
+            WorkflowsCompilerError,
+            ExecutionEngineError,
         ) as e:
             resp = JSONResponse(status_code=500, content={"message": str(e)})
             traceback.print_exc()
@@ -268,6 +279,7 @@ class HttpInterface(BaseInterface):
                 strip_dirs=False,
                 sort_by="cumulative",
             )
+        app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
         if METRICS_ENABLED:
 
@@ -289,6 +301,9 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
+            cache=cache,
+        )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -301,31 +316,36 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
-            self.model_manager.add_model(
-                inference_request.model_id, inference_request.api_key
+            de_aliased_model_id = resolve_roboflow_model_alias(
+                model_id=inference_request.model_id
             )
+            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
             resp = await self.model_manager.infer_from_request(
-                inference_request.model_id, inference_request, **kwargs
+                de_aliased_model_id, inference_request, **kwargs
             )
             return orjson_response(resp)
 
-        async def process_deployment_inference_request(
-            deployment_request: DeploymentsInferenceRequest,
-            deployment_specification: dict,
-        ) -> DeploymentsInferenceResponse:
+        async def process_workflow_inference_request(
+            workflow_request: WorkflowInferenceRequest,
+            workflow_specification: dict,
+            background_tasks: Optional[BackgroundTasks],
+        ) -> WorkflowInferenceResponse:
+            step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             result = await compile_and_execute_async(
-                deployment_spec=deployment_specification,
-                runtime_parameters=deployment_request.runtime_parameters,
+                workflow_specification=workflow_specification,
+                runtime_parameters=workflow_request.inputs,
                 model_manager=model_manager,
-                api_key=deployment_request.api_key,
+                api_key=workflow_request.api_key,
+                max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+                step_execution_mode=step_execution_mode,
+                active_learning_middleware=self.workflows_active_learning_middleware,
+                background_tasks=background_tasks,
             )
-            deployment_outputs = serialise_deployment_workflow_result(
+            outputs = serialise_workflow_result(
                 result=result,
-                excluded_fields=deployment_request.excluded_fields,
+                excluded_fields=workflow_request.excluded_fields,
             )
-            response = DeploymentsInferenceResponse(
-                deployment_outputs=deployment_outputs
-            )
+            response = WorkflowInferenceResponse(outputs=outputs)
             return orjson_response(response=response)
 
         def load_core_model(
@@ -410,6 +430,17 @@ class HttpInterface(BaseInterface):
         The Grounding DINO model ID.
         """
 
+        load_yolo_world_model = partial(load_core_model, core_model="yolo_world")
+        """Loads the YOLO World model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The YOLO World model ID.
+        """
+
         @app.get(
             "/info",
             response_model=ServerVersionInfo,
@@ -466,7 +497,10 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/add")
-                self.model_manager.add_model(request.model_id, request.api_key)
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=request.model_id
+                )
+                self.model_manager.add_model(de_aliased_model_id, request.api_key)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -489,7 +523,10 @@ class HttpInterface(BaseInterface):
                     ModelsDescriptions: The object containing models descriptions
                 """
                 logger.debug(f"Reached /model/remove")
-                self.model_manager.remove(request.model_id)
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=request.model_id
+                )
+                self.model_manager.remove(de_aliased_model_id)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -628,44 +665,50 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
+        if not DISABLE_WORKFLOW_ENDPOINTS:
+
             @app.post(
-                "/infer/deployments",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from deployment specification provided in payload",
-                description="Parses and executes deployment specification, injecting runtime parameters from request body",
+                "/infer/workflows/{workspace_name}/{workflow_name}",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_request: DeploymentSpecificationInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                deployment_specification = {
-                    "specification": deployment_request.specification
-                }
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
+            async def infer_from_predefined_workflow(
+                workspace_name: str,
+                workflow_name: str,
+                workflow_request: WorkflowInferenceRequest,
+                background_tasks: BackgroundTasks,
+            ) -> WorkflowInferenceResponse:
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_name=workflow_name,
+                )
+                return await process_workflow_inference_request(
+                    workflow_request=workflow_request,
+                    workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
             @app.post(
-                "/infer/deployments/{deployment_name}",
-                response_model=DeploymentsInferenceResponse,
-                summary="Endpoint to trigger inference from predefined deployment",
-                description="Checks Roboflow API for deployment definition, once acquired - parses and executes injecting runtime parameters from request body",
+                "/infer/workflows",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from workflow specification provided in payload",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body",
             )
             @with_route_exceptions
-            async def infer_from_specific_deployment(
-                deployment_name: str,
-                deployment_request: DeploymentsInferenceRequest,
-            ) -> DeploymentsInferenceResponse:
-                workspace = get_roboflow_workspace(api_key=deployment_request.api_key)
-                deployment_specification = get_deployment_specification(
-                    api_key=deployment_request.api_key,
-                    workspace_id=workspace,
-                    deployment_name=deployment_name,
-                )
-                return await process_deployment_inference_request(
-                    deployment_request=deployment_request,
-                    deployment_specification=deployment_specification,
+            async def infer_from_workflow(
+                workflow_request: WorkflowSpecificationInferenceRequest,
+                background_tasks: BackgroundTasks,
+            ) -> WorkflowInferenceResponse:
+                workflow_specification = {
+                    "specification": workflow_request.specification
+                }
+                return await process_workflow_inference_request(
+                    workflow_request=workflow_request,
+                    workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
                 )
 
         if CORE_MODELS_ENABLED:
@@ -825,6 +868,49 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(grounding_dino_model_id, actor)
+                    return response
+
+            if CORE_MODEL_YOLO_WORLD_ENABLED:
+
+                @app.post(
+                    "/yolo_world/infer",
+                    response_model=ObjectDetectionInferenceResponse,
+                    summary="YOLO-World inference.",
+                    description="Run the YOLO-World zero-shot object detection model.",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                async def yolo_world_infer(
+                    inference_request: YOLOWorldInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Runs the YOLO-World zero-shot object detection model.
+
+                    Args:
+                        inference_request (YOLOWorldInferenceRequest): The request containing the image on which to run object detection.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        ObjectDetectionInferenceResponse: The object detection response.
+                    """
+                    logger.debug(f"Reached /yolo_world/infer")
+                    yolo_world_model_id = load_yolo_world_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        yolo_world_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(yolo_world_model_id, actor)
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:
@@ -1137,6 +1223,14 @@ class HttpInterface(BaseInterface):
                     default=False,
                     description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
                 ),
+                source: Optional[str] = Query(
+                    "external",
+                    description="The source of the inference request",
+                ),
+                source_info: Optional[str] = Query(
+                    "external",
+                    description="The detailed source information of the inference request",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -1213,6 +1307,9 @@ class HttpInterface(BaseInterface):
                             )
                 else:
                     request_model_id = model_id
+                logger.debug(
+                    f"State of model registry: {self.model_manager.describe_models()}"
+                )
                 self.model_manager.add_model(
                     request_model_id, api_key, model_id_alias=model_id
                 )
@@ -1246,6 +1343,8 @@ class HttpInterface(BaseInterface):
                     disable_preproc_grayscale=disable_preproc_grayscale,
                     disable_preproc_static_crop=disable_preproc_static_crop,
                     disable_active_learning=disable_active_learning,
+                    source=source,
+                    source_info=source_info,
                     **args,
                 )
 

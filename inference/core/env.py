@@ -20,9 +20,11 @@ ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 # Base URL for the API
 API_BASE_URL = os.getenv(
     "API_BASE_URL",
-    "https://api.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://api.roboflow.one",
+    (
+        "https://api.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://api.roboflow.one"
+    ),
 )
 
 # Debug flag for the API, default is False
@@ -55,6 +57,9 @@ GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
+
+# If true, this will store a non-verbose version of the inference request and repsonse in the cache
+TINY_CACHE = str2bool(os.getenv("TINY_CACHE", True))
 
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
@@ -94,6 +99,11 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 # Flag to enable CogVLM core model, default is True
 CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
 
+# Flag to enable YOLO-World core model, default is True
+CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
+)
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
@@ -118,9 +128,11 @@ DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
 # ElastiCache endpoint
 ELASTICACHE_ENDPOINT = os.environ.get(
     "ELASTICACHE_ENDPOINT",
-    "roboflow-infer-prod.ljzegl.cfg.use2.cache.amazonaws.com:11211"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211",
+    (
+        "roboflow-infer-prod.ljzegl.cfg.use2.cache.amazonaws.com:11211"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211"
+    ),
 )
 
 # Flag to enable byte track, default is False
@@ -195,8 +207,8 @@ if LAMBDA:
 # Interval for metrics aggregation, default is 60
 METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 
-# URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/device-stats"
-METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/device-healthcheck")
+# URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/inference-stats"
+METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
@@ -217,7 +229,8 @@ NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
-    "ONNXRUNTIME_EXECUTION_PROVIDERS", "[CUDAExecutionProvider,CPUExecutionProvider]"
+    "ONNXRUNTIME_EXECUTION_PROVIDERS",
+    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]",
 )
 
 # Port, default is 9001
@@ -278,17 +291,21 @@ METLO_KEY = os.getenv("METLO_KEY", None)
 # Core model bucket
 CORE_MODEL_BUCKET = os.getenv(
     "CORE_MODEL_BUCKET",
-    "roboflow-core-model-prod"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-core-model-staging",
+    (
+        "roboflow-core-model-prod"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-core-model-staging"
+    ),
 )
 
 # Inference bucket
 INFER_BUCKET = os.getenv(
     "INFER_BUCKET",
-    "roboflow-infer-prod"
-    if PROJECT == "roboflow-platform"
-    else "roboflow-infer-staging",
+    (
+        "roboflow-infer-prod"
+        if PROJECT == "roboflow-platform"
+        else "roboflow-infer-staging"
+    ),
 )
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
@@ -318,3 +335,39 @@ DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
 
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
+
+
+LOCAL_INFERENCE_API_URL = os.getenv("LOCAL_INFERENCE_API_URL", "http://127.0.0.1:9001")
+HOSTED_DETECT_URL = (
+    "https://detect.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-object-detection.staging.roboflow.com"
+)
+HOSTED_INSTANCE_SEGMENTATION_URL = (
+    "https://outline.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-instance-segmentation.staging.roboflow.com"
+)
+HOSTED_CLASSIFICATION_URL = (
+    "https://classify.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://lambda-classification.staging.roboflow.com"
+)
+HOSTED_CORE_MODEL_URL = (
+    "https://infer.roboflow.com"
+    if PROJECT == "roboflow-platform"
+    else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+)
+
+DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
+WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
+WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", "1")
+)
+WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
+    os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
+)
+
+MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))

@@ -89,7 +89,8 @@ def get_cache_file_path(file: str, model_id: Optional[str] = None) -> str:
 
 def clear_cache(model_id: Optional[str] = None) -> None:
     cache_dir = get_cache_dir(model_id=model_id)
-    shutil.rmtree(cache_dir)
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
 
 
 def get_cache_dir(model_id: Optional[str] = None) -> str:

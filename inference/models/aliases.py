@@ -1,3 +1,7 @@
+# We have a duplicate in inference_sdk.http.utils.aliases - please maintain both
+# (to have aliasing work in both libraries)
+
+
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -9,6 +13,9 @@ REGISTERED_ALIASES = {
     "yolov8l-1280": "coco/12",
     "yolov8x-640": "coco/5",
     "yolov8x-1280": "coco/13",
+    "yolo-nas-s-640": "coco/14",
+    "yolo-nas-m-640": "coco/15",
+    "yolo-nas-l-640": "coco/16",
     "yolov8n-seg-640": "coco-dataset-vdnr1/2",
     "yolov8n-seg-1280": "coco-dataset-vdnr1/7",
     "yolov8s-seg-640": "coco-dataset-vdnr1/4",

@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import pickle
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -71,7 +72,8 @@ class RedisCache(BaseCache):
                     )
                     del self.zexpires[k]
             logger.debug("Redis cleaner finished task.")
-            time.sleep(MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now))
+            sleep_time = MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now)
+            time.sleep(max(sleep_time, 0))
 
     def get(self, key: str):
         """
@@ -85,7 +87,10 @@ class RedisCache(BaseCache):
         """
         item = self.client.get(key)
         if item is not None:
-            return json.loads(item)
+            try:
+                return json.loads(item)
+            except TypeError:
+                return item
 
     def set(self, key: str, value: str, expire: float = None):
         """
@@ -96,7 +101,9 @@ class RedisCache(BaseCache):
             value (str): The value to store.
             expire (float, optional): The time, in seconds, after which the key will expire. Defaults to None.
         """
-        self.client.set(key, json.dumps(value), ex=expire)
+        if not isinstance(value, bytes):
+            value = json.dumps(value)
+        self.client.set(key, value, ex=expire)
 
     def zadd(self, key: str, value: Any, score: float, expire: float = None):
         """
@@ -176,3 +183,14 @@ class RedisCache(BaseCache):
         if expire is not None:
             l.extend(expire)
         return l
+
+    def set_numpy(self, key: str, value: Any, expire: float = None):
+        serialized_value = pickle.dumps(value)
+        self.set(key, serialized_value, expire=expire)
+
+    def get_numpy(self, key: str) -> Any:
+        serialized_value = self.get(key)
+        if serialized_value is not None:
+            return pickle.loads(serialized_value)
+        else:
+            return None

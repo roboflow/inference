@@ -1,5 +1,6 @@
 
 PROJECT=${1:-roboflow-staging}
+SLIM=${2:-no-slim}
 if [ $PROJECT = 'roboflow-staging' ]
 then
     echo "Deploying to staging"
@@ -12,4 +13,12 @@ else
     echo "Project must be roboflow-staging or roboflow-platform"
     exit 1
 fi
-docker/publish/deploy_docker_image.sh $REPOSITORY docker/dockerfiles/Dockerfile.onnx.lambda
+if [ $SLIM = 'slim' ]
+then
+  echo "Building slim image"
+  REPOSITORY=$REPOSITORY-slim
+  DOCKERFILE=docker/dockerfiles/Dockerfile.onnx.lambda.slim
+else
+  DOCKERFILE=docker/dockerfiles/Dockerfile.onnx.lambda
+fi
+docker/publish/deploy_docker_image.sh $REPOSITORY $DOCKERFILE

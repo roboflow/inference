@@ -61,6 +61,10 @@ class ModelNotSelectedError(HTTPClientError):
     pass
 
 
+class APIKeyNotProvided(HTTPClientError):
+    pass
+
+
 class EncodingError(HTTPClientError):
     pass
 

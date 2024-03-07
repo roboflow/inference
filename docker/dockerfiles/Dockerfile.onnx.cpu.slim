@@ -1,6 +1,7 @@
 FROM python:3.9 as base
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
     ffmpeg \
@@ -13,17 +14,25 @@ RUN apt update -y && apt install -y \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
+
 COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
     requirements/_requirements.txt \
+    requirements/requirements.vino.txt \
+    requirements/requirements.cli.txt \
+    requirements/requirements.sdk.http.txt \
     ./
+
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
     -r requirements.waf.txt \
+    -r requirements.cli.txt \
+    -r requirements.sdk.http.txt \
     wheel>=0.38.0 \
     setuptools>=65.5.1 \
     --upgrade \
@@ -35,6 +44,8 @@ COPY --from=base / /
 WORKDIR /app
 
 COPY inference inference
+COPY inference_sdk inference_sdk
+COPY inference_cli inference_cli
 COPY docker/config/cpu_http.py cpu_http.py
 
 ENV CORE_MODEL_CLIP_ENABLED=false
@@ -46,5 +57,8 @@ ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV API_LOGGING_ENABLED=True
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
