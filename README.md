@@ -96,17 +96,18 @@ results = model.infer(
 <summary>👉 foundational models</summary>
 
 
-- CLIP Embeddings
+- [CLIP Embeddings](https://inference.roboflow.com/foundation/clip) - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
 
   ```python
   from inference.models import Clip
 
   model = Clip()
-  
-  embeddings = model.embed_image("https://media.roboflow.com/inference/soccer.jpg")
+
+  embeddings_text = clip.embed_text("a football match")
+  embeddings_image = model.embed_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- Segment Anything
+- [Segment Anything](https://inference.roboflow.com/foundation/sam) - segment all objects visible in the image or only those associated with selected points or boxes.
 
   ```python
   from inference.models import SegmentAnything
@@ -116,7 +117,7 @@ results = model.infer(
   result = model.segment_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- YOLO-World
+- [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) - an almost real-time zero-shot detector that enables the detection of any objects without any training.
 
   ```python
   from inference.models import YOLOWorld
@@ -136,13 +137,16 @@ results = model.infer(
 
 - deploy server
 
+  
+  The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](https://inference.roboflow.com/quickstart/docker/#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
+
   ```bash
   inference server start
   ```
 
 - run client
   
-  Consume inference server predictions using the HTTP client available in the Inference SDK. Note that you will need a `ROBOFLOW_API_KEY` to query the inference server. Navigate to 🔑 keys section to learn more.
+  Consume inference server predictions using the HTTP client available in the Inference SDK.
 
   ```python
   from inference_sdk import InferenceHTTPClient
@@ -155,11 +159,11 @@ results = model.infer(
       predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
   ```
   
-  If you're using the hosted API, change the local API URL to `https://detect.roboflow.com`.
+  If you're using the hosted API, change the local API URL to `https://detect.roboflow.com`. Accessing the hosted inference server and/or using any of the fine-tuned models require a `ROBOFLOW_API_KEY`. For further information, visit the 🔑 keys section.
 
 ## 🎥 inference pipeline
 
-The inference pipeline is an efficient method for processing static video files and streams.
+The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
 
 ```python
 from inference import InferencePipeline
@@ -168,8 +172,7 @@ from inference.core.interfaces.stream.sinks import render_boxes
 pipeline = InferencePipeline.init(
     model_id="yolov8x-1280",
     video_reference="https://media.roboflow.com/inference/people-walking.mp4",
-    on_prediction=render_boxes,
-    api_key=<ROBOFLOW_API_KEY>
+    on_prediction=render_boxes
 )
 
 pipeline.start()
