@@ -34,9 +34,10 @@ setuptools.setup(
         [
             "requirements/_requirements.txt",
             "requirements/requirements.gpu.txt",
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
         ]
-    )
-    + [f"inference-cli=={__version__}"],
+    ),
     packages=find_packages(
         where=root,
         exclude=(
@@ -45,8 +46,6 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
             "development",
             "development.*",
         ),

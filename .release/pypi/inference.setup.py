@@ -38,8 +38,6 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
             "development",
             "development.*",
         ),
@@ -53,9 +51,10 @@ setuptools.setup(
         [
             "requirements/_requirements.txt",
             "requirements/requirements.cpu.txt",
+            "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
         ]
-    )
-    + [f"inference-cli=={__version__}"],
+    ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "gaze": read_requirements("requirements/requirements.gaze.txt"),

@@ -38,8 +38,6 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
             "development",
             "development.*",
         ),
@@ -53,6 +51,7 @@ setuptools.setup(
         [
             "requirements/_requirements.txt",
             "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
         ]
     ),
     extras_require={
