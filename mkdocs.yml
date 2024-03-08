@@ -41,6 +41,11 @@ nav:
       - Create a Custom Sink for Inference Pipeline: quickstart/create_a_custom_inference_pipeline_sink.md
       - Predict Over UDP: quickstart/run_model_over_udp.md
       - Collect Data Without a Model: quickstart/stubs.md
+  - Models:
+    - How to Load a Model:
+      - Supported Models: models/supported_models.md
+      - From Roboflow: quickstart/explore_models.md
+      - From Local Weights: models/from_local_weights.md
     - Foundation Model:
       - What is a Foundation Model?: foundation/about.md
       - CLIP (Classification, Embeddings): foundation/clip.md
