@@ -5,12 +5,12 @@ import setuptools
 from setuptools import find_packages
 import sys
 
-root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../inference_sdk"))
 sys.path.append(root)
 
 shutil.copyfile(
-    os.path.join(root, "inference/core/version.py"),
-    os.path.join(root, "inference_sdk/version.py"),
+    os.path.join(root, "../inference/core/version.py"),
+    os.path.join(root, "../inference_sdk/version.py"),
 )
 
 from inference.core.version import __version__

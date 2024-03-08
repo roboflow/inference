@@ -5,6 +5,18 @@ from setuptools import find_packages
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+packages = find_packages(
+    where=".",
+    exclude=(
+        "docker",
+        "docs",
+        "requirements",
+        "tests",
+        "tests.*",
+        "development",
+        "development.*",
+    ),
+)
 
 def read_requirements(path):
     if not isinstance(path, list):
@@ -13,8 +25,12 @@ def read_requirements(path):
     for p in path:
         with open(p) as fh:
             requirements.extend([line.strip() for line in fh])
+    
+    # remove the local packages we're about to install from requirements
+    # (eg inference_cli requires inference_sdk but we want the local one instead of the one from pypi)
+    requirements = [r for r in requirements if not any(r == p or r.startswith(p) and r[len(p)] in ["<", ">", "=", "!", "~", "^"] for p in packages)]
+    
     return requirements
-
 
 setuptools.setup(
     name="inference-development",
@@ -24,18 +40,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/roboflow/inference",
-    packages=find_packages(
-        where=".",
-        exclude=(
-            "docker",
-            "docs",
-            "requirements",
-            "tests",
-            "tests.*",
-            "development",
-            "development.*",
-        ),
-    ),
+    packages=packages,
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",
