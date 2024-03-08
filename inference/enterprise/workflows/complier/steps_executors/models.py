@@ -1,9 +1,8 @@
-import math
 import asyncio
 import base64
 import json
+import math
 import re
-import zxingcpp
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -11,6 +10,7 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
+import zxingcpp
 from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
@@ -58,6 +58,7 @@ from inference.enterprise.workflows.complier.utils import construct_step_selecto
 from inference.enterprise.workflows.entities.steps import (
     GPT_4V_MODEL_TYPE,
     LMM,
+    BarcodeDetection,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -68,7 +69,6 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     QRCodeDetection,
-    BarcodeDetection,
     RoboflowModel,
     StepInterface,
     YoloWorld,
