@@ -1,5 +1,8 @@
 class WorkflowsCompilerError(Exception):
-    pass
+    # Message of error must be prepared to be revealed in any API response.
+
+    def get_public_message(self) -> str:
+        return str(self)
 
 
 class ValidationError(WorkflowsCompilerError):

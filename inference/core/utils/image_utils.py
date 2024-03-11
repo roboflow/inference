@@ -244,7 +244,10 @@ def load_image_base64(
     image_np = np.frombuffer(value, np.uint8)
     result = cv2.imdecode(image_np, cv_imread_flags)
     if result is None:
-        raise InputImageLoadError("Could not load valid image from base64 string.")
+        raise InputImageLoadError(
+            message="Could not load valid image from base64 string.",
+            public_message="Malformed base64 input image.",
+        )
     return result
 
 
@@ -264,7 +267,10 @@ def load_image_from_buffer(
     image_np = np.frombuffer(value.read(), np.uint8)
     result = cv2.imdecode(image_np, cv_imread_flags)
     if result is None:
-        raise InputImageLoadError("Could not load valid image from buffer.")
+        raise InputImageLoadError(
+            message="Could not load valid image from buffer.",
+            public_message="Could not decode bytes into image.",
+        )
     return result
 
 
@@ -340,7 +346,8 @@ def load_image_from_url(
         )
     except (RequestException, ConnectionError) as error:
         raise InputImageLoadError(
-            f"Error while loading image from url: {value}. Details: {error}"
+            message=f"Could not load image from url: {value}. Details: {error}",
+            public_message="Data pointed by URL could not be decoded into image.",
         )
 
 
@@ -361,7 +368,8 @@ def load_image_from_encoded_bytes(
     image = cv2.imdecode(image_np, cv_imread_flags)
     if image is None:
         raise InputImageLoadError(
-            f"Could not parse response content from url {value} into image."
+            message=f"Could not decode bytes as image.",
+            public_message="Data is not image.",
         )
     return image
 
