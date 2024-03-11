@@ -122,7 +122,8 @@ def extract_image_payload_and_type(value: Any) -> Tuple[Any, Optional[ImageType]
         return value, image_type
     if image_type.lower() not in allowed_payload_types:
         raise InvalidImageTypeDeclared(
-            f"Declared image type: {image_type.lower()} which is not in allowed types: {allowed_payload_types}."
+            message=f"Declared image type: {image_type.lower()} which is not in allowed types: {allowed_payload_types}.",
+            public_message="Image declaration contains not recognised image type.",
         )
     return value, ImageType(image_type.lower())
 
@@ -146,7 +147,8 @@ def load_image_with_known_type(
     """
     if image_type is ImageType.NUMPY and not ALLOW_NUMPY_INPUT:
         raise InvalidImageTypeDeclared(
-            f"NumPy image type is not supported in this configuration of `inference`."
+            message=f"NumPy image type is not supported in this configuration of `inference`.",
+            public_message=f"NumPy image type is not supported in this configuration of `inference`.",
         )
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
@@ -221,7 +223,8 @@ def attempt_loading_image_from_string(
         return load_image_from_numpy_str(value=value), True
     except InvalidNumpyInput as error:
         raise InputFormatInferenceFailed(
-            "Input image format could not be inferred from string."
+            message="Input image format could not be inferred from string.",
+            public_message="Input image format could not be inferred from string.",
         ) from error
 
 
@@ -292,7 +295,8 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
         data = pickle.loads(value)
     except (EOFError, TypeError, pickle.UnpicklingError, binascii.Error) as error:
         raise InvalidNumpyInput(
-            f"Could not unpickle image data. Cause: {error}"
+            message=f"Could not unpickle image data. Cause: {error}",
+            public_message="Could not deserialize pickle payload.",
         ) from error
     validate_numpy_image(data=data)
     return data
@@ -315,15 +319,18 @@ def validate_numpy_image(data: np.ndarray) -> None:
     """
     if not issubclass(type(data), np.ndarray):
         raise InvalidNumpyInput(
-            f"Data provided as input could not be decoded into np.ndarray object."
+            message=f"Data provided as input could not be decoded into np.ndarray object.",
+            public_message=f"Data provided as input could not be decoded into np.ndarray object.",
         )
     if len(data.shape) != 3 and len(data.shape) != 2:
         raise InvalidNumpyInput(
-            f"For image given as np.ndarray expected 2 or 3 dimensions, got {len(data.shape)} dimensions."
+            message=f"For image given as np.ndarray expected 2 or 3 dimensions, got {len(data.shape)} dimensions.",
+            public_message=f"For image given as np.ndarray expected 2 or 3 dimensions.",
         )
     if data.shape[-1] != 3 and data.shape[-1] != 1:
         raise InvalidNumpyInput(
-            f"For image given as np.ndarray expected 1 or 3 channels, got {data.shape[-1]} channels."
+            message=f"For image given as np.ndarray expected 1 or 3 channels, got {data.shape[-1]} channels.",
+            public_message="For image given as np.ndarray expected 1 or 3 channels.",
         )
 
 
