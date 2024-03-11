@@ -53,7 +53,7 @@ def execute_datapoint_registration(
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
-    inference_id=None,
+    inference_id: Optional[str] = None,
 ) -> None:
     local_image_id = str(uuid4())
     encoded_image, scaling_factor = prepare_image_to_registration(
