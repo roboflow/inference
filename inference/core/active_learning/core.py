@@ -53,6 +53,7 @@ def execute_datapoint_registration(
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
+    inference_id=None,
 ) -> None:
     local_image_id = str(uuid4())
     encoded_image, scaling_factor = prepare_image_to_registration(
@@ -88,6 +89,7 @@ def execute_datapoint_registration(
         configuration=configuration,
         api_key=api_key,
         batch_name=batch_name,
+        inference_id=inference_id,
     )
 
 
@@ -120,6 +122,7 @@ def register_datapoint_at_roboflow(
     configuration: ActiveLearningConfiguration,
     api_key: str,
     batch_name: str,
+    inference_id: Optional[str],
 ) -> None:
     tags = collect_tags(
         configuration=configuration,
@@ -134,6 +137,7 @@ def register_datapoint_at_roboflow(
         api_key=api_key,
         batch_name=batch_name,
         tags=tags,
+        inference_id=inference_id,
     )
     if is_prediction_registration_forbidden(
         prediction=prediction,
@@ -176,6 +180,7 @@ def safe_register_image_at_roboflow(
     api_key: str,
     batch_name: str,
     tags: List[str],
+    inference_id: Optional[str],
 ) -> Optional[str]:
     credit_to_be_returned = False
     try:
@@ -186,6 +191,7 @@ def safe_register_image_at_roboflow(
             image_bytes=encoded_image,
             batch_name=batch_name,
             tags=tags,
+            inference_id=inference_id,
         )
         image_duplicated = registration_response.get("duplicate", False)
         if image_duplicated:

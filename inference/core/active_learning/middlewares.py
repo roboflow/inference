@@ -104,6 +104,7 @@ class ActiveLearningMiddleware:
         predictions: List[Prediction],
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         for inference_input, prediction in zip(inference_inputs, predictions):
             self.register(
@@ -111,6 +112,7 @@ class ActiveLearningMiddleware:
                 prediction=prediction,
                 prediction_type=prediction_type,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
+                inference_id=inference_id,
             )
 
     def register(
@@ -119,12 +121,14 @@ class ActiveLearningMiddleware:
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         self._execute_registration(
             inference_input=inference_input,
             prediction=prediction,
             prediction_type=prediction_type,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
+            inference_id=inference_id,
         )
 
     def _execute_registration(
@@ -133,6 +137,7 @@ class ActiveLearningMiddleware:
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         if self._configuration is None:
             return None
@@ -169,6 +174,7 @@ class ActiveLearningMiddleware:
             configuration=self._configuration,
             api_key=self._api_key,
             batch_name=batch_name,
+            inference_id=inference_id,
         )
 
 
