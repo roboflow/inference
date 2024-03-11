@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import (
     BaseModel,
@@ -11,6 +11,7 @@ from pydantic import (
     confloat,
     field_validator,
 )
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, Union
 
 import cv2
 import supervision as sv
@@ -145,7 +145,7 @@ class VideoSource:
         adaptive_mode_reader_pace_tolerance: float = DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -282,7 +282,7 @@ class VideoSource:
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
-        video_source_properties: Optional[dict[str, float]],
+        video_source_properties: Optional[Dict[str, float]],
     ):
         self._stream_reference = stream_reference
         self._video: Optional[cv2.VideoCapture] = None
@@ -894,7 +894,7 @@ class VideoConsumer:
 
 
 def initialize_source_properties(
-    video: cv2.VideoCapture, properties: dict[str, float]
+    video: cv2.VideoCapture, properties: Dict[str, float]
 ) -> None:
     for property_id, value in properties.items():
         cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())

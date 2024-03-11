@@ -79,7 +79,7 @@ class InferencePipeline:
         mask_decode_mode: Optional[str] = "accurate",
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -251,7 +251,7 @@ class InferencePipeline:
         iou_threshold: Optional[float] = None,
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -369,7 +369,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -495,7 +495,7 @@ class InferencePipeline:
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
-        video_source_properties: Optional[dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, float]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
