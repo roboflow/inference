@@ -45,6 +45,7 @@ RUN pip3 install \
     -r requirements.yolo_world.txt \
     mangum \
     --upgrade \
+    --index-url https://download.pytorch.org/whl/cpu \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
 
