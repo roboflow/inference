@@ -556,7 +556,7 @@ def test_load_image_with_known_type_when_load_from_url_fails(
 ) -> None:
     # given
     url_loader_mock = MagicMock()
-    url_loader_mock.side_effect = InputImageLoadError("")
+    url_loader_mock.side_effect = InputImageLoadError(message="", public_message="")
     image_loaders_mock.__getitem__.return_value = url_loader_mock
 
     # when
