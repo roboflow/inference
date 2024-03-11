@@ -3,13 +3,11 @@ from typing import Optional
 import typer
 from typing_extensions import Annotated
 
-from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
     run_api_speed_benchmark,
     run_python_package_speed_benchmark,
 )
-from inference_cli.lib.container_adapter import stop_inference_containers
 
 benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
 

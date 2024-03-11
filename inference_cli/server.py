@@ -4,7 +4,7 @@ import typer
 from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
-from inference_cli.lib.container_adapter import stop_inference_containers
+from inference_cli.lib.container_adapter import stop_inference_containers, ensure_docker_is_running
 
 server_app = typer.Typer(
     help="""Commands for running the inference server locally. \n 
@@ -68,12 +68,14 @@ def start(
 @server_app.command()
 def status():
     print("Checking status of inference server.")
+    ensure_docker_is_running()
     check_inference_server_status()
 
 
 @server_app.command()
 def stop() -> None:
     print("Terminating running inference containers")
+    ensure_docker_is_running()
     stop_inference_containers()
 
 
