@@ -9,12 +9,15 @@ import docker
 from inference_cli.lib.exceptions import DockerConnectionErrorException
 from inference_cli.lib.utils import read_env_file
 
-try:
-    docker_client = docker.from_env()
-except docker.errors.DockerException as e:
-    raise DockerConnectionErrorException(
-        "Error connecting to Docker daemon. Is docker installed and running? See https://www.docker.com/get-started/ for installation instructions."
-    ) from e
+
+def ensure_docker_is_running() -> None:
+    try:
+        _ = docker.from_env()
+    except docker.errors.DockerException as e:
+        raise DockerConnectionErrorException(
+            "Error connecting to Docker daemon. Is docker installed and running? "
+            "See https://www.docker.com/get-started/ for installation instructions."
+        ) from e
 
 
 def ask_user_to_kill_container(container: Container) -> bool:
@@ -71,6 +74,7 @@ def kill_containers(containers: List[Container]) -> None:
 
 
 def find_running_inference_containers() -> List[Container]:
+    docker_client = docker.from_env()
     containers = []
     for c in docker_client.containers.list():
         if is_inference_server_container(c):
@@ -133,6 +137,7 @@ def start_inference_container(
     ports = {"9001": port}
     if development:
         ports["9002"] = 9002
+    docker_client = docker.from_env()
     docker_client.containers.run(
         image=image,
         privileged=privileged,
@@ -209,6 +214,7 @@ Image: {image}
 
 
 def pull_image(image: str) -> None:
+    docker_client = docker.from_env()
     print(f"Pulling image: {image}")
     progress_tasks = {}
     with Progress() as progress:

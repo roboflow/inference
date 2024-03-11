@@ -92,8 +92,8 @@ def test_kill_containers_purges_all_containers_passed() -> None:
     containers[1].kill.assert_called_once()
 
 
-@mock.patch.object(container_adapter, "docker_client")
-def test_find_running_inference_containers(docker_client_mock: MagicMock) -> None:
+@mock.patch.object(container_adapter, "docker")
+def test_find_running_inference_containers(docker_mock: MagicMock) -> None:
     # given
     containers = [MagicMock(), MagicMock(), MagicMock()]
     # inference container - not running
@@ -105,7 +105,7 @@ def test_find_running_inference_containers(docker_client_mock: MagicMock) -> Non
     # other container - running
     containers[2].image.tags = ["some", "other"]
     containers[2].attrs = {"State": {"Status": "running"}}
-    docker_client_mock.containers.list.return_value = containers
+    docker_mock.from_env.return_value.containers.list.return_value = containers
 
     # when
     result = find_running_inference_containers()
