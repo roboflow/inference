@@ -51,7 +51,13 @@ def test_ensure_model_is_selected_when_model_is_not_selected() -> None:
 
 
 @pytest.mark.parametrize(
-    "api_url", ["https://detections.roboflow.com", "inference.roboflow.com"]
+    "api_url",
+    [
+        "https://detect.roboflow.com",
+        "https://outline.roboflow.com",
+        "https://classify.roboflow.com",
+        "https://infer.roboflow.com",
+    ],
 )
 def test_determine_client_mode_when_roboflow_hosted_api_is_used(api_url: str) -> None:
     # when
