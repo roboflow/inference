@@ -109,20 +109,24 @@ def api_speed(
         )
         if proceed.lower() != "y":
             return None
-    run_api_speed_benchmark(
-        model_id=model_id,
-        dataset_reference=dataset_reference,
-        host=host,
-        warm_up_requests=warm_up_requests,
-        benchmark_requests=benchmark_requests,
-        request_batch_size=request_batch_size,
-        number_of_clients=number_of_clients,
-        requests_per_second=requests_per_second,
-        api_key=api_key,
-        model_configuration=model_configuration,
-        output_location=output_location,
-        enforce_legacy_endpoints=enforce_legacy_endpoints,
-    )
+    try:
+        run_api_speed_benchmark(
+            model_id=model_id,
+            dataset_reference=dataset_reference,
+            host=host,
+            warm_up_requests=warm_up_requests,
+            benchmark_requests=benchmark_requests,
+            request_batch_size=request_batch_size,
+            number_of_clients=number_of_clients,
+            requests_per_second=requests_per_second,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+            enforce_legacy_endpoints=enforce_legacy_endpoints,
+        )
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @benchmark_app.command()
@@ -180,16 +184,20 @@ def python_package_speed(
         ),
     ] = None,
 ):
-    run_python_package_speed_benchmark(
-        model_id=model_id,
-        dataset_reference=dataset_reference,
-        warm_up_inferences=warm_up_inferences,
-        benchmark_inferences=benchmark_inferences,
-        batch_size=batch_size,
-        api_key=api_key,
-        model_configuration=model_configuration,
-        output_location=output_location,
-    )
+    try:
+        run_python_package_speed_benchmark(
+            model_id=model_id,
+            dataset_reference=dataset_reference,
+            warm_up_inferences=warm_up_inferences,
+            benchmark_inferences=benchmark_inferences,
+            batch_size=batch_size,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+        )
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

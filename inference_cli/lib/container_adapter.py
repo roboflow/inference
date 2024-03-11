@@ -137,6 +137,7 @@ def start_inference_container(
     ports = {"9001": port}
     if development:
         ports["9002"] = 9002
+    docker_client = docker.from_env()
     docker_client.containers.run(
         image=image,
         privileged=privileged,
