@@ -987,18 +987,21 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
-                    logger.debug(f"Reached /yolo_world/infer")
+                    logger.debug(f"Reached /yolo_world/infer. Loading model")
                     yolo_world_model_id = load_yolo_world_model(
                         inference_request, api_key=api_key
                     )
+                    logger.debug("YOLOWorld model loaded. Staring the inference.")
                     response = await self.model_manager.infer_from_request(
                         yolo_world_model_id, inference_request
                     )
+                    logger.debug("YOLOWorld prediction available.")
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(yolo_world_model_id, actor)
+                        logger.debug("Usage of YOLOWorld denoted.")
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:
