@@ -4,6 +4,7 @@ from typing import Any, Optional
 import numpy as np
 from ultralytics import YOLO
 
+from inference.core import logger
 from inference.core.cache import cache
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -88,24 +89,30 @@ class YOLOWorld(RoboflowCoreModel):
         Returns:
             GroundingDINOInferenceRequest: The inference response.
         """
+        logger.debug("YOLOWorld infer() - image preprocessing.")
         t1 = perf_counter()
         image = self.preproc_image(image)
+        logger.debug("YOLOWorld infer() - image ready.")
         img_dims = image.shape
 
         if text is not None and text != self.class_names:
+            logger.debug("YOLOWorld infer() - classes embeddings are calculated.")
             self.set_classes(text)
+            logger.debug("YOLOWorld infer() - classes embeddings are ready.")
         if self.class_names is None:
             raise ValueError(
                 "Class names not set and not provided in the request. Must set class names before inference or provide them via the argument `text`."
             )
+        logger.debug("YOLOWorld infer() - prediction starts.")
         results = self.model.predict(
             image,
             conf=confidence,
             verbose=False,
         )[0]
-
+        logger.debug("YOLOWorld infer() - predictions ready.")
         t2 = perf_counter() - t1
 
+        logger.debug("YOLOWorld infer() - post-processing starting")
         if len(results) > 0:
             bbox_array = np.array([box.xywh.tolist()[0] for box in results.boxes])
             conf_array = np.array([[float(box.conf)] for box in results.boxes])
@@ -127,7 +134,7 @@ class YOLOWorld(RoboflowCoreModel):
         else:
             pred_array = []
         predictions = []
-
+        logger.debug("YOLOWorld infer() - post-processing done")
         for i, pred in enumerate(pred_array):
             predictions.append(
                 ObjectDetectionPrediction(
