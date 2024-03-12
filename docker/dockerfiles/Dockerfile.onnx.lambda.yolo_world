@@ -50,7 +50,7 @@ RUN pip3 install \
     && rm -rf ~/.cache/pip
 
 
-WORKDIR /home/sbx_user1051/.cache/clip
+WORKDIR /tmp/cache/clip
 RUN wget https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference

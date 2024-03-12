@@ -1,3 +1,4 @@
+import os.path
 from time import perf_counter
 from typing import Any, Optional
 
@@ -14,7 +15,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import DEFAULT_CLASS_AGNOSTIC_NMS, DEFAULT_MAX_CANDIDATES
+from inference.core.env import DEFAULT_CLASS_AGNOSTIC_NMS, DEFAULT_MAX_CANDIDATES, MODEL_CACHE_DIR
 from inference.core.models.defaults import (
     DEFAULT_CONFIDENCE,
     DEFAULT_IOU_THRESH,
@@ -47,7 +48,7 @@ class YOLOWorld(RoboflowCoreModel):
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
         logger.debug("Loading CLIP ViT-B/32")
-        clip_model, _ = clip.load("/home/sbx_user1051/.cache/clip/ViT-B-32.pt")
+        clip_model, _ = clip.load("ViT-B/32", download_root=os.path.join(MODEL_CACHE_DIR, "clip"))
         logger.debug("CLIP loaded")
         self.clip_model = clip_model
         self.class_names = None
