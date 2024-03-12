@@ -46,7 +46,9 @@ class YOLOWorld(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
-        clip_model, _ = clip.load("ViT-B/32")
+        logger.debug("Loading CLIP ViT-B/32")
+        clip_model, _ = clip.load("/home/sbx_user1051/.cache/clip/ViT-B-32.pt")
+        logger.debug("CLIP loaded")
         self.clip_model = clip_model
         self.class_names = None
 
