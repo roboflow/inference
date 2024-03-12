@@ -1,7 +1,9 @@
 from time import perf_counter
 from typing import Any, Optional
 
+import clip
 import numpy as np
+import torch
 from ultralytics import YOLO
 
 from inference.core import logger
@@ -44,6 +46,8 @@ class YOLOWorld(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
+        clip_model, _ = clip.load("ViT-B/32")
+        self.clip_model = clip_model
         self.class_names = None
 
     def preproc_image(self, image: Any):
@@ -173,7 +177,14 @@ class YOLOWorld(RoboflowCoreModel):
             logger.debug(
                 "Could not retrieve embeddings from cache. Calculating using CLIP model"
             )
-            self.model.set_classes(text)
+            device = next(self.clip_model.parameters()).device
+            text_token = self.clip_model.tokenize(text).to(device)
+            txt_feats = self.clip_model.encode_text(text_token).to(dtype=torch.float32)
+            txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
+            self.model.model.txt_feats = txt_feats.reshape(
+                -1, len(text), txt_feats.shape[-1]
+            ).detach()
+            self.model.model.model[-1].nc = len(text)
             logger.debug("Calculated embeddings saving into cache")
             cache.set_numpy(text_hash, self.model.model.txt_feats, expire=300)
             logger.debug("Embeddings saved into cache")
