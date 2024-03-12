@@ -89,7 +89,7 @@ class RedisCache(BaseCache):
         if item is not None:
             try:
                 return json.loads(item)
-            except TypeError:
+            except (TypeError, ValueError):
                 return item
 
     def set(self, key: str, value: str, expire: float = None):
