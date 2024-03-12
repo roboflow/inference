@@ -18,11 +18,8 @@ then
   echo "Building slim image"
   REPOSITORY=$REPOSITORY-slim
   DOCKERFILE=docker/dockerfiles/Dockerfile.onnx.lambda.slim
-elif [ $VERSION = 'yolo-world' ]
-then
-  echo "Building yolo-world image"
-  DOCKERFILE=docker/dockerfiles/Dockerfile.onnx.lambda.yolo_world
 else
+  echo "Building standard image"
   DOCKERFILE=docker/dockerfiles/Dockerfile.onnx.lambda
 fi
 docker/publish/deploy_docker_image.sh $REPOSITORY $DOCKERFILE
