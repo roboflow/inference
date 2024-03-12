@@ -166,11 +166,17 @@ class YOLOWorld(RoboflowCoreModel):
         text_hash = get_string_list_hash(text)
         cached_embeddings = cache.get_numpy(text_hash)
         if cached_embeddings is not None:
+            logger.debug("Retrieved embeddings from cache")
             self.model.model.txt_feats = cached_embeddings
             self.model.model.model[-1].nc = len(text)
         else:
+            logger.debug(
+                "Could not retrieve embeddings from cache. Calculating using CLIP model"
+            )
             self.model.set_classes(text)
+            logger.debug("Calculated embeddings saving into cache")
             cache.set_numpy(text_hash, self.model.model.txt_feats, expire=300)
+            logger.debug("Embeddings saved into cache")
         self.class_names = text
 
     def get_infer_bucket_file_list(self) -> list:
