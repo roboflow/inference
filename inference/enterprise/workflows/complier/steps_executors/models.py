@@ -360,6 +360,7 @@ def construct_http_client_configuration_for_classification_step(
         disable_active_learning=resolve(step.disable_active_learning),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -383,6 +384,7 @@ def construct_http_client_configuration_for_detection_step(
         max_candidates=resolve(step.max_candidates),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -408,6 +410,7 @@ def construct_http_client_configuration_for_segmentation_step(
         tradeoff_factor=resolve(step.tradeoff_factor),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -432,6 +435,7 @@ def construct_http_client_configuration_for_keypoints_detection_step(
         keypoint_confidence_threshold=resolve(step.keypoint_confidence),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
