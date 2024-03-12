@@ -180,7 +180,7 @@ class YOLOWorld(RoboflowCoreModel):
                 "Could not retrieve embeddings from cache. Calculating using CLIP model"
             )
             device = next(self.clip_model.parameters()).device
-            text_token = self.clip_model.tokenize(text).to(device)
+            text_token = clip.tokenize(text).to(device)
             txt_feats = self.clip_model.encode_text(text_token).to(dtype=torch.float32)
             txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
             self.model.model.txt_feats = txt_feats.reshape(
