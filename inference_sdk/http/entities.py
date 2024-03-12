@@ -20,6 +20,13 @@ INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
 DEFAULT_MAX_INPUT_SIZE = 1024
 
+ALL_ROBOFLOW_API_URLS = {
+    "https://detect.roboflow.com",
+    "https://outline.roboflow.com",
+    "https://classify.roboflow.com",
+    "https://infer.roboflow.com",
+}
+
 
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):

@@ -8,6 +8,7 @@ from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
 from inference_sdk.http.entities import (
+    ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
     KEYPOINTS_DETECTION_TASK,
@@ -1197,7 +1198,7 @@ def _determine_client_downsizing_parameters(
 
 
 def _determine_client_mode(api_url: str) -> HTTPClientMode:
-    if "roboflow.com" in api_url:
+    if any(api_url.startswith(roboflow_url) for roboflow_url in ALL_ROBOFLOW_API_URLS):
         return HTTPClientMode.V0
     return HTTPClientMode.V1
 

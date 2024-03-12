@@ -86,17 +86,21 @@ def infer(
     typer.echo(
         f"Running inference on {input_reference}, using model: {model_id}, and host: {host}"
     )
-    inference_cli.lib.infer(
-        input_reference=input_reference,
-        model_id=model_id,
-        api_key=api_key,
-        host=host,
-        output_location=output_location,
-        display=display,
-        visualise=visualise,
-        visualisation_config=visualisation_config,
-        model_configuration=model_config,
-    )
+    try:
+        inference_cli.lib.infer(
+            input_reference=input_reference,
+            model_id=model_id,
+            api_key=api_key,
+            host=host,
+            output_location=output_location,
+            display=display,
+            visualise=visualise,
+            visualisation_config=visualisation_config,
+            model_configuration=model_config,
+        )
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
