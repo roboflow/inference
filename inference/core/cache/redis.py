@@ -42,7 +42,7 @@ class RedisCache(BaseCache):
             host=host,
             port=port,
             db=db,
-            decode_responses=True,
+            decode_responses=False,
             ssl=ssl,
             socket_timeout=timeout,
             socket_connect_timeout=timeout,
