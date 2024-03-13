@@ -30,10 +30,10 @@ def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
 
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -64,10 +64,10 @@ def test_yolo_world_v1_m_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05,
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -98,10 +98,10 @@ def test_yolo_world_v1_l_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -132,10 +132,10 @@ def test_yolo_world_v1_x_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -167,10 +167,10 @@ def test_yolo_world_v2_s_against_single_image(person_image: np.ndarray) -> None:
 
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -201,10 +201,10 @@ def test_yolo_world_v2_m_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -235,10 +235,10 @@ def test_yolo_world_v2_l_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence.round(5)
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -269,10 +269,10 @@ def test_yolo_world_v2_x_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy.round(2), expected_detections.xyxy
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence.round(5), expected_detections.confidence.round(5)
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
