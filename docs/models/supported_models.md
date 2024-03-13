@@ -23,3 +23,4 @@ The following custom models are supported:
 - Grounding DINO
 - L2CS-Net
 - Segment Anything
+- YOLOWorld

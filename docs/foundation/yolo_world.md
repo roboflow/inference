@@ -10,6 +10,13 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
     YOLO-World, like most state-of-the-art zero-shot detection models, is most effective at identifying common objects (i.e. cars, people, dogs, etc.). It is less effective at identifying uncommon objects (i.e. a specific type of car, a specific person, a specific dog, etc.).
 
+!!! note
+
+    In `inference` package YOLO-World models are identified by `yolo_world/<version>`, where `<version>` can be one of
+    the following: `s`, `m`, `l`, `x`, `v2-s`, `v2-m`, `v2-l`, `v2-x`. Versions `v2-...` denote newer models, with
+    improved evaluation metrics.
+
+
 ### How to Use YOLO-World
 
 === "Inference Python Library"
