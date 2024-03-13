@@ -239,6 +239,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         logger.debug(f"Putting registration task into queue")
         try:

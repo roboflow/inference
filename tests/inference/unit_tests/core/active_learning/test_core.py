@@ -280,6 +280,7 @@ def test_safe_register_image_at_roboflow_when_registration_fails(
             api_key="api-key",
             batch_name="some-batch",
             tags=[],
+            inference_id=None,
         )
 
     # then
@@ -290,6 +291,7 @@ def test_safe_register_image_at_roboflow_when_registration_fails(
         image_bytes=b"IMAGE",
         batch_name="some-batch",
         tags=[],
+        inference_id=None,
     )
     return_strategy_credit_mock.assert_called_once_with(
         cache=cache,
@@ -369,6 +371,7 @@ def test_safe_register_image_at_roboflow_when_registration_detects_duplicate(
         api_key="api-key",
         batch_name="some-batch",
         tags=[],
+        inference_id="inference-id-234",
     )
 
     # then
@@ -379,6 +382,7 @@ def test_safe_register_image_at_roboflow_when_registration_detects_duplicate(
         image_bytes=b"IMAGE",
         batch_name="some-batch",
         tags=[],
+        inference_id="inference-id-234",
     )
     return_strategy_credit_mock.assert_not_called()
     assert result == "roboflow-id"
@@ -409,7 +413,7 @@ def test_register_datapoint_at_roboflow_when_predictions_not_to_be_persisted(
         configuration=configuration,
         api_key="api-key",
         batch_name="some-batch",
-        inference_id=None,
+        inference_id="inference-id-987",
     )
 
     # then
@@ -426,6 +430,7 @@ def test_register_datapoint_at_roboflow_when_predictions_not_to_be_persisted(
         api_key="api-key",
         batch_name="some-batch",
         tags=["a", "b"],
+        inference_id="inference-id-987",
     )
     annotate_image_at_roboflow_mock.assert_not_called()
 
@@ -560,7 +565,7 @@ def test_register_datapoint_at_roboflow_when_image_registration_error_occurs(
             configuration=configuration,
             api_key="api-key",
             batch_name="some-batch",
-            inference_id=None,
+            inference_id="inference-id-876",
         )
 
     # then
@@ -577,6 +582,7 @@ def test_register_datapoint_at_roboflow_when_image_registration_error_occurs(
         api_key="api-key",
         batch_name="some-batch",
         tags=["a", "b"],
+        inference_id="inference-id-876",
     )
     annotate_image_at_roboflow_mock.assert_not_called()
 
