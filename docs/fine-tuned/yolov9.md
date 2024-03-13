@@ -17,7 +17,7 @@ Click a link below to see instructions on how to run a YOLOv8 model on different
 
 Starting from scratch? Use our Deployment Wizard to get a code snippet tailored to your device and use case.
 
-- [Configure a YOLOv8 Object Detection Model](/quickstart/configure_yolov8_object_detection/)
+- [Configure a YOLOv9 Object Detection Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Image%20Segmentation)
 
 ## License
 

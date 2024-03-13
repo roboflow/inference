@@ -15,7 +15,7 @@ Click a link below to see instructions on how to run a YOLOv8 model on different
 
 Starting from scratch? Use our Deployment Wizard to get a code snippet tailored to your device and use case.
 
-- [Deploy a YOLOv7 Segmentation Model](/quickstart/configure_yolov8_segmentation/)
+- [Deploy a YOLOv7 Segmentation Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Image%20Segmentation)
 
 ## License
 
