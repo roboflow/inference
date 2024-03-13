@@ -17,9 +17,9 @@ Click a link below to see instructions on how to run a YOLO-NAS model on differe
 
 Starting from scratch? Use our Deployment Wizard to get a code snippet tailored to your device and use case.
 
-- [Configure a YOLO-NAS Object Detection Model](/quickstart/configure_yolov8_object_detection/)
-- [Configure a YOLO-NAS Classification Model](/quickstart/configure_yolov8_classification/)
-- [Configure a YOLO-NAS Segmentation Model](/quickstart/configure_yolov8_segmentation/)
+- [Configure a YOLO-NAS Object Detection Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Object%20Detection)
+- [Configure a YOLO-NAS Classification Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Classification)
+- [Configure a YOLO-NAS Segmentation Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Image%20Segmentation)
 
 ## License
 
