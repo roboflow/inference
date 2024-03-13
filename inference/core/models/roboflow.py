@@ -242,6 +242,7 @@ class RoboflowInferenceModel(Model):
             infer_bucket_files = self.get_all_required_infer_bucket_file()
             cache_directory = get_cache_dir()
             s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
+            logger.debug(f"S3 bucket: {self.model_artifact_bucket}, keys: {s3_keys}")
             download_s3_files_to_directory(
                 bucket=self.model_artifact_bucket,
                 keys=s3_keys,
