@@ -189,10 +189,9 @@ async def safe_execute_step(
             background_tasks=background_tasks,
         )
     except Exception as error:
+        logger.exception(f"Execution of step {step} encountered error.")
         raise ExecutionEngineError(
-            f"Error during execution of step: {step}. "
-            f"Type of error: {type(error).__name__}. "
-            f"Cause: {error}"
+            f"Error during execution of step: {step}."
         ) from error
 
 
