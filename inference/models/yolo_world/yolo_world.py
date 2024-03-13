@@ -32,10 +32,10 @@ from inference.core.utils.image_utils import load_image_rgb
 
 
 class YOLOWorld(RoboflowCoreModel):
-    """GroundingDINO class for zero-shot object detection.
+    """YOLO-World class for zero-shot object detection.
 
     Attributes:
-        model: The GroundingDINO model.
+        model: The YOLO-World model.
     """
 
     task_type = "object-detection"
