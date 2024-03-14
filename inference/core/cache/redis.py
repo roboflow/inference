@@ -42,7 +42,7 @@ class RedisCache(BaseCache):
             host=host,
             port=port,
             db=db,
-            decode_responses=True,
+            decode_responses=False,
             ssl=ssl,
             socket_timeout=timeout,
             socket_connect_timeout=timeout,
@@ -89,7 +89,7 @@ class RedisCache(BaseCache):
         if item is not None:
             try:
                 return json.loads(item)
-            except TypeError:
+            except (TypeError, ValueError):
                 return item
 
     def set(self, key: str, value: str, expire: float = None):

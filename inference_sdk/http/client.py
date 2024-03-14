@@ -827,10 +827,15 @@ class InferenceHTTPClient:
     def get_clip_image_embeddings(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        extra_payload = {}
+        if clip_version is not None:
+            extra_payload["clip_version_id"] = clip_version
         result = self._post_images(
             inference_input=inference_input,
             endpoint="/clip/embed_image",
+            extra_payload=extra_payload,
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
@@ -839,20 +844,29 @@ class InferenceHTTPClient:
     async def get_clip_image_embeddings_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        extra_payload = {}
+        if clip_version is not None:
+            extra_payload["clip_version_id"] = clip_version
         result = await self._post_images_async(
             inference_input=inference_input,
             endpoint="/clip/embed_image",
+            extra_payload=extra_payload,
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
 
     @wrap_errors
     def get_clip_text_embeddings(
-        self, text: Union[str, List[str]]
+        self,
+        text: Union[str, List[str]],
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         payload = self.__initialise_payload()
         payload["text"] = text
+        if clip_version is not None:
+            payload["clip_version_id"] = clip_version
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
@@ -863,10 +877,14 @@ class InferenceHTTPClient:
 
     @wrap_errors_async
     async def get_clip_text_embeddings_async(
-        self, text: Union[str, List[str]]
+        self,
+        text: Union[str, List[str]],
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         payload = self.__initialise_payload()
         payload["text"] = text
+        if clip_version is not None:
+            payload["clip_version_id"] = clip_version
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
@@ -884,6 +902,7 @@ class InferenceHTTPClient:
         prompt: Union[str, List[str], ImagesReference, List[ImagesReference]],
         subject_type: str = "image",
         prompt_type: str = "text",
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         """
         Both `subject_type` and `prompt_type` must be either "image" or "text"
@@ -898,6 +917,8 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["subject_type"] = subject_type
         payload["prompt_type"] = prompt_type
+        if clip_version is not None:
+            payload["clip_version_id"] = clip_version
         if subject_type == "image":
             encoded_image = load_static_inference_input(
                 inference_input=subject,
@@ -931,6 +952,7 @@ class InferenceHTTPClient:
         prompt: Union[str, List[str], ImagesReference, List[ImagesReference]],
         subject_type: str = "image",
         prompt_type: str = "text",
+        clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         """
         Both `subject_type` and `prompt_type` must be either "image" or "text"
@@ -945,6 +967,8 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["subject_type"] = subject_type
         payload["prompt_type"] = prompt_type
+        if clip_version is not None:
+            payload["clip_version_id"] = clip_version
         if subject_type == "image":
             encoded_image = await load_static_inference_input_async(
                 inference_input=subject,
@@ -1112,6 +1136,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         endpoint: str,
         model_id: Optional[str] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
@@ -1120,6 +1145,8 @@ class InferenceHTTPClient:
         if model_id is not None:
             payload["model_id"] = model_id
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}")
+        if extra_payload is not None:
+            payload.update(extra_payload)
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
@@ -1142,6 +1169,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         endpoint: str,
         model_id: Optional[str] = None,
+        extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
@@ -1150,6 +1178,8 @@ class InferenceHTTPClient:
         if model_id is not None:
             payload["model_id"] = model_id
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{endpoint}")
+        if extra_payload is not None:
+            payload.update(extra_payload)
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,

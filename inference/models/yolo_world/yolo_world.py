@@ -1,9 +1,13 @@
+import os.path
 from time import perf_counter
 from typing import Any, Optional
 
+import clip
 import numpy as np
+import torch
 from ultralytics import YOLO
 
+from inference.core import logger
 from inference.core.cache import cache
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -19,15 +23,18 @@ from inference.core.models.defaults import (
 )
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.nms import w_np_non_max_suppression
-from inference.core.utils.hash import get_string_list_hash
+from inference.core.utils.hash import get_text_hash
 from inference.core.utils.image_utils import load_image_rgb
+from inference.models import Clip
+
+EMBEDDINGS_EXPIRE_TIMEOUT = 1800  # 30 min
 
 
 class YOLOWorld(RoboflowCoreModel):
-    """GroundingDINO class for zero-shot object detection.
+    """YOLO-World class for zero-shot object detection.
 
     Attributes:
-        model: The GroundingDINO model.
+        model: The YOLO-World model.
     """
 
     task_type = "object-detection"
@@ -43,6 +50,10 @@ class YOLOWorld(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
+        logger.debug("Loading CLIP ViT-B/32")
+        clip_model = Clip(model_id="clip/ViT-B-32")
+        logger.debug("CLIP loaded")
+        self.clip_model = clip_model
         self.class_names = None
 
     def preproc_image(self, image: Any):
@@ -88,24 +99,30 @@ class YOLOWorld(RoboflowCoreModel):
         Returns:
             GroundingDINOInferenceRequest: The inference response.
         """
+        logger.debug("YOLOWorld infer() - image preprocessing.")
         t1 = perf_counter()
         image = self.preproc_image(image)
+        logger.debug("YOLOWorld infer() - image ready.")
         img_dims = image.shape
 
         if text is not None and text != self.class_names:
+            logger.debug("YOLOWorld infer() - classes embeddings are calculated.")
             self.set_classes(text)
+            logger.debug("YOLOWorld infer() - classes embeddings are ready.")
         if self.class_names is None:
             raise ValueError(
                 "Class names not set and not provided in the request. Must set class names before inference or provide them via the argument `text`."
             )
+        logger.debug("YOLOWorld infer() - prediction starts.")
         results = self.model.predict(
             image,
             conf=confidence,
             verbose=False,
         )[0]
-
+        logger.debug("YOLOWorld infer() - predictions ready.")
         t2 = perf_counter() - t1
 
+        logger.debug("YOLOWorld infer() - post-processing starting")
         if len(results) > 0:
             bbox_array = np.array([box.xywh.tolist()[0] for box in results.boxes])
             conf_array = np.array([[float(box.conf)] for box in results.boxes])
@@ -127,7 +144,7 @@ class YOLOWorld(RoboflowCoreModel):
         else:
             pred_array = []
         predictions = []
-
+        logger.debug("YOLOWorld infer() - post-processing done")
         for i, pred in enumerate(pred_array):
             predictions.append(
                 ObjectDetectionPrediction(
@@ -156,14 +173,47 @@ class YOLOWorld(RoboflowCoreModel):
         Args:
             text (list): The class names.
         """
-        text_hash = get_string_list_hash(text)
-        cached_embeddings = cache.get_numpy(text_hash)
-        if cached_embeddings is not None:
-            self.model.model.txt_feats = cached_embeddings
-            self.model.model.model[-1].nc = len(text)
+        class_names_to_calculate_embeddings = []
+        classes_embeddings = {}
+        for class_name in text:
+            class_name_hash = f"clip-embedding:{get_text_hash(text=class_name)}"
+            embedding_for_class = cache.get_numpy(class_name_hash)
+            if embedding_for_class is not None:
+                logger.debug(f"Cache hit for class: {class_name}")
+                classes_embeddings[class_name] = embedding_for_class
+            else:
+                logger.debug(f"Cache miss for class: {class_name}")
+                class_names_to_calculate_embeddings.append(class_name)
+        if len(class_names_to_calculate_embeddings) > 0:
+            logger.debug(
+                f"Calculating CLIP embeddings for {len(class_names_to_calculate_embeddings)} class names"
+            )
+            cache_miss_embeddings = self.clip_model.embed_text(
+                text=class_names_to_calculate_embeddings
+            )
         else:
-            self.model.set_classes(text)
-            cache.set_numpy(text_hash, self.model.model.txt_feats, expire=300)
+            cache_miss_embeddings = []
+        for missing_class_name, calculated_embedding in zip(
+            class_names_to_calculate_embeddings, cache_miss_embeddings
+        ):
+            classes_embeddings[missing_class_name] = calculated_embedding
+            missing_class_name_hash = (
+                f"clip-embedding:{get_text_hash(text=missing_class_name)}"
+            )
+            cache.set_numpy(  # caching vectors of shape (512,)
+                missing_class_name_hash,
+                calculated_embedding,
+                expire=EMBEDDINGS_EXPIRE_TIMEOUT,
+            )
+        embeddings_in_order = np.stack(
+            [classes_embeddings[class_name] for class_name in text], axis=0
+        )
+        txt_feats = torch.from_numpy(embeddings_in_order)
+        txt_feats = txt_feats / txt_feats.norm(p=2, dim=-1, keepdim=True)
+        self.model.model.txt_feats = txt_feats.reshape(
+            -1, len(text), txt_feats.shape[-1]
+        ).detach()
+        self.model.model.model[-1].nc = len(text)
         self.class_names = text
 
     def get_infer_bucket_file_list(self) -> list:

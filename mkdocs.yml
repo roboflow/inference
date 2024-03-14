@@ -38,7 +38,7 @@ nav:
       - YOLOv8: fine-tuned/yolov8.md
       - YOLOv7: fine-tuned/yolov7.md
       - YOLOv5: fine-tuned/yolov5.md
-      - YOLO-NAS: fine-tuned/yolo_nas.md
+      - YOLO-NAS: fine-tuned/yolonas.md
     - Run a Model:
       - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
