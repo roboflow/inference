@@ -2686,7 +2686,7 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
     )
 
     # when
-    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg")
+    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg", clip_version="ViT-B-32")
 
     # then
     assert (
@@ -2694,6 +2694,7 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
     ), "Result must match the value returned by HTTP endpoint"
     assert requests_mock.request_history[0].json() == {
         "image": {"type": "base64", "value": "base64_image"},
+        "clip_version_id": "ViT-B-32",
     }, "Request must contain image encoded in standard format"
 
 
@@ -2730,7 +2731,7 @@ async def test_get_clip_image_embeddings_async_when_single_image_given_in_v0_mod
 
         # when
         result = await http_client.get_clip_image_embeddings_async(
-            inference_input="/some/image.jpg"
+            inference_input="/some/image.jpg", clip_version="ViT-B-32",
         )
 
         # then
@@ -2744,6 +2745,7 @@ async def test_get_clip_image_embeddings_async_when_single_image_given_in_v0_mod
             data=None,
             json={
                 "image": {"type": "base64", "value": "base64_image"},
+                "clip_version_id": "ViT-B-32"
             },
             headers={"Content-Type": "application/json"},
         )
@@ -2822,7 +2824,7 @@ def test_get_clip_text_embeddings_when_single_text_given(
     )
 
     # when
-    result = http_client.get_clip_text_embeddings(text="some")
+    result = http_client.get_clip_text_embeddings(text="some", clip_version="ViT-B-32")
 
     # then
     assert (
@@ -2831,6 +2833,7 @@ def test_get_clip_text_embeddings_when_single_text_given(
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "text": "some",
+        "clip_version_id": "ViT-B-32",
     }, "Request must contain API key and text"
 
 
@@ -2862,7 +2865,7 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
         )
 
         # when
-        result = await http_client.get_clip_text_embeddings_async(text="some")
+        result = await http_client.get_clip_text_embeddings_async(text="some", clip_version="ViT-B-32")
 
         # then
         assert (
@@ -2875,6 +2878,7 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
             json={
                 "api_key": "my-api-key",
                 "text": "some",
+                "clip_version_id": "ViT-B-32",
             },
             headers={"Content-Type": "application/json"},
         )
@@ -2984,6 +2988,7 @@ def test_clip_compare_when_both_prompt_and_subject_are_texts(
         prompt=["dog", "house"],
         subject_type="text",
         prompt_type="text",
+        clip_version="ViT-B-32"
     )
 
     # then
@@ -2998,6 +3003,7 @@ def test_clip_compare_when_both_prompt_and_subject_are_texts(
         "prompt": ["dog", "house"],
         "prompt_type": "text",
         "subject_type": "text",
+        "clip_version_id": "ViT-B-32",
     }, "Request must contain API key, subject and prompt types as text, exact values of subject and list of prompt values"
 
 
@@ -3022,6 +3028,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
             prompt=["dog", "house"],
             subject_type="text",
             prompt_type="text",
+            clip_version="ViT-B-32"
         )
 
         # then
@@ -3039,6 +3046,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
                 "prompt": ["dog", "house"],
                 "prompt_type": "text",
                 "subject_type": "text",
+                "clip_version_id": "ViT-B-32",
             },
             headers={"Content-Type": "application/json"},
         )
