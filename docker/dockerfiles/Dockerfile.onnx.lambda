@@ -53,10 +53,6 @@ RUN pip3 install \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
 
-
-WORKDIR /tmp/cache/clip
-RUN wget https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt
-
 COPY inference ${LAMBDA_TASK_ROOT}/inference
 COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
