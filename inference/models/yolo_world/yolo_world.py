@@ -195,7 +195,7 @@ class YOLOWorld(RoboflowCoreModel):
             ).detach()
             self.model.model.model[-1].nc = len(text)
             logger.debug("Calculated embeddings saving into cache")
-            cache.set_numpy(text_hash, self.model.model.txt_feats, expire=300)
+            cache.set_numpy(text_hash, self.model.model.txt_feats, expire=1800)
             logger.debug("Embeddings saved into cache")
         self.class_names = text
 
