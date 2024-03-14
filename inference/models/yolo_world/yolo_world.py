@@ -15,10 +15,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import (
-    DEFAULT_CLASS_AGNOSTIC_NMS,
-    DEFAULT_MAX_CANDIDATES,
-)
+from inference.core.env import DEFAULT_CLASS_AGNOSTIC_NMS, DEFAULT_MAX_CANDIDATES
 from inference.core.models.defaults import (
     DEFAULT_CONFIDENCE,
     DEFAULT_IOU_THRESH,
