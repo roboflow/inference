@@ -24,6 +24,7 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     resolve_model_api_url,
     run_cog_vlm_prompting,
     run_qr_code_detection_step,
+    run_barcode_detection_step,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
@@ -37,6 +38,7 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     QRCodeDetection,
+    BarcodeDetection,
 )
 
 
@@ -787,6 +789,61 @@ async def test_qr_code_detection() -> None:
 
     actual_prediction_type = result["$steps.some"]["prediction_type"]
     assert actual_prediction_type == "qrcode-detection"
+
+
+@pytest.mark.asyncio
+async def test_barcode_detection() -> None:
+    # given
+    step = BarcodeDetection(
+        type="BarcodeDetection",
+        name="some",
+        image="$inputs.image",
+    )
+
+    image = cv2.imread(
+        "./tests/inference/unit_tests/enterprise/workflows/assets/barcodes.png"
+    )
+
+    # when
+    _, result = await run_barcode_detection_step(
+        step=step,
+        runtime_parameters={
+            "image": [
+                {"type": "numpy_object", "value": image, "parent_id": "$inputs.image"}
+            ]
+        },
+        outputs_lookup={},
+        model_manager=MagicMock(),
+        api_key=None,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # then
+    actual_parent_id = result["$steps.some"]["parent_id"]
+    assert actual_parent_id == ["$inputs.image"]
+
+    values = ["47205255193", "37637448832", "21974251554", "81685630817"]
+    actual_predictions = result["$steps.some"]["predictions"][0]
+    assert len(actual_predictions) == 4
+    for prediction in actual_predictions:
+        assert prediction["class"] == "barcode"
+        assert prediction["class_id"] == 0
+        assert prediction["confidence"] == 1.0
+        assert prediction["x"] > 0
+        assert prediction["y"] > 0
+        assert prediction["width"] > 0
+        assert prediction["height"] > 0
+        assert prediction["detection_id"] is not None
+        assert prediction["data"] in values
+        assert prediction["parent_id"] == "$inputs.image"
+
+    actual_image = result["$steps.some"]["image"]
+    assert len(actual_image) == 1
+    assert actual_image[0]["height"] == 480
+    assert actual_image[0]["width"] == 800
+
+    actual_prediction_type = result["$steps.some"]["prediction_type"]
+    assert actual_prediction_type == "barcode-detection"
 
 
 def test_filter_out_unwanted_classes_when_empty_results_provided() -> None:

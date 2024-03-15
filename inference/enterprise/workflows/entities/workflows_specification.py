@@ -12,6 +12,7 @@ from inference.enterprise.workflows.entities.steps import (
     LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
+    BarcodeDetection,
     ClassificationModel,
     ClipComparison,
     Condition,
@@ -35,6 +36,7 @@ InputType = Annotated[
 ]
 StepType = Annotated[
     Union[
+        BarcodeDetection,
         ClassificationModel,
         MultiLabelClassificationModel,
         ObjectDetectionModel,
