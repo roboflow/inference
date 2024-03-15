@@ -195,6 +195,9 @@ def python_package_speed(
             model_configuration=model_configuration,
             output_location=output_location,
         )
+    except KeyboardInterrupt:
+        print("Benchmark interrupted.")
+        return
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)
