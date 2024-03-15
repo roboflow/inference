@@ -182,16 +182,23 @@ def python_package_speed(
         ),
     ] = None,
 ):
-    run_python_package_speed_benchmark(
-        model_id=model_id,
-        dataset_reference=dataset_reference,
-        warm_up_inferences=warm_up_inferences,
-        benchmark_inferences=benchmark_inferences,
-        batch_size=batch_size,
-        api_key=api_key,
-        model_configuration=model_configuration,
-        output_location=output_location,
-    )
+    try:
+        run_python_package_speed_benchmark(
+            model_id=model_id,
+            dataset_reference=dataset_reference,
+            warm_up_inferences=warm_up_inferences,
+            benchmark_inferences=benchmark_inferences,
+            batch_size=batch_size,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+        )
+    except KeyboardInterrupt:
+        print("Benchmark interrupted. Cleaning up...")
+        stop_inference_containers()
+        print("Cleanup completed. Exiting.")
+        return
+
 
 
 if __name__ == "__main__":
