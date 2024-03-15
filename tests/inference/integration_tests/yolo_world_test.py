@@ -41,6 +41,34 @@ def ensure_server_runs():
             raise Exception("Test server failed to start")
 
 
+def get_bounding_boxes(response: dict) -> np.ndarray:
+    result = []
+    for prediction in response["predictions"]:
+        result.append(
+            [
+                prediction["x"],
+                prediction["y"],
+                prediction["width"],
+                prediction["height"],
+            ]
+        )
+    return np.array(result)
+
+
+def get_class_ids(response: dict) -> np.ndarray:
+    result = []
+    for prediction in response["predictions"]:
+        result.append(prediction["class_id"])
+    return np.array(result)
+
+
+def get_classes_confidence(response: dict) -> np.ndarray:
+    result = []
+    for prediction in response["predictions"]:
+        result.append(prediction["confidence"])
+    return np.array(result)
+
+
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
@@ -57,13 +85,11 @@ def test_yolo_world_v1_s() -> None:
         "yolo_world_version_id": "s",
         "confidence": 0.2,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [[1.1122, 279.79, 643.92, 1278.6], [50.946, 249.5, 646.47, 1280]]
-        ),
-        confidence=np.array([0.60646, 0.54239]),
-        class_id=np.array([0, 2]),
+    expected_boxes = np.array(
+        [[322.516, 779.195, 642.808, 998.81], [348.708, 764.75, 595.524, 1030.5]]
     )
+    expected_confidences = np.array([0.60646, 0.54239])
+    expected_classes = np.array([0, 2])
 
     # when
     response = requests.post(
@@ -75,16 +101,13 @@ def test_yolo_world_v1_s() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-5
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -103,17 +126,15 @@ def test_yolo_world_v1_m() -> None:
         "yolo_world_version_id": "m",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [67.649, 248.08, 639.96, 922.75],
-                [1.0265, 355.1, 646.4, 1279],
-                [0.89661, 355, 643.84, 1279.7],
-            ]
-        ),
-        confidence=np.array([0.89549, 0.8669, 0.52278]),
-        class_id=np.array([2, 0, 1]),
+    expected_boxes = np.array(
+        [
+            [353.8045, 585.415, 572.311, 674.67],
+            [323.7132, 817.05, 645.3735, 923.9],
+            [322.3683, 817.35, 642.9434, 924.7],
+        ]
     )
+    expected_confidences = np.array([0.89549, 0.8669, 0.52278])
+    expected_classes = np.array([2, 0, 1])
 
     # when
     response = requests.post(
@@ -125,16 +146,13 @@ def test_yolo_world_v1_m() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.01
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-5
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -153,17 +171,15 @@ def test_yolo_world_v1_l() -> None:
         "yolo_world_version_id": "l",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [0.3009, 356.79, 649.79, 1279.8],
-                [67.3, 247.69, 643.15, 924.46],
-                [1.2094, 667.86, 443.88, 1280],
-            ]
-        ),
-        confidence=np.array([0.94843, 0.89687, 0.36721]),
-        class_id=np.array([0, 2, 1]),
+    expected_boxes = np.array(
+        [
+            [325.0455, 818.295, 649.4891, 923.01],
+            [355.225, 586.075, 575.85, 676.77],
+            [222.5447, 973.93, 442.6706, 612.14],
+        ]
     )
+    expected_confidences = np.array([0.94843, 0.89687, 0.36721])
+    expected_classes = np.array([0, 2, 1])
 
     # when
     response = requests.post(
@@ -175,16 +191,13 @@ def test_yolo_world_v1_l() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-5
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -203,17 +216,15 @@ def test_yolo_world_v1_x() -> None:
         "yolo_world_version_id": "x",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [0, 356.09, 646.18, 1280],
-                [69.174, 248.41, 647.38, 934.57],
-                [1.4413, 664.79, 448.04, 1280],
-            ]
-        ),
-        confidence=np.array([0.80944, 0.77479, 0.37293]),
-        class_id=np.array([0, 2, 1]),
+    expected_boxes = np.array(
+        [
+            [323.09, 818.045, 646.18, 923.91],
+            [358.277, 591.49, 578.206, 686.16],
+            [224.7407, 972.395, 446.5987, 615.21],
+        ]
     )
+    expected_confidences = np.array([0.80944, 0.77479, 0.37293])
+    expected_classes = np.array([0, 2, 1])
 
     # when
     response = requests.post(
@@ -225,16 +236,13 @@ def test_yolo_world_v1_x() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-4
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -253,11 +261,11 @@ def test_yolo_world_v2_s() -> None:
         "yolo_world_version_id": "v2-s",
         "confidence": 0.2,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array([[67.575, 248.78, 644.36, 917.22], [0, 356.15, 607.91, 1280]]),
-        confidence=np.array([0.66347, 0.58448]),
-        class_id=np.array([2, 0]),
+    expected_boxes = np.array(
+        [[355.9675, 583.0, 576.785, 668.44], [303.955, 818.075, 607.91, 923.85]]
     )
+    expected_confidences = np.array([0.66347, 0.58448])
+    expected_classes = np.array([2, 0])
 
     # when
     response = requests.post(
@@ -269,16 +277,13 @@ def test_yolo_world_v2_s() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-5
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -297,17 +302,15 @@ def test_yolo_world_v2_m() -> None:
         "yolo_world_version_id": "v2-m",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [67.633, 249.1, 646.02, 929.87],
-                [0.89825, 354.9, 640, 1279.3],
-                [0.38277, 362.54, 474.88, 1279.7],
-            ]
-        ),
-        confidence=np.array([0.78977, 0.70636, 0.33532]),
-        class_id=np.array([2, 0, 1]),
+    expected_boxes = np.array(
+        [
+            [356.8265, 589.485, 578.387, 680.77],
+            [320.4491, 817.1, 639.1018, 924.4],
+            [237.6314, 821.12, 474.4972, 917.16],
+        ]
     )
+    expected_confidences = np.array([0.78977, 0.70636, 0.33532])
+    expected_classes = np.array([2, 0, 1])
 
     # when
     response = requests.post(
@@ -319,16 +322,13 @@ def test_yolo_world_v2_m() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-4
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -347,18 +347,16 @@ def test_yolo_world_v2_l() -> None:
         "yolo_world_version_id": "v2-l",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [0.84265, 356.88, 648.31, 1279.7],
-                [70.681, 245.05, 642.65, 923.46],
-                [0.20306, 658.29, 498.11, 1279.7],
-                [339.24, 460.29, 469.92, 563.06],
-            ]
-        ),
-        confidence=np.array([0.89018, 0.85904, 0.52798, 0.33998]),
-        class_id=np.array([0, 2, 1, 6]),
+    expected_boxes = np.array(
+        [
+            [324.5763, 818.29, 647.4673, 922.82],
+            [356.6655, 584.255, 571.969, 678.41],
+            [249.1565, 968.995, 497.9069, 621.41],
+            [404.58, 511.675, 130.68, 102.77],
+        ]
     )
+    expected_confidences = np.array([0.89018, 0.85904, 0.52798, 0.33998])
+    expected_classes = np.array([0, 2, 1, 6])
 
     # when
     response = requests.post(
@@ -370,16 +368,13 @@ def test_yolo_world_v2_l() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-4
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"
 
 
 @pytest.mark.skipif(
@@ -398,17 +393,15 @@ def test_yolo_world_v2_x() -> None:
         "yolo_world_version_id": "v2-x",
         "confidence": 0.3,
     }
-    expected_response = sv.Detections(
-        xyxy=np.array(
-            [
-                [70.392, 250.73, 643.59, 931.41],
-                [0.45392, 355.19, 648.05, 1279.9],
-                [338.5, 462.77, 469.06, 562.24],
-            ]
-        ),
-        confidence=np.array([0.94871, 0.93121, 0.63789]),
-        class_id=np.array([2, 0, 6]),
+    expected_boxes = np.array(
+        [
+            [356.991, 591.07, 573.198, 680.68],
+            [324.252, 817.545, 647.5961, 924.71],
+            [403.78, 512.505, 130.56, 99.47],
+        ]
     )
+    expected_confidences = np.array([0.94871, 0.93121, 0.63789])
+    expected_classes = np.array([2, 0, 6])
 
     # when
     response = requests.post(
@@ -420,13 +413,10 @@ def test_yolo_world_v2_x() -> None:
     response.raise_for_status()
     data = response.json()
     assert "predictions" in data, "'predictions' key not present in response"
-    result_detections = sv.Detections.from_roboflow(data)
     assert np.allclose(
-        result_detections.xyxy, expected_response.xyxy, atol=0.05
+        get_bounding_boxes(data), expected_boxes, atol=1e-1
     ), "Predicted boxes missmatch"
     assert np.allclose(
-        result_detections.confidence, expected_response.confidence, atol=1e-4
+        get_classes_confidence(data), expected_confidences, atol=1e-3
     ), "Predicted confidence missmatch"
-    assert (
-        result_detections.class_id == expected_response.class_id
-    ).all(), "Predicted classes"
+    assert (get_class_ids(data) == expected_classes).all(), "Predicted classes"

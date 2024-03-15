@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import math
 import re
 from copy import deepcopy
 from functools import partial
@@ -9,6 +10,7 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
+import zxingcpp
 from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
@@ -56,6 +58,7 @@ from inference.enterprise.workflows.complier.utils import construct_step_selecto
 from inference.enterprise.workflows.entities.steps import (
     GPT_4V_MODEL_TYPE,
     LMM,
+    BarcodeDetection,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -1292,6 +1295,65 @@ def detect_qr_codes(
                 "height": height,
                 "detection_id": str(uuid4()),
                 "data": data,
+            }
+        )
+    return predictions
+
+
+async def run_barcode_detection_step(
+    step: BarcodeDetection,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    decoded_images = [load_image(e)[0] for e in image]
+    image_metadata = [
+        {"width": img.shape[1], "height": img.shape[0]} for img in decoded_images
+    ]
+    image_parent_ids = [img["parent_id"] for img in image]
+    predictions = [
+        detect_barcodes(image=image, parent_id=parent_id)
+        for image, parent_id in zip(decoded_images, image_parent_ids)
+    ]
+
+    outputs_lookup[construct_step_selector(step_name=step.name)] = {
+        "parent_id": image_parent_ids,
+        "predictions": predictions,
+        "image": image_metadata,
+        "prediction_type": "barcode-detection",
+    }
+    return None, outputs_lookup
+
+
+def detect_barcodes(
+    image: np.ndarray, parent_id: str
+) -> Dict[str, Union[str, np.ndarray]]:
+    barcodes = zxingcpp.read_barcodes(image)
+    predictions = []
+
+    for barcode in barcodes:
+        width = barcode.position.top_right.x - barcode.position.top_left.x
+        height = barcode.position.bottom_left.y - barcode.position.top_left.y
+
+        predictions.append(
+            {
+                "parent_id": parent_id,
+                "class": "barcode",
+                "class_id": 0,
+                "confidence": 1.0,
+                "x": int(math.floor(barcode.position.top_left.x + width / 2)),
+                "y": int(math.floor(barcode.position.top_left.y + height / 2)),
+                "width": width,
+                "height": height,
+                "detection_id": str(uuid4()),
+                "data": barcode.text,
             }
         )
     return predictions

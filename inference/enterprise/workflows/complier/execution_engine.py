@@ -32,6 +32,7 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_COORDINATES_SUFFIX,
 )
 from inference.enterprise.workflows.complier.steps_executors.models import (
+    run_barcode_detection_step,
     run_clip_comparison_step,
     run_lmm_for_classification_step,
     run_lmm_step,
@@ -75,6 +76,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "LMM": run_lmm_step,
     "LMMForClassification": run_lmm_for_classification_step,
     "QRCodeDetection": run_qr_code_detection_step,
+    "BarcodeDetection": run_barcode_detection_step,
 }
 
 
