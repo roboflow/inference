@@ -555,26 +555,13 @@ The following fields are passed to API
   instance while testing model)
 - `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
 - `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered) - since `v0.9.18`
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
-The following fields are passed to API
-
-- `confidence_threshold` (as `confidence`) - to alter model thresholding
-- `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
-  based on model confidence
-- `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
-- `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
-- `mask_decode_mode`
-- `tradeoff_factor`
-- `max_detections`: max detections to return from model
-- `iou_threshold` (as `overlap`) - to dictate NMS IoU threshold
-- `stroke_width`: width of stroke in visualisation
-- `count_inference` as `countinference`
-- `service_secret`
-- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
-  `disable_preproc_static_crop` to alter server-side pre-processing
-- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
-- `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
-- `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
 
 ### Classification model in `v1` mode:
 
@@ -585,13 +572,19 @@ The following fields are passed to API
   `disable_preproc_static_crop` to alter server-side pre-processing
 - `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for
   instance while testing model)
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered) - since `v0.9.18`
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
-* `visualize_predictions`: flag to enable / disable visualisation
-* `confidence_threshold` as `confidence`
-* `stroke_width`: width of stroke in visualisation
-* `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
+- `visualize_predictions`: flag to enable / disable visualisation
+- `confidence_threshold` as `confidence`
+- `stroke_width`: width of stroke in visualisation
+- `disable_preproc_auto_orientation`, `disable_preproc_contrast`, `disable_preproc_grayscale`,
   `disable_preproc_static_crop` to alter server-side pre-processing
-* `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
+- `disable_active_learning` to prevent Active Learning feature from registering the datapoint (can be useful for instance while testing model)
 
 - `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
 - `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
@@ -614,6 +607,12 @@ The following fields are passed to API
   instance while testing model)
 - `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
 - `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered) - since `v0.9.18`
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Keypoints detection model in `v1` mode:
 
@@ -635,6 +634,12 @@ The following fields are passed to API
   instance while testing model)
 - `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
 - `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered) - since `v0.9.18`
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Instance segmentation model in `v1` mode:
 
@@ -656,6 +661,12 @@ The following fields are passed to API
   instance while testing model)
 - `source` Optional string to set a "source" attribute on the inference call; if using model monitoring, this will get logged with the inference request so you can filter/query inference requests coming from a particular source. e.g. to identify which application, system, or deployment is making the request.
 - `source_info` Optional string to set additional "source_info" attribute on the inference call; e.g. to identify a sub component in an app.
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered) - since `v0.9.18`
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Configuration of client
 

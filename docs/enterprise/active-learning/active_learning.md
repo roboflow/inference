@@ -1,11 +1,29 @@
 # Active Learning
 
-You can collect images automatically from Inference deployments for use in training new versions of a model. This is called active learning.
+Active Learning is a process of iterative improvement of model by retraining models on dataset that grows over time.
+This process includes data collection (usually with smart selection of datapoints that model would most benefit from),
+labeling, model re-training, evaluation and deployment - to close the circle and start new iteration.
 
-By collecting data actively that you can later label and use in training, you can gather images representative of the 
-environment in which your model is deployed. These images can be used to train new model versions.
+Elements of that process can be partially or fully automated - providing elegant way of improving dataset over time, 
+which is important to ensure good quality of model predictions over time (as data distribution may change and model
+trained on old data may not be performant facing the new one). At Roboflow, we brought automated data collection 
+mechanism - which is the foundation building block for Active Learning on the platform.
 
-Here is the standard workflow for active learning:
+## Where to start?
+
+We suggest clients to apply the following strategy to train their models. If it's applicable - start from small, good 
+quality dataset labeled manually (making sure that test set is representative for the problem to be solved) and train 
+initial model. Once that is done - deploy your model enabling Active Learning data collection and gradually increase 
+the size of your dataset with data collected in production environment.
+
+Alternatively, it is also possible to start the project with [Universe model](https://universe.roboflow.com/). Then
+for each request you can specify `active_learning_target_dataset` - pointing the project where the data should be 
+saved. This way - if you find a model that meets your minimal quality criteria - you may start generating valuable 
+predictions from day zero, while collecting good quality dataset to train even better models in the future.
+
+## How Active Learning data collection works? 
+
+Here is the standard workflow for Active Learning data collection:
 
 * The user initiates the creation of an Active Learning configuration within the Roboflow app.
 * This configuration is then distributed across all active inference instances, which may include those running against video streams and the HTTP API, both on-premises and within the Roboflow platform.
@@ -15,18 +33,29 @@ How active learning works with Inference is configured in your server active lea
 
 Active learning can be disabled by setting `ACTIVE_LEARNING_ENABLED=false` in the environment where you run `inference`.
 
+## Usage patterns
+Active Learning data collection may be combined with different components of Roboflow ecosystem. In particular:
+
+- `inference` Python package can be used to get predictions from the model and register them at Roboflow platform
+  - one may want to use `InferencePipeline` to get predictions from video and register its video frames using Active Learning
+- self-hosted `inferce` server - where data is collected while processing requests
+- Roboflow hosted `inference` - where you let us make sure you get your predictions and data registered. No 
+infrastructure needs to run on your end, we take care of everything
+  - [Roboflow `workflows`](../../workflows/about.md) - our newest feature - supports [`ActiveLearningDataCollectionBlock`](../../workflows/active_learning.md)
+
+
 ## Sampling Strategies
 
-Inference supports five strategies for sampling image data for use in training new model versions. These strategies are:
+`inference` make it possible to configure the way data is selected for registration. One may configure one or more sampling
+strategies within Active Learning configuration. We support five strategies for sampling image data for use in training new model versions. 
+These strategies are:
 
-* [Random sampling](#random-sampling): Images are collected at random.
-* [Close-to-threshold](#close-to-threshold-sampling): Collect data close to a given threshold.
-* [Detection count-based](#detections-number-based-sampling) (Detection models only): Collect data with a specific number of detections returned by a detection model.
-* [Class-based](#classes-based-sampling) (Classification models only): Collect data with a specific class returned by a classification model.
+* [Random sampling](./random_sampling.md): Images are collected at random.
+* [Close-to-threshold](./close_to_threshold_sampling.md): Collect data close to a given threshold.
+* [Detection count-based](./detection_number.md) (Detection models only): Collect data with a specific number of detections returned by a detection model.
+* [Class-based](./classes_based.md) (Classification models only): Collect data with a specific class returned by a classification model.
 
-You can specify multiple sampling strategies in your active learning configuration.
-
-## How Active Learning Works
+## How data is sampled?
 
 When you run Inference with an active learning configuration, the following steps are run:
 
@@ -38,11 +67,11 @@ Once a datapoint is selected and there is no limit violation, it will be saved i
 
 ## Active Learning Configuration
 
-Active learning configuration contains sampling strategies and other fields influencing the feature behaviour.
+One may choose to configure their Active Learning with Roboflow app UI - navigating to the `Active Learning` panel.
+Alternatively, request to Roboflow API may be sent with custom configuration. Here is how to configure Active Learning
+directly through the API.
 
-Active learning configurations are saved on the Roboflow platform and downloaded by your Inference server for use.
-
-#### Configuration options
+### Configuration options
 
 * `enabled`: boolean flag to enable / disable the configuration (required) - `{"enabled": false}` is minimal valid config
 * `max_image_size`: two element list with positive integers (height, width) enforcing down-sizing (with aspect-ratio
@@ -54,9 +83,50 @@ preservation) of images before submission into Roboflow platform (optional)
 * `batching_strategy`: configuration of labeling batches creation - details below (required if `enabled`)
 * `tags`: list of tags (each contains 1-64 characters from range `a-z, A-Z, 0-9, and -_:/.[]<>{}@`) (optional)
 
-## How to Configure Active Learning
+### Batching strategy
 
-To configure active learning, you need to make a HTTP request to Roboflow with your configuration.
+The `batching_strategy` field holds a dictionary with the following configuration options:
+
+* `batches_name_prefix`: A string representing the prefix of batches names created by Active Learning (required)
+* `recreation_interval`: One of value `["never", "daily", "weekly", "monthly"]`: representing the interval which is to be used to create separate batches - thanks to that - user can control the flow of labeling batches in time (required).
+* `max_batch_images`: Positive integer representing maximum size of batch (applied on top of any strategy limits) to prevent too much data to be collected (optional)
+
+
+### Strategy limits
+Each strategy can be configured with `limits`: list of values limiting how many images can be collected 
+each minute, hour or day. Each entry on that list can hold two values:
+* `type`: one of `["minutely", "hourly", "daily"]`: representing the type of limit
+* `value`: with limit threshold
+
+Limits are enforced with different granularity, as they are implemented based or either Redis or memory cache (bounded
+into single process). Se effectively:
+* if Redis cache is used - all instances of `inference` connected to the same Redis service will share limits 
+enforcements
+* otherwise - memory cache of single instance is used (multiple processes will have their own limits)
+
+Self-hosted `inference` may be connected to your own Redis cache.
+
+### Example configuration
+```json
+{
+    "enabled": true,
+    "max_image_size": [1200, 1200],
+    "jpeg_compression_level": 75,
+    "persist_predictions": true,
+    "sampling_strategies": [
+      {
+        "name": "default_strategy",
+        "type": "random",
+        "traffic_percentage": 0.1,
+        "limits": [{"type": "daily", "value": 100}]
+      }
+    ],
+    "batching_strategy": {
+      "batches_name_prefix": "al_batch",
+      "recreation_interval": "daily"
+    }
+}
+```
 
 ### Set Configuration
 
@@ -95,6 +165,7 @@ set_active_learning_configuration(
                 "name": "default_strategy",
                 "type": "random",
                 "traffic_percentage": 0.01, 
+                "limits": [{"type": "daily", "value": 100}]
             }
         ]
     }
@@ -128,50 +199,6 @@ def get_active_learning_configuration(
 
 Above, replace `workspace` with your workspace name, `project` with your project name, and `api_key` with your API key.
 
-#### Batching strategy
-
-The `batching_strategy` field holds a dictionary with the following configuration options:
-
-* `batches_name_prefix`: A string representing the prefix of batches names created by Active Learning (required)
-* `recreation_interval`: One of value `["never", "daily", "weekly", "monthly"]`: representing the interval which is to be used to create separate batches - thanks to that - user can control the flow of labeling batches in time (required).
-* `max_batch_images`: Positive integer representing maximum size of batch (applied on top of any strategy limits) to prevent too much data to be collected (optional)
-
-#### Example configuration
-```json
-{
-    "enabled": true,
-    "max_image_size": [1200, 1200],
-    "jpeg_compression_level": 75,
-    "persist_predictions": true,
-    "sampling_strategies": [
-      {
-        "name": "default_strategy",
-        "type": "random",
-        "traffic_percentage": 0.1
-      }
-    ],
-    "batching_strategy": {
-      "batches_name_prefix": "al_batch",
-      "recreation_interval": "daily"
-    }
-}
-```
-
-### <a name="detections-number-based-sampling"> Detection number based sampling (for detection)
-
-## Strategy limits
-Each strategy can be configured with `limits`: list of values limiting how many images can be collected 
-each minute, hour or day. Each entry on that list can hold two values:
-* `type`: one of `["minutely", "hourly", "daily"]`: representing the type of limit
-* `value`: with limit threshold
-
-Limits are enforced with different granularity, as they are implemented based or either Redis or memory cache (bounded
-into single process). Se effectively:
-* if Redis cache is used - all instances of `inference` connected to the same Redis service will share limits 
-enforcements
-* otherwise - memory cache of single instance is used (multiple processes will have their own limits)
-
-Self-hosted `inference` may be connected to your own Redis cache.
 
 ## Stubs
 One may use `{dataset_name}/0` as `model_id` while making prediction - to use null model for specific project. 
@@ -191,11 +218,27 @@ the dataset representing the true production distribution, before any model is t
 
 Example client usage:
 ```python
+import cv2
 from inference_sdk import InferenceHTTPClient
 
+image = cv2.imread("<path_to_your_image>")
 LOCALHOST_CLIENT = InferenceHTTPClient(
     api_url="http://127.0.0.1:9001",
     api_key="XXX"
 )
 LOCALHOST_CLIENT.infer(image, model_id="asl-poly-instance-seg/0")
 ```
+
+## Parameters of requests to `inference` server influencing the Active Learning data collection
+There are few parameters that can be added to request to influence how data collection works, in particular:
+
+- `disable_active_learning` - to disable functionality at the level of single request (if for some reason you do not 
+want input data to be collected - useful for testing purposes)
+- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
+you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered)
+- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
+Roboflow API key here and this key will be used to register data in target project
+
+Visit [Inference SDK docs](../../inference_helpers/inference_sdk.md) to learn more.
