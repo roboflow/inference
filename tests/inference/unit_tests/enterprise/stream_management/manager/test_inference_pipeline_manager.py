@@ -57,6 +57,9 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested(
         {"status": OperationStatus.SUCCESS},
     ), "Termination operation must succeed"
 
+    actual_video_source_properties = pipeline_init_mock.call_args[1]["video_source_properties"]
+    assert actual_video_source_properties == {'fps': 30, 'frame_height': 1080, 'frame_width': 1920}
+
 
 @pytest.mark.timeout(30)
 @mock.patch.object(inference_pipeline_manager.InferencePipeline, "init")
@@ -451,4 +454,9 @@ def assembly_valid_init_payload() -> dict:
         "api_key": "my_key",
         "model_configuration": {"type": "object-detection"},
         "active_learning_enabled": True,
+        "video_source_properties": {
+            "fps": 30,
+            "frame_width": 1920,
+            "frame_height": 1080,
+        }
     }

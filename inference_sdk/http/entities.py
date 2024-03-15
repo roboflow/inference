@@ -20,6 +20,13 @@ INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
 DEFAULT_MAX_INPUT_SIZE = 1024
 
+ALL_ROBOFLOW_API_URLS = {
+    "https://detect.roboflow.com",
+    "https://outline.roboflow.com",
+    "https://classify.roboflow.com",
+    "https://infer.roboflow.com",
+}
+
 
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):
@@ -88,6 +95,8 @@ class InferenceConfiguration:
     active_learning_api_key: Optional[str] = None
     max_concurrent_requests: int = 1
     max_batch_size: int = 1
+    source: Optional[str] = None
+    source_info: Optional[str] = None
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":
@@ -110,11 +119,6 @@ class InferenceConfiguration:
             f"Model task {task_type} is not supported by API v1 client."
         )
 
-    def to_keypoints_detection_parameters(self) -> Dict[str, Any]:
-        parameters = self.to_object_detection_parameters()
-        parameters["keypoint_confidence"] = self.keypoint_confidence_threshold
-        return remove_empty_values(dictionary=parameters)
-
     def to_object_detection_parameters(self) -> Dict[str, Any]:
         parameters_specs = [
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
@@ -134,11 +138,18 @@ class InferenceConfiguration:
             ("disable_active_learning", "disable_active_learning"),
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("active_learning_api_key", "active_learning_api_key"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         return get_non_empty_attributes(
             source_object=self,
             specification=parameters_specs,
         )
+
+    def to_keypoints_detection_parameters(self) -> Dict[str, Any]:
+        parameters = self.to_object_detection_parameters()
+        parameters["keypoint_confidence"] = self.keypoint_confidence_threshold
+        return remove_empty_values(dictionary=parameters)
 
     def to_instance_segmentation_parameters(self) -> Dict[str, Any]:
         parameters = self.to_object_detection_parameters()
@@ -160,6 +171,8 @@ class InferenceConfiguration:
             ("visualize_predictions", "visualize_predictions"),
             ("stroke_width", "visualization_stroke_width"),
             ("disable_active_learning", "disable_active_learning"),
+            ("source", "source"),
+            ("source_info", "source_info"),
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("active_learning_api_key", "active_learning_api_key"),
         ]
@@ -188,6 +201,8 @@ class InferenceConfiguration:
             ("disable_active_learning", "disable_active_learning"),
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("active_learning_api_key", "active_learning_api_key"),
+            ("source", "source"),
+            ("source_info", "source_info"),
         ]
         return get_non_empty_attributes(
             source_object=self,

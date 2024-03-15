@@ -1,4 +1,5 @@
 uvicorn[standard]<=0.22.0
-python-multipart<=0.0.6
+python-multipart>=0.0.7,<=0.0.9
 fastapi-cprofile<=0.0.2
 orjson>=3.9.10
+asgi_correlation_id>=4.3.1

@@ -21,9 +21,6 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
-      - name: 🦾 Install dependencies
-        run: |
-          ln -s .release/pypi/inference.core.setup.py setup.py
       - name: 🛞 Create Wheels
         run: |
           make create_wheels

@@ -50,20 +50,19 @@ class ModelManager:
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
-        if model_id in self._models:
+        resolved_identifier = model_id if model_id_alias is None else model_id_alias
+        if resolved_identifier in self._models:
             logger.debug(
-                f"ModelManager - model with model_id={model_id} is already loaded."
+                f"ModelManager - model with model_id={resolved_identifier} is already loaded."
             )
             return
         logger.debug("ModelManager - model initialisation...")
-        model = self.model_registry.get_model(
-            model_id if model_id_alias is None else model_id_alias, api_key
-        )(
+        model = self.model_registry.get_model(resolved_identifier, api_key)(
             model_id=model_id,
             api_key=api_key,
         )
         logger.debug("ModelManager - model successfully loaded.")
-        self._models[model_id if model_id_alias is None else model_id_alias] = model
+        self._models[resolved_identifier] = model
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.
@@ -252,6 +251,7 @@ class ModelManager:
             model_id (str): The identifier of the model.
         """
         try:
+            logger.debug(f"Removing model {model_id} from base model manager")
             self.check_for_model(model_id)
             self._models[model_id].clear_cache()
             del self._models[model_id]

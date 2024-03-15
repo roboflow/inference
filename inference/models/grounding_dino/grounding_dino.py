@@ -64,6 +64,7 @@ class GroundingDINO(RoboflowCoreModel):
             ),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
+        self.task_type = "object-detection"
 
     def preproc_image(self, image: Any):
         """Preprocesses an image.

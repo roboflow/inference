@@ -11,6 +11,10 @@ shutil.copyfile(
     os.path.join(root, "inference/core/version.py"),
     os.path.join(root, "inference_cli/version.py"),
 )
+shutil.copyfile(
+    os.path.join(root, "inference/core/version.py"),
+    os.path.join(root, "inference_sdk/version.py"),
+)
 
 from inference.core.version import __version__
 
@@ -20,8 +24,13 @@ with open("inference_cli/README.md", "r") as fh:
 
 
 def read_requirements(path):
-    with open(os.path.join(root, path)) as fh:
-        return [line.strip() for line in fh]
+    if not isinstance(path, list):
+        path = [path]
+    requirements = []
+    for p in path:
+        with open(p) as fh:
+            requirements.extend([line.strip() for line in fh])
+    return requirements
 
 
 setuptools.setup(
@@ -41,8 +50,6 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
             "inference",
             "inference.*",
             "development",
@@ -55,11 +62,24 @@ setuptools.setup(
         ],
     },
     package_data={"": ["configs/*.yml"]},
-    install_requires=read_requirements("requirements/requirements.cli.txt"),
+    install_requires=read_requirements([
+        "requirements/requirements.cli.txt",
+        "requirements/requirements.sdk.http.txt",
+    ]),
     classifiers=[
-        "Programming Language :: Python :: 3",
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Education",
+        "Intended Audience :: Science/Research",
         "License :: OSI Approved :: Apache Software License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Topic :: Software Development",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Scientific/Engineering :: Image Recognition",
+        "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.8",
 )

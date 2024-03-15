@@ -30,13 +30,19 @@ stop_test_docker:
 
 create_wheels:
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt
+	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt
 	rm -f dist/*
+	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.cpu.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 create_wheels_for_gpu_notebook:

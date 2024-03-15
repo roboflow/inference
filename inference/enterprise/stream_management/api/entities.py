@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -70,6 +70,17 @@ class PipelineInitialisationRequest(BaseModel):
     active_learning_enabled: Optional[bool] = Field(
         description="Flag to decide if Active Learning middleware should be enabled. If not given - env variable `ACTIVE_LEARNING_ENABLED` will be used (with default `True`).",
         default=None,
+    )
+    video_source_properties: Optional[Dict[str, float]] = Field(
+        description="Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source will be used.",
+        examples=[
+            {
+                "frame_width": 1920,
+                "frame_height": 1080,
+                "fps": 30.0,
+            }
+        ],
+        default={},
     )
     active_learning_target_dataset: Optional[str] = Field(
         default=None,

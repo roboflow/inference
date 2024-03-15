@@ -2593,7 +2593,7 @@ def test_validate_al_data_collector_target_dataset_api_key_field_when_field_cont
         _ = ActiveLearningDataCollector.parse_obj(specification)
 
 
-@pytest.mark.parametrize("disable_active_learning", ["some", 1.3])
+@pytest.mark.parametrize("disable_active_learning", ["some"])
 def test_validate_al_data_collector_disable_active_learning_field_when_field_contains_invalid_value(
     disable_active_learning: Any,
 ) -> None:

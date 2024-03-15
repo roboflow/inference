@@ -28,6 +28,8 @@ REFERENCE_IMAGE_CONFIGURATION = InferenceConfiguration(
     visualize_labels=True,
     iou_threshold=0.7,
     disable_active_learning=True,
+    source="config-test",
+    source_info="config-test-source-info",
 )
 
 
@@ -55,6 +57,29 @@ def test_get_non_empty_attributes() -> None:
     }
 
 
+def test_source_attributes() -> None:
+    # given
+    reference_object = InferenceConfiguration(
+        source="source-test",
+        source_info="source-info-test",
+    )
+
+    # when
+    result = get_non_empty_attributes(
+        source_object=reference_object,
+        specification=[
+            ("source", "A"),
+            ("source_info", "B"),
+        ],
+    )
+
+    # then
+    assert result == {
+        "A": "source-test",
+        "B": "source-info-test",
+    }
+
+
 def test_to_api_call_parameters_for_api_v0() -> None:
     # when
     result = REFERENCE_IMAGE_CONFIGURATION.to_api_call_parameters(
@@ -78,6 +103,8 @@ def test_to_api_call_parameters_for_api_v0() -> None:
         "disable_preproc_grayscale": True,
         "disable_preproc_static_crop": False,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }
 
 
@@ -98,6 +125,8 @@ def test_to_api_call_parameters_for_api_v1_classification() -> None:
         "disable_preproc_grayscale": True,
         "disable_preproc_static_crop": False,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }
 
 
@@ -124,4 +153,6 @@ def test_to_api_call_parameters_for_api_v1_object_detection() -> None:
         "visualize_predictions": False,
         "visualization_stroke_width": 1,
         "disable_active_learning": True,
+        "source": "config-test",
+        "source_info": "config-test-source-info",
     }

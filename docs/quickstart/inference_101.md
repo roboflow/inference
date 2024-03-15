@@ -1,19 +1,80 @@
-Inference is designed to fit every computer vision use case. Within Inference, there are several different interfaces and your use case will likely dictate which interface you should choose. The interfaces included in Inference are:
+There are three ways to run Inference:
 
-- [Native Python API](#native-python-api)
-- [HTTP API](#http-api)
-- [Inference Pipeline](#inference-pipeline)
-- [Advanced Interfaces (Enterprise)](#advanced-usage-interfaces)
+- [Using the Python SDK (Images and Videos)](#native-python-api)
+- [Using the Python HTTP SDK (Images)](#native-python-api)
+- [Using the HTTP API (Images for all languages)](#http-api)
 
-## Native Python API
+We document every method in the "Inputs" section of the Inference documentation.
 
-The native python API is the most simple interface and involves accessing the base package APIs directly. Going this route, you will import Inference modules directly into your python code. You will load models, run inference, and handle the results all within your own logic. You will also need to manage the dependencies within your python environment. If you are creating a simple app or just testing, the native Python API is a great place to start.
+Below, we talk about when you would want to use each method.
 
-[See Docs and Examples](/using_inference/native_python_api/)
+## Using the Python SDK (Images and Videos)
 
-## HTTP API
+![](https://media.roboflow.com/inference/python-integration.png)
 
-The HTTP API is a helpful way to treat your machine learning models as their own microservice. With this interface, you will run a docker container and make requests over HTTP. The requests contain all of the information Inference needs to run a computer vision model including the model ID, the input image data, and any configurable parameters used during processing (e.g. confidence threshold).
+You can use the Python SDK to run models on images and videos directly using the Inference code, without using Docker.
+
+Any code example that imports from `inference.models` uses the model directly.
+
+To use the Python SDK, you need to install:
+
+```bash
+pip install inference
+```
+
+## Python HTTP SDK
+
+You can use the Python HTTP SDK to run models using Inference with Docker.
+
+Any code example that imports from `inference_sdk` uses the HTTP API.
+
+To use this method, you will need an Inference server running, or you can use the Roboflow endpoint for your model.
+
+### Self-Hosted Inference Server
+
+You can set up and install and Inference server using:
+
+```bash
+pip install inference
+inference server start
+```
+
+### Roboflow Hosted API
+
+First, run:
+
+```bash
+pip install inference inference-sdk
+```
+
+Then, use your Roboflow hosted API endpoint to access your model. You can find this in the Deploy tab of your Roboflow model.
+
+## HTTP SDK
+
+You can deploy your model with Inference and Docker and use the API in any programming language (i.e. Swift, Node.js, and more).
+
+To use this method, you will need an Inference server running. You can set up and install and Inference server using:
+
+
+### Self-Hosted Inference Server
+
+You can set up and install and Inference server using:
+
+```bash
+pip install inference
+inference server start
+```
+
+### Roboflow Hosted API
+
+Use your Roboflow hosted API endpoint to access your model. You can find this in the Deploy tab of your Roboflow model.
+
+## Benefits of Using Inference Over HTTP
+
+![](https://media.roboflow.com/inference/http-api.png)
+![](https://media.roboflow.com/inference/http-api-roboflow.png)
+
+You can run Inference directly from your codebase or using a HTTP microservice deployed with Docker.
 
 Running Inference this way can have several advantages:
 
@@ -22,24 +83,12 @@ Running Inference this way can have several advantages:
 - **Roboflow Hosted API:** Roboflow hosts a powerful and infinitely scalable version of the Roboflow Inference Server. This makes it even easier to integrate computer vision models into your software without adding any maintenance burden. And, since the Roboflow hosted APIs are running using the Inference package, it's easy to switch between using a hosted server and an on prem server without having to reinvent your client code.
 - **Non-Python Clients:** Running Inference within an HTTP server allows you to interact with it from any language you prefer.
 
-[See Docs and Examples](/using_inference/http_api/)
-
-!!! Hint
-
-    Checkout the [Inference SDK](/inference_helpers/inference_sdk) for a ready made client that makes using the HTTP interface even easier.
-
-## Inference Pipeline
-
-The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. It is an asynchronous interface that can consume many different video sources including local devices (like webcams), RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks. Sinks are methods that operate on the results of inferring on a single frame. The Inference package has several built in sinks but also gives you the ability to write custom sinks for integrating with the rest of your software.
-
-[See Docs and Examples](/using_inference/inference_pipeline/)
-
 ## Advanced Usage & Interfaces
 
 There are several advanced interfaces that enhance the capabilities of the base Inference package.
 
-- Active Learning: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](/enterprise/active-learning/active_learning/)
-- Parallel HTTP API\*: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/enterprise/parallel_processing/)
-- Stream Manager API\*: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](/enterprise/stream_management_api/)
+- **Active Learning**: Active learning helps improve your model over time by contributing real world data back to your Roboflow dataset in real time. [Docs and Examples](/enterprise/active-learning/active_learning/)
+- **Parallel HTTP API**: A highly parallel server capable of accepting requests from many different clients and batching them dynamically in real time to make the most efficient use of the host hardware. [Docs and Examples](/enterprise/parallel_processing/)
+- **Stream Manager API**: An API for starting, stopping, and managing Inference Pipeline instances. This interfaces combines the advantages of running Inference realtime on a stream while also fitting nicely into a microservice architecture. [Docs and Examples](/enterprise/stream_management_api/)
 
-\*For Roboflow enterprise users only. Contact sales@roboflow.com to learn more.
+To learn more, [contact the Roboflow sales team](https://roboflow.com/sales).

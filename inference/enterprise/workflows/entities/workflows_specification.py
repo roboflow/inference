@@ -1,6 +1,7 @@
-from typing import Annotated, List, Literal, Union
+from typing import List, Literal, Union
 
 from pydantic import BaseModel, Field
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.inputs import (
     InferenceImage,
@@ -24,6 +25,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection,
     RelativeStaticCrop,
     YoloWorld,
 )
@@ -46,6 +48,7 @@ StepType = Annotated[
         ClipComparison,
         RelativeStaticCrop,
         AbsoluteStaticCrop,
+        QRCodeDetection,
         DetectionsConsensus,
         ActiveLearningDataCollector,
         YoloWorld,

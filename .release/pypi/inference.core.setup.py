@@ -38,8 +38,6 @@ setuptools.setup(
             "requirements",
             "tests",
             "tests.*",
-            "inference_sdk",
-            "inference_sdk.*",
             "development",
             "development.*",
         ),
@@ -53,6 +51,7 @@ setuptools.setup(
         [
             "requirements/_requirements.txt",
             "requirements/requirements.cli.txt",
+            "requirements/requirements.sdk.http.txt",
         ]
     ),
     extras_require={
@@ -70,9 +69,19 @@ setuptools.setup(
         "yolo-world": read_requirements("requirements/requirements.yolo_world.txt"),
     },
     classifiers=[
-        "Programming Language :: Python :: 3",
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Education",
+        "Intended Audience :: Science/Research",
         "License :: OSI Approved :: Apache Software License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Topic :: Software Development",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Scientific/Engineering :: Image Recognition",
+        "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.8",
 )

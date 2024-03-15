@@ -5,7 +5,10 @@ import re
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
+import cv2
+import numpy as np
 from openai import AsyncOpenAI
 
 from inference.core.entities.requests.clip import ClipCompareRequest
@@ -62,6 +65,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
+    QRCodeDetection,
     RoboflowModel,
     StepInterface,
     YoloWorld,
@@ -127,6 +131,17 @@ async def run_roboflow_model_step(
             image=image, results=serialised_result, nested_key=None
         )
     else:
+        class_filter = resolve_parameter(
+            selector_or_value=step.class_filter,
+            runtime_parameters=runtime_parameters,
+            outputs_lookup=outputs_lookup,
+        )
+        # we need to filter-out classes here, to ensure consistent behaviour of external API usage
+        # as legacy endpoints to not support this functionality
+        serialised_result = filter_out_unwanted_classes(
+            serialised_result=serialised_result,
+            classes_to_accept=class_filter,
+        )
         serialised_result = attach_parent_info(image=image, results=serialised_result)
         serialised_result = anchor_detections_in_parent_coordinates(
             image=image,
@@ -134,6 +149,25 @@ async def run_roboflow_model_step(
         )
     outputs_lookup[construct_step_selector(step_name=step.name)] = serialised_result
     return None, outputs_lookup
+
+
+def filter_out_unwanted_classes(
+    serialised_result: List[Dict[str, Any]],
+    classes_to_accept: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    if classes_to_accept is None:
+        return serialised_result
+    classes_to_accept = set(classes_to_accept)
+    results = []
+    for image_result in serialised_result:
+        filtered_image_result = deepcopy(image_result)
+        filtered_image_result["predictions"] = []
+        for prediction in image_result["predictions"]:
+            if prediction["class"] not in classes_to_accept:
+                continue
+            filtered_image_result["predictions"].append(prediction)
+        results.append(filtered_image_result)
+    return results
 
 
 async def get_roboflow_model_predictions_locally(
@@ -183,6 +217,7 @@ def construct_classification_request(
         image=image,
         confidence=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
+        source="workflow-execution",
         active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         active_learning_api_key=resolve(step.active_learning_api_key),
     )
@@ -213,6 +248,7 @@ def construct_object_detection_request(
         iou_threshold=resolve(step.iou_threshold),
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
+        source="workflow-execution",
     )
 
 
@@ -243,6 +279,7 @@ def construct_instance_segmentation_request(
         max_candidates=resolve(step.max_candidates),
         mask_decode_mode=resolve(step.mask_decode_mode),
         tradeoff_factor=resolve(step.tradeoff_factor),
+        source="workflow-execution",
     )
 
 
@@ -272,6 +309,7 @@ def construct_keypoints_detection_request(
         max_detections=resolve(step.max_detections),
         max_candidates=resolve(step.max_candidates),
         keypoint_confidence=resolve(step.keypoint_confidence),
+        source="workflow-execution",
     )
 
 
@@ -332,6 +370,7 @@ def construct_http_client_configuration_for_classification_step(
         active_learning_api_key=resolve(step.active_learning_api_key),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -357,6 +396,7 @@ def construct_http_client_configuration_for_detection_step(
         max_candidates=resolve(step.max_candidates),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -384,6 +424,7 @@ def construct_http_client_configuration_for_segmentation_step(
         tradeoff_factor=resolve(step.tradeoff_factor),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -410,6 +451,7 @@ def construct_http_client_configuration_for_keypoints_detection_step(
         keypoint_confidence_threshold=resolve(step.keypoint_confidence),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        source="workflow-execution",
     )
 
 
@@ -1195,3 +1237,61 @@ def resolve_model_api_url(step: StepInterface) -> str:
     if WORKFLOWS_REMOTE_API_TARGET != "hosted":
         return LOCAL_INFERENCE_API_URL
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
+
+
+async def run_qr_code_detection_step(
+    step: QRCodeDetection,
+    runtime_parameters: Dict[str, Any],
+    outputs_lookup: OutputsLookup,
+    model_manager: ModelManager,
+    api_key: Optional[str],
+    step_execution_mode: StepExecutionMode,
+) -> Tuple[NextStepReference, OutputsLookup]:
+    image = get_image(
+        step=step,
+        runtime_parameters=runtime_parameters,
+        outputs_lookup=outputs_lookup,
+    )
+    decoded_images = [load_image(e)[0] for e in image]
+    image_metadata = [
+        {"width": img.shape[1], "height": img.shape[0]} for img in decoded_images
+    ]
+    image_parent_ids = [img["parent_id"] for img in image]
+    predictions = [
+        detect_qr_codes(image=image, parent_id=parent_id)
+        for image, parent_id in zip(decoded_images, image_parent_ids)
+    ]
+
+    outputs_lookup[construct_step_selector(step_name=step.name)] = {
+        "parent_id": image_parent_ids,
+        "predictions": predictions,
+        "image": image_metadata,
+        "prediction_type": "qrcode-detection",
+    }
+    return None, outputs_lookup
+
+
+def detect_qr_codes(
+    image: np.ndarray, parent_id: str
+) -> Dict[str, Union[str, np.ndarray]]:
+    detector = cv2.QRCodeDetector()
+    retval, detections, pointsList, _ = detector.detectAndDecodeMulti(image)
+    predictions = []
+    for data, points in zip(detections, pointsList):
+        width = points[2][0] - points[0][0]
+        height = points[2][1] - points[0][1]
+        predictions.append(
+            {
+                "parent_id": parent_id,
+                "class": "qr_code",
+                "class_id": 0,
+                "confidence": 1.0,
+                "x": points[0][0] + width / 2,
+                "y": points[0][1] + height / 2,
+                "width": width,
+                "height": height,
+                "detection_id": str(uuid4()),
+                "data": data,
+            }
+        )
+    return predictions
