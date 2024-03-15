@@ -4,7 +4,10 @@ import typer
 from typing_extensions import Annotated
 
 from inference_cli.lib import check_inference_server_status, start_inference_container
-from inference_cli.lib.container_adapter import stop_inference_containers
+from inference_cli.lib.container_adapter import (
+    ensure_docker_is_running,
+    stop_inference_containers,
+)
 
 server_app = typer.Typer(
     help="""Commands for running the inference server locally. \n 
@@ -55,26 +58,41 @@ def start(
             help="Roboflow API key (default is None).",
         ),
     ] = None,
-):
-    start_inference_container(
-        port=port,
-        project=rf_env,
-        env_file_path=env_file_path,
-        development=development,
-        api_key=api_key,
-    )
+) -> None:
+    try:
+        ensure_docker_is_running()
+        start_inference_container(
+            port=port,
+            project=rf_env,
+            env_file_path=env_file_path,
+            development=development,
+            api_key=api_key,
+        )
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @server_app.command()
-def status():
-    print("Checking status of inference server.")
-    check_inference_server_status()
+def status() -> None:
+    typer.echo("Checking status of inference server.")
+    try:
+        ensure_docker_is_running()
+        check_inference_server_status()
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @server_app.command()
 def stop() -> None:
-    print("Terminating running inference containers")
-    stop_inference_containers()
+    typer.echo("Terminating running inference containers")
+    try:
+        ensure_docker_is_running()
+        stop_inference_containers()
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

@@ -5,9 +5,8 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
 )
 from inference.core.env import MAX_BATCH_SIZE
-from inference.models import (
-    YOLONASObjectDetection
-)
+from inference.models import YOLONASObjectDetection
+
 
 @pytest.mark.slow
 def test_yolonas_detection_single_image_inference(

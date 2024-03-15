@@ -15,11 +15,13 @@ We welcome contributions to:
 
 ### Contributing Features
 
-The Inference Server provides a standard interface through which you can work with computer vision models. With Inference Server, you can use state-of-the-art models with your own weights without having to spend time installing dependencies, configuring environments, and writing inference code.
+The goal of `inference` is to make it easy to adopt computer vision models. The package provides standardised interface
+for making prediction, make it possible to expose model through HTTP API and enable making predictions from 
+models on video. Our goal is also to make it seamless to integrate `inference` components with Roboflow platform.
 
 We welcome contributions that add support for new models to the project. Before you begin, please make sure that another contributor has not already begun work on the model you want to add. You can check the [project README](https://github.com/roboflow/inference-server/blob/main/README.md) for our roadmap on adding more models.
 
-You will need to add documentation for your model and link to it from the `inference-server` README. You can add a new page to the `docs/models` directory that describes your model and how to use it. You can use the existing model documentation as a guide for how to structure your documentation.
+We require documentation and tests for contributions (if applicable).
 
 ## How to Contribute Changes
 
@@ -35,6 +37,42 @@ All pull requests will be reviewed by the maintainers of the project. We will pr
 
 PRs must pass all tests and linting requirements before they can be merged.
 
+## :wrench: Development environment
+We recommend creating fresh conda environment:
+```bash
+conda create -n inference-development python=3.10
+conda activate inference-development
+```
+
+Then, in repository root:
+```bash
+repo_root$ (inference-development) pip install -e .
+```
+
+That will install all requirements apart from SAM model. To install the latter:
+```bash
+repo_root$ (inference-development) pip install -e ".[sam]"
+```
+but in some OS (like MacOS) that would require installing additional libs ([this](https://medium.com/@vascofernandes_13322/how-to-install-gdal-on-macos-6a76fb5e24a4) guide should fix the issue for MacOS).
+
+After installation, you should be able to run both tests and the library components without issues.
+
+## 🐳 Building docker image with inference server
+
+To test the changes related to `inference` server, you would probably need to build docker image locally.
+This is to be done with the following command:
+
+```bash
+# template
+repo_root$ docker build -t roboflow/roboflow-inference-server-{version}:dev -f docker/dockerfiles/Dockerfile.onnx.{version} .
+
+# example build for CPU
+repo_root$ docker build -t roboflow/roboflow-inference-server-cpu:dev -f docker/dockerfiles/Dockerfile.onnx.cpu .
+
+# example build for GPU
+repo_root$ docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu .
+```
+
 ## 🧹 Code quality 
 
 We provide two handy commands inside the `Makefile`, namely:
@@ -42,9 +80,55 @@ We provide two handy commands inside the `Makefile`, namely:
 - `make style` to format the code
 - `make check_code_quality` to check code quality (PEP8 basically)
 
+
 ## 🧪 Tests 
 
-[`pytests`](https://docs.pytest.org/en/7.1.x/) is used to run our tests.
+[`pytests`](https://docs.pytest.org/en/7.1.x/) is used to run our tests. We have specific structure of tests to ensure stability on different 
+platforms that we support (CPU, GPU, Jetson, etc.). 
+
+### Unit tests
+
+We would like all low-level components to be covered with unit tests. That tests must be:
+* fast (if that's not possible for some reason, please use `@pytest.mark.slow`)
+* deterministic (not flaky)
+* covering all [equivalence classes](https://piketec.com/testing-with-equivalence-classes/#:~:text=Testing%20with%20equivalence%20classes&text=Equivalence%20classes%20in%20the%20test,class%20you%20use%20as%20input.)
+
+Running the unit tests:
+
+```bash
+repo_root$ (inference-development) pytest tests/inference/unit_tests/ 
+repo_root$ (inference-development) pytest tests/inference_cli/unit_tests/ 
+repo_root$ (inference-development) pytest tests/inference_sdk/unit_tests/ 
+```
+
+With GH Actions defined in `.github` directory, the ones related to integration tests at `x86` platform 
+will work after you fork repositories. Other actions may not work, as they require access to our internal resources
+will not work (tests on Jetson devices, Tesla T4, integration tests for `inference` server). There is nothing wrong 
+with that, we will make required checks as you submit PR to main repository.
+
+### Integration tests
+
+We would like to have decent coverage of most important components with integration tests suites.
+Those should check specific functions e2e, including communication with external services (or their stubs if 
+real service cannot be used for any reasons). Integration tests may be more bulky than unit tests, but we wish them
+not to require burning a lot of resources, and be completed within max 20-30 minutes.
+
+Running the integration tests locally is possible, but only in some cases. For instance, one may locally run:
+```bash
+repo_root$ (inference-development) pytest tests/inference/models_predictions_tests/ 
+repo_root$ (inference-development) pytest tests/inference_cli/integration_tests/ 
+```
+
+But running 
+```bash
+repo_root$ (inference-development) pytest tests/inference/integration_tests/ 
+```
+will not be fully possible, as part of them require API key for Roboflow API.
+
+#### :bulb:	Contribution idea
+
+It would be a great contribution to make `inference` server integration tests running without API keys for Roboflow. 
+
 
 ## 📚 Documentation
 

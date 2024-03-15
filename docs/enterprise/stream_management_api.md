@@ -264,6 +264,11 @@ Message must be a valid JSON after decoding and represent valid command.
     "iou_threshold": 0.4,
     "max_candidates": 300,
     "max_detections": 3000
+  },
+  "video_source_properties": {
+    "frame_width": 1920,
+    "frame_height": 1080,
+    "fps": 30
   }
 }
 ```

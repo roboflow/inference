@@ -55,10 +55,16 @@ def w_np_non_max_suppression(
         np_conf_mask = (np_image_pred[:, 4] >= conf_thresh).squeeze()
 
         np_image_pred = np_image_pred[np_conf_mask]
-        if np_image_pred.shape[0] == 0:
+        cls_confs = np_image_pred[:, 5 : num_classes + 5]
+        if (
+            np_image_pred.shape[0] == 0
+            or np_image_pred.shape[1] == 0
+            or cls_confs.shape[1] == 0
+        ):
             batch_predictions.append(filtered_predictions)
             continue
-        np_class_conf = np.max(np_image_pred[:, 5 : num_classes + 5], 1)
+
+        np_class_conf = np.max(cls_confs, 1)
         np_class_pred = np.argmax(np_image_pred[:, 5 : num_classes + 5], 1)
         np_class_conf = np.expand_dims(np_class_conf, axis=1)
         np_class_pred = np.expand_dims(np_class_pred, axis=1)

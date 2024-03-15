@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import (
     BaseModel,
@@ -11,6 +11,7 @@ from pydantic import (
     confloat,
     field_validator,
 )
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
@@ -562,6 +563,9 @@ class Operator(Enum):
     LOWER_OR_EQUAL_THAN = "lower_or_equal_than"
     GREATER_OR_EQUAL_THAN = "greater_or_equal_than"
     IN = "in"
+    STR_STARTS_WITH = "str_starts_with"
+    STR_ENDS_WITH = "str_ends_with"
+    STR_CONTAINS = "str_contains"
 
 
 class Condition(BaseModel, StepInterface):
@@ -608,6 +612,44 @@ class BinaryOperator(Enum):
 
 class QRCodeDetection(BaseModel, StepInterface):
     type: Literal["QRCodeDetection"]
+    name: str
+    image: Union[str, List[str]]
+
+    @field_validator("image")
+    @classmethod
+    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
+        validate_image_is_valid_selector(value=value)
+        return value
+
+    def get_type(self) -> str:
+        return self.type
+
+    def get_input_names(self) -> Set[str]:
+        return {"image"}
+
+    def get_output_names(self) -> Set[str]:
+        return {"predictions", "image", "parent_id"}
+
+    def validate_field_selector(
+        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+    ) -> None:
+        if not is_selector(selector_or_value=getattr(self, field_name)):
+            raise ExecutionGraphError(
+                f"Attempted to validate selector value for field {field_name}, but field is not selector."
+            )
+        validate_selector_holds_image(
+            step_type=self.type,
+            field_name=field_name,
+            input_step=input_step,
+        )
+
+    def validate_field_binding(self, field_name: str, value: Any) -> None:
+        if field_name == "image":
+            validate_image_biding(value=value)
+
+
+class BarcodeDetection(BaseModel, StepInterface):
+    type: Literal["BarcodeDetection"]
     name: str
     image: Union[str, List[str]]
 

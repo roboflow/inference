@@ -22,6 +22,19 @@ In this guide, we will show:
   - using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
   - creating custom code to make HTTP requests (see [API Reference](/api/))
 
+## Supported CLIP versions
+
+- `clip/RN101`
+- `clip/RN50`
+- `clip/RN50x16`
+- `clip/RN50x4`
+- `clip/RN50x64`
+- `clip/ViT-B-16`
+- `clip/ViT-B-32`
+- `clip/ViT-L-14-336px`
+- `clip/ViT-L-14`
+
+
 ## Classify Video Frames
 
 With CLIP, you can classify images and video frames without training a model. This is because CLIP has been pre-trained to recognize many different objects.
@@ -50,7 +63,7 @@ import inference
 from inference.core.utils.postprocess import cosine_similarity
 
 from inference.models import Clip
-clip = Clip()
+clip = Clip(model_id="clip/ViT-B-16")  # `model_id` has default, but here is how to test other versions
 
 prompt = "an ace of spades playing card"
 text_embedding = clip.embed_text(prompt)
@@ -126,6 +139,9 @@ CLIENT = InferenceHTTPClient(
 )
 embeddings = CLIENT.get_clip_image_embeddings(inference_input="https://i.imgur.com/Q6lDy8B.jpg")
 print(embeddings)
+
+# since release `0.9.17`, you may pass extra argument `clip_version` to get_clip_image_embeddings(...) to select
+# model version
 ```
 
 ### Text Embedding
@@ -150,6 +166,9 @@ CLIENT = InferenceHTTPClient(
 
 embeddings = CLIENT.get_clip_text_embeddings(text="the quick brown fox jumped over the lazy dog")
 print(embeddings)
+
+# since release `0.9.17`, you may pass extra argument `clip_version` to get_clip_text_embeddings(...) to select
+# model version
 ```
 
 ### Compare Embeddings
@@ -179,9 +198,19 @@ result = CLIENT.clip_compare(
   prompt=["dog", "cat"]
 )
 print(result)
+# since release `0.9.17`, you may pass extra argument `clip_version` to clip_compare(...) to select
+# model version
 ```
 
 The resulting number will be between 0 and 1. The higher the number, the more similar the image and text are.
+
+### Benchmarking
+
+We ran 100 inferences on an NVIDIA T4 GPU to benchmark the performance of CLIP.
+
+- CLIP Embed Images: 0.5 seconds per inference (59.55 seconds for 100 inferences).
+- CLIP Embed Text: 0.5 seconds per inference (51.52 seconds for 100 inferences).
+- CLIP Compare Image and Text: 0.58 seconds per inference (58.03 seconds for 100 inferences).
 
 ## See Also
 

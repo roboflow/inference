@@ -19,7 +19,11 @@ cloud_app = typer.Typer(
 
 @cloud_app.command()
 def status():
-    cloud_status()
+    try:
+        cloud_status()
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @cloud_app.command()
@@ -82,23 +86,39 @@ def deploy(
     #     ),
     # ] = False,
 ):
-    cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key)
+    try:
+        cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key)
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @cloud_app.command()
 def undeploy(
     cluster_name: Annotated[str, typer.Argument(help="Name of cluster to undeploy.")]
 ):
-    cloud_undeploy(cluster_name)
+    try:
+        cloud_undeploy(cluster_name)
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @cloud_app.command()
 def stop(cluster_name: Annotated[str, typer.Argument(help="Name of cluster to stop.")]):
-    cloud_stop(cluster_name)
+    try:
+        cloud_stop(cluster_name)
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @cloud_app.command()
 def start(
     cluster_name: Annotated[str, typer.Argument(help="Name of cluster to start.")]
 ):
-    cloud_start(cluster_name)
+    try:
+        cloud_start(cluster_name)
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)

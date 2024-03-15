@@ -32,6 +32,7 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_COORDINATES_SUFFIX,
 )
 from inference.enterprise.workflows.complier.steps_executors.models import (
+    run_barcode_detection_step,
     run_clip_comparison_step,
     run_lmm_for_classification_step,
     run_lmm_step,
@@ -75,6 +76,7 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "LMM": run_lmm_step,
     "LMMForClassification": run_lmm_for_classification_step,
     "QRCodeDetection": run_qr_code_detection_step,
+    "BarcodeDetection": run_barcode_detection_step,
 }
 
 
@@ -187,10 +189,9 @@ async def safe_execute_step(
             background_tasks=background_tasks,
         )
     except Exception as error:
+        logger.exception(f"Execution of step {step} encountered error.")
         raise ExecutionEngineError(
-            f"Error during execution of step: {step}. "
-            f"Type of error: {type(error).__name__}. "
-            f"Cause: {error}"
+            f"Error during execution of step: {step}."
         ) from error
 
 

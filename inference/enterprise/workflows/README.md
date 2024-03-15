@@ -426,6 +426,23 @@ This step represents inference from QR Code Detection.
 of multi-step pipelines
 * `prediction_type` - denoting `qrcode-detection` model
 
+#### `BarcodeDetection`
+This step represents inference from barcode Detection.
+
+##### Step parameters
+* `type`: must be `BarcodeDetection` (required)
+* `name`: must be unique within all steps - used as identifier (required)
+* `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
+`Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
+
+##### Step outputs:
+* `predictions` - details of predictions
+    * Note: `predictions.data` is a string which is populated with the data contents of the QR code.
+* `image` - size of input image, that `predictions` coordinates refers to
+* `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
+of multi-step pipelines
+* `prediction_type` - denoting `barcode-detection` model
+
 
 #### `Condition`
 This step is responsible for flow-control in execution graph based on the condition defined in its body.
@@ -441,8 +458,9 @@ prevent situation when evaluation of condition for multiple images yield differe
 * `name`: must be unique within all steps - used as identifier (required)
 * `left`: left operand of `operator`, can be actual value, reference to input or step output (required)
 * `right`: left operand of `operator`, can be actual value, reference to input or step output (required)
-* `operator`: one of `equal`, `not_equal`, `lower_than`, `greater_than`, `lower_or_equal_than`, `greater_or_equal_than`
-or `in` (required)
+* `operator`: one of `equal`, `not_equal`, `lower_than`, `greater_than`, `lower_or_equal_than`, `greater_or_equal_than`, 
+`in`, `str_starts_with` (meaning `left` ends with `right`), `str_ends_with` (meaning `left` starts with `right`), 
+`str_contains` (meaning `left` contains `right`) (required)
 * `step_if_true`: reference to the step that will be executed if condition is true (required)
 * `step_if_false`: reference to the step that will be executed if condition is false (required)
 
@@ -487,7 +505,18 @@ or `CompoundDetectionFilterDefinition`
 ```
 
 where `DetectionFilterDefinition` uses binary operator and the left operand is detection field pointed by `field_name`
-and right operand is `reference_value`.
+and right operand is `reference_value`. `"operaror"` can be filled with values:
+* `equal` (field value equal to `reference_value`)
+* `not_equal`
+* `lower_than`
+* `greater_than`
+* `lower_or_equal_than`
+* `greater_or_equal_than`
+* `in` (field value in range of `reference_value`)
+* `str_starts_with` (field value - string - starts from `reference_value`)
+* `str_ends_with` (field value - string - ends with `reference_value`)
+* `str_contains` (field value - string - contains substring pointed in `reference_value`)
+
 In case if `CompoundDetectionFilterDefinition`, logical operators `or`, `and` can be used to combine simple filters.
 This let user define recursive structure of filters.
 

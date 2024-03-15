@@ -28,6 +28,7 @@ from inference.core.env import (
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
@@ -259,24 +260,21 @@ class Clip(OnnxRoboflowCoreModel):
         Notes:
             The function utilizes an ONNX session to compute embeddings and measures the embedding time with perf_counter.
         """
-        t1 = perf_counter()
-
         if isinstance(text, list):
-            if len(text) > CLIP_MAX_BATCH_SIZE:
-                raise ValueError(
-                    f"The maximum number of text strings that can be embedded at once is {CLIP_MAX_BATCH_SIZE}"
-                )
-
             texts = text
         else:
             texts = [text]
-
-        texts = clip.tokenize(texts).numpy().astype(np.int32)
-
-        onnx_input_text = {self.textual_onnx_session.get_inputs()[0].name: texts}
-        embeddings = self.textual_onnx_session.run(None, onnx_input_text)[0]
-
-        return embeddings
+        results = []
+        for texts_batch in create_batches(
+            sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
+        ):
+            tokenized_batch = clip.tokenize(texts_batch).numpy().astype(np.int32)
+            onnx_input_text = {
+                self.textual_onnx_session.get_inputs()[0].name: tokenized_batch
+            }
+            embeddings = self.textual_onnx_session.run(None, onnx_input_text)[0]
+            results.append(embeddings)
+        return np.concatenate(results, axis=0)
 
     def make_embed_text_response(self, embeddings: np.ndarray) -> ClipEmbeddingResponse:
         """

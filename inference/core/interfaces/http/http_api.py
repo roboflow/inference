@@ -161,48 +161,136 @@ def with_route_exceptions(route):
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
-        except (
-            ContentTypeInvalid,
-            ContentTypeMissing,
-            InputImageLoadError,
-            InvalidModelIDError,
-            InvalidMaskDecodeArgument,
-            MissingApiKeyError,
-            RuntimePayloadError,
-        ) as e:
-            resp = JSONResponse(status_code=400, content={"message": str(e)})
+        except ContentTypeInvalid:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Invalid Content-Type header provided with request."
+                },
+            )
             traceback.print_exc()
-        except RoboflowAPINotAuthorizedError as e:
-            resp = JSONResponse(status_code=401, content={"message": str(e)})
+        except ContentTypeMissing:
+            resp = JSONResponse(
+                status_code=400,
+                content={"message": "Content-Type header not provided with request."},
+            )
             traceback.print_exc()
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as e:
-            resp = JSONResponse(status_code=404, content={"message": str(e)})
+        except InputImageLoadError as e:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Could not load input image. Cause: {e.get_public_error_details()}"
+                },
+            )
+            traceback.print_exc()
+        except InvalidModelIDError:
+            resp = JSONResponse(
+                status_code=400,
+                content={"message": "Invalid Model ID sent in request."},
+            )
+            traceback.print_exc()
+        except InvalidMaskDecodeArgument:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Invalid mask decode argument sent. tradeoff_factor must be in [0.0, 1.0], "
+                    "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
+                },
+            )
+            traceback.print_exc()
+        except MissingApiKeyError:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": "Required Roboflow API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                    "to learn how to retrieve one."
+                },
+            )
+            traceback.print_exc()
+        except RuntimePayloadError as e:
+            resp = JSONResponse(
+                status_code=400, content={"message": e.get_public_message()}
+            )
+            traceback.print_exc()
+        except RoboflowAPINotAuthorizedError:
+            resp = JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
+                    "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                    "to learn how to retrieve one."
+                },
+            )
+            traceback.print_exc()
+        except (RoboflowAPINotNotFoundError, InferenceModelNotFound):
+            resp = JSONResponse(
+                status_code=404,
+                content={
+                    "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
+                    "you referred in request exists."
+                },
+            )
             traceback.print_exc()
         except (
             InvalidEnvironmentVariableError,
             MissingServiceSecretError,
-            WorkspaceLoadError,
+            ServiceConfigurationError,
+        ):
+            resp = JSONResponse(
+                status_code=500, content={"message": "Service misconfiguration."}
+            )
+            traceback.print_exc()
+        except (
             PreProcessingError,
             PostProcessingError,
-            ServiceConfigurationError,
-            ModelArtefactError,
-            MalformedWorkflowResponseError,
+        ):
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": "Model configuration related to pre- or post-processing is invalid."
+                },
+            )
+            traceback.print_exc()
+        except ModelArtefactError:
+            resp = JSONResponse(
+                status_code=500, content={"message": "Model package is broken."}
+            )
+            traceback.print_exc()
+        except (
             WorkflowsCompilerError,
             ExecutionEngineError,
         ) as e:
-            resp = JSONResponse(status_code=500, content={"message": str(e)})
+            resp = JSONResponse(
+                status_code=500, content={"message": e.get_public_message()}
+            )
             traceback.print_exc()
-        except OnnxProviderNotAvailable as e:
-            resp = JSONResponse(status_code=501, content={"message": str(e)})
+        except OnnxProviderNotAvailable:
+            resp = JSONResponse(
+                status_code=501,
+                content={
+                    "message": "Could not find requested ONNX Runtime Provider. Check that you are using "
+                    "the correct docker image on a supported device."
+                },
+            )
             traceback.print_exc()
         except (
             MalformedRoboflowAPIResponseError,
             RoboflowAPIUnsuccessfulRequestError,
-        ) as e:
-            resp = JSONResponse(status_code=502, content={"message": str(e)})
+            WorkspaceLoadError,
+            MalformedWorkflowResponseError,
+        ):
+            resp = JSONResponse(
+                status_code=502,
+                content={"message": "Internal error. Request to Roboflow API failed."},
+            )
             traceback.print_exc()
-        except RoboflowAPIConnectionError as e:
-            resp = JSONResponse(status_code=503, content={"message": str(e)})
+        except RoboflowAPIConnectionError:
+            resp = JSONResponse(
+                status_code=503,
+                content={
+                    "message": "Internal error. Could not connect to Roboflow API."
+                },
+            )
             traceback.print_exc()
         except Exception:
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -899,18 +987,21 @@ class HttpInterface(BaseInterface):
                     Returns:
                         ObjectDetectionInferenceResponse: The object detection response.
                     """
-                    logger.debug(f"Reached /yolo_world/infer")
+                    logger.debug(f"Reached /yolo_world/infer. Loading model")
                     yolo_world_model_id = load_yolo_world_model(
                         inference_request, api_key=api_key
                     )
+                    logger.debug("YOLOWorld model loaded. Staring the inference.")
                     response = await self.model_manager.infer_from_request(
                         yolo_world_model_id, inference_request
                     )
+                    logger.debug("YOLOWorld prediction available.")
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(yolo_world_model_id, actor)
+                        logger.debug("Usage of YOLOWorld denoted.")
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:

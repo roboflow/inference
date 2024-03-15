@@ -2,26 +2,9 @@ With Inference, you can run any of the 50,000+ models available on Roboflow Univ
 
 All models run on your own hardware.
 
-## Run pre-trained YOLOv8 model
+## Run a Model From Roboflow Universe
 
-Roboflow Universe exposes pre-trained YOLOv8 models.
-
-- object-detection: `yolov8{model_size}-{inference_resolution}`
-
-  - supported model sizes: `[n, s, m, l, x]`
-  - supported inference resolutions: `[640, 1280]`
-
-- instance-segmentation: `yolov8{model_size}-seg-{inference_resolution}`
-  - supported model sizes: `[n, s, m, l, x]`
-  - supported inference resolutions: `[640, 1280]`
-
-## Run a Model on Universe
-
-In the first example, we showed how to run a rock paper scissors model. This model was hosted on Universe. Let's find another model to try.
-
-!!! Info
-
-    If you haven't already, follow our [Run Your First Model guide](http://127.0.0.1:8000/quickstart/run_a_model/) to install and set up Inference.
+In the first example, we showed how to run a people detection model. This model was hosted on Universe. Let's find another model to try.
 
 Go to the <a href="https://universe.roboflow.com" target="_blank">Roboflow Universe</a> homepage and use the search bar to find a model.
 
@@ -37,7 +20,13 @@ Browse the search page to find a model.
 
 When you have found a model, click on the model card to learn more. Click the "Model" link in the sidebar to get the information you need to use the model.
 
-Create a new Python file and add the following code:
+Then, install Inference and supervision, which we will use to run our model and handle model predictions, respectively:
+
+```bash
+pip install inference supervision
+```
+
+Next, create a new Python file and add the following code:
 
 ```python
 # import a utility function for loading Roboflow models
@@ -73,6 +62,10 @@ annotated_image = label_annotator.annotate(
 # display the image
 sv.plot_image(annotated_image)
 ```
+
+!!! Tip
+
+    To see more models, check out the [Pre-Trained Models](/quickstart/aliases/) page and [Roboflow Universe](https://universe.roboflow.com).
 
 The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 

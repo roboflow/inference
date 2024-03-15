@@ -37,19 +37,7 @@ class PipelineWatchDog(ABC):
         pass
 
     @abstractmethod
-    def on_model_preprocessing_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        pass
-
-    @abstractmethod
     def on_model_inference_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        pass
-
-    @abstractmethod
-    def on_model_postprocessing_started(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
         pass
@@ -72,17 +60,7 @@ class NullPipelineWatchdog(PipelineWatchDog):
     def on_status_update(self, status_update: StatusUpdate) -> None:
         pass
 
-    def on_model_preprocessing_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        pass
-
     def on_model_inference_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        pass
-
-    def on_model_postprocessing_started(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
         pass
@@ -98,34 +76,14 @@ class NullPipelineWatchdog(PipelineWatchDog):
 
 class LatencyMonitor:
     def __init__(self):
-        self._preprocessing_start_event: Optional[ModelActivityEvent] = None
         self._inference_start_event: Optional[ModelActivityEvent] = None
-        self._postprocessing_start_event: Optional[ModelActivityEvent] = None
         self._prediction_ready_event: Optional[ModelActivityEvent] = None
         self._reports: Deque[LatencyMonitorReport] = deque(maxlen=MAX_LATENCY_CONTEXT)
-
-    def register_preprocessing_start(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._preprocessing_start_event = ModelActivityEvent(
-            event_timestamp=datetime.now(),
-            frame_id=frame_id,
-            frame_decoding_timestamp=frame_timestamp,
-        )
 
     def register_inference_start(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
         self._inference_start_event = ModelActivityEvent(
-            event_timestamp=datetime.now(),
-            frame_id=frame_id,
-            frame_decoding_timestamp=frame_timestamp,
-        )
-
-    def register_postprocessing_start(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._postprocessing_start_event = ModelActivityEvent(
             event_timestamp=datetime.now(),
             frame_id=frame_id,
             frame_decoding_timestamp=frame_timestamp,
@@ -145,42 +103,27 @@ class LatencyMonitor:
         avg_frame_decoding_latency = average_property_values(
             examined_objects=self._reports, property_name="frame_decoding_latency"
         )
-        avg_pre_processing_latency = average_property_values(
-            examined_objects=self._reports, property_name="pre_processing_latency"
-        )
         avg_inference_latency = average_property_values(
             examined_objects=self._reports, property_name="inference_latency"
-        )
-        avg_pos_processing_latency = average_property_values(
-            examined_objects=self._reports, property_name="post_processing_latency"
-        )
-        avg_model_latency = average_property_values(
-            examined_objects=self._reports, property_name="model_latency"
         )
         avg_e2e_latency = average_property_values(
             examined_objects=self._reports, property_name="e2e_latency"
         )
         return LatencyMonitorReport(
             frame_decoding_latency=avg_frame_decoding_latency,
-            pre_processing_latency=avg_pre_processing_latency,
             inference_latency=avg_inference_latency,
-            post_processing_latency=avg_pos_processing_latency,
-            model_latency=avg_model_latency,
             e2e_latency=avg_e2e_latency,
         )
 
     def _generate_report(self) -> None:
         frame_decoding_latency = None
-        if self._preprocessing_start_event is not None:
+        if self._inference_start_event is not None:
             frame_decoding_latency = (
-                self._preprocessing_start_event.event_timestamp
-                - self._preprocessing_start_event.frame_decoding_timestamp
+                self._inference_start_event.event_timestamp
+                - self._inference_start_event.frame_decoding_timestamp
             ).total_seconds()
         event_pairs = [
-            (self._preprocessing_start_event, self._inference_start_event),
-            (self._inference_start_event, self._postprocessing_start_event),
-            (self._postprocessing_start_event, self._prediction_ready_event),
-            (self._preprocessing_start_event, self._prediction_ready_event),
+            (self._inference_start_event, self._prediction_ready_event),
         ]
         event_pairs_results = []
         for earlier_event, later_event in event_pairs:
@@ -189,12 +132,7 @@ class LatencyMonitor:
                 later_event=later_event,
             )
             event_pairs_results.append(latency)
-        (
-            pre_processing_latency,
-            inference_latency,
-            post_processing_latency,
-            model_latency,
-        ) = event_pairs_results
+        (inference_latency,) = event_pairs_results
         e2e_latency = None
         if self._prediction_ready_event is not None:
             e2e_latency = (
@@ -204,10 +142,7 @@ class LatencyMonitor:
         self._reports.append(
             LatencyMonitorReport(
                 frame_decoding_latency=frame_decoding_latency,
-                pre_processing_latency=pre_processing_latency,
                 inference_latency=inference_latency,
-                post_processing_latency=post_processing_latency,
-                model_latency=model_latency,
                 e2e_latency=e2e_latency,
             )
         )
@@ -278,24 +213,10 @@ class BasePipelineWatchDog(PipelineWatchDog):
             return None
         self._stream_updates.append(status_update)
 
-    def on_model_preprocessing_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._latency_monitor.register_preprocessing_start(
-            frame_timestamp=frame_timestamp, frame_id=frame_id
-        )
-
     def on_model_inference_started(
         self, frame_timestamp: datetime, frame_id: int
     ) -> None:
         self._latency_monitor.register_inference_start(
-            frame_timestamp=frame_timestamp, frame_id=frame_id
-        )
-
-    def on_model_postprocessing_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._latency_monitor.register_postprocessing_start(
             frame_timestamp=frame_timestamp, frame_id=frame_id
         )
 

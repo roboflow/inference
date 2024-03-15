@@ -3,13 +3,11 @@ from typing import Optional
 import typer
 from typing_extensions import Annotated
 
-from inference_cli.lib import check_inference_server_status, start_inference_container
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
     run_api_speed_benchmark,
     run_python_package_speed_benchmark,
 )
-from inference_cli.lib.container_adapter import stop_inference_containers
 
 benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
 
@@ -111,20 +109,24 @@ def api_speed(
         )
         if proceed.lower() != "y":
             return None
-    run_api_speed_benchmark(
-        model_id=model_id,
-        dataset_reference=dataset_reference,
-        host=host,
-        warm_up_requests=warm_up_requests,
-        benchmark_requests=benchmark_requests,
-        request_batch_size=request_batch_size,
-        number_of_clients=number_of_clients,
-        requests_per_second=requests_per_second,
-        api_key=api_key,
-        model_configuration=model_configuration,
-        output_location=output_location,
-        enforce_legacy_endpoints=enforce_legacy_endpoints,
-    )
+    try:
+        run_api_speed_benchmark(
+            model_id=model_id,
+            dataset_reference=dataset_reference,
+            host=host,
+            warm_up_requests=warm_up_requests,
+            benchmark_requests=benchmark_requests,
+            request_batch_size=request_batch_size,
+            number_of_clients=number_of_clients,
+            requests_per_second=requests_per_second,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+            enforce_legacy_endpoints=enforce_legacy_endpoints,
+        )
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 @benchmark_app.command()
@@ -194,11 +196,11 @@ def python_package_speed(
             output_location=output_location,
         )
     except KeyboardInterrupt:
-        print("Benchmark interrupted. Cleaning up...")
-        stop_inference_containers()
-        print("Cleanup completed. Exiting.")
+        print("Benchmark interrupted.")
         return
-
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

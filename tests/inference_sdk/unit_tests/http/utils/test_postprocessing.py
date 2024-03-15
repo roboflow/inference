@@ -563,7 +563,10 @@ def test_decode_workflow_outputs() -> None:
         "some": "value",
         "other": {"type": "base64", "value": "base64_image_here"},
         "third": [1, {"type": "base64", "value": "base64_image_here"}],
-        "fourth": [1, [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}]],
+        "fourth": [
+            1,
+            [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}],
+        ],
     }
 
     # when
@@ -575,14 +578,18 @@ def test_decode_workflow_outputs() -> None:
     # then
     assert len(result) == 4, "Number of elements in dict cannot be altered"
     assert result["some"] == "value", "This value must not be changed"
-    assert result["other"]["type"] == "numpy_object", "This element must be deserialized"
+    assert (
+        result["other"]["type"] == "numpy_object"
+    ), "This element must be deserialized"
     assert result["third"][0] == 1, "This object cannot be mutated"
     assert (
         result["third"][1]["type"] == "numpy_object"
     ), "This element must be deserialize"
     assert result["fourth"][0] == 1, "First element of `fourth` key not to be changed"
     assert result["fourth"][1][0]["a"] == 2, "Nested dict key `a` not to be changed"
-    assert result["fourth"][1][0]["b"]["type"] == "numpy_object", "This element must be deserialized"
+    assert (
+        result["fourth"][1][0]["b"]["type"] == "numpy_object"
+    ), "This element must be deserialized"
 
 
 def test_combine_gaze_detections_when_single_detections_given() -> None:
