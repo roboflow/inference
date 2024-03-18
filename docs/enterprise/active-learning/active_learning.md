@@ -55,7 +55,7 @@ These strategies are:
 * [Detection count-based](./detection_number.md) (Detection models only): Collect data with a specific number of detections returned by a detection model.
 * [Class-based](./classes_based.md) (Classification models only): Collect data with a specific class returned by a classification model.
 
-## How data is sampled?
+## How Data is Sampled
 
 When you run Inference with an active learning configuration, the following steps are run:
 
