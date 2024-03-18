@@ -38,7 +38,7 @@ Active Learning data collection may be combined with different components of Rob
 
 - `inference` Python package can be used to get predictions from the model and register them at Roboflow platform
   - one may want to use `InferencePipeline` to get predictions from video and register its video frames using Active Learning
-- self-hosted `inferce` server - where data is collected while processing requests
+- self-hosted `inference` server - where data is collected while processing requests
 - Roboflow hosted `inference` - where you let us make sure you get your predictions and data registered. No 
 infrastructure needs to run on your end, we take care of everything
   - [Roboflow `workflows`](../../workflows/about.md) - our newest feature - supports [`ActiveLearningDataCollectionBlock`](../../workflows/active_learning.md)
