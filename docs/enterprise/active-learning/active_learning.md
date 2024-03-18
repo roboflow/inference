@@ -236,9 +236,10 @@ There are few parameters that can be added to request to influence how data coll
 want input data to be collected - useful for testing purposes)
 - `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
-you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
-registered)
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project
+you cannot use incompatible type of models in `project_a` and `project_b` - if that is the case - data will not be 
+registered - classification predictions cannot be registered in detection-based projects.** You are free to mix
+such tasks like object-detection, instance-segmentation of keypoints detection, but naturally not every detail of
+required label may be available in prediction.
+
 
 Visit [Inference SDK docs](../../inference_helpers/inference_sdk.md) to learn more.

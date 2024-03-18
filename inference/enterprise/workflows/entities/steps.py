@@ -82,7 +82,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     model_id: str
     disable_active_learning: Union[Optional[bool], str] = Field(default=False)
     active_learning_target_dataset: Optional[str] = Field(default=None)
-    active_learning_api_key: Optional[str] = Field(default=None)
 
     @field_validator("image")
     @classmethod
@@ -110,12 +109,12 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         )
         return value
 
-    @field_validator("active_learning_target_dataset", "active_learning_api_key")
+    @field_validator("active_learning_target_dataset")
     @classmethod
     def validate_active_learning_configuration_fields(cls, value: Any) -> str:
         validate_field_is_selector_or_has_given_type(
             value=value,
-            field_name="active_learning_target_dataset | active_learning_api_key",
+            field_name="active_learning_target_dataset",
             allowed_types=[type(None), str],
         )
         return value
@@ -129,7 +128,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             "model_id",
             "disable_active_learning",
             "active_learning_target_dataset",
-            "active_learning_api_key",
         }
 
     def get_output_names(self) -> Set[str]:
@@ -155,7 +153,6 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
                 "model_id",
                 "disable_active_learning",
                 "active_learning_target_dataset",
-                "active_learning_api_key",
             },
         )
 
@@ -176,10 +173,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
                 value=value,
                 error=VariableTypeError,
             )
-        elif field_name in {
-            "active_learning_target_dataset",
-            "active_learning_api_key",
-        }:
+        elif field_name in {"active_learning_target_dataset"}:
             validate_field_has_given_type(
                 field_name=field_name,
                 allowed_types=[type(None), str],

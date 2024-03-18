@@ -559,9 +559,6 @@ The following fields are passed to API
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
 you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
 registered) - since `v0.9.18`
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
-
 
 ### Classification model in `v1` mode:
 
@@ -576,8 +573,6 @@ Roboflow API key here and this key will be used to register data in target proje
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
 you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
 registered) - since `v0.9.18`
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 - `visualize_predictions`: flag to enable / disable visualisation
 - `confidence_threshold` as `confidence`
@@ -611,8 +606,6 @@ Roboflow API key here and this key will be used to register data in target proje
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
 you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
 registered) - since `v0.9.18`
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Keypoints detection model in `v1` mode:
 
@@ -638,8 +631,6 @@ Roboflow API key here and this key will be used to register data in target proje
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
 you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
 registered) - since `v0.9.18`
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Instance segmentation model in `v1` mode:
 
@@ -665,8 +656,6 @@ Roboflow API key here and this key will be used to register data in target proje
 to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
 you cannot use different type of models in `project_a` and `project_b` - if that is the case - data will not be 
 registered) - since `v0.9.18`
-- `active_learning_api_key` - in rare cases (for instance cross-workspace data registration) one can provide auxiliary
-Roboflow API key here and this key will be used to register data in target project - since `v0.9.18`
 
 ### Configuration of client
 

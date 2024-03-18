@@ -258,9 +258,6 @@ input parameter
 input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
 dictating that AL should collect data to different dataset that the one declared with model
-* `active_learning_api_key`: optional auxiliary API key (or reference to `InferenceParemeter`) providing
-Roboflow API key to access `active_learning_target_dataset` if dataset occupy different workspace than the model and
-default API key do not provide sufficient access rights
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -285,9 +282,6 @@ input parameter
 input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
 dictating that AL should collect data to different dataset that the one declared with model
-* `active_learning_api_key`: optional auxiliary API key (or reference to `InferenceParemeter`) providing
-Roboflow API key to access `active_learning_target_dataset` if dataset occupy different workspace than the model and
-default API key do not provide sufficient access rights
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -319,9 +313,6 @@ input parameter. Default: `0.3`.
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
 dictating that AL should collect data to different dataset that the one declared with model
-* `active_learning_api_key`: optional auxiliary API key (or reference to `InferenceParemeter`) providing
-Roboflow API key to access `active_learning_target_dataset` if dataset occupy different workspace than the model and
-default API key do not provide sufficient access rights
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -355,9 +346,6 @@ input parameter. Default: `0.3`.
 input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
 dictating that AL should collect data to different dataset that the one declared with model
-* `active_learning_api_key`: optional auxiliary API key (or reference to `InferenceParemeter`) providing
-Roboflow API key to access `active_learning_target_dataset` if dataset occupy different workspace than the model and
-default API key do not provide sufficient access rights
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -392,9 +380,6 @@ input parameter. Default: `0.3`.
 input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
 dictating that AL should collect data to different dataset that the one declared with model
-* `active_learning_api_key`: optional auxiliary API key (or reference to `InferenceParemeter`) providing
-Roboflow API key to access `active_learning_target_dataset` if dataset occupy different workspace than the model and
-default API key do not provide sufficient access rights
 
 ##### Step outputs:
 * `predictions` - details of predictions

@@ -1318,10 +1318,6 @@ class HttpInterface(BaseInterface):
                     default=None,
                     description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
                 ),
-                active_learning_api_key: Optional[str] = Query(
-                    default=None,
-                    description="Parameter to be used when Active Learning data registration should happen against dataset that is registered in workspace that require different API key (to be used in combination with active_learning_target_dataset). If not given, primary request API key will be used",
-                ),
                 source: Optional[str] = Query(
                     "external",
                     description="The source of the inference request",
@@ -1443,7 +1439,6 @@ class HttpInterface(BaseInterface):
                     disable_preproc_static_crop=disable_preproc_static_crop,
                     disable_active_learning=disable_active_learning,
                     active_learning_target_dataset=active_learning_target_dataset,
-                    active_learning_api_key=active_learning_api_key,
                     source=source,
                     source_info=source_info,
                     **args,

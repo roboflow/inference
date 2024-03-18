@@ -45,7 +45,6 @@ from inference.core.interfaces.stream.watchdog import (
 )
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
-from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
@@ -83,7 +82,6 @@ class InferencePipeline:
         active_learning_enabled: Optional[bool] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         active_learning_target_dataset: Optional[str] = None,
-        active_learning_api_key: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -154,9 +152,6 @@ class InferencePipeline:
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
             active_learning_target_dataset (Optional[str]): Parameter to be used when Active Learning data registration
                 should happen against different dataset than the one pointed by model_id
-            active_learning_api_key (Optional[str]): Parameter to be used when Active Learning data registration should
-                happen against dataset that is registered in workspace that require different API key (to be used in
-                combination with active_learning_target_dataset). If not given, primary API key will be used.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -211,16 +206,14 @@ class InferencePipeline:
             )
             active_learning_enabled = False
         if active_learning_enabled is True:
-            target_dataset_api_key = active_learning_api_key or api_key
             resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
             target_dataset = (
                 active_learning_target_dataset or resolved_model_id.split("/")[0]
             )
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
-                target_dataset_api_key=target_dataset_api_key,
+                api_key=api_key,
                 target_dataset=target_dataset,
                 model_id=model_id,
-                model_api_key=api_key,
                 cache=cache,
             )
             al_sink = partial(

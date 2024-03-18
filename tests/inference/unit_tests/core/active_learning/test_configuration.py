@@ -10,7 +10,8 @@ from inference.core.active_learning import configuration
 from inference.core.active_learning.configuration import (
     get_roboflow_project_metadata,
     initialize_sampling_methods,
-    prepare_active_learning_configuration, predictions_incompatible_with_dataset,
+    predictions_incompatible_with_dataset,
+    prepare_active_learning_configuration,
 )
 from inference.core.active_learning.entities import (
     ActiveLearningConfiguration,
@@ -121,10 +122,9 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered(
 
     # when
     result = get_roboflow_project_metadata(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="some",
         model_id="some/1",
-        model_api_key="api-key",
         cache=cache,
     )
 
@@ -177,10 +177,9 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_model_dat
 
     # when
     result = get_roboflow_project_metadata(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="other",
         model_id="some/1",
-        model_api_key="other-key",
         cache=cache,
     )
 
@@ -211,7 +210,7 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_model_dat
         workspace_id="my-workspace",
         dataset_id="other",
     )
-    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="other-key")
+    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="api-key")
 
 
 @mock.patch.object(configuration, "get_model_type")
@@ -233,10 +232,9 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_missmatch
 
     # when
     result = get_roboflow_project_metadata(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="other",
         model_id="some/1",
-        model_api_key="other-key",
         cache=cache,
     )
 
@@ -263,7 +261,7 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_missmatch
         dataset_id="other",
     )
     get_roboflow_active_learning_configuration_mock.assert_not_called()
-    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="other-key")
+    get_model_type_mock.assert_called_once_with(model_id="some/1", api_key="api-key")
 
 
 def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
@@ -282,10 +280,9 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered() -> None:
 
     # when
     result = get_roboflow_project_metadata(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="other",
         model_id="some/1",
-        model_api_key="other-key",
         cache=cache,
     )
 
@@ -316,10 +313,9 @@ def test_get_roboflow_project_metadata_when_cache_hit_encountered_but_content_is
     # when
     with pytest.raises(ActiveLearningConfigurationDecodingError):
         _ = get_roboflow_project_metadata(
-            target_dataset_api_key="api-key",
+            api_key="api-key",
             target_dataset="other",
             model_id="some/1",
-            model_api_key="other-key",
             cache=cache,
         )
 
@@ -339,10 +335,9 @@ def test_prepare_active_learning_configuration_when_active_learning_disabled_by_
 
     # when
     result = prepare_active_learning_configuration(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="other",
         model_id="some/1",
-        model_api_key="other-key",
         cache=cache,
     )
 
@@ -391,10 +386,9 @@ def test_prepare_active_learning_configuration_when_active_learning_enabled(
 
     # when
     result = prepare_active_learning_configuration(
-        target_dataset_api_key="api-key",
+        api_key="api-key",
         target_dataset="other",
         model_id="some/1",
-        model_api_key="other-key",
         cache=cache,
     )
 
@@ -475,7 +469,7 @@ def test_test_initialize_sampling_methods_when_duplicate_names_detected() -> Non
         ("instance-segmentation", "keypoint-detection"),
         ("keypoint-detection", "keypoint-detection"),
         ("instance-segmentation", "instance-segmentation"),
-    ]
+    ],
 )
 def test_predictions_incompatible_with_dataset_when_elements_are_compatible(
     model_type: str,
@@ -500,11 +494,11 @@ def test_predictions_incompatible_with_dataset_when_elements_are_compatible(
         ("object-detection", "classification"),
         ("keypoint-detection", "classification"),
         ("instance-segmentation", "classification"),
-    ]
+    ],
 )
 def test_predictions_incompatible_with_dataset_when_elements_are_incompatible(
-        model_type: str,
-        dataset_type: str,
+    model_type: str,
+    dataset_type: str,
 ) -> None:
     # when
     result = predictions_incompatible_with_dataset(

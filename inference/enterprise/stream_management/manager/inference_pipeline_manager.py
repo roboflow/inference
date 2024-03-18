@@ -130,7 +130,6 @@ class InferencePipelineManager(Process):
                 active_learning_target_dataset=payload.get(
                     "active_learning_target_dataset"
                 ),
-                active_learning_api_key=payload.get("active_learning_api_key"),
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)

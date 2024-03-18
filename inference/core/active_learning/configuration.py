@@ -42,17 +42,15 @@ ACTIVE_LEARNING_CONFIG_CACHE_EXPIRE = 900  # 15 min
 
 
 def prepare_active_learning_configuration(
-    target_dataset_api_key: str,
+    api_key: str,
     target_dataset: str,
     model_id: str,
-    model_api_key: str,
     cache: BaseCache,
 ) -> Optional[ActiveLearningConfiguration]:
     project_metadata = get_roboflow_project_metadata(
-        target_dataset_api_key=target_dataset_api_key,
+        api_key=api_key,
         target_dataset=target_dataset,
         model_id=model_id,
-        model_api_key=model_api_key,
         cache=cache,
     )
     if not project_metadata.active_learning_configuration.get("enabled", False):
@@ -69,10 +67,9 @@ def prepare_active_learning_configuration(
 
 
 def prepare_active_learning_configuration_inplace(
-    target_dataset_api_key: str,
+    api_key: str,
     target_dataset: str,
     model_id: str,
-    model_api_key: str,
     active_learning_configuration: Optional[dict],
 ) -> Optional[ActiveLearningConfiguration]:
     if (
@@ -80,15 +77,15 @@ def prepare_active_learning_configuration_inplace(
         or active_learning_configuration.get("enabled", False) is False
     ):
         return None
-    workspace_id = get_roboflow_workspace(api_key=target_dataset_api_key)
+    workspace_id = get_roboflow_workspace(api_key=api_key)
     dataset_type = get_roboflow_dataset_type(
-        api_key=target_dataset_api_key,
+        api_key=api_key,
         workspace_id=workspace_id,
         dataset_id=target_dataset,
     )
     model_type = dataset_type
     if not model_id.startswith(target_dataset):
-        model_type = get_model_type(model_id=model_id, api_key=model_api_key)
+        model_type = get_model_type(model_id=model_id, api_key=api_key)
     if predictions_incompatible_with_dataset(
         model_type=model_type, dataset_type=dataset_type
     ):
@@ -110,15 +107,14 @@ def prepare_active_learning_configuration_inplace(
 
 
 def get_roboflow_project_metadata(
-    target_dataset_api_key: str,
+    api_key: str,
     target_dataset: str,
     model_id: str,
-    model_api_key: str,
     cache: BaseCache,
 ) -> RoboflowProjectMetadata:
     logger.info(f"Fetching active learning configuration.")
     config_cache_key = construct_cache_key_for_active_learning_config(
-        api_key=target_dataset_api_key,
+        api_key=api_key,
         target_dataset=target_dataset,
         model_id=model_id,
     )
@@ -126,15 +122,15 @@ def get_roboflow_project_metadata(
     if cached_config is not None:
         logger.info("Found Active Learning configuration in cache.")
         return parse_cached_roboflow_project_metadata(cached_config=cached_config)
-    workspace_id = get_roboflow_workspace(api_key=target_dataset_api_key)
+    workspace_id = get_roboflow_workspace(api_key=api_key)
     dataset_type = get_roboflow_dataset_type(
-        api_key=target_dataset_api_key,
+        api_key=api_key,
         workspace_id=workspace_id,
         dataset_id=target_dataset,
     )
     model_type = dataset_type
     if not model_id.startswith(target_dataset):
-        model_type = get_model_type(model_id=model_id, api_key=model_api_key)
+        model_type = get_model_type(model_id=model_id, api_key=api_key)
     if predictions_incompatible_with_dataset(
         model_type=model_type, dataset_type=dataset_type
     ):
@@ -145,7 +141,7 @@ def get_roboflow_project_metadata(
         roboflow_api_configuration = {"enabled": False}
     else:
         roboflow_api_configuration = safe_get_roboflow_active_learning_configuration(
-            api_key=target_dataset_api_key,
+            api_key=api_key,
             workspace_id=workspace_id,
             dataset_id=target_dataset,
         )

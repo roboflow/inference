@@ -39,13 +39,10 @@ class ActiveLearningManager(ModelManager):
         active_learning_disabled_for_request = getattr(
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
-        active_learning_api_key = getattr(
-            request, "active_learning_api_key", None
-        ) or getattr(request, "api_key", None)
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
-            or active_learning_api_key is None
+            or request.api_key is None
         ):
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
@@ -91,13 +88,10 @@ class ActiveLearningManager(ModelManager):
             return None
         start = time.perf_counter()
         logger.debug(f"Initialising AL middleware for {model_id}")
-        target_dataset_api_key = request.active_learning_api_key or request.api_key
-        model_api_key = request.api_key or request.active_learning_api_key
         self._middlewares[middleware_key] = ActiveLearningMiddleware.init(
-            target_dataset_api_key=target_dataset_api_key,
+            api_key=request.api_key,
             target_dataset=target_dataset,
             model_id=model_id,
-            model_api_key=model_api_key,
             cache=self._cache,
         )
         end = time.perf_counter()
@@ -153,13 +147,10 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
         prediction = await super().infer_from_request(
             model_id=model_id, request=request, **kwargs
         )
-        active_learning_api_key = getattr(
-            request, "active_learning_api_key", None
-        ) or getattr(request, "api_key", None)
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
-            or active_learning_api_key is None
+            or request.api_key is None
         ):
             return prediction
         if BACKGROUND_TASKS_PARAM not in kwargs:
