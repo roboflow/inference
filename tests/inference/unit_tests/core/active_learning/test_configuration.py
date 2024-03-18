@@ -10,7 +10,7 @@ from inference.core.active_learning import configuration
 from inference.core.active_learning.configuration import (
     get_roboflow_project_metadata,
     initialize_sampling_methods,
-    prepare_active_learning_configuration,
+    prepare_active_learning_configuration, predictions_incompatible_with_dataset,
 )
 from inference.core.active_learning.entities import (
     ActiveLearningConfiguration,
@@ -227,7 +227,7 @@ def test_get_roboflow_project_metadata_when_cache_miss_encountered_and_missmatch
     # given
     get_roboflow_workspace_mock.return_value = "my-workspace"
     get_roboflow_dataset_type_mock.return_value = "object-detection"
-    get_model_type_mock.return_value = "instance-segmentation"
+    get_model_type_mock.return_value = "classification"
     get_roboflow_active_learning_configuration_mock.return_value = {"some": "config"}
     cache = MemoryCache()
 
@@ -463,3 +463,54 @@ def test_test_initialize_sampling_methods_when_duplicate_names_detected() -> Non
         _ = initialize_sampling_methods(
             sampling_strategies_configs=sampling_strategies_configs
         )
+
+
+@pytest.mark.parametrize(
+    "model_type, dataset_type",
+    [
+        ("classification", "classification"),
+        ("object-detection", "object-detection"),
+        ("object-detection", "keypoint-detection"),
+        ("object-detection", "instance-segmentation"),
+        ("instance-segmentation", "keypoint-detection"),
+        ("keypoint-detection", "keypoint-detection"),
+        ("instance-segmentation", "instance-segmentation"),
+    ]
+)
+def test_predictions_incompatible_with_dataset_when_elements_are_compatible(
+    model_type: str,
+    dataset_type: str,
+) -> None:
+    # when
+    result = predictions_incompatible_with_dataset(
+        model_type=model_type,
+        dataset_type=dataset_type,
+    )
+
+    # then
+    assert result is False
+
+
+@pytest.mark.parametrize(
+    "model_type, dataset_type",
+    [
+        ("classification", "object-detection"),
+        ("classification", "keypoint-detection"),
+        ("classification", "instance-segmentation"),
+        ("object-detection", "classification"),
+        ("keypoint-detection", "classification"),
+        ("instance-segmentation", "classification"),
+    ]
+)
+def test_predictions_incompatible_with_dataset_when_elements_are_incompatible(
+        model_type: str,
+        dataset_type: str,
+) -> None:
+    # when
+    result = predictions_incompatible_with_dataset(
+        model_type=model_type,
+        dataset_type=dataset_type,
+    )
+
+    # then
+    assert result is True
