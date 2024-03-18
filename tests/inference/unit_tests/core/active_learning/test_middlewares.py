@@ -162,6 +162,7 @@ def test_active_learning_registration_when_datapoint_is_to_be_registered(
         configuration=configuration,
         api_key="api-key",
         batch_name="some-batch",
+        inference_id=None,
     )
 
 
@@ -217,12 +218,14 @@ def test_active_learning_registration_of_batch(
                 prediction={"some": "prediction"},
                 prediction_type="object-detection",
                 disable_preproc_auto_orient=False,
+                inference_id=None,
             ),
             call(
                 inference_input=image_as_numpy,
                 prediction={"other": "prediction"},
                 prediction_type="object-detection",
                 disable_preproc_auto_orient=False,
+                inference_id=None,
             ),
         ]
     )
