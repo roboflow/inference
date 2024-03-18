@@ -5,7 +5,7 @@ rich<=13.5.2
 skypilot==0.4.1
 PyYAML>=6.0.0
 supervision>=0.17.1
-opencv-python-headless>=4.6.0
+opencv-python>=4.6.0
 tqdm>=4.0.0
 GPUtil>=1.4.0
 py-cpuinfo>=9.0.0
