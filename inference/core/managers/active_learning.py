@@ -135,6 +135,7 @@ class ActiveLearningManager(ModelManager):
             predictions=results_dicts,
             prediction_type=prediction_type,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
+            inference_id=request.id,
         )
         end = time.perf_counter()
         logger.debug(f"Registration: {(end - start) * 1000} ms")

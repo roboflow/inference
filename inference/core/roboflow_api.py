@@ -228,12 +228,15 @@ def register_image_at_roboflow(
     image_bytes: bytes,
     batch_name: str,
     tags: Optional[List[str]] = None,
+    inference_id=None,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
         ("api_key", api_key),
         ("batch", batch_name),
     ]
+    if inference_id is not None:
+        params.append(("inference_id", inference_id))
     tags = tags if tags is not None else []
     for tag in tags:
         params.append(("tag", tag))
