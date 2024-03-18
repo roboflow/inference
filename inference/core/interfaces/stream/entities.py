@@ -106,6 +106,7 @@ class ModelActivityEvent:
 
 @dataclass(frozen=True)
 class LatencyMonitorReport:
+    source_id: Optional[int] = None
     frame_decoding_latency: Optional[float] = None
     inference_latency: Optional[float] = None
     e2e_latency: Optional[float] = None
@@ -114,6 +115,6 @@ class LatencyMonitorReport:
 @dataclass(frozen=True)
 class PipelineStateReport:
     video_source_status_updates: List[StatusUpdate]
-    latency_report: LatencyMonitorReport
+    latency_reports: List[LatencyMonitorReport]
     inference_throughput: float
-    source_metadata: Optional[SourceMetadata]
+    sources_metadata: List[SourceMetadata]

@@ -32,7 +32,7 @@ from inference.core.interfaces.camera.video_source import (
     discover_source_properties,
     drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
-    purge_queue,
+    get_from_queue,
 )
 
 
@@ -45,7 +45,7 @@ def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
     queue = Queue()
 
     # when
-    result = purge_queue(queue=queue, wait_on_empty=False)
+    result = get_from_queue(queue=queue, wait_on_empty=False)
 
     # then
     assert (
@@ -61,7 +61,7 @@ def test_purge_queue_when_non_empty_queue_given() -> None:
     queue.put(3)
 
     # when
-    result = purge_queue(queue=queue)
+    result = get_from_queue(queue=queue)
 
     # then
     assert (
@@ -85,7 +85,7 @@ def test_purge_queue_when_non_empty_queue_given_with_callback() -> None:
     queue.put(3)
 
     # when
-    _ = purge_queue(queue=queue, on_successful_read=on_successful_read)
+    _ = get_from_queue(queue=queue, on_successful_read=on_successful_read)
 
     # then
     assert (

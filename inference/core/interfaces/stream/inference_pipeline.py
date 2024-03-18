@@ -62,7 +62,7 @@ class InferencePipeline:
     @classmethod
     def init(
         cls,
-        video_reference: Union[str, int],
+        video_reference: Union[str, int, List[Union[str, int]]],
         model_id: str,
         on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
         api_key: Optional[str] = None,
@@ -79,7 +79,9 @@ class InferencePipeline:
         mask_decode_mode: Optional[str] = "accurate",
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[
+            Union[Dict[str, float], List[Dict[str, float]]]
+        ] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -165,6 +167,18 @@ class InferencePipeline:
             api_key = API_KEY
         if status_update_handlers is None:
             status_update_handlers = []
+        if not issubclass(type(video_reference), list):
+            video_reference = [video_reference]
+        if not issubclass(type(video_source_properties), list):
+            video_source_properties = [video_source_properties]
+        if len(video_source_properties) != len(video_reference):
+            if len(video_source_properties) != 1:
+                raise ValueError(
+                    f"Provided {len(video_source_properties)} `video_source_properties` and {len(video_reference)} "
+                    f"video references, which makes it impossible to deduce configuration. Provide a single value for "
+                    f"all sources or separate configuration for each video."
+                )
+            video_source_properties = video_source_properties * len(video_reference)
         inference_config = ModelConfig.init(
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
@@ -181,14 +195,19 @@ class InferencePipeline:
         if watchdog is None:
             watchdog = NullPipelineWatchdog()
         status_update_handlers.append(watchdog.on_status_update)
-        video_source = VideoSource.init(
-            video_reference=video_reference,
-            status_update_handlers=status_update_handlers,
-            buffer_filling_strategy=source_buffer_filling_strategy,
-            buffer_consumption_strategy=source_buffer_consumption_strategy,
-            video_source_properties=video_source_properties,
-        )
-        watchdog.register_video_source(video_source=video_source)
+        video_sources = [
+            VideoSource.init(
+                video_reference=reference,
+                status_update_handlers=status_update_handlers,
+                buffer_filling_strategy=source_buffer_filling_strategy,
+                buffer_consumption_strategy=source_buffer_consumption_strategy,
+                video_source_properties=source_properties,
+            )
+            for (reference, source_properties) in zip(
+                video_reference, video_source_properties
+            )
+        ]
+        watchdog.register_video_sources(video_sources=video_sources)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         active_learning_middleware = NullActiveLearningMiddleware()
         if active_learning_enabled is None:
@@ -222,7 +241,7 @@ class InferencePipeline:
         on_pipeline_end = active_learning_middleware.stop_registration_thread
         return cls(
             on_video_frame=on_video_frame,
-            video_source=video_source,
+            video_sources=video_sources,
             on_prediction=on_prediction,
             max_fps=max_fps,
             predictions_queue=predictions_queue,
@@ -343,7 +362,7 @@ class InferencePipeline:
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
         )
-        watchdog.register_video_source(video_source=video_source)
+        watchdog.register_video_sources(video_sources=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         return cls(
             on_video_frame=on_video_frame,
@@ -470,7 +489,7 @@ class InferencePipeline:
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
         )
-        watchdog.register_video_source(video_source=video_source)
+        watchdog.register_video_sources(video_sources=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         return cls(
             on_video_frame=on_video_frame,
@@ -560,7 +579,7 @@ class InferencePipeline:
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
         )
-        watchdog.register_video_source(video_source=video_source)
+        watchdog.register_video_sources(video_sources=video_source)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         return cls(
             on_video_frame=on_video_frame,
@@ -576,8 +595,8 @@ class InferencePipeline:
 
     def __init__(
         self,
-        on_video_frame: Callable[[VideoFrame], AnyPrediction],
-        video_source: VideoSource,
+        on_video_frame: Callable[[List[VideoFrame]], AnyPrediction],
+        video_sources: List[VideoSource],
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
@@ -585,9 +604,10 @@ class InferencePipeline:
         on_pipeline_start: Optional[Callable[[], None]] = None,
         on_pipeline_end: Optional[Callable[[], None]] = None,
         max_fps: Optional[float] = None,
+        batch_collection_timeout: Optional[float] = None,
     ):
         self._on_video_frame = on_video_frame
-        self._video_source = video_source
+        self._video_sources = video_sources
         self._on_prediction = on_prediction
         self._max_fps = max_fps
         self._predictions_queue = predictions_queue
@@ -600,6 +620,7 @@ class InferencePipeline:
         self._status_update_handlers = status_update_handlers
         self._on_pipeline_start = on_pipeline_start
         self._on_pipeline_end = on_pipeline_end
+        self._batch_collection_timeout = batch_collection_timeout
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -615,16 +636,23 @@ class InferencePipeline:
 
     def terminate(self) -> None:
         self._stop = True
-        self._video_source.terminate()
+        for video_source in self._video_sources:
+            video_source.terminate()
 
-    def pause_stream(self) -> None:
-        self._video_source.pause()
+    def pause_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.pause()
 
-    def mute_stream(self) -> None:
-        self._video_source.mute()
+    def mute_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.mute()
 
-    def resume_stream(self) -> None:
-        self._video_source.resume()
+    def resume_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.resume()
 
     def join(self) -> None:
         if self._inference_thread is not None:
@@ -716,11 +744,14 @@ class InferencePipeline:
 
     def _generate_frames(
         self,
-    ) -> Generator[VideoFrame, None, None]:
-        self._video_source.start()
+    ) -> Generator[List[VideoFrame], None, None]:
+        for video_source in self._video_sources:
+            video_source.start()
         while True:
-            source_properties = self._video_source.describe_source().source_properties
-            if source_properties is None:
+            sources_properties = [
+                s.describe_source().source_properties for s in self._video_sources
+            ]
+            if any(properties is None for properties in sources_properties):
                 break
             allow_reconnect = not source_properties.is_file
             yield from get_video_frames_generator(

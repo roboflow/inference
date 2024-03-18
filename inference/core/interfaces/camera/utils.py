@@ -1,22 +1,166 @@
 import time
+from datetime import datetime, timedelta
 from enum import Enum
-from typing import Generator, Iterable, Optional, Tuple, Union
+from threading import Thread
+from typing import Callable, Dict, Generator, Iterable, List, Optional, TypeVar, Union
 
-import numpy as np
-
-from inference.core.interfaces.camera.entities import (
-    FrameID,
-    FrameTimestamp,
-    VideoFrame,
+from inference.core import logger
+from inference.core.env import RESTART_ATTEMPT_DELAY
+from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.exceptions import (
+    EndOfStreamError,
+    SourceConnectionError,
 )
-from inference.core.interfaces.camera.video_source import SourceProperties, VideoSource
+from inference.core.interfaces.camera.video_source import (
+    SourceProperties,
+    StreamState,
+    VideoSource,
+)
 
 MINIMAL_FPS = 0.01
+
+T = TypeVar("T")
 
 
 class FPSLimiterStrategy(Enum):
     DROP = "drop"
     WAIT = "wait"
+
+
+def never_stop() -> bool:
+    return False
+
+
+def log_error(source_id: Optional[int], error: SourceConnectionError) -> None:
+    logger.warning(
+        f"Could not re-connect to source with id: {source_id}. Error: {error}"
+    )
+
+
+def multiplex_videos(
+    videos: List[Union[VideoSource, str, int]],
+    max_fps: Optional[Union[float, int]] = None,
+    limiter_strategy: FPSLimiterStrategy = FPSLimiterStrategy.DROP,
+    batch_collection_timeout: Optional[float] = None,
+    reconnect: bool = True,
+    should_stop: Callable[[], bool] = never_stop,
+    on_reconnection_error: Callable[
+        [Optional[int], SourceConnectionError], None
+    ] = log_error,
+) -> Generator[List[VideoFrame], None, None]:
+    generator = _multiplex_videos(
+        videos=videos,
+        batch_collection_timeout=batch_collection_timeout,
+        reconnect=reconnect,
+        should_stop=should_stop,
+        on_reconnection_error=on_reconnection_error,
+    )
+    if max_fps is None:
+        yield from generator
+        return None
+    yield from limit_frame_rate(
+        frames_generator=generator, max_fps=max_fps, strategy=limiter_strategy
+    )
+
+
+def _multiplex_videos(
+    videos: List[Union[VideoSource, str, int]],
+    batch_collection_timeout: Optional[float] = None,
+    reconnect: bool = True,
+    should_stop: Callable[[], bool] = never_stop,
+    on_reconnection_error: Callable[
+        [Optional[int], SourceConnectionError], None
+    ] = log_error,
+) -> Generator[List[VideoFrame], None, None]:
+    initialised_videos: List[VideoSource] = []
+    internally_created_sources: List[VideoSource] = []
+    minimal_free_source_id = max(
+        v.source_id if v.source_id is not None else -1
+        for v in videos
+        if issubclass(type(v), VideoSource)
+    )
+    minimal_free_source_id += 1
+    for video in videos:
+        if issubclass(type(video), str) or issubclass(type(video), int):
+            video = VideoSource.init(
+                video_reference=video, source_id=minimal_free_source_id
+            )
+            minimal_free_source_id += 1
+            video.start()
+            internally_created_sources.append(video)
+        initialised_videos.append(video)
+    sources_properties = [
+        s.describe_source().source_properties for s in initialised_videos
+    ]
+    if any(properties is None for properties in sources_properties):
+        logger.warning("Could not connect to all sources.")
+        return None
+    allow_reconnection = [not s.is_file and reconnect for s in sources_properties]
+    reconnection_threads: Dict[str, Thread] = {}
+    ended_sources = set()
+    while len(ended_sources) < len(initialised_videos):
+        batch_frames = []
+        if batch_collection_timeout is not None:
+            batch_timeout_moment = datetime.now() + timedelta(
+                seconds=batch_collection_timeout
+            )
+        else:
+            batch_timeout_moment = None
+        for video_id, (source, source_should_reconnect) in enumerate(
+            zip(initialised_videos, allow_reconnection)
+        ):
+            if should_stop():
+                print("END")
+                return None
+            batch_time_left = (
+                None
+                if batch_timeout_moment is None
+                else max((batch_timeout_moment - datetime.now()).total_seconds(), 0.0)
+            )
+            try:
+                frame = source.read_frame(timeout=batch_time_left)
+                if frame is not None:
+                    print(f"Got frame from: {video_id}")
+                    batch_frames.append(frame)
+                    if video_id in reconnection_threads:
+                        reconnection_threads[video_id].join()
+                        del reconnection_threads[video_id]
+            except EndOfStreamError:
+                print(f"Source {video_id} disconnected")
+                if source_should_reconnect:
+                    print("Staring thread")
+                    reconnection_threads[video_id] = Thread(
+                        target=attempt_reconnect,
+                        args=(source, should_stop, on_reconnection_error),
+                    )
+                    reconnection_threads[video_id].start()
+                else:
+                    ended_sources.add(video_id)
+        if len(batch_frames) > 0:
+            yield batch_frames
+    for v in internally_created_sources:
+        v.terminate()
+    return None
+
+
+def attempt_reconnect(
+    video_source: VideoSource,
+    should_stop: Callable[[], bool],
+    on_reconnection_error: Callable[[Optional[int], SourceConnectionError], None],
+) -> None:
+    succeeded = False
+    while not should_stop() and not succeeded:
+        try:
+            video_source.restart()
+            succeeded = True
+        except SourceConnectionError as error:
+            on_reconnection_error(video_source.source_id, error)
+            if should_stop():
+                return None
+            logger.warning(
+                f"Could not connect to video source. Retrying in {RESTART_ATTEMPT_DELAY}s..."
+            )
+            time.sleep(RESTART_ATTEMPT_DELAY)
 
 
 def get_video_frames_generator(
@@ -77,20 +221,23 @@ def resolve_limiter_strategy(
 
 
 def limit_frame_rate(
-    frames_generator: Iterable[Tuple[FrameTimestamp, FrameID, np.ndarray]],
+    frames_generator: Iterable[T],
     max_fps: Union[float, int],
     strategy: FPSLimiterStrategy,
-) -> Generator[Tuple[FrameTimestamp, FrameID, np.ndarray], None, None]:
+) -> Generator[T, None, None]:
     rate_limiter = RateLimiter(desired_fps=max_fps)
     for frame_data in frames_generator:
         delay = rate_limiter.estimate_next_action_delay()
+        ticks = 1 if not issubclass(type(frame_data), list) else len(frame_data)
         if delay <= 0.0:
-            rate_limiter.tick()
+            for _ in range(ticks):
+                rate_limiter.tick()
             yield frame_data
             continue
         if strategy is FPSLimiterStrategy.WAIT:
             time.sleep(delay)
-            rate_limiter.tick()
+            for _ in range(ticks):
+                rate_limiter.tick()
             yield frame_data
 
 

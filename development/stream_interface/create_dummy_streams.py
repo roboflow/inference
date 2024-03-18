@@ -13,6 +13,8 @@ BASE_STREAM_URL = "rtsp://localhost:8554/live"
 
 def main(video_dir: str, n: int) -> None:
     video_paths = glob(os.path.join(video_dir, "*.mp4")) + glob(os.path.join(video_dir, "*.webm"))
+    while len(video_paths) < n:
+        video_paths = video_paths * 2
     video_paths = video_paths[:n]
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:

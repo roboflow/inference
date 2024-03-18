@@ -207,10 +207,10 @@ def test_base_watchdog_gives_correct_report_when_nothing_registered() -> None:
         abs(result.inference_throughput) < 1e-5
     ), "Throughput cannot be measured when nothing was registered"
     assert (
-        result.latency_report == LatencyMonitorReport()
+            result.latency_reports == LatencyMonitorReport()
     ), "Latency report should be empty"
     assert (
-        result.source_metadata is None
+            result.sources_metadata is None
     ), "No video source registered, so metadata must be empty"
 
 
@@ -244,14 +244,14 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
         end_of_emission_time - first_frame_timestamp
     ).total_seconds() / 2
     assert (
-        result.latency_report.e2e_latency <= max_average_e2e_latency
+            result.latency_reports.e2e_latency <= max_average_e2e_latency
     ), "Latency cannot be larger than time passed in test"
     min_throughput = 2 / (end_of_emission_time - first_frame_timestamp).total_seconds()
     assert (
         result.inference_throughput >= min_throughput
     ), "Throughput cannot be smaller than the one indicated by test time"
     assert (
-        result.source_metadata is None
+            result.sources_metadata is None
     ), "No video source registered, so metadata must be empty"
 
 
@@ -285,12 +285,12 @@ def test_base_watchdog_gives_correct_report_when_not_all_events_are_in_series_re
         end_of_emission_time - first_frame_timestamp
     ).total_seconds() / 2
     assert (
-        result.latency_report.e2e_latency <= max_average_e2e_latency
+            result.latency_reports.e2e_latency <= max_average_e2e_latency
     ), "Latency cannot be larger than time passed in test"
     min_throughput = 2 / (end_of_emission_time - first_frame_timestamp).total_seconds()
     assert (
         result.inference_throughput >= min_throughput
     ), "Throughput cannot be smaller than the one indicated by test time"
     assert (
-        result.source_metadata is None
+            result.sources_metadata is None
     ), "No video source registered, so metadata must be empty"

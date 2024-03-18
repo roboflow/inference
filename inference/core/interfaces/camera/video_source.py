@@ -38,6 +38,8 @@ FRAME_CONSUMED_EVENT = "FRAME_CONSUMED"
 VIDEO_CONSUMPTION_STARTED_EVENT = "VIDEO_CONSUMPTION_STARTED"
 VIDEO_CONSUMPTION_FINISHED_EVENT = "VIDEO_CONSUMPTION_FINISHED"
 
+POISON_PILL = "POISON_PILL"
+
 
 class StreamState(Enum):
     NOT_STARTED = "NOT_STARTED"
@@ -116,6 +118,7 @@ class SourceMetadata:
     state: StreamState
     buffer_filling_strategy: Optional[BufferFillingStrategy]
     buffer_consumption_strategy: Optional[BufferConsumptionStrategy]
+    source_id: Optional[int]
 
 
 class VideoSourceMethod(Protocol):
@@ -146,6 +149,7 @@ class VideoSource:
         minimum_adaptive_mode_samples: int = DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
         video_source_properties: Optional[Dict[str, float]] = None,
+        source_id: Optional[int] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -273,6 +277,7 @@ class VideoSource:
             buffer_consumption_strategy=buffer_consumption_strategy,
             video_consumer=video_consumer,
             video_source_properties=video_source_properties,
+            source_id=source_id,
         )
 
     def __init__(
@@ -283,6 +288,7 @@ class VideoSource:
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
         video_consumer: "VideoConsumer",
         video_source_properties: Optional[Dict[str, float]],
+        source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
         self._video: Optional[cv2.VideoCapture] = None
@@ -297,6 +303,11 @@ class VideoSource:
         self._stream_consumption_thread: Optional[Thread] = None
         self._state_change_lock = Lock()
         self._video_source_properties = video_source_properties or {}
+        self._source_id = source_id
+
+    @property
+    def source_id(self) -> Optional[int]:
+        return self._source_id
 
     @lock_state_transition
     def restart(self, wait_on_frames_consumption: bool = True) -> None:
@@ -454,7 +465,7 @@ class VideoSource:
         """
         return not self._frames_buffer.empty()
 
-    def read_frame(self) -> VideoFrame:
+    def read_frame(self, timeout: Optional[float] = None) -> Optional[VideoFrame]:
         """
         Method to be used by the consumer to get decoded source frame.
 
@@ -462,28 +473,27 @@ class VideoSource:
         Throws:
             * EndOfStreamError: when trying to get the frame from closed source.
         """
-        if self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER:
-            video_frame: Optional[VideoFrame] = purge_queue(
-                queue=self._frames_buffer,
-                on_successful_read=self._video_consumer.notify_frame_consumed,
-            )
-        else:
-            video_frame: Optional[VideoFrame] = self._frames_buffer.get()
-            self._frames_buffer.task_done()
-            self._video_consumer.notify_frame_consumed()
-        if video_frame is None:
+        video_frame: Optional[Union[VideoFrame, str]] = get_from_queue(
+            queue=self._frames_buffer,
+            on_successful_read=self._video_consumer.notify_frame_consumed,
+            timeout=timeout,
+            purge=self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER,
+        )
+        if video_frame == POISON_PILL:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
             )
-        send_video_source_status_update(
-            severity=UpdateSeverity.DEBUG,
-            event_type=FRAME_CONSUMED_EVENT,
-            payload={
-                "frame_timestamp": video_frame.frame_timestamp,
-                "frame_id": video_frame.frame_id,
-            },
-            status_update_handlers=self._status_update_handlers,
-        )
+        if video_frame is not None:
+            send_video_source_status_update(
+                severity=UpdateSeverity.DEBUG,
+                event_type=FRAME_CONSUMED_EVENT,
+                payload={
+                    "frame_timestamp": video_frame.frame_timestamp,
+                    "frame_id": video_frame.frame_id,
+                    "source_id": video_frame.source_id,
+                },
+                status_update_handlers=self._status_update_handlers,
+            )
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
@@ -494,6 +504,7 @@ class VideoSource:
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,
             buffer_consumption_strategy=self._buffer_consumption_strategy,
+            source_id=self._source_id,
         )
 
     def _restart(self, wait_on_frames_consumption: bool = True) -> None:
@@ -584,10 +595,11 @@ class VideoSource:
                     declared_source_fps=declared_source_fps,
                     buffer=self._frames_buffer,
                     frames_buffering_allowed=self._frames_buffering_allowed,
+                    source_id=self._source_id,
                 )
                 if not success:
                     break
-            self._frames_buffer.put(None)
+            self._frames_buffer.put(POISON_PILL)
             self._video.release()
             self._change_state(target_state=StreamState.ENDED)
             send_video_source_status_update(
@@ -738,6 +750,7 @@ class VideoConsumer:
         declared_source_fps: Optional[float],
         buffer: Queue,
         frames_buffering_allowed: bool,
+        source_id: Optional[int] = None,
     ) -> bool:
         frame_timestamp = datetime.now()
         success = video.grab()
@@ -751,6 +764,7 @@ class VideoConsumer:
             payload={
                 "frame_timestamp": frame_timestamp,
                 "frame_id": self._frame_counter,
+                "source_id": source_id,
             },
             status_update_handlers=self._status_update_handlers,
         )
@@ -760,6 +774,7 @@ class VideoConsumer:
             frame_timestamp=frame_timestamp,
             buffer=buffer,
             frames_buffering_allowed=frames_buffering_allowed,
+            source_id=source_id,
         )
 
     def _set_file_mode_buffering_strategies(self) -> None:
@@ -777,6 +792,7 @@ class VideoConsumer:
         frame_timestamp: datetime,
         buffer: Queue,
         frames_buffering_allowed: bool,
+        source_id: Optional[int],
     ) -> bool:
         """
         Returns: boolean flag with success status
@@ -787,6 +803,7 @@ class VideoConsumer:
                 frame_id=self._frame_counter,
                 cause="Buffering not allowed at the moment",
                 status_update_handlers=self._status_update_handlers,
+                source_id=source_id,
             )
             return True
         if self._frame_should_be_adaptively_dropped(
@@ -798,6 +815,7 @@ class VideoConsumer:
                 frame_id=self._frame_counter,
                 cause="ADAPTIVE strategy",
                 status_update_handlers=self._status_update_handlers,
+                source_id=source_id,
             )
             return True
         self._adaptive_frames_dropped_in_row = 0
@@ -811,18 +829,21 @@ class VideoConsumer:
                 video=video,
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
+                source_id=source_id,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
                 frame_timestamp=frame_timestamp,
                 video=video,
                 buffer=buffer,
+                source_id=source_id,
             )
         send_frame_drop_update(
             frame_timestamp=frame_timestamp,
             frame_id=self._frame_counter,
             cause="DROP_LATEST strategy",
             status_update_handlers=self._status_update_handlers,
+            source_id=source_id,
         )
         return True
 
@@ -878,11 +899,13 @@ class VideoConsumer:
         frame_timestamp: datetime,
         video: cv2.VideoCapture,
         buffer: Queue,
+        source_id: Optional[int],
     ) -> bool:
         drop_single_frame_from_buffer(
             buffer=buffer,
             cause="DROP_OLDEST strategy",
             status_update_handlers=self._status_update_handlers,
+            source_id=source_id,
         )
         return decode_video_frame_to_buffer(
             frame_timestamp=frame_timestamp,
@@ -890,6 +913,7 @@ class VideoConsumer:
             video=video,
             buffer=buffer,
             decoding_pace_monitor=self._decoding_pace_monitor,
+            source_id=source_id,
         )
 
 
@@ -915,17 +939,29 @@ def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
     )
 
 
-def purge_queue(
+def get_from_queue(
     queue: Queue,
-    wait_on_empty: bool = True,
+    timeout: Optional[float] = None,
     on_successful_read: Callable[[], None] = lambda: None,
+    purge: bool = False,
 ) -> Optional[Any]:
+    """
+    Function is supposed to take element from the queue waiting on the first element to appear using `timeout`
+    parameter. One may ask to go to the very last element of the queue and return it - then `purge` should be set
+    to True. No additional wait on new elements to appear happen and the purge stops once queue is free returning last
+    element consumed.
+    queue.task_done() and on_successful_read(...) will be called on each received element.
+    """
     result = None
-    if queue.empty() and wait_on_empty:
-        result = queue.get()
-        queue.task_done()
-        on_successful_read()
-    while not queue.empty():
+    if queue.empty():
+        try:
+            result = queue.get(timeout=timeout)
+        except Empty:
+            pass
+        else:
+            queue.task_done()
+            on_successful_read()
+    while not queue.empty() and purge:
         result = queue.get()
         queue.task_done()
         on_successful_read()
@@ -936,6 +972,7 @@ def drop_single_frame_from_buffer(
     buffer: Queue,
     cause: str,
     status_update_handlers: List[Callable[[StatusUpdate], None]],
+    source_id: Optional[int],
 ) -> None:
     try:
         video_frame = buffer.get_nowait()
@@ -945,6 +982,7 @@ def drop_single_frame_from_buffer(
             frame_id=video_frame.frame_id,
             cause=cause,
             status_update_handlers=status_update_handlers,
+            source_id=source_id,
         )
     except Empty:
         # buffer may be emptied in the meantime, hence we ignore Empty
@@ -956,6 +994,7 @@ def send_frame_drop_update(
     frame_id: int,
     cause: str,
     status_update_handlers: List[Callable[[StatusUpdate], None]],
+    source_id: Optional[int],
 ) -> None:
     send_video_source_status_update(
         severity=UpdateSeverity.DEBUG,
@@ -964,6 +1003,7 @@ def send_frame_drop_update(
             "frame_timestamp": frame_timestamp,
             "frame_id": frame_id,
             "cause": cause,
+            "source_id": source_id,
         },
         status_update_handlers=status_update_handlers,
         sub_context=VIDEO_CONSUMER_CONTEXT,
@@ -1002,13 +1042,17 @@ def decode_video_frame_to_buffer(
     video: cv2.VideoCapture,
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
+    source_id: Optional[int],
 ) -> bool:
     success, image = video.retrieve()
     if not success:
         return False
     decoding_pace_monitor.tick()
     video_frame = VideoFrame(
-        image=image, frame_id=frame_id, frame_timestamp=frame_timestamp
+        image=image,
+        frame_id=frame_id,
+        frame_timestamp=frame_timestamp,
+        source_id=source_id,
     )
     buffer.put(video_frame)
     return True

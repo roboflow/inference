@@ -6,11 +6,15 @@ observability. Please consider them internal details of implementation.
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime
-from typing import Any, Deque, Iterable, List, Optional, TypeVar
+from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
 import supervision as sv
 
-from inference.core.interfaces.camera.entities import StatusUpdate, UpdateSeverity
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    UpdateSeverity,
+    VideoFrame,
+)
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.entities import (
     LatencyMonitorReport,
@@ -29,7 +33,7 @@ class PipelineWatchDog(ABC):
         pass
 
     @abstractmethod
-    def register_video_source(self, video_source: VideoSource) -> None:
+    def register_video_sources(self, video_sources: List[VideoSource]) -> None:
         pass
 
     @abstractmethod
@@ -38,13 +42,15 @@ class PipelineWatchDog(ABC):
 
     @abstractmethod
     def on_model_inference_started(
-        self, frame_timestamp: datetime, frame_id: int
+        self,
+        frames: List[VideoFrame],
     ) -> None:
         pass
 
     @abstractmethod
     def on_model_prediction_ready(
-        self, frame_timestamp: datetime, frame_id: int
+        self,
+        frames: List[VideoFrame],
     ) -> None:
         pass
 
@@ -54,20 +60,16 @@ class PipelineWatchDog(ABC):
 
 
 class NullPipelineWatchdog(PipelineWatchDog):
-    def register_video_source(self, video_source: VideoSource) -> None:
+    def register_video_sources(self, video_sources: VideoSource) -> None:
         pass
 
     def on_status_update(self, status_update: StatusUpdate) -> None:
         pass
 
-    def on_model_inference_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
+    def on_model_inference_started(self, frames: List[VideoFrame]) -> None:
         pass
 
-    def on_model_prediction_ready(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
+    def on_model_prediction_ready(self, frames: List[VideoFrame]) -> None:
         pass
 
     def get_report(self) -> Optional[PipelineStateReport]:
@@ -75,7 +77,8 @@ class NullPipelineWatchdog(PipelineWatchDog):
 
 
 class LatencyMonitor:
-    def __init__(self):
+    def __init__(self, source_id: Optional[int]):
+        self._source_id = source_id
         self._inference_start_event: Optional[ModelActivityEvent] = None
         self._prediction_ready_event: Optional[ModelActivityEvent] = None
         self._reports: Deque[LatencyMonitorReport] = deque(maxlen=MAX_LATENCY_CONTEXT)
@@ -110,6 +113,7 @@ class LatencyMonitor:
             examined_objects=self._reports, property_name="e2e_latency"
         )
         return LatencyMonitorReport(
+            source_id=self._source_id,
             frame_decoding_latency=avg_frame_decoding_latency,
             inference_latency=avg_inference_latency,
             e2e_latency=avg_e2e_latency,
@@ -141,6 +145,7 @@ class LatencyMonitor:
             ).total_seconds()
         self._reports.append(
             LatencyMonitorReport(
+                source_id=self._source_id,
                 frame_decoding_latency=frame_decoding_latency,
                 inference_latency=inference_latency,
                 e2e_latency=e2e_latency,
@@ -200,41 +205,48 @@ class BasePipelineWatchDog(PipelineWatchDog):
 
     def __init__(self):
         super().__init__()
-        self._video_source: Optional[VideoSource] = None
+        self._video_sources: Optional[List[VideoSource]] = None
         self._inference_throughput_monitor = sv.FPSMonitor()
-        self._latency_monitor = LatencyMonitor()
+        self._latency_monitors: Dict[Optional[int], LatencyMonitor] = {}
         self._stream_updates = deque(maxlen=MAX_UPDATES_CONTEXT)
 
-    def register_video_source(self, video_source: VideoSource) -> None:
-        self._video_source = video_source
+    def register_video_sources(self, video_sources: List[VideoSource]) -> None:
+        self._video_sources = video_sources
+        for source in video_sources:
+            self._latency_monitors[source.source_id] = LatencyMonitor(
+                source_id=source.source_id
+            )
 
     def on_status_update(self, status_update: StatusUpdate) -> None:
         if status_update.severity.value <= UpdateSeverity.DEBUG.value:
             return None
         self._stream_updates.append(status_update)
 
-    def on_model_inference_started(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._latency_monitor.register_inference_start(
-            frame_timestamp=frame_timestamp, frame_id=frame_id
-        )
+    def on_model_inference_started(self, frames: List[VideoFrame]) -> None:
+        for frame in frames:
+            self._latency_monitors[frame.frame_id].register_inference_start(
+                frame_timestamp=frame.frame_timestamp,
+                frame_id=frame.frame_id,
+            )
 
-    def on_model_prediction_ready(
-        self, frame_timestamp: datetime, frame_id: int
-    ) -> None:
-        self._latency_monitor.register_prediction_ready(
-            frame_timestamp=frame_timestamp, frame_id=frame_id
-        )
-        self._inference_throughput_monitor.tick()
+    def on_model_prediction_ready(self, frames: List[VideoFrame]) -> None:
+        for frame in frames:
+            self._latency_monitors[frame.frame_id].register_prediction_ready(
+                frame_timestamp=frame.frame_timestamp,
+                frame_id=frame.frame_id,
+            )
+            self._inference_throughput_monitor.tick()
 
     def get_report(self) -> PipelineStateReport:
-        source_metadata = None
-        if self._video_source is not None:
-            source_metadata = self._video_source.describe_source()
+        sources_metadata = None
+        if self._video_sources is not None:
+            sources_metadata = [s.describe_source() for s in self._video_sources]
+        latency_reports = [
+            monitor.summarise_reports() for monitor in self._latency_monitors.values()
+        ]
         return PipelineStateReport(
             video_source_status_updates=list(self._stream_updates),
-            latency_report=self._latency_monitor.summarise_reports(),
+            latency_reports=latency_reports,
             inference_throughput=self._inference_throughput_monitor(),
-            source_metadata=source_metadata,
+            sources_metadata=sources_metadata,
         )
