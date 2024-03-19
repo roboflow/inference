@@ -16,7 +16,10 @@ class BaseInference:
     """
 
     def infer(self, image: Any, **kwargs) -> Any:
-        """Runs inference on given data."""
+        """Runs inference on given data.
+        -image:
+            can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
+        """
         preproc_image, returned_metadata = self.preprocess(image, **kwargs)
         logger.debug(
             f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"

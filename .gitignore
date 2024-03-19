@@ -160,3 +160,4 @@ inference_sdk/version.py
 tests/inference/models_predictions_tests/assets/*.zip
 !inference/enterprise/workflows/assets/*.jpg
 dev.py
+scratch
