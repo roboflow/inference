@@ -12,7 +12,7 @@ mechanism - which is the foundational building block for Active Learning  -- to 
 ## Where to start?
 
 We suggest clients apply the following strategy to train their models. If it's applicable - start from a small, good 
-quality dataset labeled manually (making sure that test set is representative for the problem to be solved) and train 
+quality dataset labeled manually (making sure that the test set is representative of the problem to be solved) and train 
 initial model. Once that is done - deploy your model enabling Active Learning data collection and gradually increase 
 the size of your dataset with data collected in production environment.
 
