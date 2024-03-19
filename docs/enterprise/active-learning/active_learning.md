@@ -18,8 +18,8 @@ the size of your dataset with data collected in production environment.
 
 Alternatively, it is also possible to start the project with [a Universe model](https://universe.roboflow.com/). Then,
 for each request you can specify `active_learning_target_dataset` - pointing to the project where the data should be 
-saved. This way - if you find a model that meets your minimal quality criteria - you may start generating valuable 
-predictions from day zero, while collecting good quality dataset to train even better models in the future.
+saved. This way, if you find a model that meets your minimal quality criteria, you may start generating valuable 
+predictions from day zero, while collecting good quality data to train even better models in the future.
 
 ## How Active Learning data collection works? 
 
@@ -34,9 +34,9 @@ How active learning works with Inference is configured in your server active lea
 Active learning can be disabled by setting `ACTIVE_LEARNING_ENABLED=false` in the environment where you run `inference`.
 
 ## Usage patterns
-Active Learning data collection may be combined with different components of Roboflow ecosystem. In particular:
+Active Learning data collection may be combined with different components of the Roboflow ecosystem. In particular:
 
-- `inference` Python package can be used to get predictions from the model and register them at Roboflow platform
+- the `inference` Python package can be used to get predictions from the model and register them at Roboflow platform
   - one may want to use `InferencePipeline` to get predictions from video and register its video frames using Active Learning
 - self-hosted `inference` server - where data is collected while processing requests
 - Roboflow hosted `inference` - where you let us make sure you get your predictions and data registered. No 
@@ -46,8 +46,8 @@ infrastructure needs to run on your end, we take care of everything
 
 ## Sampling Strategies
 
-`inference` make it possible to configure the way data is selected for registration. One may configure one or more sampling
-strategies within Active Learning configuration. We support five strategies for sampling image data for use in training new model versions. 
+`inference` makes it possible to configure the way data is selected for registration. One may configure one or more sampling
+strategies during Active Learning configuration. We support five strategies for sampling image data for use in training new model versions. 
 These strategies are:
 
 * [Random sampling](./random_sampling.md): Images are collected at random.
@@ -67,8 +67,8 @@ Once a datapoint is selected and there is no limit violation, it will be saved i
 
 ## Active Learning Configuration
 
-One may choose to configure their Active Learning with Roboflow app UI - navigating to the `Active Learning` panel.
-Alternatively, request to Roboflow API may be sent with custom configuration. Here is how to configure Active Learning
+One may choose to configure their Active Learning with the Roboflow app UI by navigating to the `Active Learning` panel.
+Alternatively, requests to Roboflow API may be sent with custom configuration. Here is how to configure Active Learning
 directly through the API.
 
 ### Configuration options
@@ -87,9 +87,9 @@ preservation) of images before submission into Roboflow platform (optional)
 
 The `batching_strategy` field holds a dictionary with the following configuration options:
 
-* `batches_name_prefix`: A string representing the prefix of batches names created by Active Learning (required)
-* `recreation_interval`: One of value `["never", "daily", "weekly", "monthly"]`: representing the interval which is to be used to create separate batches - thanks to that - user can control the flow of labeling batches in time (required).
-* `max_batch_images`: Positive integer representing maximum size of batch (applied on top of any strategy limits) to prevent too much data to be collected (optional)
+* `batches_name_prefix`: A string representing the prefix of batch names created by Active Learning (required)
+* `recreation_interval`: One of `["never", "daily", "weekly", "monthly"]`: representing the interval which is to be used to create separate batches. This parameter allows the user to control the flow of labeling batches over time (required).
+* `max_batch_images`: Positive integer representing the maximum size of the batch (applied on top of any strategy limits) to prevent too much data from being collected (optional)
 
 
 ### Strategy limits
@@ -99,10 +99,10 @@ each minute, hour or day. Each entry on that list can hold two values:
 * `value`: with limit threshold
 
 Limits are enforced with different granularity, as they are implemented based or either Redis or memory cache (bounded
-into single process). Se effectively:
-* if Redis cache is used - all instances of `inference` connected to the same Redis service will share limits 
+into a single process). So, effectively:
+* if the Redis cache is used - all instances of `inference` connected to the same Redis service will share limit 
 enforcements
-* otherwise - memory cache of single instance is used (multiple processes will have their own limits)
+* otherwise, the memory cache of a single instance is used (multiple processes will have their own limits)
 
 Self-hosted `inference` may be connected to your own Redis cache.
 
@@ -230,16 +230,16 @@ LOCALHOST_CLIENT.infer(image, model_id="asl-poly-instance-seg/0")
 ```
 
 ## Parameters of requests to `inference` server influencing the Active Learning data collection
-There are few parameters that can be added to request to influence how data collection works, in particular:
+There are a few parameters that can be added to request to influence how data collection works, in particular:
 
-- `disable_active_learning` - to disable functionality at the level of single request (if for some reason you do not 
+- `disable_active_learning` - to disable functionality at the level of a single request (if for some reason you do not 
 want input data to be collected - useful for testing purposes)
-- `active_learning_target_dataset` - making inference from specific model (let's say `project_a/1`), when we want
-to save data in another project `project_b` - the latter should be pointed by this parameter. **Please remember that
-you cannot use incompatible type of models in `project_a` and `project_b` - if that is the case - data will not be 
-registered - classification predictions cannot be registered in detection-based projects.** You are free to mix
-such tasks like object-detection, instance-segmentation of keypoints detection, but naturally not every detail of
-required label may be available in prediction.
+- `active_learning_target_dataset` - making inference from a specific model (let's say `project_a/1`), when we want
+to save data in another project `project_b` - the latter should be pointed to by this parameter. **Please remember that
+you cannot use incompatible types of models in `project_a` and `project_b`; if that is the case, data will not be 
+registered. For instance, classification predictions cannot be registered in detection-based projects.** You are free to mix
+ tasks like object-detection, instance-segmentation, or keypoints detection, but naturally not every detail of
+the required label may be available from prediction.
 
 
 Visit [Inference SDK docs](../../inference_helpers/inference_sdk.md) to learn more.

@@ -24,7 +24,7 @@ input parameter. Default: `0.3`.
 * `tradeoff_factor`: optional parameter of post-processing - can be selector to 
 input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
-dictating that AL should collect data to different dataset that the one declared with model
+dictating that AL should collect data to a different dataset than the one declared by the model
 
 ## Step outputs:
 * `predictions` - details of predictions

@@ -90,7 +90,7 @@ def prepare_active_learning_configuration_inplace(
         model_type=model_type, dataset_type=dataset_type
     ):
         logger.warning(
-            f"Attempted to registrate predictions from model {model_id} (type: {model_type}) "
+            f"Attempted to register predictions from model {model_id} (type: {model_type}) "
             f"into dataset {target_dataset} (of type {dataset_type}) which have incompatible types."
         )
         return None
@@ -135,7 +135,7 @@ def get_roboflow_project_metadata(
         model_type=model_type, dataset_type=dataset_type
     ):
         logger.warning(
-            f"Attempted to registrate predictions from model {model_id} (type: {model_type}) "
+            f"Attempted to register predictions from model {model_id} (type: {model_type}) "
             f"into dataset {target_dataset} (of type {dataset_type}) which have incompatible types."
         )
         roboflow_api_configuration = {"enabled": False}
