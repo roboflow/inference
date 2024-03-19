@@ -4,7 +4,7 @@ Active Learning is a process of iterative improvement of model by retraining mod
 This process includes data collection (usually with smart selection of datapoints that model would most benefit from),
 labeling, model re-training, evaluation and deployment - to close the circle and start new iteration.
 
-Elements of that process can be partially or fully automated - providing elegant way of improving dataset over time, 
+Elements of that process can be partially or fully automated - providing an elegant way of improving dataset over time, 
 which is important to ensure good quality of model predictions over time (as data distribution may change and model
 trained on old data may not be performant facing the new one). At Roboflow, we brought automated data collection 
 mechanism - which is the foundation building block for Active Learning on the platform.
