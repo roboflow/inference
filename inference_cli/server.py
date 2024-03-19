@@ -63,7 +63,6 @@ def start(
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
-        typer.echo("Docker is required but not running. Please start Docker to proceed with Docker-based inference.")
         raise typer.Exit(code=1) from docker_error
 
     try:
@@ -88,7 +87,6 @@ def status() -> None:
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
-        typer.echo("Docker is required to check the status but is not running. Please start Docker and try again.")
         raise typer.Exit(code=1) from docker_error
 
     try:
@@ -105,7 +103,6 @@ def stop() -> None:
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
-        typer.echo("Docker is required to stop containers but is not running. Please start Docker and try again.")
         raise typer.Exit(code=1) from docker_error
 
     try:
