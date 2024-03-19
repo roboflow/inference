@@ -5,7 +5,7 @@ This process includes data collection (usually with smart selection of datapoint
 labeling, model re-training, evaluation and deployment - to close the circle and start new iteration.
 
 Elements of that process can be partially or fully automated - providing an elegant way of improving dataset over time, 
-which is important to ensure good quality of model predictions over time (as data distribution may change and model
+which is important to ensure good quality of model predictions over time (as the data distribution may change and a model
 trained on old data may not be performant facing the new one). At Roboflow, we brought automated data collection 
 mechanism - which is the foundation building block for Active Learning on the platform.
 
