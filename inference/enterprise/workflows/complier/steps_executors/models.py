@@ -221,6 +221,7 @@ def construct_classification_request(
         confidence=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
         source="workflow-execution",
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
     )
 
 
@@ -241,6 +242,7 @@ def construct_object_detection_request(
         model_id=resolve(step.model_id),
         image=image,
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence=resolve(step.confidence),
@@ -268,6 +270,7 @@ def construct_instance_segmentation_request(
         model_id=resolve(step.model_id),
         image=image,
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence=resolve(step.confidence),
@@ -297,6 +300,7 @@ def construct_keypoints_detection_request(
         model_id=resolve(step.model_id),
         image=image,
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence=resolve(step.confidence),
@@ -361,6 +365,7 @@ def construct_http_client_configuration_for_classification_step(
     return InferenceConfiguration(
         confidence_threshold=resolve(step.confidence),
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
         max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         source="workflow-execution",
@@ -379,6 +384,7 @@ def construct_http_client_configuration_for_detection_step(
     )
     return InferenceConfiguration(
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence_threshold=resolve(step.confidence),
@@ -403,6 +409,7 @@ def construct_http_client_configuration_for_segmentation_step(
     )
     return InferenceConfiguration(
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence_threshold=resolve(step.confidence),
@@ -429,6 +436,7 @@ def construct_http_client_configuration_for_keypoints_detection_step(
     )
     return InferenceConfiguration(
         disable_active_learning=resolve(step.disable_active_learning),
+        active_learning_target_dataset=resolve(step.active_learning_target_dataset),
         class_agnostic_nms=resolve(step.class_agnostic_nms),
         class_filter=resolve(step.class_filter),
         confidence_threshold=resolve(step.confidence),

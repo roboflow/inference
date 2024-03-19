@@ -135,7 +135,6 @@ class ActiveLearningConfiguration:
 @dataclass(frozen=True)
 class RoboflowProjectMetadata:
     dataset_id: DatasetID
-    version_id: str
     workspace_id: WorkspaceID
     dataset_type: str
     active_learning_configuration: dict

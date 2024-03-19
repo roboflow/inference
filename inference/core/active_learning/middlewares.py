@@ -60,10 +60,15 @@ class NullActiveLearningMiddleware:
 class ActiveLearningMiddleware:
     @classmethod
     def init(
-        cls, api_key: str, model_id: str, cache: BaseCache
+        cls,
+        api_key: str,
+        target_dataset: str,
+        model_id: str,
+        cache: BaseCache,
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             cache=cache,
         )
@@ -75,10 +80,16 @@ class ActiveLearningMiddleware:
 
     @classmethod
     def init_from_config(
-        cls, api_key: str, model_id: str, cache: BaseCache, config: Optional[dict]
+        cls,
+        api_key: str,
+        target_dataset: str,
+        model_id: str,
+        cache: BaseCache,
+        config: Optional[dict],
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             active_learning_configuration=config,
         )
@@ -104,6 +115,7 @@ class ActiveLearningMiddleware:
         predictions: List[Prediction],
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         for inference_input, prediction in zip(inference_inputs, predictions):
             self.register(
@@ -111,6 +123,7 @@ class ActiveLearningMiddleware:
                 prediction=prediction,
                 prediction_type=prediction_type,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
+                inference_id=inference_id,
             )
 
     def register(
@@ -119,12 +132,14 @@ class ActiveLearningMiddleware:
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         self._execute_registration(
             inference_input=inference_input,
             prediction=prediction,
             prediction_type=prediction_type,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
+            inference_id=inference_id,
         )
 
     def _execute_registration(
@@ -133,6 +148,7 @@ class ActiveLearningMiddleware:
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         if self._configuration is None:
             return None
@@ -169,6 +185,7 @@ class ActiveLearningMiddleware:
             configuration=self._configuration,
             api_key=self._api_key,
             batch_name=batch_name,
+            inference_id=inference_id,
         )
 
 
@@ -177,12 +194,14 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def init(
         cls,
         api_key: str,
+        target_dataset: str,
         model_id: str,
         cache: BaseCache,
         max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             cache=cache,
         )
@@ -198,6 +217,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def init_from_config(
         cls,
         api_key: str,
+        target_dataset: str,
         model_id: str,
         cache: BaseCache,
         config: Optional[dict],
@@ -205,6 +225,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             active_learning_configuration=config,
         )
@@ -233,6 +254,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
         prediction: dict,
         prediction_type: PredictionType,
         disable_preproc_auto_orient: bool = False,
+        inference_id=None,
     ) -> None:
         logger.debug(f"Putting registration task into queue")
         try:

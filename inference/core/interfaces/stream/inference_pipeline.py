@@ -46,6 +46,7 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
@@ -82,6 +83,7 @@ class InferencePipeline:
         video_source_properties: Optional[
             Union[Dict[str, float], List[Dict[str, float]]]
         ] = None,
+        active_learning_target_dataset: Optional[str] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -150,7 +152,8 @@ class InferencePipeline:
                 corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
                 will be used.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
-
+            active_learning_target_dataset (Optional[str]): Parameter to be used when Active Learning data registration
+                should happen against different dataset than the one pointed by model_id
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -222,8 +225,13 @@ class InferencePipeline:
             )
             active_learning_enabled = False
         if active_learning_enabled is True:
+            resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+            target_dataset = (
+                active_learning_target_dataset or resolved_model_id.split("/")[0]
+            )
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,
+                target_dataset=target_dataset,
                 model_id=model_id,
                 cache=cache,
             )
@@ -753,7 +761,7 @@ class InferencePipeline:
             ]
             if any(properties is None for properties in sources_properties):
                 break
-            allow_reconnect = not source_properties.is_file
+            allow_reconnect = not sources_properties.is_file
             yield from get_video_frames_generator(
                 video=self._video_source, max_fps=self._max_fps
             )

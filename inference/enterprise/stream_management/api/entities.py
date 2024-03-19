@@ -82,6 +82,11 @@ class PipelineInitialisationRequest(BaseModel):
         ],
         default={},
     )
+    active_learning_target_dataset: Optional[str] = Field(
+        default=None,
+        examples=["my_dataset"],
+        description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+    )
 
 
 class CommandContext(BaseModel):

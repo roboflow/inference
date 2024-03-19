@@ -23,6 +23,8 @@ input parameter. Default: `0.3`.
 * `mask_decode_mode`: optional parameter of post-processing - can be selector to input parameter 
 * `tradeoff_factor`: optional parameter of post-processing - can be selector to 
 input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared by the model
 
 ## Step outputs:
 * `predictions` - details of predictions
