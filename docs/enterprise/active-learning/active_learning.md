@@ -17,7 +17,7 @@ an initial model. Once that is done - deploy your model, enabling Active Learnin
 the size of your dataset with data collected in production environment.
 
 Alternatively, it is also possible to start the project with [a Universe model](https://universe.roboflow.com/). Then,
-for each request you can specify `active_learning_target_dataset` - pointing the project where the data should be 
+for each request you can specify `active_learning_target_dataset` - pointing to the project where the data should be 
 saved. This way - if you find a model that meets your minimal quality criteria - you may start generating valuable 
 predictions from day zero, while collecting good quality dataset to train even better models in the future.
 
