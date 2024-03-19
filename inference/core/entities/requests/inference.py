@@ -158,6 +158,11 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         examples=[False],
         description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
     )
+    active_learning_target_dataset: Optional[str] = Field(
+        default=None,
+        examples=["my_dataset"],
+        description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+    )
 
 
 class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
@@ -216,6 +221,11 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         default=False,
         examples=[False],
         description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
+    )
+    active_learning_target_dataset: Optional[str] = Field(
+        default=None,
+        examples=["my_dataset"],
+        description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
     )
 
 

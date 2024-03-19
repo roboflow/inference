@@ -81,6 +81,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     image: Union[str, List[str]]
     model_id: str
     disable_active_learning: Union[Optional[bool], str] = Field(default=False)
+    active_learning_target_dataset: Optional[str] = Field(default=None)
 
     @field_validator("image")
     @classmethod
@@ -108,11 +109,26 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         )
         return value
 
+    @field_validator("active_learning_target_dataset")
+    @classmethod
+    def validate_active_learning_configuration_fields(cls, value: Any) -> str:
+        validate_field_is_selector_or_has_given_type(
+            value=value,
+            field_name="active_learning_target_dataset",
+            allowed_types=[type(None), str],
+        )
+        return value
+
     def get_type(self) -> str:
         return self.type
 
     def get_input_names(self) -> Set[str]:
-        return {"image", "model_id", "disable_active_learning"}
+        return {
+            "image",
+            "model_id",
+            "disable_active_learning",
+            "active_learning_target_dataset",
+        }
 
     def get_output_names(self) -> Set[str]:
         return {"prediction_type"}
@@ -133,7 +149,11 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             step_type=self.type,
             field_name=field_name,
             input_step=input_step,
-            applicable_fields={"model_id", "disable_active_learning"},
+            applicable_fields={
+                "model_id",
+                "disable_active_learning",
+                "active_learning_target_dataset",
+            },
         )
 
     def validate_field_binding(self, field_name: str, value: Any) -> None:
@@ -150,6 +170,13 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
             validate_field_has_given_type(
                 field_name=field_name,
                 allowed_types=[bool],
+                value=value,
+                error=VariableTypeError,
+            )
+        elif field_name in {"active_learning_target_dataset"}:
+            validate_field_has_given_type(
+                field_name=field_name,
+                allowed_types=[type(None), str],
                 value=value,
                 error=VariableTypeError,
             )

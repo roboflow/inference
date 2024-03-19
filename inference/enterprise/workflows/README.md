@@ -256,6 +256,8 @@ This step represents inference from multi-class classification model.
 input parameter 
 * `confidence`: optional float value in range [0, 1] with threshold - can be selector to 
 input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -278,6 +280,8 @@ This step represents inference from multi-label classification model.
 input parameter 
 * `confidence`: optional float value in range [0, 1] with threshold - can be selector to 
 input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -307,6 +311,8 @@ input parameter
 input parameter. Default: `0.3`.
 * `max_detections`: optional integer parameter of NMS - can be selector to input parameter 
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -338,6 +344,8 @@ input parameter. Default: `0.3`.
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 * `keypoint_confidence`: optional float value in range [0, 1] with keypoints confidence threshold - can be selector to 
 input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions
@@ -370,6 +378,8 @@ input parameter. Default: `0.3`.
 * `mask_decode_mode`: optional parameter of post-processing - can be selector to input parameter 
 * `tradeoff_factor`: optional parameter of post-processing - can be selector to 
 input parameter 
+* `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions

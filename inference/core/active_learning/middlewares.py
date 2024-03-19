@@ -60,10 +60,15 @@ class NullActiveLearningMiddleware:
 class ActiveLearningMiddleware:
     @classmethod
     def init(
-        cls, api_key: str, model_id: str, cache: BaseCache
+        cls,
+        api_key: str,
+        target_dataset: str,
+        model_id: str,
+        cache: BaseCache,
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             cache=cache,
         )
@@ -75,10 +80,16 @@ class ActiveLearningMiddleware:
 
     @classmethod
     def init_from_config(
-        cls, api_key: str, model_id: str, cache: BaseCache, config: Optional[dict]
+        cls,
+        api_key: str,
+        target_dataset: str,
+        model_id: str,
+        cache: BaseCache,
+        config: Optional[dict],
     ) -> "ActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             active_learning_configuration=config,
         )
@@ -183,12 +194,14 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def init(
         cls,
         api_key: str,
+        target_dataset: str,
         model_id: str,
         cache: BaseCache,
         max_queue_size: int = MAX_REGISTRATION_QUEUE_SIZE,
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             cache=cache,
         )
@@ -204,6 +217,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     def init_from_config(
         cls,
         api_key: str,
+        target_dataset: str,
         model_id: str,
         cache: BaseCache,
         config: Optional[dict],
@@ -211,6 +225,7 @@ class ThreadingActiveLearningMiddleware(ActiveLearningMiddleware):
     ) -> "ThreadingActiveLearningMiddleware":
         configuration = prepare_active_learning_configuration_inplace(
             api_key=api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             active_learning_configuration=config,
         )

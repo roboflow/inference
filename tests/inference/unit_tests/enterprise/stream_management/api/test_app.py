@@ -167,7 +167,7 @@ def test_initialise_pipeline_when_valid_payload_given(
                 "frame_width": 1280,
                 "frame_height": 720,
                 "fps": 30,
-            }
+            },
         },
     )
 
@@ -180,11 +180,14 @@ def test_initialise_pipeline_when_valid_payload_given(
             "pipeline_id": "my_pipeline",
         },
     }, "CommandResponse must be serialised directly to JSON response"
-    
-    actual_request = stream_manager_client.initialise_pipeline.call_args[1]['initialisation_request']
+
+    actual_request = stream_manager_client.initialise_pipeline.call_args[1][
+        "initialisation_request"
+    ]
     assert actual_request.video_source_properties["frame_width"] == 1280
     assert actual_request.video_source_properties["frame_height"] == 720
     assert actual_request.video_source_properties["fps"] == 30
+
 
 @mock.patch.object(app, "STREAM_MANAGER_CLIENT", new_callable=AsyncMock)
 def test_initialise_pipeline_when_valid_payload_given_without_api_key(

@@ -4,6 +4,7 @@ import time
 import numpy as np
 import pytest
 import requests
+import supervision as sv
 
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)

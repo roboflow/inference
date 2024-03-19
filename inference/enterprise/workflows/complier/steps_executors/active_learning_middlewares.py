@@ -106,6 +106,7 @@ class WorkflowsActiveLearningMiddleware:
             return None
         if active_learning_configuration is not None:
             self._middlewares[model_id] = ActiveLearningMiddleware.init_from_config(
+                target_dataset=model_id.split("/")[0],
                 api_key=api_key,
                 model_id=model_id,
                 cache=self._cache,
@@ -113,6 +114,7 @@ class WorkflowsActiveLearningMiddleware:
             )
         else:
             self._middlewares[model_id] = ActiveLearningMiddleware.init(
+                target_dataset=model_id.split("/")[0],
                 api_key=api_key,
                 model_id=model_id,
                 cache=self._cache,

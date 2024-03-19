@@ -22,13 +22,14 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,
     resolve_model_api_url,
+    run_barcode_detection_step,
     run_cog_vlm_prompting,
     run_qr_code_detection_step,
-    run_barcode_detection_step,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
 from inference.enterprise.workflows.entities.steps import (
+    BarcodeDetection,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -38,7 +39,6 @@ from inference.enterprise.workflows.entities.steps import (
     ObjectDetectionModel,
     OCRModel,
     QRCodeDetection,
-    BarcodeDetection,
 )
 
 

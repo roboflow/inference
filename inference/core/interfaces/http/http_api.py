@@ -1314,6 +1314,10 @@ class HttpInterface(BaseInterface):
                     default=False,
                     description="If true, the predictions will be prevented from registration by Active Learning (if the functionality is enabled)",
                 ),
+                active_learning_target_dataset: Optional[str] = Query(
+                    default=None,
+                    description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+                ),
                 source: Optional[str] = Query(
                     "external",
                     description="The source of the inference request",
@@ -1434,6 +1438,7 @@ class HttpInterface(BaseInterface):
                     disable_preproc_grayscale=disable_preproc_grayscale,
                     disable_preproc_static_crop=disable_preproc_static_crop,
                     disable_active_learning=disable_active_learning,
+                    active_learning_target_dataset=active_learning_target_dataset,
                     source=source,
                     source_info=source_info,
                     **args,

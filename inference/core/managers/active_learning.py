@@ -11,6 +11,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
+from inference.models.aliases import resolve_roboflow_model_alias
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"
@@ -51,11 +52,23 @@ class ActiveLearningManager(ModelManager):
         self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
     ) -> None:
         try:
-            self.ensure_middleware_initialised(model_id=model_id, request=request)
+            resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+            target_dataset = (
+                request.active_learning_target_dataset
+                or resolved_model_id.split("/")[0]
+            )
+            middleware_key = f"{model_id}->{target_dataset}"
+            self.ensure_middleware_initialised(
+                model_id=resolved_model_id,
+                request=request,
+                middleware_key=middleware_key,
+                target_dataset=target_dataset,
+            )
             self.register_datapoint(
                 prediction=prediction,
-                model_id=model_id,
+                model_id=resolved_model_id,
                 request=request,
+                middleware_key=middleware_key,
             )
         except Exception as error:
             # Error handling to be decided
@@ -65,14 +78,19 @@ class ActiveLearningManager(ModelManager):
             )
 
     def ensure_middleware_initialised(
-        self, model_id: str, request: InferenceRequest
+        self,
+        model_id: str,
+        request: InferenceRequest,
+        middleware_key: str,
+        target_dataset: str,
     ) -> None:
-        if model_id in self._middlewares:
+        if middleware_key in self._middlewares:
             return None
         start = time.perf_counter()
         logger.debug(f"Initialising AL middleware for {model_id}")
-        self._middlewares[model_id] = ActiveLearningMiddleware.init(
+        self._middlewares[middleware_key] = ActiveLearningMiddleware.init(
             api_key=request.api_key,
+            target_dataset=target_dataset,
             model_id=model_id,
             cache=self._cache,
         )
@@ -80,7 +98,11 @@ class ActiveLearningManager(ModelManager):
         logger.debug(f"Middleware init latency: {(end - start) * 1000} ms")
 
     def register_datapoint(
-        self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
+        self,
+        prediction: InferenceResponse,
+        model_id: str,
+        request: InferenceRequest,
+        middleware_key: str,
     ) -> None:
         start = time.perf_counter()
         inference_inputs = getattr(request, "image", None)
@@ -102,7 +124,7 @@ class ActiveLearningManager(ModelManager):
             getattr(request, "disable_preproc_auto_orient", False)
             or DISABLE_PREPROC_AUTO_ORIENT
         )
-        self._middlewares[model_id].register_batch(
+        self._middlewares[middleware_key].register_batch(
             inference_inputs=inference_inputs,
             predictions=results_dicts,
             prediction_type=prediction_type,

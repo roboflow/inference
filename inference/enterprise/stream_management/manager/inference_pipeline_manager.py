@@ -127,6 +127,9 @@ class InferencePipelineManager(Process):
                 max_detections=model_configuration.get("max_detections"),
                 active_learning_enabled=payload.get("active_learning_enabled"),
                 video_source_properties=payload.get("video_source_properties"),
+                active_learning_target_dataset=payload.get(
+                    "active_learning_target_dataset"
+                ),
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)
