@@ -344,7 +344,10 @@ class Clip(OnnxRoboflowCoreModel):
         return [self.make_embed_image_response(predictions[0])]
 
     def infer(self, image: Any, **kwargs) -> Any:
-        """Embeds an image"""
+        """Embeds an image
+            - image:
+                can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
+        """
         return super().infer(image, **kwargs)
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:

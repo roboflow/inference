@@ -93,7 +93,7 @@ class YOLOWorld(RoboflowCoreModel):
         Run inference on a provided image.
 
         Args:
-            request (CVInferenceRequest): The inference request.
+            image - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
             class_filter (Optional[List[str]]): A list of class names to filter, if provided.
 
         Returns:

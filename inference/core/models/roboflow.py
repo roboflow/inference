@@ -614,6 +614,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             raise ModelArtefactError from e
 
     def infer(self, image: Any, **kwargs) -> Any:
+        """Runs inference on given data.
+        - image:
+            can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
+        """
         input_elements = calculate_input_elements(input_value=image)
         max_batch_size = MAX_BATCH_SIZE if self.batching_enabled else self.batch_size
         if (input_elements == 1) or (max_batch_size == float("inf")):
