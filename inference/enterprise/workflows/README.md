@@ -312,7 +312,7 @@ input parameter. Default: `0.3`.
 * `max_detections`: optional integer parameter of NMS - can be selector to input parameter 
 * `max_candidates`: optional integer parameter of NMS - can be selector to input parameter 
 * `active_learning_target_dataset`: optional name of target dataset (or reference to `InferenceParemeter`) 
-dictating that AL should collect data to different dataset that the one declared with model
+dictating that AL should collect data to a different dataset than the one declared with model
 
 ##### Step outputs:
 * `predictions` - details of predictions
