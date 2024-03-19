@@ -32,7 +32,7 @@ def main(n: int) -> None:
         camera.start()
     multiplexer = multiplex_videos(
         videos=cameras,
-        batch_collection_timeout=0.05,
+        batch_collection_timeout=0.1,
         should_stop=lambda: STOP,
     )
     fps_monitor = sv.FPSMonitor()
@@ -84,31 +84,38 @@ def main(n: int) -> None:
         cv2.imshow("playback", merged)
         cv2.waitKey(1)
     cv2.destroyAllWindows()
+    global STOP
+    STOP = True
     control_thread.join()
     for c in cameras:
-        c.terminate(wait_on_frames_consumption=False)
+        c.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
     print("JOINED")
 
 
 def command_thread(cameras: List[VideoSource]) -> None:
     global STOP
     while not STOP:
-        idx, key = input().split(",")
-        idx = int(idx)
-        if key == "q":
-            continue
-        elif key == "i":
-            print(cameras[idx].describe_source())
-        elif key == "s":
-            STOP = True
-        elif key == "p":
-            cameras[idx].pause()
-        elif key == "m":
-            cameras[idx].mute()
-        elif key == "r":
-            cameras[idx].resume()
-        elif key == "re":
-            cameras[idx].restart()
+        try:
+            payload = input().split(",")
+            idx = None
+            if len(payload) > 1:
+                idx = int(payload[1])
+            if payload[0] == "q":
+                continue
+            elif payload[0] == "i":
+                print(cameras[idx].describe_source())
+            elif payload[0] == "s":
+                STOP = True
+            elif payload[0] == "p":
+                cameras[idx].pause()
+            elif payload[0] == "m":
+                cameras[idx].mute()
+            elif payload[0] == "r":
+                cameras[idx].resume()
+            elif payload[0] == "re":
+                cameras[idx].restart(wait_on_frames_consumption=False)
+        except Exception as e:
+            print(e)
     print("END CMD THREAD")
 
 

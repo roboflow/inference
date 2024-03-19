@@ -310,7 +310,9 @@ class VideoSource:
         return self._source_id
 
     @lock_state_transition
-    def restart(self, wait_on_frames_consumption: bool = True) -> None:
+    def restart(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
         """
         Method to restart source consumption. Eligible to be used in states:
         [MUTED, RUNNING, PAUSED, ENDED, ERROR].
@@ -333,7 +335,10 @@ class VideoSource:
             raise StreamOperationNotAllowedError(
                 f"Could not RESTART stream in state: {self._state}"
             )
-        self._restart(wait_on_frames_consumption=wait_on_frames_consumption)
+        self._restart(
+            wait_on_frames_consumption=wait_on_frames_consumption,
+            purge_frames_buffer=purge_frames_buffer,
+        )
 
     @lock_state_transition
     def start(self) -> None:
@@ -358,7 +363,9 @@ class VideoSource:
         self._start()
 
     @lock_state_transition
-    def terminate(self, wait_on_frames_consumption: bool = True) -> None:
+    def terminate(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
         """
         Method to be used to terminate source consumption. Eligible to be used in states:
         [MUTED, RUNNING, PAUSED, ENDED, ERROR, (RESTARTING - which is internal state only)]
@@ -382,7 +389,10 @@ class VideoSource:
             raise StreamOperationNotAllowedError(
                 f"Could not TERMINATE stream in state: {self._state}"
             )
-        self._terminate(wait_on_frames_consumption=wait_on_frames_consumption)
+        self._terminate(
+            wait_on_frames_consumption=wait_on_frames_consumption,
+            purge_frames_buffer=purge_frames_buffer,
+        )
 
     @lock_state_transition
     def pause(self) -> None:
@@ -507,8 +517,13 @@ class VideoSource:
             source_id=self._source_id,
         )
 
-    def _restart(self, wait_on_frames_consumption: bool = True) -> None:
-        self._terminate(wait_on_frames_consumption=wait_on_frames_consumption)
+    def _restart(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
+        self._terminate(
+            wait_on_frames_consumption=wait_on_frames_consumption,
+            purge_frames_buffer=purge_frames_buffer,
+        )
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
@@ -537,11 +552,15 @@ class VideoSource:
         self._stream_consumption_thread = Thread(target=self._consume_video)
         self._stream_consumption_thread.start()
 
-    def _terminate(self, wait_on_frames_consumption: bool) -> None:
+    def _terminate(
+        self, wait_on_frames_consumption: bool, purge_frames_buffer: bool
+    ) -> None:
         if self._state in RESUME_ELIGIBLE_STATES:
             self._resume()
         previous_state = self._state
         self._change_state(target_state=StreamState.TERMINATING)
+        if purge_frames_buffer:
+            _ = get_from_queue(queue=self._frames_buffer, timeout=0.0, purge=True)
         if self._stream_consumption_thread is not None:
             self._stream_consumption_thread.join()
         if wait_on_frames_consumption:
@@ -582,7 +601,8 @@ class VideoSource:
         )
         logger.info(f"Video consumption started")
         try:
-            self._change_state(target_state=StreamState.RUNNING)
+            if self._state is not StreamState.TERMINATING:
+                self._change_state(target_state=StreamState.RUNNING)
             declared_source_fps = None
             if self._source_properties is not None:
                 declared_source_fps = self._source_properties.fps
