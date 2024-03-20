@@ -925,7 +925,6 @@ class VideoConsumer:
             buffer=buffer,
             cause="DROP_OLDEST strategy",
             status_update_handlers=self._status_update_handlers,
-            source_id=source_id,
         )
         return decode_video_frame_to_buffer(
             frame_timestamp=frame_timestamp,
@@ -973,14 +972,13 @@ def get_from_queue(
     queue.task_done() and on_successful_read(...) will be called on each received element.
     """
     result = None
-    if queue.empty():
+    if queue.empty() or not purge:
         try:
             result = queue.get(timeout=timeout)
-        except Empty:
-            pass
-        else:
             queue.task_done()
             on_successful_read()
+        except Empty:
+            pass
     while not queue.empty() and purge:
         result = queue.get()
         queue.task_done()
@@ -992,7 +990,6 @@ def drop_single_frame_from_buffer(
     buffer: Queue,
     cause: str,
     status_update_handlers: List[Callable[[StatusUpdate], None]],
-    source_id: Optional[int],
 ) -> None:
     try:
         video_frame = buffer.get_nowait()
@@ -1002,7 +999,7 @@ def drop_single_frame_from_buffer(
             frame_id=video_frame.frame_id,
             cause=cause,
             status_update_handlers=status_update_handlers,
-            source_id=source_id,
+            source_id=video_frame.source_id,
         )
     except Empty:
         # buffer may be emptied in the meantime, hence we ignore Empty

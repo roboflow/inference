@@ -40,12 +40,12 @@ def tear_down_source(source: VideoSource) -> None:
     source.terminate(wait_on_frames_consumption=False)
 
 
-def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
+def test_get_from_queue_when_empty_queue_given_and_await_not_desired() -> None:
     # given
     queue = Queue()
 
     # when
-    result = get_from_queue(queue=queue, wait_on_empty=False)
+    result = get_from_queue(queue=queue, timeout=0.0)
 
     # then
     assert (
@@ -53,7 +53,7 @@ def test_purge_queue_when_empty_queue_given_and_await_not_desired() -> None:
     ), "Purging empty queue should yield empty result when waiting is not desired"
 
 
-def test_purge_queue_when_non_empty_queue_given() -> None:
+def test_get_from_queue_when_non_empty_queue_given_and_purge_disabled() -> None:
     # given
     queue = Queue()
     queue.put(1)
@@ -61,7 +61,26 @@ def test_purge_queue_when_non_empty_queue_given() -> None:
     queue.put(3)
 
     # when
-    result = get_from_queue(queue=queue)
+    result = get_from_queue(queue=queue, purge=False)
+
+    # then
+    assert (
+        result is 1
+    ), "As a result of non-empty queue purge - last inserted value should be returned"
+    assert (
+        queue.empty() is False
+    ), "After purge - queue must be empty if there is no external producer"
+
+
+def test_get_from_queue_when_non_empty_queue_given_and_purge_enabled() -> None:
+    # given
+    queue = Queue()
+    queue.put(1)
+    queue.put(2)
+    queue.put(3)
+
+    # when
+    result = get_from_queue(queue=queue, purge=True)
 
     # then
     assert (
@@ -72,7 +91,7 @@ def test_purge_queue_when_non_empty_queue_given() -> None:
     ), "After purge - queue must be empty if there is no external producer"
 
 
-def test_purge_queue_when_non_empty_queue_given_with_callback() -> None:
+def test_get_from_queue_when_non_empty_queue_given_with_callback() -> None:
     # given
     successful_reads = []
 
@@ -85,7 +104,7 @@ def test_purge_queue_when_non_empty_queue_given_with_callback() -> None:
     queue.put(3)
 
     # when
-    _ = get_from_queue(queue=queue, on_successful_read=on_successful_read)
+    _ = get_from_queue(queue=queue, on_successful_read=on_successful_read, purge=True)
 
     # then
     assert (
@@ -124,7 +143,7 @@ def test_video_source_throwing_error_when_invalid_video_reference_given() -> Non
 
 def test_video_source_describe_source_when_stream_consumption_not_yet_started() -> None:
     # given
-    source = VideoSource.init(video_reference="invalid")
+    source = VideoSource.init(video_reference="invalid", source_id=2)
 
     # when
     result = source.describe_source()
@@ -137,6 +156,7 @@ def test_video_source_describe_source_when_stream_consumption_not_yet_started() 
         state=StreamState.NOT_STARTED,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
+        source_id=2,
     ), "Source description must denote NOT_STARTED state and invalid source reference"
 
 
@@ -159,6 +179,7 @@ def test_video_source_describe_source_when_invalid_video_reference_consumption_s
         state=StreamState.ERROR,
         buffer_filling_strategy=None,
         buffer_consumption_strategy=None,
+        source_id=None,
     ), "Source description must denote error regarding to connection to invalid source"
 
 
@@ -586,7 +607,9 @@ def test_drop_single_frame_from_buffer_when_buffer_is_empty() -> None:
 
     # when
     drop_single_frame_from_buffer(
-        buffer=buffer, cause="some", status_update_handlers=[handle_status_updates]
+        buffer=buffer,
+        cause="some",
+        status_update_handlers=[handle_status_updates],
     )
 
     # then
@@ -604,6 +627,7 @@ def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
         image=np.zeros((128, 128, 3), dtype=np.uint8),
         frame_timestamp=frame_timestamp,
         frame_id=37,
+        source_id=3,
     )
     buffer.put(video_frame)
 
@@ -612,7 +636,9 @@ def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
 
     # when
     drop_single_frame_from_buffer(
-        buffer=buffer, cause="some", status_update_handlers=[handle_status_updates]
+        buffer=buffer,
+        cause="some",
+        status_update_handlers=[handle_status_updates],
     )
 
     # then
@@ -620,6 +646,7 @@ def test_drop_single_frame_from_buffer_when_buffer_has_video_frame() -> None:
     assert updates[0].payload == {
         "frame_timestamp": frame_timestamp,
         "frame_id": 37,
+        "source_id": 3,
         "cause": "some",
     }, "Dropped frames details must match content of the buffer"
     assert (
@@ -643,6 +670,7 @@ def test_decode_video_frame_to_buffer_when_frame_could_not_be_retrieved() -> Non
         video=video,
         buffer=buffer,
         decoding_pace_monitor=fps_monitor,
+        source_id=38,
     )
 
     # then
@@ -670,6 +698,7 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
         video=video,
         buffer=buffer,
         decoding_pace_monitor=fps_monitor,
+        source_id=3,
     )
 
     # then
@@ -678,7 +707,10 @@ def test_decode_video_frame_to_buffer_when_frame_could_be_retrieved() -> None:
         len(fps_monitor.all_timestamps) == 2
     ), "FPS monitor tick must be emitted on success"
     assert buffer.get_nowait() == VideoFrame(
-        image=image, frame_id=1, frame_timestamp=frame_timestamp
+        image=image,
+        frame_id=1,
+        frame_timestamp=frame_timestamp,
+        source_id=3,
     ), "Decoded frame must be saved into buffer"
 
 

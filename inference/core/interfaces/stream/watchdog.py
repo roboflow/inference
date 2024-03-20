@@ -224,14 +224,14 @@ class BasePipelineWatchDog(PipelineWatchDog):
 
     def on_model_inference_started(self, frames: List[VideoFrame]) -> None:
         for frame in frames:
-            self._latency_monitors[frame.frame_id].register_inference_start(
+            self._latency_monitors[frame.source_id].register_inference_start(
                 frame_timestamp=frame.frame_timestamp,
                 frame_id=frame.frame_id,
             )
 
     def on_model_prediction_ready(self, frames: List[VideoFrame]) -> None:
         for frame in frames:
-            self._latency_monitors[frame.frame_id].register_prediction_ready(
+            self._latency_monitors[frame.source_id].register_prediction_ready(
                 frame_timestamp=frame.frame_timestamp,
                 frame_id=frame.frame_id,
             )

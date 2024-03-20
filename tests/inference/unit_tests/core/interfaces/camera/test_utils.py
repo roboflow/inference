@@ -449,6 +449,7 @@ def test_get_video_frames_generator_against_real_video_with_rate_limit_and_await
     ):
         results_timestamp.append(time.monotonic())
         results.append(result)
+        print(result)
 
     # then
     assert (
@@ -497,6 +498,11 @@ class DummyVideoSource:
         metadata_mock = MagicMock()
         metadata_mock.source_properties = self._source_properties
         return metadata_mock
+
+    def terminate(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
+        pass
 
     def __iter__(self) -> "DummyVideoSource":
         return self

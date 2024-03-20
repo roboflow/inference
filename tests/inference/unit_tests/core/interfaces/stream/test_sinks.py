@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from functools import partial
+from typing import List, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -12,6 +13,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.sinks import (
+    ImageWithSourceID,
     UDPSink,
     active_learning_sink,
     multi_sink,
@@ -47,7 +49,7 @@ def test_render_boxes_completes_successfully() -> None:
     )
     captured_images = []
 
-    def capture_image(image: np.ndarray) -> None:
+    def capture_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
         captured_images.append(image)
 
     # when
@@ -61,7 +63,10 @@ def test_render_boxes_completes_successfully() -> None:
     assert (
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
-    assert captured_images[0].shape == (
+    assert (
+        captured_images[0][0] == 0
+    ), "Id of image must be 0, as this is first and only image in the batch"
+    assert captured_images[0][1].shape == (
         720,
         1280,
         3,
@@ -78,7 +83,7 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
     predictions = {"top": "cat", "predictions": {"class": "cat", "confidence": 0.8}}
     captured_images = []
 
-    def capture_image(image: np.ndarray) -> None:
+    def capture_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
         captured_images.append(image)
 
     # when
@@ -92,7 +97,10 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
     assert (
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
-    assert captured_images[0].shape == (
+    assert (
+        captured_images[0][0] == 0
+    ), "Id of image must be 0, as this is first and only image in the batch"
+    assert captured_images[0][1].shape == (
         720,
         1280,
         3,
@@ -223,9 +231,9 @@ def test_active_learning_sink() -> None:
     sink(predictions, video_frame)
 
     # then
-    active_learning_middleware.register.assert_called_once_with(
-        inference_input=video_frame.image,
-        prediction=predictions,
+    active_learning_middleware.register_batch.assert_called_once_with(
+        inference_inputs=[video_frame.image],
+        predictions=[predictions],
         prediction_type="object-detection",
         disable_preproc_auto_orient=False,
     )

@@ -11,29 +11,35 @@ import supervision as sv
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
 DEFAULT_ANNOTATOR = sv.BoxAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
+ImageWithSourceID = Tuple[int, np.ndarray]
 
-def display_image(image: List[np.ndarray]) -> None:
+
+def display_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
     if issubclass(type(image), list):
-        image = create_tiles(images=image)
-    cv2.imshow("Predictions", image)
+        tiles = create_tiles(images=[i[1] for i in image])
+        cv2.imshow("Predictions - tiles", tiles)
+    else:
+        source_id, picture_to_display = image
+        cv2.imshow(f"Predictions - video: {source_id}", picture_to_display)
     cv2.waitKey(1)
 
 
 def render_boxes(
-    predictions: Union[dict, List[dict]],
-    video_frame: Union[VideoFrame, List[dict]],
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
     annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
     display_size: Optional[Tuple[int, int]] = (1280, 720),
     fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
     display_statistics: bool = False,
     on_frame_rendered: Callable[
-        [Union[np.ndarray, List[np.ndarray]]], None
+        [Union[ImageWithSourceID, List[ImageWithSourceID]]], None
     ] = display_image,
 ) -> None:
     """
@@ -85,29 +91,61 @@ def render_boxes(
         In this example, `render_boxes()` is used as a sink for `InferencePipeline` predictions - making frames with
         predictions displayed to be saved into video file.
     """
+    sequential_input_provided = False
+    if not issubclass(type(video_frame), list):
+        video_frame = [video_frame]
+        predictions = [predictions]
+        sequential_input_provided = True
     fps_value = None
     if fps_monitor is not None:
-        fps_monitor.tick()
+        ticks = sum(f is not None for f in video_frame)
+        for _ in range(ticks):
+            fps_monitor.tick()
         fps_value = fps_monitor()
-    try:
-        labels = [p["class"] for p in predictions["predictions"]]
-        detections = sv.Detections.from_roboflow(predictions)
-        image = annotator.annotate(
-            scene=video_frame.image.copy(), detections=detections, labels=labels
-        )
-    except (TypeError, KeyError):
-        logger.warning(
-            f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected format "
-            f"of object detection prediction that could be accepted by `supervision.Detection.from_roboflow(...)"
-        )
-        image = video_frame.image.copy()
+    images: List[ImageWithSourceID] = []
+    for idx, (single_frame, frame_prediction) in enumerate(
+        zip(video_frame, predictions)
+    ):
+        if single_frame is None:
+            image = np.zeros((256, 256, 3), dtype=np.uint8)
+        else:
+            try:
+                labels = [p["class"] for p in frame_prediction["predictions"]]
+                detections = sv.Detections.from_roboflow(frame_prediction)
+                image = annotator.annotate(
+                    scene=single_frame.image.copy(),
+                    detections=detections,
+                    labels=labels,
+                )
+            except (TypeError, KeyError):
+                logger.warning(
+                    f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected "
+                    f"format of object detection prediction that could be accepted by "
+                    f"`supervision.Detection.from_roboflow(...)"
+                )
+                image = single_frame.image.copy()
+        images.append((idx, image))
     if display_size is not None:
-        image = letterbox_image(image, desired_size=display_size)
+        images = [
+            (image[0], letterbox_image(image[1], desired_size=display_size))
+            for image in images
+        ]
     if display_statistics:
-        image = render_statistics(
-            image=image, frame_timestamp=video_frame.frame_timestamp, fps=fps_value
-        )
-    on_frame_rendered(image)
+        images = [
+            (
+                image[0],
+                render_statistics(
+                    image=image[1],
+                    frame_timestamp=video_frame.frame_timestamp,
+                    fps=fps_value,
+                ),
+            )
+            for image in images
+        ]
+    if sequential_input_provided:
+        on_frame_rendered(images[0])
+    else:
+        on_frame_rendered(images)
 
 
 def render_statistics(
@@ -170,8 +208,8 @@ class UDPSink:
 
     def send_predictions(
         self,
-        predictions: dict,
-        video_frame: VideoFrame,
+        predictions: Union[dict, List[Optional[dict]]],
+        video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         """
         Method to send predictions via UDP socket. Useful in combination with `InferencePipeline` as
@@ -205,26 +243,34 @@ class UDPSink:
             ```
             `UDPSink` used in this way will emit predictions to receiver automatically.
         """
-        inference_metadata = {
-            "frame_id": video_frame.frame_id,
-            "frame_decoding_time": video_frame.frame_timestamp.isoformat(),
-            "emission_time": datetime.now().isoformat(),
-        }
-        predictions["inference_metadata"] = inference_metadata
-        serialised_predictions = json.dumps(predictions).encode("utf-8")
-        self._socket.sendto(
-            serialised_predictions,
-            (
-                self._ip_address,
-                self._port,
-            ),
-        )
+        if not issubclass(type(video_frame), list):
+            video_frame = [video_frame]
+            predictions = [predictions]
+
+        for single_frame, frame_predictions in zip(video_frame, predictions):
+            if single_frame is None:
+                continue
+            inference_metadata = {
+                "source_id": single_frame.source_id,
+                "frame_id": single_frame.frame_id,
+                "frame_decoding_time": single_frame.frame_timestamp.isoformat(),
+                "emission_time": datetime.now().isoformat(),
+            }
+            frame_predictions["inference_metadata"] = inference_metadata
+            serialised_predictions = json.dumps(frame_predictions).encode("utf-8")
+            self._socket.sendto(
+                serialised_predictions,
+                (
+                    self._ip_address,
+                    self._port,
+                ),
+            )
 
 
 def multi_sink(
-    predictions: dict,
-    video_frame: VideoFrame,
-    sinks: List[Callable[[dict, VideoFrame], None]],
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+    sinks: List[SinkHandler],
 ) -> None:
     """
     Helper util useful to combine multiple sinks together, while using `InferencePipeline`.
@@ -271,15 +317,20 @@ def multi_sink(
 
 
 def active_learning_sink(
-    predictions: dict,
-    video_frame: VideoFrame,
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
     active_learning_middleware: ActiveLearningMiddleware,
     model_type: str,
     disable_preproc_auto_orient: bool = False,
 ) -> None:
-    active_learning_middleware.register(
-        inference_input=video_frame.image,
-        prediction=predictions,
+    if not issubclass(type(video_frame), list):
+        video_frame = [video_frame]
+        predictions = [predictions]
+    images = [f.image for f in video_frame if f is not None]
+    predictions = [p for p in predictions if p is not None]
+    active_learning_middleware.register_batch(
+        inference_inputs=images,
+        predictions=predictions,
         prediction_type=model_type,
         disable_preproc_auto_orient=disable_preproc_auto_orient,
     )
@@ -377,9 +428,10 @@ class VideoFileSink:
 
     def _save_predictions(
         self,
-        frame: np.ndarray,
+        frame: Union[ImageWithSourceID, List[ImageWithSourceID]],
     ) -> None:
-        """ """
+        if issubclass(type(frame), list):
+            frame = create_tiles(images=[i[1] for i in frame])
         self._video_writer.write(frame)
         if not self._quiet:
             print(f"Writing frame {self._frame_idx}", end="\r")

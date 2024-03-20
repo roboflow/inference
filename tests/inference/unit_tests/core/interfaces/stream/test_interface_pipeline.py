@@ -2,7 +2,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Lock
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -16,7 +16,10 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.camera.exceptions import SourceConnectionError
+from inference.core.interfaces.camera.exceptions import (
+    EndOfStreamError,
+    SourceConnectionError,
+)
 from inference.core.interfaces.camera.video_source import (
     SourceMetadata,
     SourceProperties,
@@ -34,7 +37,9 @@ from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
 
 class VideoSourceStub:
-    def __init__(self, frames_number: int, is_file: bool, rounds: int = 0):
+    def __init__(
+        self, frames_number: int, is_file: bool, rounds: int = 0, source_id: int = 0
+    ):
         self._frames_number = frames_number
         self._is_file = is_file
         self._current_round = 0
@@ -44,9 +49,12 @@ class VideoSourceStub:
         self._frame_id = 0
         self._state_change_lock = Lock()
         self.on_end = None
+        self.source_id = source_id
 
     @lock_state_transition
-    def restart(self) -> None:
+    def restart(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
         self._calls.append("restart")
         if self._current_round == self._rounds:
             self.on_end()
@@ -61,7 +69,9 @@ class VideoSourceStub:
         self._emissions_in_current_round = 0
 
     @lock_state_transition
-    def terminate(self) -> None:
+    def terminate(
+        self, wait_on_frames_consumption: bool = True, purge_frames_buffer: bool = False
+    ) -> None:
         self._calls.append("terminate")
 
     def describe_source(self) -> SourceMetadata:
@@ -78,22 +88,30 @@ class VideoSourceStub:
             state=StreamState.RUNNING,
             buffer_filling_strategy=None,
             buffer_consumption_strategy=None,
+            source_id=self.source_id,
         )
 
-    def __iter__(self) -> "VideoSourceStub":
-        return self
-
-    def __next__(self) -> VideoFrame:
+    def read_frame(self, timeout: Optional[float] = None) -> VideoFrame:
         self._calls.append("read_frame")
         if self._emissions_in_current_round == self._frames_number:
-            raise StopIteration()
+            raise EndOfStreamError()
         self._frame_id += 1
         self._emissions_in_current_round += 1
         return VideoFrame(
             image=np.zeros((128, 128, 3), dtype=np.uint8),
             frame_id=self._frame_id,
             frame_timestamp=datetime.now(),
+            source_id=self.source_id,
         )
+
+    def __iter__(self) -> "VideoSourceStub":
+        return self
+
+    def __next__(self) -> VideoFrame:
+        try:
+            return self.read_frame()
+        except EndOfStreamError:
+            raise StopIteration()
 
 
 class ModelStub:
@@ -127,6 +145,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
     model = ModelStub()
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(video_sources=[video_source])
     predictions = []
 
     def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
@@ -140,7 +159,7 @@ def test_inference_pipeline_works_correctly_against_video_file(
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        video_source=video_source,
+        video_sources=[video_source],
         on_prediction=on_prediction,
         max_fps=100,
         predictions_queue=predictions_queue,
@@ -169,6 +188,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     model = ModelStub()
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=2)
     watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(video_sources=[video_source])
     predictions = []
 
     def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
@@ -182,7 +202,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_reconnectio
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        video_source=video_source,
+        video_sources=[video_source],
         on_prediction=on_prediction,
         max_fps=None,
         predictions_queue=predictions_queue,
@@ -214,6 +234,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     model = ModelStub()
     video_source = VideoSourceStub(frames_number=100, is_file=False, rounds=1)
     watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(video_sources=[video_source])
     predictions = []
 
     def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
@@ -229,7 +250,7 @@ def test_inference_pipeline_works_correctly_against_stream_including_dispatching
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        video_source=video_source,
+        video_sources=[video_source],
         on_prediction=on_prediction,
         max_fps=None,
         predictions_queue=predictions_queue,
@@ -262,6 +283,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
     model = ModelStub()
     video_source = VideoSource.init(video_reference=local_video_path)
     watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(video_sources=[video_source])
     predictions = []
     al_datapoints = []
     active_learning_middleware = ThreadingActiveLearningMiddleware(
@@ -287,7 +309,10 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
         disable_preproc_auto_orient=False,
     )
 
-    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
+    def on_prediction(
+        prediction: Union[dict, List[Optional[dict]]],
+        video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+    ) -> None:
         predictions.append((video_frame, prediction))
 
     prediction_handler = partial(multi_sink, sinks=[on_prediction, al_sink])
@@ -300,7 +325,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
     predictions_queue = Queue(maxsize=512)
     inference_pipeline = InferencePipeline(
         on_video_frame=process_frame_func,
-        video_source=video_source,
+        video_sources=[video_source],
         on_prediction=prediction_handler,
         max_fps=100,
         predictions_queue=predictions_queue,

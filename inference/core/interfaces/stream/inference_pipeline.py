@@ -32,7 +32,12 @@ from inference.core.interfaces.camera.video_source import (
     BufferFillingStrategy,
     VideoSource,
 )
-from inference.core.interfaces.stream.entities import AnyPrediction, ModelConfig
+from inference.core.interfaces.stream.entities import (
+    AnyPrediction,
+    InferenceHandler,
+    ModelConfig,
+    SinkHandler,
+)
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
@@ -59,15 +64,6 @@ INFERENCE_THREAD_STARTED_EVENT = "INFERENCE_THREAD_STARTED"
 INFERENCE_THREAD_FINISHED_EVENT = "INFERENCE_THREAD_FINISHED"
 INFERENCE_COMPLETED_EVENT = "INFERENCE_COMPLETED"
 INFERENCE_ERROR_EVENT = "INFERENCE_ERROR"
-
-
-InferenceHandler = Callable[[List[VideoFrame]], List[AnyPrediction]]
-SinkHandler = Optional[
-    Union[
-        Callable[[AnyPrediction, VideoFrame], None],
-        Callable[[List[AnyPrediction], List[VideoFrame]], None],
-    ]
-]
 
 
 class SinkMode(Enum):
@@ -725,7 +721,7 @@ class InferencePipeline:
         video_frames: List[VideoFrame],
     ) -> None:
         if self._should_use_batch_sink():
-            self._use_sink(predictions, video_frames)
+            self._use_batch_sink(predictions, video_frames)
             return None
         for frame_predictions, video_frame in zip(predictions, video_frames):
             self._use_sink(frame_predictions, video_frame)
@@ -735,10 +731,32 @@ class InferencePipeline:
             self._sink_mode is SinkMode.ADAPTIVE and len(self._video_sources) > 1
         )
 
+    def _use_batch_sink(
+        self,
+        predictions: List[AnyPrediction],
+        video_frames: List[VideoFrame],
+    ) -> None:
+        # This function makes it possible to always call sinks with payloads aligned to order of
+        # video sources - marking empty frames as None
+        results_by_source_id = {
+            video_frame.source_id: (frame_predictions, video_frame)
+            for frame_predictions, video_frame in zip(predictions, video_frames)
+        }
+        source_id_aligned_sink_payload = [
+            results_by_source_id.get(video_source.source_id, (None, None))
+            for video_source in self._video_sources
+        ]
+        source_id_aligned_predictions = [e[0] for e in source_id_aligned_sink_payload]
+        source_id_aligned_frames = [e[1] for e in source_id_aligned_sink_payload]
+        self._use_sink(
+            predictions=source_id_aligned_predictions,
+            video_frames=source_id_aligned_frames,
+        )
+
     def _use_sink(
         self,
-        predictions: Union[AnyPrediction, List[AnyPrediction]],
-        video_frames: Union[VideoFrame, List[VideoFrame]],
+        predictions: Union[AnyPrediction, List[Optional[AnyPrediction]]],
+        video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
     ) -> None:
         try:
             self._on_prediction(predictions, video_frames)

@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta
 from typing import Optional
+from unittest.mock import MagicMock
 
+import numpy as np
+
+from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import (
     LatencyMonitorReport,
     ModelActivityEvent,
@@ -206,11 +210,9 @@ def test_base_watchdog_gives_correct_report_when_nothing_registered() -> None:
     assert (
         abs(result.inference_throughput) < 1e-5
     ), "Throughput cannot be measured when nothing was registered"
+    assert result.latency_reports == [], "Latency report should be empty"
     assert (
-            result.latency_reports == LatencyMonitorReport()
-    ), "Latency report should be empty"
-    assert (
-            result.sources_metadata is None
+        result.sources_metadata is None
     ), "No video source registered, so metadata must be empty"
 
 
@@ -219,21 +221,53 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
 ):
     # given
     watchdog = BasePipelineWatchDog()
-
+    image = np.zeros((192, 168, 3))
+    source_mock = MagicMock()
+    source_mock.source_id = 0
+    source_mock.describe_source.return_value = "METADATA"
+    watchdog.register_video_sources(video_sources=[source_mock])
     # when
     first_frame_timestamp = datetime.now()
     watchdog.on_model_inference_started(
-        frame_timestamp=first_frame_timestamp, frame_id=1
+        frames=[
+            VideoFrame(
+                image=image,
+                source_id=0,
+                frame_id=1,
+                frame_timestamp=first_frame_timestamp,
+            )
+        ]
     )
     watchdog.on_model_prediction_ready(
-        frame_timestamp=first_frame_timestamp, frame_id=1
+        frames=[
+            VideoFrame(
+                image=image,
+                source_id=0,
+                frame_id=1,
+                frame_timestamp=first_frame_timestamp,
+            )
+        ]
     )
     second_frame_timestamp = datetime.now()
     watchdog.on_model_inference_started(
-        frame_timestamp=second_frame_timestamp, frame_id=2
+        frames=[
+            VideoFrame(
+                image=image,
+                source_id=0,
+                frame_id=2,
+                frame_timestamp=second_frame_timestamp,
+            )
+        ]
     )
     watchdog.on_model_prediction_ready(
-        frame_timestamp=second_frame_timestamp, frame_id=2
+        frames=[
+            VideoFrame(
+                image=image,
+                source_id=0,
+                frame_id=2,
+                frame_timestamp=second_frame_timestamp,
+            )
+        ]
     )
     end_of_emission_time = datetime.now()
     result = watchdog.get_report()
@@ -244,53 +278,18 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
         end_of_emission_time - first_frame_timestamp
     ).total_seconds() / 2
     assert (
-            result.latency_reports.e2e_latency <= max_average_e2e_latency
+        len(result.latency_reports) == 1
+    ), "Only one video source registered - hence only single latency report is expected"
+    assert (
+        result.latency_reports[0].e2e_latency <= max_average_e2e_latency
     ), "Latency cannot be larger than time passed in test"
     min_throughput = 2 / (end_of_emission_time - first_frame_timestamp).total_seconds()
     assert (
         result.inference_throughput >= min_throughput
     ), "Throughput cannot be smaller than the one indicated by test time"
     assert (
-            result.sources_metadata is None
-    ), "No video source registered, so metadata must be empty"
-
-
-def test_base_watchdog_gives_correct_report_when_not_all_events_are_in_series_related_to_the_same_frame() -> (
-    None
-):
-    # given
-    watchdog = BasePipelineWatchDog()
-
-    # when
-    first_frame_timestamp = datetime.now()
-    watchdog.on_model_inference_started(
-        frame_timestamp=first_frame_timestamp, frame_id=1
-    )
-    watchdog.on_model_prediction_ready(
-        frame_timestamp=first_frame_timestamp, frame_id=1
-    )
-    second_frame_timestamp = datetime.now()
-    watchdog.on_model_inference_started(
-        frame_timestamp=second_frame_timestamp, frame_id=2
-    )
-    watchdog.on_model_prediction_ready(
-        frame_timestamp=second_frame_timestamp, frame_id=2
-    )
-    end_of_emission_time = datetime.now()
-    result = watchdog.get_report()
-
-    # when
-    assert result.video_source_status_updates == [], "No updates emitted to watchdog"
-    max_average_e2e_latency = (
-        end_of_emission_time - first_frame_timestamp
-    ).total_seconds() / 2
+        len(result.sources_metadata) == 1
+    ), "Only one video source registered - hence only single source metadata is expected"
     assert (
-            result.latency_reports.e2e_latency <= max_average_e2e_latency
-    ), "Latency cannot be larger than time passed in test"
-    min_throughput = 2 / (end_of_emission_time - first_frame_timestamp).total_seconds()
-    assert (
-        result.inference_throughput >= min_throughput
-    ), "Throughput cannot be smaller than the one indicated by test time"
-    assert (
-            result.sources_metadata is None
-    ), "No video source registered, so metadata must be empty"
+        result.sources_metadata[0] == "METADATA"
+    ), "Metadata must match mocked video source response"

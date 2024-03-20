@@ -354,13 +354,17 @@ def get_video_frames_generator(
              pass
         ```
     """
+    is_managed_source = False
     if issubclass(type(video), str) or issubclass(type(video), int):
         video = VideoSource.init(
             video_reference=video,
         )
         video.start()
+        is_managed_source = True
     if max_fps is None:
         yield from video
+        if is_managed_source:
+            video.terminate(purge_frames_buffer=True)
         return None
     limiter_strategy = resolve_limiter_strategy(
         explicitly_defined_strategy=limiter_strategy,
@@ -369,6 +373,9 @@ def get_video_frames_generator(
     yield from limit_frame_rate(
         frames_generator=video, max_fps=max_fps, strategy=limiter_strategy
     )
+    if is_managed_source:
+        video.terminate(purge_frames_buffer=True)
+    return None
 
 
 def resolve_limiter_strategy(
@@ -389,9 +396,11 @@ def limit_frame_rate(
     strategy: FPSLimiterStrategy,
 ) -> Generator[T, None, None]:
     rate_limiter = RateLimiter(desired_fps=max_fps)
+    i = 0
     for frame_data in frames_generator:
         delay = rate_limiter.estimate_next_action_delay()
         ticks = 1 if not issubclass(type(frame_data), list) else len(frame_data)
+        i += 1
         if delay <= 0.0:
             for _ in range(ticks):
                 rate_limiter.tick()
