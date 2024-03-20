@@ -63,6 +63,7 @@ def start(
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
+        typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
 
     try:
@@ -74,7 +75,7 @@ def start(
             api_key=api_key,
         )
     except Exception as container_error:
-        typer.echo(f"Failed to start inference container. Cause: {container_error}")
+        typer.echo(container_error)
         raise typer.Exit(code=1) from container_error
 
 
@@ -87,12 +88,13 @@ def status() -> None:
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
+        typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
 
     try:
         check_inference_server_status()
     except Exception as status_error:
-        typer.echo(f"Failed to check inference server status. Cause: {status_error}")
+        typer.echo(status_error)
         raise typer.Exit(code=1) from status_error
 
 
@@ -103,12 +105,13 @@ def stop() -> None:
     try:
         ensure_docker_is_running()
     except Exception as docker_error:
+        typer.echo(docker_error)
         raise typer.Exit(code=1) from docker_error
 
     try:
         stop_inference_containers()
     except Exception as stop_error:
-        typer.echo(f"Failed to stop inference containers. Cause: {stop_error}")
+        typer.echo(stop_error)
         raise typer.Exit(code=1) from stop_error
 
 
