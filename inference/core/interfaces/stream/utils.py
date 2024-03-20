@@ -55,7 +55,7 @@ def broadcast_elements(
 ) -> List[T]:
     if len(elements) == desired_length:
         return elements
-    if len(elements) <= 1:
+    if len(elements) != 1:
         raise ValueError(error_description)
     return elements * desired_length
 

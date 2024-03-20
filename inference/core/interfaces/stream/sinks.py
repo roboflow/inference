@@ -136,32 +136,33 @@ def render_boxes(
                 image[0],
                 render_statistics(
                     image=image[1],
-                    frame_timestamp=video_frame.frame_timestamp,
+                    frame_timestamp=frame.frame_timestamp if frame is not None else None,
                     fps=fps_value,
                 ),
             )
-            for image in images
+            for image, frame in zip(images, video_frame)
         ]
     if sequential_input_provided:
-        on_frame_rendered(images[0])
+        on_frame_rendered((video_frame[0].source_id, images[0][1]))
     else:
         on_frame_rendered(images)
 
 
 def render_statistics(
-    image: np.ndarray, frame_timestamp: datetime, fps: Optional[float]
+    image: np.ndarray, frame_timestamp: Optional[datetime], fps: Optional[float]
 ) -> np.ndarray:
-    latency = round((datetime.now() - frame_timestamp).total_seconds() * 1000, 2)
     image_height = image.shape[0]
-    image = cv2.putText(
-        image,
-        f"LATENCY: {latency} ms",
-        (10, image_height - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 0),
-        2,
-    )
+    if frame_timestamp is not None:
+        latency = round((datetime.now() - frame_timestamp).total_seconds() * 1000, 2)
+        image = cv2.putText(
+            image,
+            f"LATENCY: {latency} ms",
+            (10, image_height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 255, 0),
+            2,
+        )
     if fps is not None:
         fps = round(fps, 2)
         image = cv2.putText(

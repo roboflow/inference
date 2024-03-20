@@ -622,7 +622,7 @@ class InferencePipeline:
     def terminate(self) -> None:
         self._stop = True
         for video_source in self._video_sources:
-            video_source.terminate()
+            video_source.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
 
     def pause_stream(self, source_id: Optional[int] = None) -> None:
         for video_source in self._video_sources:
