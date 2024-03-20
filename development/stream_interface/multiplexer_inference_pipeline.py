@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import supervision as sv
 
+from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import StatusUpdate
 from inference.core.interfaces.camera.utils import multiplex_videos
 from inference.core.interfaces.camera.video_source import VideoSource
@@ -26,26 +27,40 @@ def main(n: int) -> None:
     stream_uris = []
     for i in range(n):
         stream_uris.append(f"{STREAM_SERVER_URL}/live{i}.stream")
-    cameras = [VideoSource.init(uri, source_id=i) for i, uri in enumerate(stream_uris)]
-    control_thread = Thread(target=command_thread, args=(cameras,))
-    control_thread.start()
-    for camera in cameras:
-        camera.start()
-    multiplexer = multiplex_videos(
-        videos=cameras,
-        batch_collection_timeout=0.1,
-        should_stop=lambda: STOP,
-    )
     fps_monitor = sv.FPSMonitor(sample_size=8192)
     monitors = {}
     for i in range(n):
         monitors[i] = sv.FPSMonitor(sample_size=8192)
-    for frames in multiplexer:
+    renderer = Renderer(monitors, fps_monitor, n)
+    pipeline = InferencePipeline.init(
+        video_reference=stream_uris,
+        model_id="yolov8n-640",
+        on_prediction=renderer.render
+    )
+    pipeline.start()
+    pipeline.join()
+    cv2.destroyAllWindows()
+    global STOP
+    STOP = True
+    print("JOINED")
+
+
+class Renderer:
+
+    def __init__(self, monitors, fps_monitor, n):
+        self.monitors = monitors
+        self.fps_monitor = fps_monitor
+        self.n = n
+        self.annotator = sv.BoundingBoxAnnotator()
+
+    def render(self, predictions, frames):
         registered_frames = {}
-        for f in frames:
-            monitors[f.source_id].tick()
+        for p, f in zip(predictions, frames):
+            self.monitors[f.source_id].tick()
+            detections = sv.Detections.from_roboflow(p)
+            i = self.annotator.annotate(f.image, detections)
             i = cv2.putText(
-                f.image,
+                i,
                 f"LATENCY: {round((datetime.now() - f.frame_timestamp).total_seconds() * 1000, 2)} ms",
                 (10, f.image.shape[0] - 50),
                 cv2.FONT_HERSHEY_SIMPLEX,
@@ -55,7 +70,7 @@ def main(n: int) -> None:
             )
             i = cv2.putText(
                 i,
-                f"THROUGHPUT: {round(monitors[f.source_id](), 2)}",
+                f"THROUGHPUT: {round(self.monitors[f.source_id](), 2)}",
                 (10, f.image.shape[0] - 120),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 2.0,
@@ -64,9 +79,9 @@ def main(n: int) -> None:
             )
             registered_frames[f.source_id] = i
         for _ in range(len(frames)):
-            fps_monitor.tick()
-        fps_value = fps_monitor()
-        images = [letterbox_image(registered_frames.get(i, BLACK_FRAME), (348, 348)) for i in range(n)]
+            self.fps_monitor.tick()
+        fps_value = self.fps_monitor()
+        images = [letterbox_image(registered_frames.get(i, BLACK_FRAME), (348, 348)) for i in range(self.n)]
         rows = list(create_batches(sequence=images, batch_size=4))
         while len(rows[-1]) < 4:
             rows[-1].append(BLACK_FRAME)
@@ -84,13 +99,6 @@ def main(n: int) -> None:
         )
         cv2.imshow("playback", merged)
         cv2.waitKey(1)
-    cv2.destroyAllWindows()
-    global STOP
-    STOP = True
-    control_thread.join()
-    for c in cameras:
-        c.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
-    print("JOINED")
 
 
 def command_thread(cameras: List[VideoSource]) -> None:

@@ -81,6 +81,7 @@ class VideoSourcesManager:
         self._enforce_stop: Dict[int, bool] = {}
         self._ended_sources: Set[int] = set()
         self._threads_to_join: Set[int] = set()
+        self._last_batch_yielded_time = datetime.now()
 
     def retrieve_frames_from_sources(
         self,
@@ -88,7 +89,7 @@ class VideoSourcesManager:
     ) -> Optional[List[VideoFrame]]:
         batch_frames = []
         if batch_collection_timeout is not None:
-            batch_timeout_moment = datetime.now() + timedelta(
+            batch_timeout_moment = self._last_batch_yielded_time + timedelta(
                 seconds=batch_collection_timeout
             )
         else:
@@ -97,6 +98,7 @@ class VideoSourcesManager:
             zip(self._video_sources.all_sources, self._video_sources.allow_reconnection)
         ):
             if self._external_should_stop():
+                self.join_all_reconnection_threads(include_not_finished=True)
                 return None
             if self._is_source_inactive(source_ord=source_ord):
                 continue
@@ -112,13 +114,18 @@ class VideoSourcesManager:
             except EndOfStreamError:
                 self._register_end_of_stream(source_ord=source_ord)
         self.join_all_reconnection_threads()
+        self._last_batch_yielded_time = datetime.now()
         return batch_frames
 
     def all_sources_ended(self) -> bool:
         return len(self._ended_sources) >= len(self._video_sources.all_sources)
 
-    def join_all_reconnection_threads(self) -> None:
+    def join_all_reconnection_threads(self, include_not_finished: bool = False) -> None:
         for source_ord in copy(self._threads_to_join):
+            self._purge_reconnection_thread(source_ord=source_ord)
+        if not include_not_finished:
+            return None
+        for source_ord in list(self._reconnection_threads.keys()):
             self._purge_reconnection_thread(source_ord=source_ord)
 
     def _is_source_inactive(self, source_ord: int) -> bool:

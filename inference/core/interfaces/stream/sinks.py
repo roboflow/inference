@@ -2,7 +2,7 @@ import json
 import socket
 from datetime import datetime
 from functools import partial
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -11,25 +11,30 @@ import supervision as sv
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
 DEFAULT_ANNOTATOR = sv.BoxAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
 
-def display_image(image: np.ndarray) -> None:
+def display_image(image: List[np.ndarray]) -> None:
+    if issubclass(type(image), list):
+        image = create_tiles(images=image)
     cv2.imshow("Predictions", image)
     cv2.waitKey(1)
 
 
 def render_boxes(
-    predictions: dict,
-    video_frame: VideoFrame,
+    predictions: Union[dict, List[dict]],
+    video_frame: Union[VideoFrame, List[dict]],
     annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
     display_size: Optional[Tuple[int, int]] = (1280, 720),
     fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
     display_statistics: bool = False,
-    on_frame_rendered: Callable[[np.ndarray], None] = display_image,
+    on_frame_rendered: Callable[
+        [Union[np.ndarray, List[np.ndarray]]], None
+    ] = display_image,
 ) -> None:
     """
     Helper tool to render object detection predictions on top of video frame. It is designed
