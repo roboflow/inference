@@ -89,7 +89,13 @@ class GroundingDINO(RoboflowCoreModel):
         return result
 
     def infer(
-        self, image: Any = None, text: list = None, class_filter: list = None, **kwargs
+        self,
+        image: Any = None,
+        text: list[str] = None,
+        class_filter: list = None,
+        box_threshold=0.5,
+        text_threshold=0.5,
+        **kwargs
     ):
         """
         Run inference on a provided image.
@@ -109,11 +115,13 @@ class GroundingDINO(RoboflowCoreModel):
         detections = self.model.predict_with_classes(
             image=image,
             classes=text,
-            box_threshold=0.5,
-            text_threshold=0.5,
+            box_threshold=0.1,
+            text_threshold=0.7,
         )
 
-        self.class_names = text
+        # TODO: Follow project NMS config
+        if True:
+            detections = detections.with_nms()
 
         xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
@@ -128,12 +136,12 @@ class GroundingDINO(RoboflowCoreModel):
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
                         "confidence": detections.confidence[i],
-                        "class": self.class_names[int(detections.class_id[i])],
-                        "class_id": int(detections.class_id[i]),
+                        "class": text[int(detections.class_id[i] or 0)],
+                        "class_id": int(detections.class_id[i] or 0),
                     }
                 )
                 for i, pred in enumerate(detections.xyxy)
-                if not class_filter or self.class_names[int(pred[6])] in class_filter
+                if not class_filter or text[int(pred[6])] in class_filter
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,
