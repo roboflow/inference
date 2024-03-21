@@ -59,8 +59,14 @@ def start(
         ),
     ] = None,
 ) -> None:
+
     try:
         ensure_docker_is_running()
+    except Exception as docker_error:
+        typer.echo(docker_error)
+        raise typer.Exit(code=1) from docker_error
+
+    try:
         start_inference_container(
             port=port,
             project=rf_env,
@@ -68,31 +74,45 @@ def start(
             development=development,
             api_key=api_key,
         )
-    except Exception as error:
-        typer.echo(f"Command failed. Cause: {error}")
-        raise typer.Exit(code=1)
+    except Exception as container_error:
+        typer.echo(container_error)
+        raise typer.Exit(code=1) from container_error
+
+
+
 
 
 @server_app.command()
 def status() -> None:
-    typer.echo("Checking status of inference server.")
+    typer.echo("Checking status of the inference server.")
     try:
         ensure_docker_is_running()
+    except Exception as docker_error:
+        typer.echo(docker_error)
+        raise typer.Exit(code=1) from docker_error
+
+    try:
         check_inference_server_status()
-    except Exception as error:
-        typer.echo(f"Command failed. Cause: {error}")
-        raise typer.Exit(code=1)
+    except Exception as status_error:
+        typer.echo(status_error)
+        raise typer.Exit(code=1) from status_error
+
 
 
 @server_app.command()
 def stop() -> None:
-    typer.echo("Terminating running inference containers")
+    typer.echo("Terminating running inference containers.")
     try:
         ensure_docker_is_running()
+    except Exception as docker_error:
+        typer.echo(docker_error)
+        raise typer.Exit(code=1) from docker_error
+
+    try:
         stop_inference_containers()
-    except Exception as error:
-        typer.echo(f"Command failed. Cause: {error}")
-        raise typer.Exit(code=1)
+    except Exception as stop_error:
+        typer.echo(stop_error)
+        raise typer.Exit(code=1) from stop_error
 
 
 if __name__ == "__main__":
