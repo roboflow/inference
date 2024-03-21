@@ -15,7 +15,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
-from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
+from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
 
 class GroundingDINO(RoboflowCoreModel):
@@ -75,7 +75,7 @@ class GroundingDINO(RoboflowCoreModel):
         Returns:
             np.array: The preprocessed image.
         """
-        np_image = load_image_rgb(image)
+        np_image = load_image_bgr(image)
         return np_image
 
     def infer_from_request(
