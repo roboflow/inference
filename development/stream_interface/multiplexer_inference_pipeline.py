@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from inference import InferencePipeline
+from inference.core.interfaces.stream.inference_pipeline import SinkMode
 from inference.core.interfaces.stream.sinks import render_boxes
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 
@@ -48,10 +49,12 @@ def command_thread(pipeline: InferencePipeline, watchdog: BasePipelineWatchDog) 
             if payload == "s":
                 pipeline.terminate()
                 STOP = True
-            elif payload == "p":
-                pipeline.mute_stream()
-            elif payload == "r":
-                pipeline.resume_stream()
+            elif payload.startswith("p"):
+                idx = payload.split(",")[1]
+                pipeline.mute_stream(source_id=idx)
+            elif payload.startswith("r"):
+                idx = payload.split(",")[1]
+                pipeline.resume_stream(source_id=idx)
             elif payload == "i":
                 print(json.dumps(asdict(watchdog.get_report()), default=serialise_to_json,))
         except Exception as e:

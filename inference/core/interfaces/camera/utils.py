@@ -43,6 +43,60 @@ class VideoSources:
     managed_sources: List[VideoSource]
 
 
+def get_video_frames_generator(
+    video: Union[VideoSource, str, int],
+    max_fps: Optional[Union[float, int]] = None,
+    limiter_strategy: Optional[FPSLimiterStrategy] = None,
+) -> Generator[VideoFrame, None, None]:
+    """
+    Util function to create a frames generator from `VideoSource` with possibility to
+    limit FPS of consumed frames and dictate what to do if frames are produced to fast.
+
+    Args:
+        video (Union[VideoSource, str, int]): Either instance of VideoSource or video reference accepted
+            by VideoSource.init(...)
+        max_fps (Optional[Union[float, int]]): value of maximum FPS rate of generated frames - can be used to limit
+            generation frequency
+        limiter_strategy (Optional[FPSLimiterStrategy]): strategy used to deal with frames decoding exceeding
+            limit of `max_fps`. By default - for files, in the interest of processing all frames -
+            generation will be awaited, for streams - frames will be dropped on the floor.
+    Returns: generator of `VideoFrame`
+
+    Example:
+        ```python
+        from inference.core.interfaces.camera.utils import get_video_frames_generator
+
+        for frame in get_video_frames_generator(
+            video="./some.mp4",
+            max_fps=50,
+        ):
+             pass
+        ```
+    """
+    is_managed_source = False
+    if issubclass(type(video), str) or issubclass(type(video), int):
+        video = VideoSource.init(
+            video_reference=video,
+        )
+        video.start()
+        is_managed_source = True
+    if max_fps is None:
+        yield from video
+        if is_managed_source:
+            video.terminate(purge_frames_buffer=True)
+        return None
+    limiter_strategy = resolve_limiter_strategy(
+        explicitly_defined_strategy=limiter_strategy,
+        source_properties=video.describe_source().source_properties,
+    )
+    yield from limit_frame_rate(
+        frames_generator=video, max_fps=max_fps, strategy=limiter_strategy
+    )
+    if is_managed_source:
+        video.terminate(purge_frames_buffer=True)
+    return None
+
+
 def never_stop() -> bool:
     return False
 
@@ -54,6 +108,9 @@ def log_error(source_id: Optional[int], error: SourceConnectionError) -> None:
 
 
 class VideoSourcesManager:
+    """
+    This class should be treated as internal building block of stream multiplexer - not for external use.
+    """
 
     @classmethod
     def init(
@@ -182,7 +239,7 @@ class VideoSourcesManager:
 def multiplex_videos(
     videos: List[Union[VideoSource, str, int]],
     max_fps: Optional[Union[float, int]] = None,
-    limiter_strategy: FPSLimiterStrategy = FPSLimiterStrategy.DROP,
+    limiter_strategy: Optional[FPSLimiterStrategy] = None,
     batch_collection_timeout: Optional[float] = None,
     force_stream_reconnection: bool = True,
     should_stop: Callable[[], bool] = never_stop,
@@ -190,10 +247,63 @@ def multiplex_videos(
         [Optional[int], SourceConnectionError], None
     ] = log_error,
 ) -> Generator[List[VideoFrame], None, None]:
+    """
+    Function that is supposed to provide a generator over frames from multiple video sources. It is capable to
+    initialise `VideoSource` from references to video files or streams and grab frames from all the sources -
+    each running individual decoding on separate thread. In each cycle it attempts to grab frames from all sources
+    (and wait at max `batch_collection_timeout` for whole batch to be collected). If frame from specific source
+    cannot be collected in that time - it is simply not included in returned list. If after batch collection list of
+    frames is empty - new collection start immediately. Collection does not account for
+    sources that lost connectivity (example: streams that went offline). If that does not happen and stream has
+    large latency - without reasonable `batch_collection_timeout` it will slow down processing - so please
+    set it up in PROD solutions. In case of video streams (not video files) - given that
+    `force_stream_reconnection=True` function will attempt to re-connect to disconnected source using background thread,
+    not impairing batch frames collection and that source is not going to block frames retrieval even if infinite
+    `batch_collection_timeout=None` is set. Similarly, when processing files - video file that is shorter than other
+    passed into processing will not block the whole flow after End Of Stream (EOS).
+
+    All sources must be accessible on start - if that's not the case - logic function raises `SourceConnectionError`
+    and closes all video sources it opened on it own. Disconnections at later stages are handled by re-connection
+    mechanism.
+
+    Args:
+        videos (List[Union[VideoSource, str, int]]): List with references to video sources. Elements can be
+            pre-initialised `VideoSource` instances, str with stream URI or file location or int representing
+            camera device attached to the PC/server running the code.
+        max_fps (Optional[Union[float, int]]): Upper-bound of processing speed - to be used when one wants at max
+            `max_fps` video frames per second to be yielded from all sources by the generator.
+        limiter_strategy (Optional[FPSLimiterStrategy]): strategy used to deal with frames decoding exceeding
+            limit of `max_fps`. For video files, in the interest of processing all frames - we recommend WAIT mode,
+             for streams - frames should be dropped on the floor with DROP strategy. Not setting the strategy equals
+             using automatic mode - WAIT if all sources are files and DROP otherwise
+        batch_collection_timeout:
+        force_stream_reconnection:
+        should_stop:
+        on_reconnection_error:
+
+    Returns Generator[List[VideoFrame], None, None]: allowing to iterate through frames from multiple video sources.
+
+    Raises:
+        SourceConnectionError: when one or more source is not reachable at start of generation
+
+    Example:
+        ```python
+        from inference.core.interfaces.camera.utils import multiplex_videos
+
+        for frames in multiplex_videos(videos=["./some.mp4", "./other.mp4"]):
+             for frame in frames:
+                pass  # do something with frame
+        ```
+    """
+    video_sources = _prepare_video_sources(
+        videos=videos, force_stream_reconnection=force_stream_reconnection
+    )
+    if any(rule is None for rule in video_sources.allow_reconnection):
+        logger.warning("Could not connect to all sources.")
+        return None
     generator = _multiplex_videos(
-        videos=videos,
+        video_sources=video_sources,
         batch_collection_timeout=batch_collection_timeout,
-        force_stream_reconnection=force_stream_reconnection,
         should_stop=should_stop,
         on_reconnection_error=on_reconnection_error,
     )
@@ -201,24 +311,21 @@ def multiplex_videos(
         yield from generator
         return None
     max_fps = max_fps / len(videos)
+    if limiter_strategy is None:
+        limiter_strategy = negotiate_rate_limiter_strategy_for_multiple_sources(
+            video_sources=video_sources.all_sources,
+        )
     yield from limit_frame_rate(
         frames_generator=generator, max_fps=max_fps, strategy=limiter_strategy
     )
 
 
 def _multiplex_videos(
-    videos: List[Union[VideoSource, str, int]],
+    video_sources: VideoSources,
     batch_collection_timeout: Optional[float],
-    force_stream_reconnection: bool,
     should_stop: Callable[[], bool],
     on_reconnection_error: Callable[[Optional[int], SourceConnectionError], None],
 ) -> Generator[List[VideoFrame], None, None]:
-    video_sources = _prepare_video_sources(
-        videos=videos, force_stream_reconnection=force_stream_reconnection
-    )
-    if any(rule is None for rule in video_sources.allow_reconnection):
-        logger.warning("Could not connect to all sources.")
-        return None
     sources_manager = VideoSourcesManager.init(
         video_sources=video_sources,
         should_stop=should_stop,
@@ -244,16 +351,7 @@ def _prepare_video_sources(
 ) -> VideoSources:
     all_sources: List[VideoSource] = []
     managed_sources: List[VideoSource] = []
-    minimal_free_source_id = [
-        v.source_id if v.source_id is not None else -1
-        for v in videos
-        if issubclass(type(v), VideoSource)
-    ]
-    if len(minimal_free_source_id) == 0:
-        minimal_free_source_id = -1
-    else:
-        minimal_free_source_id = max(minimal_free_source_id)
-    minimal_free_source_id += 1
+    minimal_free_source_id = _find_free_source_identifier(videos=videos)
     try:
         for video in videos:
             if issubclass(type(video), str) or issubclass(type(video), int):
@@ -285,14 +383,28 @@ def _prepare_video_sources(
     )
 
 
+def _find_free_source_identifier(videos: List[Union[VideoSource, str, int]]) -> int:
+    minimal_free_source_id = [
+        v.source_id if v.source_id is not None else -1
+        for v in videos
+        if issubclass(type(v), VideoSource)
+    ]
+    if len(minimal_free_source_id) == 0:
+        minimal_free_source_id = -1
+    else:
+        minimal_free_source_id = max(minimal_free_source_id)
+    minimal_free_source_id += 1
+    return minimal_free_source_id
+
+
 def _establish_sources_reconnection_rules(
     all_sources: List[VideoSource], force_stream_reconnection: bool
-) -> List[Optional[bool]]:
+) -> List[bool]:
     result = []
     for video_source in all_sources:
         source_properties = video_source.describe_source().source_properties
         if source_properties is None:
-            result.append(None)
+            result.append(False)
         else:
             result.append(not source_properties.is_file and force_stream_reconnection)
     return result
@@ -327,56 +439,22 @@ def _attempt_reconnect(
             break
 
 
-def get_video_frames_generator(
-    video: Union[VideoSource, str, int],
-    max_fps: Optional[Union[float, int]] = None,
-    limiter_strategy: Optional[FPSLimiterStrategy] = None,
-) -> Generator[VideoFrame, None, None]:
-    """
-    Util function to create a frames generator from `VideoSource` with possibility to
-    limit FPS of consumed frames and dictate what to do if frames are produced to fast.
-
-    Args:
-        video (Union[VideoSource, str, int]): Either instance of VideoSource or video reference accepted
-            by VideoSource.init(...)
-        max_fps (Optional[Union[float, int]]): value of maximum FPS rate of generated frames - can be used to limit
-            generation frequency
-        limiter_strategy (Optional[FPSLimiterStrategy]): strategy used to deal with frames decoding exceeding
-            limit of `max_fps`. By default - for files, in the interest of processing all frames -
-            generation will be awaited, for streams - frames will be dropped on the floor.
-    Returns: generator of `VideoFrame`
-
-    Example:
-        ```python
-        for frame in get_video_frames_generator(
-            video="./some.mp4",
-            max_fps=50,
-        ):
-             pass
-        ```
-    """
-    is_managed_source = False
-    if issubclass(type(video), str) or issubclass(type(video), int):
-        video = VideoSource.init(
-            video_reference=video,
+def negotiate_rate_limiter_strategy_for_multiple_sources(
+    video_sources: List[VideoSource],
+) -> FPSLimiterStrategy:
+    source_types_statuses = {
+        s.describe_source().source_properties.is_file for s in video_sources
+    }
+    if len(source_types_statuses) == 2:
+        logger.warning(
+            f"`InferencePipeline` started with FPS limit rate. Detected both files and video streams as video sources. "
+            f"Rate limiter cannot satisfy both - choosing `FPSLimiterStrategy.DROP` which may drop file sources frames "
+            f"that would not happen if only video files are submitted into processing."
         )
-        video.start()
-        is_managed_source = True
-    if max_fps is None:
-        yield from video
-        if is_managed_source:
-            video.terminate(purge_frames_buffer=True)
-        return None
-    limiter_strategy = resolve_limiter_strategy(
-        explicitly_defined_strategy=limiter_strategy,
-        source_properties=video.describe_source().source_properties,
-    )
-    yield from limit_frame_rate(
-        frames_generator=video, max_fps=max_fps, strategy=limiter_strategy
-    )
-    if is_managed_source:
-        video.terminate(purge_frames_buffer=True)
-    return None
+        return FPSLimiterStrategy.DROP
+    if True in source_types_statuses:
+        return FPSLimiterStrategy.WAIT
+    return FPSLimiterStrategy.DROP
 
 
 def resolve_limiter_strategy(

@@ -1,8 +1,6 @@
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
-from inference.core import logger
 from inference.core.interfaces.camera.entities import StatusUpdate
-from inference.core.interfaces.camera.utils import FPSLimiterStrategy
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -80,22 +78,3 @@ def initialise_video_sources(
             zip(video_reference, video_source_properties)
         )
     ]
-
-
-def negotiate_rate_limiter_strategy(
-    video_sources: List[VideoSource],
-    max_fps: Optional[float],
-) -> FPSLimiterStrategy:
-    source_types_statuses = {
-        s.describe_source().source_properties.is_file for s in video_sources
-    }
-    if len(source_types_statuses) == 2 and max_fps is not None:
-        logger.warning(
-            f"`InferencePipeline` started with FPS limit rate. Detected both files and video streams as video sources. "
-            f"Rate limiter cannot satisfy both - choosing `FPSLimiterStrategy.DROP` which may drop file sources frames "
-            f"that would not happen if only video files are submitted into processing."
-        )
-        return FPSLimiterStrategy.DROP
-    if True in source_types_statuses:
-        return FPSLimiterStrategy.WAIT
-    return FPSLimiterStrategy.DROP

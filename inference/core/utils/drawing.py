@@ -31,6 +31,8 @@ def create_tiles(
         for i in images
     ]
     grid_size = _establish_grid_size(images=images, grid_size=grid_size)
+    if len(images) > grid_size[0] * grid_size[1]:
+        raise ValueError(f"Grid of size: {grid_size} cannot fit {len(images)} images.")
     return _generate_tiles(
         images=resized_images,
         grid_size=grid_size,
@@ -74,18 +76,17 @@ def _establish_grid_size(
         return _negotiate_grid_size(images=images)
     if grid_size[0] is None:
         return math.ceil(len(images) / grid_size[1]), grid_size[1]
-    return grid_size[0], math.ceil(len(images) / grid_size[0])
+    if grid_size[1] is None:
+        return grid_size[0], math.ceil(len(images) / grid_size[0])
+    return grid_size
 
 
 def _negotiate_grid_size(images: List[np.ndarray]) -> Tuple[int, int]:
     if len(images) <= MAX_COLUMNS_FOR_SINGLE_ROW_GRID:
         return 1, len(images)
     nearest_sqrt = math.ceil(np.sqrt(len(images)))
-    if len(images) > max(nearest_sqrt - 1, 0) * nearest_sqrt:
-        # there will be no empty row at the bottom
-        return nearest_sqrt, nearest_sqrt
-    proposed_columns = nearest_sqrt + 1
-    proposed_rows = nearest_sqrt - 1
+    proposed_columns = nearest_sqrt
+    proposed_rows = nearest_sqrt
     while proposed_columns * (proposed_rows - 1) >= len(images):
         proposed_rows -= 1
     return proposed_rows, proposed_columns

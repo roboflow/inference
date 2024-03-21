@@ -33,7 +33,7 @@ def main(n: int) -> None:
         camera.start()
     multiplexer = multiplex_videos(
         videos=cameras,
-        batch_collection_timeout=0.1,
+        batch_collection_timeout=None,
         should_stop=lambda: STOP,
     )
     fps_monitor = sv.FPSMonitor(sample_size=8192)

@@ -412,6 +412,31 @@ def test_terminate_running_stream_succeeds(local_video_path: str) -> None:
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
+def test_terminate_running_stream_succeeds_with_buffer_purging(
+    local_video_path: str,
+) -> None:
+    # given
+    source = VideoSource.init(video_reference=local_video_path)
+    frames_captured = []
+
+    def capture_frames() -> None:
+        for f in source:
+            frames_captured.append(f)
+
+    capture_thread = Thread(target=capture_frames)
+
+    # when
+    source.start()
+    _ = source.read_frame()
+    capture_thread.start()
+    source.terminate(purge_frames_buffer=True)
+    capture_thread.join()
+
+    # then - nothing hangs
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
 def test_terminate_paused_stream_succeeds(local_video_path: str) -> None:
     # given
     source = VideoSource.init(video_reference=local_video_path)

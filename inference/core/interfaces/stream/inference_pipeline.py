@@ -42,10 +42,7 @@ from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
-from inference.core.interfaces.stream.utils import (
-    negotiate_rate_limiter_strategy,
-    prepare_video_sources,
-)
+from inference.core.interfaces.stream.utils import prepare_video_sources
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
@@ -789,13 +786,9 @@ class InferencePipeline:
     ) -> Generator[List[VideoFrame], None, None]:
         for video_source in self._video_sources:
             video_source.start()
-        limiter_strategy = negotiate_rate_limiter_strategy(
-            video_sources=self._video_sources, max_fps=self._max_fps
-        )
         yield from multiplex_videos(
             videos=self._video_sources,
             max_fps=self._max_fps,
-            limiter_strategy=limiter_strategy,
             batch_collection_timeout=self._batch_collection_timeout,
             should_stop=lambda: self._stop,
         )
