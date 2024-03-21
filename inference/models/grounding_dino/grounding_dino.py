@@ -115,13 +115,13 @@ class GroundingDINO(RoboflowCoreModel):
         detections = self.model.predict_with_classes(
             image=image,
             classes=text,
-            box_threshold=0.1,
-            text_threshold=0.7,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
         )
 
         # TODO: Follow project NMS config
         if True:
-            detections = detections.with_nms()
+            detections = detections.with_nms(class_agnostic=True)
 
         xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
