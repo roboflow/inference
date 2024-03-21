@@ -79,9 +79,6 @@ def start(
         raise typer.Exit(code=1) from container_error
 
 
-
-
-
 @server_app.command()
 def status() -> None:
     typer.echo("Checking status of the inference server.")
@@ -96,7 +93,6 @@ def status() -> None:
     except Exception as status_error:
         typer.echo(status_error)
         raise typer.Exit(code=1) from status_error
-
 
 
 @server_app.command()

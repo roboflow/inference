@@ -27,6 +27,7 @@ def test_render_boxes_completes_successfully() -> None:
         image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
         frame_id=1,
         frame_timestamp=datetime.now(),
+        source_id=37,
     )
     predictions = ObjectDetectionInferenceResponse(
         predictions=[
@@ -64,7 +65,7 @@ def test_render_boxes_completes_successfully() -> None:
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
     assert (
-        captured_images[0][0] == 0
+        captured_images[0][0] == 37
     ), "Id of image must be 0, as this is first and only image in the batch"
     assert captured_images[0][1].shape == (
         720,
@@ -79,6 +80,7 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
         image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
         frame_id=1,
         frame_timestamp=datetime.now(),
+        source_id=37,
     )
     predictions = {"top": "cat", "predictions": {"class": "cat", "confidence": 0.8}}
     captured_images = []
@@ -98,7 +100,7 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
     assert (
-        captured_images[0][0] == 0
+        captured_images[0][0] == 37
     ), "Id of image must be 0, as this is first and only image in the batch"
     assert captured_images[0][1].shape == (
         720,
