@@ -67,6 +67,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
 
         Args:
             image (Any): An image or a list of images for processing.
+                - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
             class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
             confidence (float, optional): Confidence threshold for predictions. Defaults to 0.5.
             iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.5.

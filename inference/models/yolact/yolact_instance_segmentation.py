@@ -50,7 +50,8 @@ class YOLACT(OnnxRoboflowInferenceModel):
         and returns the segmented instances as dictionaries containing their properties.
 
         Args:
-            image (Any): The image or list of images to segment. Can be in various formats (e.g., raw array, PIL image).
+            image (Any): The image or list of images to segment.
+                - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
             class_agnostic_nms (bool, optional): Whether to perform class-agnostic non-max suppression. Defaults to False.
             confidence (float, optional): Confidence threshold for filtering weak detections. Defaults to 0.5.
             iou_threshold (float, optional): Intersection-over-union threshold for non-max suppression. Defaults to 0.5.

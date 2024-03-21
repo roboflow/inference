@@ -81,6 +81,7 @@ class DocTR(RoboflowCoreModel):
     def infer(self, image: Any, **kwargs):
         """
         Run inference on a provided image.
+            - image: can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
 
         Args:
             request (DoctrOCRInferenceRequest): The inference request.

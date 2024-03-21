@@ -61,7 +61,7 @@ pip install inference
 
 ## 🔥 quickstart
 
-Use Inference SDK to run models locally with just a few lines of code. The image input can be a URL, a numpy array, or a PIL image.
+Use Inference SDK to run models locally with just a few lines of code. The image input can be a URL, a numpy array (BGR), or a PIL image.
 
 ```python
 from inference import get_model
