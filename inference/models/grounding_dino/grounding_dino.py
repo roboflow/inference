@@ -93,6 +93,7 @@ class GroundingDINO(RoboflowCoreModel):
     ):
         """
         Run inference on a provided image.
+            - image: can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
 
         Args:
             request (CVInferenceRequest): The inference request.
