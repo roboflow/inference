@@ -97,6 +97,7 @@ class InferencePipeline:
             Union[Dict[str, float], List[Optional[Dict[str, float]]]]
         ] = None,
         active_learning_target_dataset: Optional[str] = None,
+        batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
@@ -242,6 +243,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
         )
 
@@ -263,6 +265,7 @@ class InferencePipeline:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
@@ -355,6 +358,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
         )
 
@@ -373,6 +377,7 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
@@ -479,6 +484,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
         )
 
@@ -496,6 +502,7 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
@@ -573,6 +580,7 @@ class InferencePipeline:
             max_fps=max_fps,
             on_pipeline_start=on_pipeline_start,
             on_pipeline_end=on_pipeline_end,
+            batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
         )
 
@@ -622,7 +630,9 @@ class InferencePipeline:
     def terminate(self) -> None:
         self._stop = True
         for video_source in self._video_sources:
-            video_source.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
+            video_source.terminate(
+                wait_on_frames_consumption=False, purge_frames_buffer=True
+            )
 
     def pause_stream(self, source_id: Optional[int] = None) -> None:
         for video_source in self._video_sources:

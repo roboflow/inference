@@ -136,7 +136,9 @@ def render_boxes(
                 image[0],
                 render_statistics(
                     image=image[1],
-                    frame_timestamp=frame.frame_timestamp if frame is not None else None,
+                    frame_timestamp=(
+                        frame.frame_timestamp if frame is not None else None
+                    ),
                     fps=fps_value,
                 ),
             )

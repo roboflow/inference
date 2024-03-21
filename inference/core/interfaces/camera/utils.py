@@ -200,6 +200,7 @@ def multiplex_videos(
     if max_fps is None:
         yield from generator
         return None
+    max_fps = max_fps / len(videos)
     yield from limit_frame_rate(
         frames_generator=generator, max_fps=max_fps, strategy=limiter_strategy
     )
@@ -396,20 +397,15 @@ def limit_frame_rate(
     strategy: FPSLimiterStrategy,
 ) -> Generator[T, None, None]:
     rate_limiter = RateLimiter(desired_fps=max_fps)
-    i = 0
     for frame_data in frames_generator:
         delay = rate_limiter.estimate_next_action_delay()
-        ticks = 1 if not issubclass(type(frame_data), list) else len(frame_data)
-        i += 1
         if delay <= 0.0:
-            for _ in range(ticks):
-                rate_limiter.tick()
+            rate_limiter.tick()
             yield frame_data
             continue
         if strategy is FPSLimiterStrategy.WAIT:
             time.sleep(delay)
-            for _ in range(ticks):
-                rate_limiter.tick()
+            rate_limiter.tick()
             yield frame_data
 
 

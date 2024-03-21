@@ -101,9 +101,7 @@ def command_thread(cameras: List[VideoSource]) -> None:
             idx = None
             if len(payload) > 1:
                 idx = int(payload[1])
-            if payload[0] == "q":
-                continue
-            elif payload[0] == "i":
+            if payload[0] == "i":
                 print(cameras[idx].describe_source())
             elif payload[0] == "s":
                 STOP = True
