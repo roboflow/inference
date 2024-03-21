@@ -12,13 +12,14 @@ from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import SinkHandler
+from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
 DEFAULT_ANNOTATOR = sv.BoxAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
-ImageWithSourceID = Tuple[int, np.ndarray]
+ImageWithSourceID = Tuple[Optional[int], np.ndarray]
 
 
 def display_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
@@ -27,6 +28,8 @@ def display_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> N
         cv2.imshow("Predictions - tiles", tiles)
     else:
         source_id, picture_to_display = image
+        if source_id is None:
+            source_id = "N/A"
         cv2.imshow(f"Predictions - video: {source_id}", picture_to_display)
     cv2.waitKey(1)
 
@@ -93,9 +96,9 @@ def render_boxes(
     """
     sequential_input_provided = False
     if not issubclass(type(video_frame), list):
-        video_frame = [video_frame]
-        predictions = [predictions]
         sequential_input_provided = True
+    video_frame = wrap_in_list(element=video_frame)
+    predictions = wrap_in_list(element=predictions)
     fps_value = None
     if fps_monitor is not None:
         ticks = sum(f is not None for f in video_frame)
@@ -106,48 +109,56 @@ def render_boxes(
     for idx, (single_frame, frame_prediction) in enumerate(
         zip(video_frame, predictions)
     ):
-        if single_frame is None:
-            image = np.zeros((256, 256, 3), dtype=np.uint8)
-        else:
-            try:
-                labels = [p["class"] for p in frame_prediction["predictions"]]
-                detections = sv.Detections.from_roboflow(frame_prediction)
-                image = annotator.annotate(
-                    scene=single_frame.image.copy(),
-                    detections=detections,
-                    labels=labels,
-                )
-            except (TypeError, KeyError):
-                logger.warning(
-                    f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected "
-                    f"format of object detection prediction that could be accepted by "
-                    f"`supervision.Detection.from_roboflow(...)"
-                )
-                image = single_frame.image.copy()
+        image = _handle_frame_rendering(
+            frame=single_frame,
+            prediction=frame_prediction,
+            annotator=annotator,
+            display_size=display_size,
+            display_statistics=display_statistics,
+            fps_value=fps_value,
+        )
         images.append((idx, image))
-    if display_size is not None:
-        images = [
-            (image[0], letterbox_image(image[1], desired_size=display_size))
-            for image in images
-        ]
-    if display_statistics:
-        images = [
-            (
-                image[0],
-                render_statistics(
-                    image=image[1],
-                    frame_timestamp=(
-                        frame.frame_timestamp if frame is not None else None
-                    ),
-                    fps=fps_value,
-                ),
-            )
-            for image, frame in zip(images, video_frame)
-        ]
     if sequential_input_provided:
         on_frame_rendered((video_frame[0].source_id, images[0][1]))
     else:
         on_frame_rendered(images)
+
+
+def _handle_frame_rendering(
+    frame: Optional[VideoFrame],
+    prediction: dict,
+    annotator: sv.BoxAnnotator,
+    display_size: Optional[Tuple[int, int]],
+    display_statistics: bool,
+    fps_value: Optional[float],
+) -> np.ndarray:
+    if frame is None:
+        image = np.zeros((256, 256, 3), dtype=np.uint8)
+    else:
+        try:
+            labels = [p["class"] for p in prediction["predictions"]]
+            detections = sv.Detections.from_roboflow(prediction)
+            image = annotator.annotate(
+                scene=frame.image.copy(),
+                detections=detections,
+                labels=labels,
+            )
+        except (TypeError, KeyError):
+            logger.warning(
+                f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected "
+                f"format of object detection prediction that could be accepted by "
+                f"`supervision.Detection.from_roboflow(...)"
+            )
+            image = frame.image.copy()
+    if display_size is not None:
+        image = letterbox_image(image, desired_size=display_size)
+    if display_statistics:
+        image = render_statistics(
+            image=image,
+            frame_timestamp=(frame.frame_timestamp if frame is not None else None),
+            fps=fps_value,
+        )
+    return image
 
 
 def render_statistics(
@@ -246,10 +257,8 @@ class UDPSink:
             ```
             `UDPSink` used in this way will emit predictions to receiver automatically.
         """
-        if not issubclass(type(video_frame), list):
-            video_frame = [video_frame]
-            predictions = [predictions]
-
+        video_frame = wrap_in_list(element=video_frame)
+        predictions = wrap_in_list(element=predictions)
         for single_frame, frame_predictions in zip(video_frame, predictions):
             if single_frame is None:
                 continue
@@ -326,9 +335,8 @@ def active_learning_sink(
     model_type: str,
     disable_preproc_auto_orient: bool = False,
 ) -> None:
-    if not issubclass(type(video_frame), list):
-        video_frame = [video_frame]
-        predictions = [predictions]
+    video_frame = wrap_in_list(element=video_frame)
+    predictions = wrap_in_list(element=predictions)
     images = [f.image for f in video_frame if f is not None]
     predictions = [p for p in predictions if p is not None]
     active_learning_middleware.register_batch(
@@ -350,6 +358,7 @@ class VideoFileSink:
         display_statistics: bool = False,
         output_fps: int = 25,
         quiet: bool = False,
+        video_frame_size: Tuple[int, int] = (1280, 720),
     ) -> "VideoFileSink":
         """
         Creates `InferencePipeline` predictions sink capable of saving model predictions into video file.
@@ -392,6 +401,7 @@ class VideoFileSink:
             display_statistics=display_statistics,
             output_fps=output_fps,
             quiet=quiet,
+            video_frame_size=video_frame_size,
         )
 
     def __init__(
@@ -403,6 +413,7 @@ class VideoFileSink:
         display_statistics: bool,
         output_fps: int,
         quiet: bool,
+        video_frame_size: Tuple[int, int],
     ):
         self._video_file_name = video_file_name
         self._annotator = annotator
@@ -412,14 +423,8 @@ class VideoFileSink:
         self._output_fps = output_fps
         self._quiet = quiet
         self._frame_idx = 0
-
-        self._video_writer = cv2.VideoWriter(
-            self._video_file_name,
-            cv2.VideoWriter_fourcc(*"MJPG"),
-            self._output_fps,
-            self._display_size,
-        )
-
+        self._video_frame_size = video_frame_size
+        self._video_writer: Optional[cv2.VideoWriter] = None
         self.on_prediction = partial(
             render_boxes,
             annotator=self._annotator,
@@ -429,19 +434,40 @@ class VideoFileSink:
             on_frame_rendered=self._save_predictions,
         )
 
+    def release(self) -> None:
+        """
+        Releases VideoWriter object.
+        """
+        if self._video_writer is not None and self._video_writer.isOpened():
+            self._video_writer.release()
+
     def _save_predictions(
         self,
         frame: Union[ImageWithSourceID, List[ImageWithSourceID]],
     ) -> None:
+        if self._video_writer is None:
+            self._initialise_sink()
         if issubclass(type(frame), list):
             frame = create_tiles(images=[i[1] for i in frame])
+        else:
+            frame = frame[1]
+        if (frame.shape[1], frame.shape[0]) != self._video_frame_size:
+            frame = letterbox_image(image=frame, desired_size=self._video_frame_size)
         self._video_writer.write(frame)
         if not self._quiet:
             print(f"Writing frame {self._frame_idx}", end="\r")
         self._frame_idx += 1
 
-    def release(self) -> None:
-        """
-        Releases VideoWriter object.
-        """
-        self._video_writer.release()
+    def _initialise_sink(self) -> None:
+        self._video_writer = cv2.VideoWriter(
+            self._video_file_name,
+            cv2.VideoWriter_fourcc(*"MJPG"),
+            self._output_fps,
+            self._video_frame_size,
+        )
+
+    def __enter__(self) -> "VideoFileSink":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.release()
