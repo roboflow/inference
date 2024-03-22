@@ -132,8 +132,11 @@ class InferencePipeline:
 
         Args:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
                 Roboflow model prediction (different for specific types of models).
@@ -176,9 +179,12 @@ class InferencePipeline:
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
             active_learning_target_dataset (Optional[str]): Parameter to be used when Active Learning data registration
                 should happen against different dataset than the one pointed by model_id
@@ -188,7 +194,9 @@ class InferencePipeline:
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
             sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
                 handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
-                in case of SinkMode.BATCH - list of frames and predictions
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -294,8 +302,11 @@ class InferencePipeline:
         method.
 
         Args:
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             classes (List[str]): List of classes to execute zero-shot detection against
             model_size (str): version of model - to be chosen from `s`, `m`, `l`
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
@@ -328,10 +339,22 @@ class InferencePipeline:
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
 
 
         Other ENV variables involved in low-level configuration:
@@ -385,7 +408,7 @@ class InferencePipeline:
     @classmethod
     def init_with_workflow(
         cls,
-        video_reference: Union[str, int, List[Union[str, int]]],
+        video_reference: Union[str, int],
         workflow_specification: dict,
         api_key: Optional[str] = None,
         image_input_name: str = "image",
@@ -397,8 +420,6 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
-        batch_collection_timeout: Optional[float] = None,
-        sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -504,8 +525,6 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
-            batch_collection_timeout=batch_collection_timeout,
-            sink_mode=sink_mode,
         )
 
     @classmethod
@@ -531,8 +550,11 @@ class InferencePipeline:
         method.
 
         Args:
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             on_video_frame (Callable[[VideoFrame], AnyPrediction]): function supposed to make prediction (or do another
                 kind of custom processing according to your will). Accept `VideoFrame` object and is supposed
                 to return dictionary with results of any kind.
@@ -560,10 +582,22 @@ class InferencePipeline:
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
                 Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
 
 
         Other ENV variables involved in low-level configuration:

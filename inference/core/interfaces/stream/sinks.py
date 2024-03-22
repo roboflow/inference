@@ -50,21 +50,31 @@ def render_boxes(
     to be used with `InferencePipeline`, as sink for predictions. By default, it uses standard `sv.BoxAnnotator()`
     to draw bounding boxes and resizes prediction to 1280x720 (keeping aspect ratio and adding black padding).
     One may configure default behaviour, for instance to display latency and throughput statistics.
+    In batch mode it will display tiles of frames and overlay predictions.
 
     This sink is only partially compatible with stubs and classification models (it will not fail,
     although predictions will not be displayed).
 
+    Since version `0.9.18`, when multi-source InferencePipeline was introduced - it support batch input, without
+    changes to old functionality when single (predictions, video_frame) is used.
+
     Args:
-        predictions (dict): Roboflow object detection predictions with Bounding Boxes
-        video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
+        predictions (Union[dict, List[Optional[dict]]]): Roboflow predictions, the function support single prediction
+            processing and batch processing since version `0.9.18`. Batch predictions elements are optional, but
+            should occur at the same position as `video_frame` list. Order is expected to match with `video_frame`.
+        video_frame (Union[VideoFrame, List[Optional[VideoFrame]]]): frame of video with its basic metadata emitted
+            by `VideoSource` or list of frames from (it is possible for empty batch frames at corresponding positions
+            to `predictions` list). Order is expected to match with `predictions`
         annotator (sv.BoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
             default is used.
         display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output
         fps_monitor (Optional[sv.FPSMonitor]): FPS monitor used to monitor throughput
         display_statistics (bool): Flag to decide if throughput and latency can be displayed in the result image,
             if enabled, throughput will only be presented if `fps_monitor` is not None
-        on_frame_rendered (Callable[[np.ndarray], None]): callback to be called once frame is rendered - by default,
-            function will display OpenCV window.
+        on_frame_rendered (Callable[[Union[ImageWithSourceID, List[ImageWithSourceID]]], None]): callback to be
+            called once frame is rendered - by default, function will display OpenCV window. It expects optional integer
+            identifier with np.ndarray or list of those elements. Identifier is supposed to refer to either source_id
+            (for sequential input) or position in the batch (from 0 to batch_size-1).
 
     Returns: None
     Side effects: on_frame_rendered() is called against the np.ndarray produced from video frame
@@ -230,8 +240,12 @@ class UDPSink:
         a sink for predictions.
 
         Args:
-            predictions (dict): Roboflow object detection predictions with Bounding Boxes
-            video_frame (VideoFrame): frame of video with its basic metadata emitted by `VideoSource`
+            predictions (Union[dict, List[Optional[dict]]]): Roboflow predictions, the function support single prediction
+                processing and batch processing since version `0.9.18`. Batch predictions elements are optional, but
+                should occur at the same position as `video_frame` list. Order is expected to match with `video_frame`.
+            video_frame (Union[VideoFrame, List[Optional[VideoFrame]]]): frame of video with its basic metadata emitted
+                by `VideoSource` or list of frames from (it is possible for empty batch frames at corresponding positions
+                to `predictions` list). Order is expected to match with `predictions`
 
         Returns: None
         Side effects: Sends serialised `predictions` and `video_frame` metadata via the UDP socket as
@@ -335,6 +349,24 @@ def active_learning_sink(
     model_type: str,
     disable_preproc_auto_orient: bool = False,
 ) -> None:
+    """
+    Function to serve as Active Learning sink for InferencePipeline.
+
+    Args:
+        predictions (Union[dict, List[Optional[dict]]]): Roboflow predictions, the function support single prediction
+            processing and batch processing since version `0.9.18`. Batch predictions elements are optional, but
+            should occur at the same position as `video_frame` list. Order is expected to match with `video_frame`.
+        video_frame (Union[VideoFrame, List[Optional[VideoFrame]]]): frame of video with its basic metadata emitted
+            by `VideoSource` or list of frames from (it is possible for empty batch frames at corresponding positions
+            to `predictions` list). Order is expected to match with `predictions`
+        active_learning_middleware (ActiveLearningMiddleware): instance of middleware to register data.
+        model_type (str): Type of Roboflow model in use
+        disable_preproc_auto_orient (bool): Flag to denote how image is preprocessed which is important in
+            Active Learning.
+
+    Returns: None
+    Side effects: Can register data and predictions in Roboflow backend if that's the evaluation of sampling engine.
+    """
     video_frame = wrap_in_list(element=video_frame)
     predictions = wrap_in_list(element=predictions)
     images = [f.image for f in video_frame if f is not None]
@@ -362,11 +394,23 @@ class VideoFileSink:
     ) -> "VideoFileSink":
         """
         Creates `InferencePipeline` predictions sink capable of saving model predictions into video file.
+        It works also for
 
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
         Args:
             video_file_name (str): name of the video file to save predictions
-            render_boxes (Callable[[dict, VideoFrame], None]): callable to render predictions on top of video frame
+            annotator (sv.BoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
+                default is used.
+            display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output. Should
+                be set to the same value as `display_size` for InferencePipeline with single video source, otherwise
+                it represents the size of single visualisation tile (whole tiles mosaic will be scaled to
+                `video_frame_size`)
+            fps_monitor (Optional[sv.FPSMonitor]): FPS monitor used to monitor throughput
+            display_statistics (bool): Flag to decide if throughput and latency can be displayed in the result image,
+                if enabled, throughput will only be presented if `fps_monitor` is not None
+            output_fps (int): desired FPS of output file
+            quiet (bool): Flag to decide whether to log progress
+            video_frame_size (Tuple[int, int]): The size of frame in target video file.
 
         Attributes:
             on_prediction (Callable[[dict, VideoFrame], None]): callable to be used as a sink for predictions
