@@ -274,7 +274,7 @@ def on_prediction(
 ) -> None:
     if not issubclass(type(predictions), list):
       # this is required to support both sequential and batch processing with single code
-      # if you use only one mode - yo may create function that handles with only one type
+      # if you use only one mode - you may create function that handles with only one type
       # of input
       predictions = [predictions]
       video_frame = [video_frame]

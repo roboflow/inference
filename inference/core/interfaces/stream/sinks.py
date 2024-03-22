@@ -394,7 +394,7 @@ class VideoFileSink:
     ) -> "VideoFileSink":
         """
         Creates `InferencePipeline` predictions sink capable of saving model predictions into video file.
-        It works also for
+        It works both for pipelines with single input video and multiple ones.
 
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
         Args:
