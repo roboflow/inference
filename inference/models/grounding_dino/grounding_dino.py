@@ -37,17 +37,17 @@ class GroundingDINO(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-        GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
+        GROUNDING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
 
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
-            GROUDNING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
+            GROUNDING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
         )
         # GROUNDING_DINO_CHECKPOINT_PATH = os.path.join(
         #     GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
         # )
 
-        if not os.path.exists(GROUDNING_DINO_CACHE_DIR):
-            os.makedirs(GROUDNING_DINO_CACHE_DIR)
+        if not os.path.exists(GROUNDING_DINO_CACHE_DIR):
+            os.makedirs(GROUNDING_DINO_CACHE_DIR)
 
         if not os.path.exists(GROUNDING_DINO_CONFIG_PATH):
             url = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
@@ -60,7 +60,7 @@ class GroundingDINO(RoboflowCoreModel):
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,
             model_checkpoint_path=os.path.join(
-                GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
+                GROUNDING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
             ),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
@@ -90,7 +90,7 @@ class GroundingDINO(RoboflowCoreModel):
 
     def infer(
         self,
-        image: Any = None,
+        image: InferenceRequestImage,
         text: list[str] = None,
         class_filter: list = None,
         box_threshold=0.5,
