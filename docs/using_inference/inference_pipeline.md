@@ -203,9 +203,6 @@ The arguments are:
 - `video_frame`: A [VideoFrame object](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
 
 ### After `v0.9.18`
-Three is no breaking change in `v0.9.18`, but old sinks will not be able to process batches of predictions.
-That's why we changed sink signature to be union of sequential input and batch input
-
 ```python
 from typing import Union, List, Optional
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -254,13 +251,19 @@ pipeline = InferencePipeline.init(
 To create a custom sink, define a new function with the appropriate signature.
 
 ```python
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Any
 from inference.core.interfaces.camera.entities import VideoFrame
 
 def on_prediction(
-    predictions: Union[dict, List[Optional[dict]]],
+    predictions: Union[Any, List[Optional[dict]]],
     video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
 ) -> None:
+    if not issubclass(type(predictions), list):
+      # this is required to support both sequential and batch processing with single code
+      # if you use only one mode - yo may create function that handles with only one type
+      # of input
+      predictions = [predictions]
+      video_frame = [video_frame]
     for prediction, frame in zip(predictions, video_frame):
         if prediction is None:
             # EMPTY FRAME
