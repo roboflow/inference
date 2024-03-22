@@ -1,4 +1,8 @@
-The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. It is an asynchronous interface that can consume many different video sources including local devices (like webcams), RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks.
+The Inference Pipeline interface is made for streaming and is likely the best route to go for real time use cases. 
+It is an asynchronous interface that can consume many different video sources including local devices (like webcams), 
+RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks.
+
+Now, since version `v0.9.18`
 
 ## Quickstart
 
