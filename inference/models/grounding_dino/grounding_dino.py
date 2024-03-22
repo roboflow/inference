@@ -119,6 +119,8 @@ class GroundingDINO(RoboflowCoreModel):
             text_threshold=text_threshold,
         )
 
+        self.class_names = text
+
         # TODO: Follow project NMS config
         if True:
             detections = detections.with_nms(class_agnostic=True)
@@ -136,12 +138,14 @@ class GroundingDINO(RoboflowCoreModel):
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
                         "confidence": detections.confidence[i],
-                        "class": text[int(detections.class_id[i] or 0)],
-                        "class_id": int(detections.class_id[i] or 0),
+                        "class": self.class_names[int(detections.class_id[i])],
+                        "class_id": int(detections.class_id[i]),
                     }
                 )
                 for i, pred in enumerate(detections.xyxy)
-                if not class_filter or text[int(pred[6])] in class_filter
+                if not class_filter
+                or self.class_names[int(pred[6])] in class_filter
+                and detections.class_id[i] is not None
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,
