@@ -13,7 +13,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import CLASS_AGNOSTIC_NMS, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
@@ -121,9 +121,10 @@ class GroundingDINO(RoboflowCoreModel):
 
         self.class_names = text
 
-        # TODO: Follow project NMS config
-        if True:
+        if CLASS_AGNOSTIC_NMS:
             detections = detections.with_nms(class_agnostic=True)
+        else:
+            detections = detections.with_nms()
 
         xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
