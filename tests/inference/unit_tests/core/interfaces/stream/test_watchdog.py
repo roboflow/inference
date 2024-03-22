@@ -212,7 +212,7 @@ def test_base_watchdog_gives_correct_report_when_nothing_registered() -> None:
     ), "Throughput cannot be measured when nothing was registered"
     assert result.latency_reports == [], "Latency report should be empty"
     assert (
-        result.sources_metadata is None
+        result.sources_metadata == []
     ), "No video source registered, so metadata must be empty"
 
 
