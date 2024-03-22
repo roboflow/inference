@@ -92,7 +92,7 @@ class PipelineInitialisationRequest(BaseModel):
     batch_collection_timeout: Optional[float] = Field(
         default=None,
         examples=[0.1],
-        description="Parameter that is important if `video_reference` points multiple video sources. In that case - it dictates how long process of grabbing frames from multiple sources can wait for collection of full batch. See `InferencePipeline` docs for more details."
+        description="Parameter that is important if `video_reference` points multiple video sources. In that case - it dictates how long process of grabbing frames from multiple sources can wait for collection of full batch. See `InferencePipeline` docs for more details.",
     )
 
 

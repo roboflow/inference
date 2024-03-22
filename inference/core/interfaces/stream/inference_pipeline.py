@@ -114,6 +114,22 @@ class InferencePipeline:
         Since version 0.9.11 it works not only for object detection models but is also compatible with stubs,
         classification, instance-segmentation and keypoint-detection models.
 
+        Since version 0.9.18, `InferencePipeline` is capable of handling multiple video sources at once. If multiple
+        sources are provided - source multiplexing will happen. One of the change introduced in that release is switch
+        from `get_video_frames_generator(...)` as video frames provider into `multiplex_videos(...)`. For a single
+        video source, the behaviour of `InferencePipeline` is remained unchanged when default parameters are used.
+        For multiple videos - frames are multiplexed, and we can adjust the pipeline behaviour using new configuration
+        options. `batch_collection_timeout` is one of the new option - it is the parameter of `multiplex_videos(...)`
+        that dictates how long the batch frames collection process may wait for all sources to provide video frame.
+        It can be set infinite (None) or with specific value representing fraction of second. We advise that value to
+        be set in production solutions to avoid processing slow-down caused by source with unstable latency spikes.
+        For more information on multiplexing process - please visit `multiplex_videos(...)` function docs.
+        Another change is the way on how sinks work. They can work in `SinkMode.ADAPTIVE` - which means that
+        video frames and predictions will be either provided to sink as list of objects, or specific elements -
+        and the determining factor is number of sources (it will behave SEQUENTIAL for one source and BATCH if multiple
+        ones are provided). All old sinks were adjusted to work in both modes, custom ones should be migrated
+        to reflect changes in sink function signature.
+
         Args:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
             video_reference (Union[str, int]): Reference of source to be used to make predictions against.
@@ -166,6 +182,13 @@ class InferencePipeline:
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
             active_learning_target_dataset (Optional[str]): Parameter to be used when Active Learning data registration
                 should happen against different dataset than the one pointed by model_id
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching

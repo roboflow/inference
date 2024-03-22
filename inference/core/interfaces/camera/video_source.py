@@ -256,6 +256,9 @@ class VideoSource:
                 adaptive strategy
             video_source_properties (Optional[dict[str, float]]): Optional dictionary with video source properties
                 corresponding to OpenCV VideoCapture properties cv2.CAP_PROP_* to set values for the video source.
+            source_id (Optional[int]): Optional identifier of video source - mainly useful to recognise specific source
+                when multiple ones are in use. Identifier will be added to emitted frames and updates. It is advised
+                to keep it unique within all sources in use.
 
         Returns: Instance of `VideoSource` class
         """
@@ -598,7 +601,7 @@ class VideoSource:
             severity=UpdateSeverity.INFO,
             event_type=VIDEO_CONSUMPTION_STARTED_EVENT,
             status_update_handlers=self._status_update_handlers,
-            payload={"source_id": self._source_id}
+            payload={"source_id": self._source_id},
         )
         logger.info(f"Video consumption started")
         try:

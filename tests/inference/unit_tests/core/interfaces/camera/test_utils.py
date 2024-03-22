@@ -597,7 +597,9 @@ def test_multiplex_videos_when_multiple_video_files_provided(
                 source_0_frames.append(video_frame.frame_id)
             else:
                 source_1_frames.append(video_frame.frame_id)
-            if np.allclose(video_frame.image, np.zeros_like(video_frame.image), atol=5.0):
+            if np.allclose(
+                video_frame.image, np.zeros_like(video_frame.image), atol=5.0
+            ):
                 empty_frames += 1
 
     # then
@@ -607,7 +609,9 @@ def test_multiplex_videos_when_multiple_video_files_provided(
     assert source_1_frames == list(
         range(1, 432)
     ), "Order of video frames abused or not all frames processed for source 1"
-    assert empty_frames == 0, "Expected not to encounter empty frames in the video (they don't exist in source and may only appear if batch collection is faulty)"
+    assert (
+        empty_frames == 0
+    ), "Expected not to encounter empty frames in the video (they don't exist in source and may only appear if batch collection is faulty)"
 
 
 @pytest.mark.timeout(90)
