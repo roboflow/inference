@@ -31,5 +31,6 @@ ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV HOST=0.0.0.0
 ENV PORT=7070
+ENV SUPERVISON_DEPRECATION_WARNING=0
 
 ENTRYPOINT ["python3", "-m", "inference.enterprise.stream_management.manager.app"]

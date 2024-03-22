@@ -598,6 +598,7 @@ class VideoSource:
             severity=UpdateSeverity.INFO,
             event_type=VIDEO_CONSUMPTION_STARTED_EVENT,
             status_update_handlers=self._status_update_handlers,
+            payload={"source_id": self._source_id}
         )
         logger.info(f"Video consumption started")
         try:
@@ -626,11 +627,13 @@ class VideoSource:
                 severity=UpdateSeverity.INFO,
                 event_type=VIDEO_CONSUMPTION_FINISHED_EVENT,
                 status_update_handlers=self._status_update_handlers,
+                payload={"source_id": self._source_id},
             )
             logger.info(f"Video consumption finished")
         except Exception as error:
             self._change_state(target_state=StreamState.ERROR)
             payload = {
+                "source_id": self._source_id,
                 "error_type": error.__class__.__name__,
                 "error_message": str(error),
                 "error_context": "stream_consumer_thread",
@@ -647,6 +650,7 @@ class VideoSource:
         payload = {
             "previous_state": self._state,
             "new_state": target_state,
+            "source_id": self._source_id,
         }
         self._state = target_state
         send_video_source_status_update(
