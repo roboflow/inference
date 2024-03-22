@@ -130,6 +130,7 @@ class InferencePipelineManager(Process):
                 active_learning_target_dataset=payload.get(
                     "active_learning_target_dataset"
                 ),
+                batch_collection_timeout=payload.get("batch_collection_timeout"),
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)

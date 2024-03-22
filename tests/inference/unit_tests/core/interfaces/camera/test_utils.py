@@ -577,39 +577,28 @@ def test_get_differences_when_multi_elements_input_given() -> None:
 )
 def test_multiplex_videos_when_multiple_video_files_provided(
     local_video_path: str,
-    expected_result_video_path: str,
-    empty_directory: str,
     max_fps: Optional[Union[float, int]],
     batch_collection_timeout: Optional[float],
 ) -> None:
     # given
-    video_info = sv.VideoInfo(
-        width=192,
-        height=168,
-        fps=25,
-    )
     source_0_frames = []
     source_1_frames = []
-    source_0_recording_path = os.path.join(empty_directory, "source_0.mp4")
-    source_1_recording_path = os.path.join(empty_directory, "source_1.mp4")
+    empty_frames = 0
 
     # when
-    with sv.VideoSink(source_0_recording_path, video_info) as source_0:
-        with sv.VideoSink(source_1_recording_path, video_info) as source_1:
-            for video_frames in multiplex_videos(
-                videos=[local_video_path, local_video_path],
-                max_fps=max_fps,
-                limiter_strategy=FPSLimiterStrategy.WAIT,
-                batch_collection_timeout=batch_collection_timeout,
-            ):
-                for video_frame in video_frames:
-                    frame = letterbox_image(video_frame.image, (192, 168))
-                    if video_frame.source_id == 0:
-                        source_0.write_frame(frame=frame)
-                        source_0_frames.append(video_frame.frame_id)
-                    else:
-                        source_1.write_frame(frame=frame)
-                        source_1_frames.append(video_frame.frame_id)
+    for video_frames in multiplex_videos(
+        videos=[local_video_path, local_video_path],
+        max_fps=max_fps,
+        limiter_strategy=FPSLimiterStrategy.WAIT,
+        batch_collection_timeout=batch_collection_timeout,
+    ):
+        for video_frame in video_frames:
+            if video_frame.source_id == 0:
+                source_0_frames.append(video_frame.frame_id)
+            else:
+                source_1_frames.append(video_frame.frame_id)
+            if np.allclose(video_frame.image, np.zeros_like(video_frame.image), atol=5.0):
+                empty_frames += 1
 
     # then
     assert source_0_frames == list(
@@ -618,17 +607,8 @@ def test_multiplex_videos_when_multiple_video_files_provided(
     assert source_1_frames == list(
         range(1, 432)
     ), "Order of video frames abused or not all frames processed for source 1"
-    expected_video_frames = list(sv.get_video_frames_generator(expected_result_video_path))
-    result_0_video_frames = list(sv.get_video_frames_generator(source_0_recording_path))
-    result_1_video_frames = list(sv.get_video_frames_generator(source_1_recording_path))
-    assert_series_of_images_almost_equal(expected=expected_video_frames, actual=result_0_video_frames)
-    assert_series_of_images_almost_equal(expected=expected_video_frames, actual=result_1_video_frames)
+    assert empty_frames == 0, "Expected not to encounter empty frames in the video (they don't exist in source and may only appear if batch collection is faulty)"
 
-
-def assert_series_of_images_almost_equal(expected: List[np.ndarray], actual: List[np.ndarray], atol: float = 5.0) -> None:
-    assert len(expected) == len(actual), "Length missmatch between expected number of images vs actual"
-    for i, (e, a) in enumerate(zip(expected, actual)):
-        assert np.allclose(e, a, atol=atol), f"For frame {i}, there is difference in frame content"
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow

@@ -45,7 +45,7 @@ class ObjectDetectionModelConfiguration(BaseModel):
 
 class PipelineInitialisationRequest(BaseModel):
     model_id: str = Field(description="Roboflow model id")
-    video_reference: Union[str, int] = Field(
+    video_reference: Union[str, int, List[Union[str, int]]] = Field(
         description="Reference to video source - either stream, video file or device. It must be accessible from the host running inference stream"
     )
     sink_configuration: UDPSinkConfiguration = Field(
@@ -71,7 +71,9 @@ class PipelineInitialisationRequest(BaseModel):
         description="Flag to decide if Active Learning middleware should be enabled. If not given - env variable `ACTIVE_LEARNING_ENABLED` will be used (with default `True`).",
         default=None,
     )
-    video_source_properties: Optional[Dict[str, float]] = Field(
+    video_source_properties: Optional[
+        Union[Dict[str, float], List[Optional[Dict[str, float]]]]
+    ] = Field(
         description="Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source will be used.",
         examples=[
             {
@@ -86,6 +88,11 @@ class PipelineInitialisationRequest(BaseModel):
         default=None,
         examples=["my_dataset"],
         description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+    )
+    batch_collection_timeout: Optional[float] = Field(
+        default=None,
+        examples=[0.1],
+        description="Parameter that is important if `video_reference` points multiple video sources. In that case - it dictates how long process of grabbing frames from multiple sources can wait for collection of full batch. See `InferencePipeline` docs for more details."
     )
 
 
