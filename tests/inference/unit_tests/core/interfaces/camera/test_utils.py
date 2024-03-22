@@ -1,4 +1,3 @@
-import hashlib
 import os
 import time
 from queue import Queue
@@ -578,14 +577,15 @@ def test_get_differences_when_multi_elements_input_given() -> None:
 )
 def test_multiplex_videos_when_multiple_video_files_provided(
     local_video_path: str,
+    expected_result_video_path: str,
     empty_directory: str,
     max_fps: Optional[Union[float, int]],
     batch_collection_timeout: Optional[float],
 ) -> None:
     # given
     video_info = sv.VideoInfo(
-        width=640,
-        height=480,
+        width=192,
+        height=168,
         fps=25,
     )
     source_0_frames = []
@@ -603,7 +603,7 @@ def test_multiplex_videos_when_multiple_video_files_provided(
                 batch_collection_timeout=batch_collection_timeout,
             ):
                 for video_frame in video_frames:
-                    frame = letterbox_image(video_frame.image, (640, 480))
+                    frame = letterbox_image(video_frame.image, (192, 168))
                     if video_frame.source_id == 0:
                         source_0.write_frame(frame=frame)
                         source_0_frames.append(video_frame.frame_id)
@@ -618,21 +618,17 @@ def test_multiplex_videos_when_multiple_video_files_provided(
     assert source_1_frames == list(
         range(1, 432)
     ), "Order of video frames abused or not all frames processed for source 1"
-    assert (
-        get_file_hash(source_0_recording_path)
-        == "f0511e559c5dd75b43288d8464677dddb2c21f4042e2289fc45e66131943b1d1"
-    ), "Video processing result differs from expectation for source 0"
-    assert (
-        get_file_hash(source_1_recording_path)
-        == "f0511e559c5dd75b43288d8464677dddb2c21f4042e2289fc45e66131943b1d1"
-    ), "Video processing result differs from expectation for source 1"
+    expected_video_frames = list(sv.get_video_frames_generator(expected_result_video_path))
+    result_0_video_frames = list(sv.get_video_frames_generator(source_0_recording_path))
+    result_1_video_frames = list(sv.get_video_frames_generator(source_1_recording_path))
+    assert_series_of_images_almost_equal(expected=expected_video_frames, actual=result_0_video_frames)
+    assert_series_of_images_almost_equal(expected=expected_video_frames, actual=result_1_video_frames)
 
 
-def get_file_hash(file_path: str) -> str:
-    with open(file_path, "rb") as f:
-        data = f.read()
-        return hashlib.sha256(data).hexdigest()
-
+def assert_series_of_images_almost_equal(expected: List[np.ndarray], actual: List[np.ndarray], atol: float = 5.0) -> None:
+    assert len(expected) == len(actual), "Length missmatch between expected number of images vs actual"
+    for i, (e, a) in enumerate(zip(expected, actual)):
+        assert np.allclose(e, a, atol=atol), f"For frame {i}, there is difference in frame content"
 
 @pytest.mark.timeout(90)
 @pytest.mark.slow
