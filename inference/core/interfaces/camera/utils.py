@@ -276,10 +276,14 @@ def multiplex_videos(
             limit of `max_fps`. For video files, in the interest of processing all frames - we recommend WAIT mode,
              for streams - frames should be dropped on the floor with DROP strategy. Not setting the strategy equals
              using automatic mode - WAIT if all sources are files and DROP otherwise
-        batch_collection_timeout:
-        force_stream_reconnection:
-        should_stop:
-        on_reconnection_error:
+        batch_collection_timeout (Optional[float]): maximum await time to get batch of predictions from all sources.
+            `None` means infinite timeout.
+        force_stream_reconnection (bool): Flag to decide on reconnection to streams (files are never re-connected)
+        should_stop (Callable[[], bool]): external stop signal that is periodically checked - to denote that
+            video consumption stopped - make the function to return True
+        on_reconnection_error (Callable[[Optional[int], SourceConnectionError], None]): Function that will be
+            called whenever source cannot re-connect after disconnection. First parameter is source_id, second
+            is connection error instance.
 
     Returns Generator[List[VideoFrame], None, None]: allowing to iterate through frames from multiple video sources.
 

@@ -66,7 +66,21 @@ Inference Pipelines can consume many different types of video streams.
 - Since version `0.9.18` - list of elements that may be any of values described above.
 
 ## How the `InferencePipeline` works?
+![inference pipeline diagram](https://media.roboflow.com/inference/inference-pipeline-diagram.jpg)
 
+`InferencePipeline` spins a video source consumer thread for each provided video reference. Frames from videos are
+grabbed by video multiplexer that awaits `batch_collection_timeout` (if source will not provide frame, smaller batch 
+will be passed to `on_video_frame(...)`, but missing frames and predictions will be filled with `None` before passing
+to `on_prediction(...)`). `on_prediction(...)` may work in `SEQUENTIAL` mode (only one element at once), or `BATCH` 
+mode - all batch elements at a time and that can be controlled by `sink_mode` parameter.
+
+For static video files, `InferencePipeline` processes all frames by default, for streams - it is possible to drop
+frames from the buffers - in favour of always processing the most recent data (when model inference is slow, more
+frames can be accumulated in buffer - stream processing drop older frames and only processes the most recent one).
+
+To enhance stability, in case of streams processing - video sources will be automatically re-connected once 
+connectivity is lost during processing. That is meant to prevent failures in production environment when the pipeline
+can run long hours and need to gracefully handle sources downtimes.
 
 ## How to provide a custom inference logic to `InferencePipeline`
 
