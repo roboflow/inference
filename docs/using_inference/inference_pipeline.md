@@ -2,7 +2,7 @@ The Inference Pipeline interface is made for streaming and is likely the best ro
 It is an asynchronous interface that can consume many different video sources including local devices (like webcams), 
 RTSP video streams, video files, etc. With this interface, you define the source of a video stream and sinks.
 
-Now, since version `v0.9.18`
+Now, since version `v0.9.18` `InferencePipeline` supports multiple sources of video at the same time! 
 
 ## Quickstart
 
@@ -63,6 +63,10 @@ Inference Pipelines can consume many different types of video streams.
 - Video File (string): Providing the path to a video file will result in the pipeline reading every frame from the file, running inference with the specified model, then running the `on_prediction` method with each set of resulting predictions.
 - Video URL (string): Providing the path to a video URL is equivalent to providing a video file path and voids needing to first download the video.
 - RTSP URL (string): Providing an RTSP URL will result in the pipeline streaming frames from an RTSP stream as fast as possible, then running the `on_prediction` callback on the latest available frame.
+- Since version `0.9.18` - list of elements that may be any of values described above.
+
+## How the `InferencePipeline` works?
+
 
 ## How to provide a custom inference logic to `InferencePipeline`
 
@@ -78,6 +82,7 @@ import os
 import json
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference import InferencePipeline
+from typing import Any, List
 
 TARGET_DIR = "./my_predictions"
 
@@ -86,9 +91,15 @@ class MyModel:
   def __init__(self, weights_path: str):
     self._model = your_model_loader(weights_path)
 
-  def infer(self, video_frame: VideoFrame) -> dict:
+  # before v0.9.18  
+  def infer(self, video_frame: VideoFrame) -> Any:
     return self._model(video_frame.image)
-
+  
+  # after v0.9.18  
+  def infer(self, video_frames: List[VideoFrame]) -> List[Any]: 
+    # result must be returned as list of elements representing model prediction for single frame
+    # with order unchanged.
+    return self._model([v.image for v in video_frames])
   
 def save_prediction(prediction: dict, video_frame: VideoFrame) -> None:
   with open(os.path.join(TARGET_DIR, f"{video_frame.frame_id}.json")) as f:
@@ -113,6 +124,8 @@ pipeline.join()
 !!! Info
 
     This is feature preview. Please refer to [workflows docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows).
+  
+    Feature preview do not support multiple videos input!
 
 We are working to make `workflows` compatible with `InferencePipeline`. Since version `0.9.16` we introduce 
 an initializer to be used with workflow definitions. Here is the example:
@@ -172,9 +185,9 @@ pipeline.join()
 
 Sinks define what an Inference Pipeline should do with each prediction. A sink is a function with signature:
 
+### Before `v0.9.18`
 ```python
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference import InferencePipeline
 
 
 def on_prediction(
@@ -188,6 +201,29 @@ The arguments are:
 
 - `predictions`: A dictionary that is the response object resulting from a call to a model's `infer(...)` method.
 - `video_frame`: A [VideoFrame object](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
+
+### After `v0.9.18`
+Three is no breaking change in `v0.9.18`, but old sinks will not be able to process batches of predictions.
+That's why we changed sink signature to be union of sequential input and batch input
+
+```python
+from typing import Union, List, Optional
+from inference.core.interfaces.camera.entities import VideoFrame
+
+def on_prediction(
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+) -> None:
+    for prediction, frame in zip(predictions, video_frame):
+        if prediction is None:
+            # EMPTY FRAME
+            continue
+        # SOME PROCESSING
+```
+
+See more info in **Custom Sink** section on how to create sink.
+
+### Usage
 
 You can also make `on_prediction` accepting other parameters that configure its behaviour, but those needs to be 
 latched in function closure before injection into `InferencePipeline` init methods.
@@ -218,16 +254,37 @@ pipeline = InferencePipeline.init(
 To create a custom sink, define a new function with the appropriate signature.
 
 ```python
-# import the VideoFrame object for type hints
+from typing import Union, List, Optional
 from inference.core.interfaces.camera.entities import VideoFrame
 
-def my_custom_sink(
-    prediction: dict, # predictions are dictionaries
-    video_frame: VideoFrame, # video frames are python objects with metadata and the video frame itself
-):
-    # put your custom logic here
-    ...
+def on_prediction(
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+) -> None:
+    for prediction, frame in zip(predictions, video_frame):
+        if prediction is None:
+            # EMPTY FRAME
+            continue
+        # SOME PROCESSING
 ```
+
+In `v0.9.18` we introduced `InferencePipeline` parameter called `sink_mode` - here is how it works.
+With `SinkMode.SEQUENTIAL` - each frame and prediction triggers separate call for sink, in case of `SinkMode.BATCH` - 
+list of frames and predictions will be provided to sink, always aligned in the order of video sources - with None 
+values in the place of vide_frames / predictions that were skipped due to `batch_collection_timeout`. 
+`SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode against a single 
+video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`. To handle multiple videos - 
+sink needs to accept `predictions: List[Optional[dict]]` and `video_frame: List[Optional[VideoFrame]]`. It is also 
+possible to process multiple videos using old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing
+sink to be called on each prediction element.
+
+#### Why there is `Optional` in  `List[Optional[dict]]` and `List[Optional[VideoFrame]]`?
+It may happen that it is not possible to collect video frames from all the video sources (for instance when one of the 
+source disconnected and re-connection is attempted). `predictions` and `video_frame` are ordered matching the order of
+`video_reference` list of `InferencePipeline` and `None` elements will appear in position of missing frames. We
+provide this information to sink, as some sinks may require all predictions and video frames from the batch to
+be provided (even if missing) - for example: `render_boxes(...)` sink needs that information to maintain the position
+of frames in tiles mosaic.
 
 !!! Info
 
@@ -237,7 +294,9 @@ def my_custom_sink(
 
 Predictions are provided to the sink as a dictionary containing keys:
 
-- `predictions`: A dictionary with predictions
+- `predictions`: predictions - either for single frame or batch of frames. Content depends on which model runs behind 
+`InferencePipeline` - for Roboflow models - it will come as dict or list of dicts. The schema of elements is given 
+below.
 
 Depending on the model output, predictions look differently. You must adjust sink to the prediction format.
 For instance, Roboflow object-detection prediction contains the following keys:
@@ -365,3 +424,170 @@ Additionally, it eliminates the need of grabbing `.frame_id` from `inference.Str
 
 `InferencePipeline` exposes interface to manage its state (possibly from different thread) - including
 functions like `.start()`, `.pause()`, `.terminate()`.
+
+### Migrate to changes introduced in `v0.9.18`
+
+List of changes:
+1. `VideoFrame` got new parameter: `source_id` - indicating which video source yielded the frame
+2. `on_prediction` callable signature changed:
+```python
+from typing import Callable, Any, Optional, List, Union
+from inference.core.interfaces.camera.entities import VideoFrame
+# OLD
+SinkHandler = Callable[[Any, VideoFrame], None]
+
+# NEW
+SinkHandler = Optional[
+    Union[
+        Callable[[Any, VideoFrame], None],
+        Callable[[List[Optional[Any]], List[Optional[VideoFrame]]], None],
+    ]
+]
+```
+this change is non-breaking, as there is new parameter of `InferencePipeline.init*()` functions - `sink_mode` with default 
+value on `ADAPTIVE` - which forces single video frame and prediction to be provided for sink invocation if one video 
+only is specified. Old sinks were adjusted to work in dual mode - for instance in the demo you see `render_boxes(...)` 
+displaying image tiles.
+
+Example:
+```python
+from typing import Union, List, Optional
+import json
+
+from inference.core.interfaces.camera.entities import VideoFrame
+
+def save_prediction(predictions: dict, file_name: str) -> None:
+  with open(file_name, "w") as f:
+    json.dump(predictions, f)
+
+def on_prediction_old(predictions: dict, video_frame: VideoFrame) -> None:
+  save_prediction(
+    predictions=predictions,
+    file_name=f"frame_{video_frame.frame_id}.json"
+  )
+
+def on_prediction_new(
+    predictions: Union[dict, List[Optional[dict]]],
+    video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+) -> None:
+    for prediction, frame in zip(predictions, video_frame):
+        if prediction is None:
+            # EMPTY FRAME
+            continue
+        save_prediction(
+        predictions=prediction,
+        file_name=f"source_{frame.source_id}_frame_{frame.frame_id}.json"
+      )
+```
+
+2. `on_video_frame` callable used in InferencePipeline.init_with_custom_logic(...)` changed:
+Previously:  `InferenceHandler = Callable[[VideoFrame], Any]`
+Now: `InferenceHandler = Callable[[List[VideoFrame]], List[Any]]`
+
+Example:
+```python
+from inference.core.interfaces.camera.entities import VideoFrame
+from typing import Any, List
+
+MY_MODEL = ...
+
+# before v0.9.18  
+def on_video_frame_old(video_frame: VideoFrame) -> Any:
+  return MY_MODEL(video_frame.image)
+  
+# after v0.9.18  
+def on_video_frame_new(video_frames: List[VideoFrame]) -> List[Any]: 
+  # result must be returned as list of elements representing model prediction for single frame
+  # with order unchanged.
+  return MY_MODEL([v.image for v in video_frames])
+```
+
+3. The interface for `PipelineWatchdog` changed - and there is also a side effect change in form of pipeline state report 
+that is emitted being changed.
+
+Old watchdog:
+```python
+class PipelineWatchDog(ABC):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def register_video_source(self, video_source: VideoSource) -> None:
+        pass
+
+    @abstractmethod
+    def on_status_update(self, status_update: StatusUpdate) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_inference_started(
+        self, frame_timestamp: datetime, frame_id: int
+    ) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_prediction_ready(
+        self, frame_timestamp: datetime, frame_id: int
+    ) -> None:
+        pass
+
+    @abstractmethod
+    def get_report(self) -> Optional[PipelineStateReport]:
+        pass
+```
+
+New watchdog:
+```python
+class PipelineWatchDog(ABC):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def register_video_sources(self, video_sources: List[VideoSource]) -> None:
+        pass
+
+    @abstractmethod
+    def on_status_update(self, status_update: StatusUpdate) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_inference_started(
+        self,
+        frames: List[VideoFrame],
+    ) -> None:
+        pass
+
+    @abstractmethod
+    def on_model_prediction_ready(
+        self,
+        frames: List[VideoFrame],
+    ) -> None:
+        pass
+
+    @abstractmethod
+    def get_report(self) -> Optional[PipelineStateReport]:
+        pass
+```
+
+Old report:
+```python
+@dataclass(frozen=True)
+class PipelineStateReport:
+    video_source_status_updates: List[StatusUpdate]
+    latency_report: LatencyMonitorReport
+    inference_throughput: float
+    source_metadata: Optional[SourceMetadata]
+```
+
+New report:
+```python
+@dataclass(frozen=True)
+class PipelineStateReport:
+    video_source_status_updates: List[StatusUpdate]
+    latency_reports: List[LatencyMonitorReport]  # now - one report for each source
+    inference_throughput: float
+    sources_metadata: List[SourceMetadata] # now - one metadata for each source
+```
+
+If there was custom watchdog created on your end - reimplementation should be easy, as all the data passed to methods
+previously for single video source / frame are now provided for all sources / frames.

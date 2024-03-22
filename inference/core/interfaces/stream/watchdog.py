@@ -238,7 +238,7 @@ class BasePipelineWatchDog(PipelineWatchDog):
             self._inference_throughput_monitor.tick()
 
     def get_report(self) -> PipelineStateReport:
-        sources_metadata = None
+        sources_metadata = []
         if self._video_sources is not None:
             sources_metadata = [s.describe_source() for s in self._video_sources]
         latency_reports = [

@@ -197,6 +197,12 @@ class InferencePipeline:
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
                 in the order of video sources - with None values in the place of vide_frames / predictions that
                 were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -355,6 +361,12 @@ class InferencePipeline:
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
                 in the order of video sources - with None values in the place of vide_frames / predictions that
                 were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
 
         Other ENV variables involved in low-level configuration:
@@ -598,6 +610,12 @@ class InferencePipeline:
                 in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
                 in the order of video sources - with None values in the place of vide_frames / predictions that
                 were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
 
         Other ENV variables involved in low-level configuration:

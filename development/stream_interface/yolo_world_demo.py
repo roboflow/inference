@@ -13,7 +13,7 @@ def main() -> None:
     global STOP
     watchdog = BasePipelineWatchDog()
     pipeline = InferencePipeline.init_with_yolo_world(
-        video_reference=os.environ["VIDEO_REFERENCE"],
+        video_reference=[os.environ["VIDEO_REFERENCE"]] * 2,
         watchdog=watchdog,
         on_prediction=partial(render_boxes, display_statistics=True),
         classes=["person", "dog", "car", "truck"]
