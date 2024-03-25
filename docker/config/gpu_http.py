@@ -4,7 +4,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from inference.core.cache import cache
 from inference.core.env import MAX_ACTIVE_MODELS, ACTIVE_LEARNING_ENABLED, LAMBDA
 from inference.core.interfaces.http.http_api import HttpInterface
-from inference.core.managers.active_learning import ActiveLearningManager
+from inference.core.managers.active_learning import ActiveLearningManager, BackgroundTaskActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import (
@@ -19,7 +19,7 @@ if ACTIVE_LEARNING_ENABLED:
     if LAMBDA:
         model_manager = ActiveLearningManager(model_registry=model_registry, cache=cache)
     else:
-        model_manager = ActiveLearningManager(model_registry=model_registry, cache=cache)
+        model_manager = BackgroundTaskActiveLearningManager(model_registry=model_registry, cache=cache)
 else:
     model_manager = ModelManager(model_registry=model_registry)
 

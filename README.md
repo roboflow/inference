@@ -3,7 +3,7 @@
     <a align="center" href="" target="https://inference.roboflow.com/">
       <img
         width="100%"
-        src="https://github.com/roboflow/inference/blob/main/banner.png"
+        src="https://github.com/roboflow/inference/blob/main/banner.png?raw=true"
       >
     </a>
   </p>

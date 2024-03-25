@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 import numpy as np
 
@@ -57,3 +58,4 @@ class VideoFrame:
     image: np.ndarray
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
+    source_id: Optional[int] = None

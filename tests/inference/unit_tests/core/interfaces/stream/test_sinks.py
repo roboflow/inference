@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from functools import partial
+from typing import List, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -12,6 +13,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.sinks import (
+    ImageWithSourceID,
     UDPSink,
     active_learning_sink,
     multi_sink,
@@ -25,6 +27,7 @@ def test_render_boxes_completes_successfully() -> None:
         image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
         frame_id=1,
         frame_timestamp=datetime.now(),
+        source_id=37,
     )
     predictions = ObjectDetectionInferenceResponse(
         predictions=[
@@ -47,7 +50,7 @@ def test_render_boxes_completes_successfully() -> None:
     )
     captured_images = []
 
-    def capture_image(image: np.ndarray) -> None:
+    def capture_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
         captured_images.append(image)
 
     # when
@@ -61,7 +64,91 @@ def test_render_boxes_completes_successfully() -> None:
     assert (
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
-    assert captured_images[0].shape == (
+    assert (
+        captured_images[0][0] == 37
+    ), "Id of image must be 0, as this is first and only image in the batch"
+    assert captured_images[0][1].shape == (
+        720,
+        1280,
+        3,
+    ), "capture_image() should be called against resized image dictated by default parameter"
+
+
+def test_render_boxes_completes_successfully_against_batch_input() -> None:
+    # given
+    video_frames = [
+        VideoFrame(
+            image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
+            frame_id=1,
+            frame_timestamp=datetime.now(),
+            source_id=37,
+        ),
+        VideoFrame(
+            image=np.ones((1920, 1920, 3), dtype=np.uint8) * 128,
+            frame_id=2,
+            frame_timestamp=datetime.now(),
+            source_id=37,
+        ),
+        None,
+    ]
+    predictions = [
+        ObjectDetectionInferenceResponse(
+            predictions=[
+                ObjectDetectionPrediction(
+                    **{
+                        "x": 10,
+                        "y": 20,
+                        "width": 30,
+                        "height": 40,
+                        "confidence": 0.9,
+                        "class": "car",
+                        "class_id": 3,
+                    }
+                )
+            ],
+            image=InferenceResponseImage(width=1920, height=1080),
+        ).dict(
+            by_alias=True,
+            exclude_none=True,
+        )
+    ] * 2
+    predictions.append(None)
+    captured_images = []
+
+    def capture_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
+        captured_images.extend(image)
+
+    # when
+    render_boxes(
+        video_frame=video_frames,
+        predictions=predictions,
+        on_frame_rendered=capture_image,
+    )
+
+    # then
+    assert (
+        len(captured_images) == 3
+    ), "One capture_image() side effect expected after rendering"
+    assert (
+        captured_images[0][0] == 0
+    ), "Id of image must be 0, as this is first image in the batch"
+    assert captured_images[0][1].shape == (
+        720,
+        1280,
+        3,
+    ), "capture_image() should be called against resized image dictated by default parameter"
+    assert (
+        captured_images[1][0] == 1
+    ), "Id of image must be 1, as this is second image in the batch"
+    assert captured_images[1][1].shape == (
+        720,
+        1280,
+        3,
+    ), "capture_image() should be called against resized image dictated by default parameter"
+    assert (
+        captured_images[2][0] == 2
+    ), "Id of image must be 2, as this is third image in the batch"
+    assert captured_images[2][1].shape == (
         720,
         1280,
         3,
@@ -74,11 +161,12 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
         image=np.ones((1920, 1920, 3), dtype=np.uint8) * 255,
         frame_id=1,
         frame_timestamp=datetime.now(),
+        source_id=37,
     )
     predictions = {"top": "cat", "predictions": {"class": "cat", "confidence": 0.8}}
     captured_images = []
 
-    def capture_image(image: np.ndarray) -> None:
+    def capture_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> None:
         captured_images.append(image)
 
     # when
@@ -92,7 +180,10 @@ def test_render_boxes_completes_successfully_despite_malformed_predictions() -> 
     assert (
         len(captured_images) == 1
     ), "One capture_image() side effect expected after rendering"
-    assert captured_images[0].shape == (
+    assert (
+        captured_images[0][0] == 37
+    ), "Id of image must be 0, as this is first and only image in the batch"
+    assert captured_images[0][1].shape == (
         720,
         1280,
         3,
@@ -204,6 +295,46 @@ def test_multi_sink_when_no_error_occurs() -> None:
     ), "Call must happen according to contract (VideoFrame, dict)"
 
 
+def test_multi_sink_when_no_error_occurs_and_batch_input_is_provided() -> None:
+    # given
+    video_frame = [
+        VideoFrame(
+            image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+            frame_id=1,
+            frame_timestamp=datetime.now(),
+        ),
+        VideoFrame(
+            image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+            frame_id=2,
+            frame_timestamp=datetime.now(),
+        ),
+    ]
+    predictions = [{"some": "prediction"}, {"other": "prediction"}]
+
+    calls = []
+
+    def correct_sink(predict: dict, frame: VideoFrame) -> None:
+        calls.append((frame, predict))
+
+    # when
+    multi_sink(
+        video_frame=video_frame,
+        predictions=predictions,
+        sinks=[correct_sink, correct_sink],
+    )
+
+    # then
+    assert len(calls) == 2, "All handlers must be called"
+    assert calls[0] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
+    assert calls[1] == (
+        video_frame,
+        predictions,
+    ), "Call must happen according to contract (VideoFrame, dict)"
+
+
 def test_active_learning_sink() -> None:
     # given
     active_learning_middleware = MagicMock()
@@ -223,9 +354,43 @@ def test_active_learning_sink() -> None:
     sink(predictions, video_frame)
 
     # then
-    active_learning_middleware.register.assert_called_once_with(
-        inference_input=video_frame.image,
-        prediction=predictions,
+    active_learning_middleware.register_batch.assert_called_once_with(
+        inference_inputs=[video_frame.image],
+        predictions=[predictions],
+        prediction_type="object-detection",
+        disable_preproc_auto_orient=False,
+    )
+
+
+def test_active_learning_sink_with_batch_input() -> None:
+    # given
+    active_learning_middleware = MagicMock()
+    sink = partial(
+        active_learning_sink,
+        active_learning_middleware=active_learning_middleware,
+        model_type="object-detection",
+    )
+    video_frames = [
+        VideoFrame(
+            image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+            frame_id=1,
+            frame_timestamp=datetime.now(),
+        ),
+        VideoFrame(
+            image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+            frame_id=2,
+            frame_timestamp=datetime.now(),
+        ),
+    ]
+    predictions = [{"some": "prediction"}, {"other": "prediction"}]
+
+    # when
+    sink(predictions, video_frames)
+
+    # then
+    active_learning_middleware.register_batch.assert_called_once_with(
+        inference_inputs=[video_frames[0].image, video_frames[1].image],
+        predictions=predictions,
         prediction_type="object-detection",
         disable_preproc_auto_orient=False,
     )

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from inference.core.env import (
     CLASS_AGNOSTIC_NMS_ENV,
@@ -13,11 +13,11 @@ from inference.core.env import (
     MAX_CANDIDATES_ENV,
     MAX_DETECTIONS_ENV,
 )
-from inference.core.interfaces.camera.entities import StatusUpdate
+from inference.core.interfaces.camera.entities import StatusUpdate, VideoFrame
 from inference.core.interfaces.camera.video_source import SourceMetadata
 from inference.core.utils.environment import safe_env_to_type, str2bool
 
-AnyPrediction = dict
+AnyPrediction = Any
 ObjectDetectionPrediction = dict
 
 
@@ -106,6 +106,7 @@ class ModelActivityEvent:
 
 @dataclass(frozen=True)
 class LatencyMonitorReport:
+    source_id: Optional[int] = None
     frame_decoding_latency: Optional[float] = None
     inference_latency: Optional[float] = None
     e2e_latency: Optional[float] = None
@@ -114,6 +115,15 @@ class LatencyMonitorReport:
 @dataclass(frozen=True)
 class PipelineStateReport:
     video_source_status_updates: List[StatusUpdate]
-    latency_report: LatencyMonitorReport
+    latency_reports: List[LatencyMonitorReport]
     inference_throughput: float
-    source_metadata: Optional[SourceMetadata]
+    sources_metadata: List[SourceMetadata]
+
+
+InferenceHandler = Callable[[List[VideoFrame]], List[AnyPrediction]]
+SinkHandler = Optional[
+    Union[
+        Callable[[AnyPrediction, VideoFrame], None],
+        Callable[[List[Optional[AnyPrediction]], List[Optional[VideoFrame]]], None],
+    ]
+]

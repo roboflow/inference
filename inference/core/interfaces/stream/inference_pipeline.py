@@ -1,5 +1,5 @@
-import time
 from datetime import datetime
+from enum import Enum
 from functools import partial
 from queue import Queue
 from threading import Thread
@@ -19,7 +19,6 @@ from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
-    RESTART_ATTEMPT_DELAY,
 )
 from inference.core.exceptions import CannotInitialiseModelError
 from inference.core.interfaces.camera.entities import (
@@ -27,18 +26,23 @@ from inference.core.interfaces.camera.entities import (
     UpdateSeverity,
     VideoFrame,
 )
-from inference.core.interfaces.camera.exceptions import SourceConnectionError
-from inference.core.interfaces.camera.utils import get_video_frames_generator
+from inference.core.interfaces.camera.utils import multiplex_videos
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
     VideoSource,
 )
-from inference.core.interfaces.stream.entities import AnyPrediction, ModelConfig
+from inference.core.interfaces.stream.entities import (
+    AnyPrediction,
+    InferenceHandler,
+    ModelConfig,
+    SinkHandler,
+)
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
+from inference.core.interfaces.stream.utils import prepare_video_sources
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
@@ -59,13 +63,19 @@ INFERENCE_COMPLETED_EVENT = "INFERENCE_COMPLETED"
 INFERENCE_ERROR_EVENT = "INFERENCE_ERROR"
 
 
+class SinkMode(Enum):
+    ADAPTIVE = "adaptive"
+    BATCH = "batch"
+    SEQUENTIAL = "sequential"
+
+
 class InferencePipeline:
     @classmethod
     def init(
         cls,
-        video_reference: Union[str, int],
+        video_reference: Union[str, int, List[Union[str, int]]],
         model_id: str,
-        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_prediction: SinkHandler = None,
         api_key: Optional[str] = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
@@ -80,8 +90,12 @@ class InferencePipeline:
         mask_decode_mode: Optional[str] = "accurate",
         tradeoff_factor: Optional[float] = 0.0,
         active_learning_enabled: Optional[bool] = None,
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[
+            Union[Dict[str, float], List[Optional[Dict[str, float]]]]
+        ] = None,
         active_learning_target_dataset: Optional[str] = None,
+        batch_collection_timeout: Optional[float] = None,
+        sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -100,10 +114,29 @@ class InferencePipeline:
         Since version 0.9.11 it works not only for object detection models but is also compatible with stubs,
         classification, instance-segmentation and keypoint-detection models.
 
+        Since version 0.9.18, `InferencePipeline` is capable of handling multiple video sources at once. If multiple
+        sources are provided - source multiplexing will happen. One of the change introduced in that release is switch
+        from `get_video_frames_generator(...)` as video frames provider into `multiplex_videos(...)`. For a single
+        video source, the behaviour of `InferencePipeline` is remained unchanged when default parameters are used.
+        For multiple videos - frames are multiplexed, and we can adjust the pipeline behaviour using new configuration
+        options. `batch_collection_timeout` is one of the new option - it is the parameter of `multiplex_videos(...)`
+        that dictates how long the batch frames collection process may wait for all sources to provide video frame.
+        It can be set infinite (None) or with specific value representing fraction of second. We advise that value to
+        be set in production solutions to avoid processing slow-down caused by source with unstable latency spikes.
+        For more information on multiplexing process - please visit `multiplex_videos(...)` function docs.
+        Another change is the way on how sinks work. They can work in `SinkMode.ADAPTIVE` - which means that
+        video frames and predictions will be either provided to sink as list of objects, or specific elements -
+        and the determining factor is number of sources (it will behave SEQUENTIAL for one source and BATCH if multiple
+        ones are provided). All old sinks were adjusted to work in both modes, custom ones should be migrated
+        to reflect changes in sink function signature.
+
         Args:
             model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
                 Roboflow model prediction (different for specific types of models).
@@ -146,12 +179,30 @@ class InferencePipeline:
                 `ACTIVE_LEARNING_ENABLED` will be used. Please point out that Active Learning will be forcefully
                 disabled in a scenario when Roboflow API key is not given, as Roboflow account is required
                 for this feature to be operational.
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
             active_learning_target_dataset (Optional[str]): Parameter to be used when Active Learning data registration
                 should happen against different dataset than the one pointed by model_id
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -166,8 +217,6 @@ class InferencePipeline:
         """
         if api_key is None:
             api_key = API_KEY
-        if status_update_handlers is None:
-            status_update_handlers = []
         inference_config = ModelConfig.init(
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
@@ -181,18 +230,6 @@ class InferencePipeline:
         on_video_frame = partial(
             default_process_frame, model=model, inference_config=inference_config
         )
-        if watchdog is None:
-            watchdog = NullPipelineWatchdog()
-        status_update_handlers.append(watchdog.on_status_update)
-        video_source = VideoSource.init(
-            video_reference=video_reference,
-            status_update_handlers=status_update_handlers,
-            buffer_filling_strategy=source_buffer_filling_strategy,
-            buffer_consumption_strategy=source_buffer_consumption_strategy,
-            video_source_properties=video_source_properties,
-        )
-        watchdog.register_video_source(video_source=video_source)
-        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         active_learning_middleware = NullActiveLearningMiddleware()
         if active_learning_enabled is None:
             logger.info(
@@ -213,7 +250,7 @@ class InferencePipeline:
             active_learning_middleware = ThreadingActiveLearningMiddleware.init(
                 api_key=api_key,
                 target_dataset=target_dataset,
-                model_id=model_id,
+                model_id=resolved_model_id,
                 cache=cache,
             )
             al_sink = partial(
@@ -228,27 +265,29 @@ class InferencePipeline:
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         on_pipeline_start = active_learning_middleware.start_registration_thread
         on_pipeline_end = active_learning_middleware.stop_registration_thread
-        return cls(
+        return InferencePipeline.init_with_custom_logic(
+            video_reference=video_reference,
             on_video_frame=on_video_frame,
-            video_source=video_source,
             on_prediction=on_prediction,
-            max_fps=max_fps,
-            predictions_queue=predictions_queue,
-            watchdog=watchdog,
-            status_update_handlers=status_update_handlers,
             on_pipeline_start=on_pipeline_start,
             on_pipeline_end=on_pipeline_end,
+            max_fps=max_fps,
+            watchdog=watchdog,
+            status_update_handlers=status_update_handlers,
+            source_buffer_filling_strategy=source_buffer_filling_strategy,
+            source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
+            sink_mode=sink_mode,
         )
 
-    # we shall prob. generalise to zero-shot models and possibly create aliases
-    # for easier use without knowledge of model ids
     @classmethod
     def init_with_yolo_world(
         cls,
-        video_reference: Union[str, int],
+        video_reference: Union[str, int, List[Union[str, int]]],
         classes: List[str],
         model_size: str = "s",
-        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_prediction: SinkHandler = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
@@ -260,6 +299,8 @@ class InferencePipeline:
         max_candidates: Optional[int] = None,
         max_detections: Optional[int] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
+        sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -267,8 +308,11 @@ class InferencePipeline:
         method.
 
         Args:
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             classes (List[str]): List of classes to execute zero-shot detection against
             model_size (str): version of model - to be chosen from `s`, `m`, `l`
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
@@ -301,10 +345,28 @@ class InferencePipeline:
                 env variable "MAX_CANDIDATES" with default "3000"
             max_detections (Optional[int]): Parameter of model post-processing. If not given - value checked in
                 env variable "MAX_DETECTIONS" with default "300"
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
 
         Other ENV variables involved in low-level configuration:
@@ -339,28 +401,20 @@ class InferencePipeline:
                 f"Could not initialise yolo_world/{model_size} due to lack of sufficient dependencies. "
                 f"Use pip install inference[yolo-world] to install missing dependencies and try again."
             ) from error
-        if watchdog is None:
-            watchdog = NullPipelineWatchdog()
-        if status_update_handlers is None:
-            status_update_handlers = []
-        status_update_handlers.append(watchdog.on_status_update)
-        video_source = VideoSource.init(
+        return InferencePipeline.init_with_custom_logic(
             video_reference=video_reference,
-            status_update_handlers=status_update_handlers,
-            buffer_filling_strategy=source_buffer_filling_strategy,
-            buffer_consumption_strategy=source_buffer_consumption_strategy,
-            video_source_properties=video_source_properties,
-        )
-        watchdog.register_video_source(video_source=video_source)
-        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
-        return cls(
             on_video_frame=on_video_frame,
-            video_source=video_source,
             on_prediction=on_prediction,
+            on_pipeline_start=None,
+            on_pipeline_end=None,
             max_fps=max_fps,
-            predictions_queue=predictions_queue,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
+            source_buffer_filling_strategy=source_buffer_filling_strategy,
+            source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
+            sink_mode=sink_mode,
         )
 
     @classmethod
@@ -371,7 +425,7 @@ class InferencePipeline:
         api_key: Optional[str] = None,
         image_input_name: str = "image",
         workflows_parameters: Optional[Dict[str, Any]] = None,
-        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_prediction: SinkHandler = None,
         max_fps: Optional[Union[float, int]] = None,
         watchdog: Optional[PipelineWatchDog] = None,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
@@ -429,6 +483,11 @@ class InferencePipeline:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
                 always if connection to stream is lost.
         """
+        if issubclass(type(video_reference), list) and len(list) > 1:
+            raise ValueError(
+                "Usage of workflows and `InferencePipeline` is experimental feature for now. We do not support "
+                "multiple video sources yet."
+            )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 run_video_frame_through_workflow,
@@ -466,36 +525,26 @@ class InferencePipeline:
                 f"Could not initialise workflow processing due to lack of dependencies required. "
                 f"Please provide an issue report under https://github.com/roboflow/inference/issues"
             ) from error
-        if watchdog is None:
-            watchdog = NullPipelineWatchdog()
-        if status_update_handlers is None:
-            status_update_handlers = []
-        status_update_handlers.append(watchdog.on_status_update)
-        video_source = VideoSource.init(
+        return InferencePipeline.init_with_custom_logic(
             video_reference=video_reference,
-            status_update_handlers=status_update_handlers,
-            buffer_filling_strategy=source_buffer_filling_strategy,
-            buffer_consumption_strategy=source_buffer_consumption_strategy,
-            video_source_properties=video_source_properties,
-        )
-        watchdog.register_video_source(video_source=video_source)
-        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
-        return cls(
             on_video_frame=on_video_frame,
-            video_source=video_source,
-            predictions_queue=predictions_queue,
+            on_prediction=on_prediction,
+            on_pipeline_start=None,
+            on_pipeline_end=None,
+            max_fps=max_fps,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
-            on_prediction=on_prediction,
-            max_fps=max_fps,
+            source_buffer_filling_strategy=source_buffer_filling_strategy,
+            source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+            video_source_properties=video_source_properties,
         )
 
     @classmethod
     def init_with_custom_logic(
         cls,
-        video_reference: Union[str, int],
-        on_video_frame: Callable[[VideoFrame], AnyPrediction],
-        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        video_reference: Union[str, int, List[Union[str, int]]],
+        on_video_frame: InferenceHandler,
+        on_prediction: SinkHandler = None,
         on_pipeline_start: Optional[Callable[[], None]] = None,
         on_pipeline_end: Optional[Callable[[], None]] = None,
         max_fps: Optional[Union[float, int]] = None,
@@ -504,6 +553,8 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
+        sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -511,8 +562,11 @@ class InferencePipeline:
         method.
 
         Args:
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
+                predictions against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             on_video_frame (Callable[[VideoFrame], AnyPrediction]): function supposed to make prediction (or do another
                 kind of custom processing according to your will). Accept `VideoFrame` object and is supposed
                 to return dictionary with results of any kind.
@@ -540,10 +594,28 @@ class InferencePipeline:
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
                 Please find detailed explanation in docs of [`VideoSource`](../camera/video_source.py)
-            video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
-                corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
-                will be used.
+            video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
+                Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
+                cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
+                It is optional and if provided can be provided as single dict (applicable for all sources) or
+                as list of configs. Then the list must be of length of `video_reference` and may also contain None
+                values to denote that specific source should remain not configured.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            sink_mode (SinkMode): Parameter that controls how video frames and predictions will be passed to sink
+                handler. With SinkMode.SEQUENTIAL - each frame and prediction triggers separate call for sink,
+                in case of SinkMode.BATCH - list of frames and predictions will be provided to sink, always aligned
+                in the order of video sources - with None values in the place of vide_frames / predictions that
+                were skipped due to `batch_collection_timeout`.
+                `SinkMode.ADAPTIVE` is a middle ground (and default mode) - all old sources will work in that mode
+                against a single video input, as the pipeline will behave as if running in `SinkMode.SEQUENTIAL`.
+                To handle multiple videos - sink needs to accept `predictions: List[Optional[dict]]` and
+                `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
+                old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
+                prediction element.
 
 
         Other ENV variables involved in low-level configuration:
@@ -561,18 +633,18 @@ class InferencePipeline:
         if status_update_handlers is None:
             status_update_handlers = []
         status_update_handlers.append(watchdog.on_status_update)
-        video_source = VideoSource.init(
+        video_sources = prepare_video_sources(
             video_reference=video_reference,
-            status_update_handlers=status_update_handlers,
-            buffer_filling_strategy=source_buffer_filling_strategy,
-            buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            status_update_handlers=status_update_handlers,
+            source_buffer_filling_strategy=source_buffer_filling_strategy,
+            source_buffer_consumption_strategy=source_buffer_consumption_strategy,
         )
-        watchdog.register_video_source(video_source=video_source)
+        watchdog.register_video_sources(video_sources=video_sources)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
         return cls(
             on_video_frame=on_video_frame,
-            video_source=video_source,
+            video_sources=video_sources,
             predictions_queue=predictions_queue,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
@@ -580,22 +652,26 @@ class InferencePipeline:
             max_fps=max_fps,
             on_pipeline_start=on_pipeline_start,
             on_pipeline_end=on_pipeline_end,
+            batch_collection_timeout=batch_collection_timeout,
+            sink_mode=sink_mode,
         )
 
     def __init__(
         self,
-        on_video_frame: Callable[[VideoFrame], AnyPrediction],
-        video_source: VideoSource,
+        on_video_frame: InferenceHandler,
+        video_sources: List[VideoSource],
         predictions_queue: Queue,
         watchdog: PipelineWatchDog,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
-        on_prediction: Optional[Callable[[AnyPrediction, VideoFrame], None]] = None,
+        on_prediction: SinkHandler = None,
         on_pipeline_start: Optional[Callable[[], None]] = None,
         on_pipeline_end: Optional[Callable[[], None]] = None,
         max_fps: Optional[float] = None,
+        batch_collection_timeout: Optional[float] = None,
+        sink_mode: SinkMode = SinkMode.ADAPTIVE,
     ):
         self._on_video_frame = on_video_frame
-        self._video_source = video_source
+        self._video_sources = video_sources
         self._on_prediction = on_prediction
         self._max_fps = max_fps
         self._predictions_queue = predictions_queue
@@ -608,6 +684,8 @@ class InferencePipeline:
         self._status_update_handlers = status_update_handlers
         self._on_pipeline_start = on_pipeline_start
         self._on_pipeline_end = on_pipeline_end
+        self._batch_collection_timeout = batch_collection_timeout
+        self._sink_mode = sink_mode
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -623,16 +701,25 @@ class InferencePipeline:
 
     def terminate(self) -> None:
         self._stop = True
-        self._video_source.terminate()
+        for video_source in self._video_sources:
+            video_source.terminate(
+                wait_on_frames_consumption=False, purge_frames_buffer=True
+            )
 
-    def pause_stream(self) -> None:
-        self._video_source.pause()
+    def pause_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.pause()
 
-    def mute_stream(self) -> None:
-        self._video_source.mute()
+    def mute_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.mute()
 
-    def resume_stream(self) -> None:
-        self._video_source.resume()
+    def resume_stream(self, source_id: Optional[int] = None) -> None:
+        for video_source in self._video_sources:
+            if video_source.source_id == source_id or source_id is None:
+                video_source.resume()
 
     def join(self) -> None:
         if self._inference_thread is not None:
@@ -652,23 +739,22 @@ class InferencePipeline:
         )
         logger.info(f"Inference thread started")
         try:
-            for video_frame in self._generate_frames():
+            for video_frames in self._generate_frames():
                 self._watchdog.on_model_inference_started(
-                    frame_timestamp=video_frame.frame_timestamp,
-                    frame_id=video_frame.frame_id,
+                    frames=video_frames,
                 )
-                predictions = self._on_video_frame(video_frame)
+                predictions = self._on_video_frame(video_frames)
                 self._watchdog.on_model_prediction_ready(
-                    frame_timestamp=video_frame.frame_timestamp,
-                    frame_id=video_frame.frame_id,
+                    frames=video_frames,
                 )
-                self._predictions_queue.put((predictions, video_frame))
+                self._predictions_queue.put((predictions, video_frames))
                 send_inference_pipeline_status_update(
                     severity=UpdateSeverity.DEBUG,
                     event_type=INFERENCE_COMPLETED_EVENT,
                     payload={
-                        "frame_id": video_frame.frame_id,
-                        "frame_timestamp": video_frame.frame_timestamp,
+                        "frames_ids": [f.frame_id for f in video_frames],
+                        "frames_timestamps": [f.frame_timestamp for f in video_frames],
+                        "sources_id": [f.source_id for f in video_frames],
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
@@ -697,81 +783,90 @@ class InferencePipeline:
 
     def _dispatch_inference_results(self) -> None:
         while True:
-            inference_results: Optional[Tuple[dict, VideoFrame]] = (
-                self._predictions_queue.get()
-            )
+            inference_results: Optional[
+                Tuple[List[AnyPrediction], List[VideoFrame]]
+            ] = self._predictions_queue.get()
             if inference_results is None:
                 self._predictions_queue.task_done()
                 break
-            predictions, video_frame = inference_results
+            predictions, video_frames = inference_results
             if self._on_prediction is not None:
-                try:
-                    self._on_prediction(predictions, video_frame)
-                except Exception as error:
-                    payload = {
-                        "error_type": error.__class__.__name__,
-                        "error_message": str(error),
-                        "error_context": "inference_results_dispatching",
-                    }
-                    send_inference_pipeline_status_update(
-                        severity=UpdateSeverity.ERROR,
-                        event_type=INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
-                        payload=payload,
-                        status_update_handlers=self._status_update_handlers,
-                    )
-                    logger.warning(f"Error in results dispatching - {error}")
+                self._handle_predictions_dispatching(
+                    predictions=predictions,
+                    video_frames=video_frames,
+                )
             self._predictions_queue.task_done()
+
+    def _handle_predictions_dispatching(
+        self,
+        predictions: List[AnyPrediction],
+        video_frames: List[VideoFrame],
+    ) -> None:
+        if self._should_use_batch_sink():
+            self._use_batch_sink(predictions, video_frames)
+            return None
+        for frame_predictions, video_frame in zip(predictions, video_frames):
+            self._use_sink(frame_predictions, video_frame)
+
+    def _should_use_batch_sink(self) -> bool:
+        return self._sink_mode is SinkMode.BATCH or (
+            self._sink_mode is SinkMode.ADAPTIVE and len(self._video_sources) > 1
+        )
+
+    def _use_batch_sink(
+        self,
+        predictions: List[AnyPrediction],
+        video_frames: List[VideoFrame],
+    ) -> None:
+        # This function makes it possible to always call sinks with payloads aligned to order of
+        # video sources - marking empty frames as None
+        results_by_source_id = {
+            video_frame.source_id: (frame_predictions, video_frame)
+            for frame_predictions, video_frame in zip(predictions, video_frames)
+        }
+        source_id_aligned_sink_payload = [
+            results_by_source_id.get(video_source.source_id, (None, None))
+            for video_source in self._video_sources
+        ]
+        source_id_aligned_predictions = [e[0] for e in source_id_aligned_sink_payload]
+        source_id_aligned_frames = [e[1] for e in source_id_aligned_sink_payload]
+        self._use_sink(
+            predictions=source_id_aligned_predictions,
+            video_frames=source_id_aligned_frames,
+        )
+
+    def _use_sink(
+        self,
+        predictions: Union[AnyPrediction, List[Optional[AnyPrediction]]],
+        video_frames: Union[VideoFrame, List[Optional[VideoFrame]]],
+    ) -> None:
+        try:
+            self._on_prediction(predictions, video_frames)
+        except Exception as error:
+            payload = {
+                "error_type": error.__class__.__name__,
+                "error_message": str(error),
+                "error_context": "inference_results_dispatching",
+            }
+            send_inference_pipeline_status_update(
+                severity=UpdateSeverity.ERROR,
+                event_type=INFERENCE_RESULTS_DISPATCHING_ERROR_EVENT,
+                payload=payload,
+                status_update_handlers=self._status_update_handlers,
+            )
+            logger.warning(f"Error in results dispatching - {error}")
 
     def _generate_frames(
         self,
-    ) -> Generator[VideoFrame, None, None]:
-        self._video_source.start()
-        while True:
-            source_properties = self._video_source.describe_source().source_properties
-            if source_properties is None:
-                break
-            allow_reconnect = not source_properties.is_file
-            yield from get_video_frames_generator(
-                video=self._video_source, max_fps=self._max_fps
-            )
-            if not allow_reconnect:
-                self.terminate()
-                break
-            if self._stop:
-                break
-            logger.warning(f"Lost connection with video source.")
-            send_inference_pipeline_status_update(
-                severity=UpdateSeverity.WARNING,
-                event_type=SOURCE_CONNECTION_LOST_EVENT,
-                payload={
-                    "source_reference": self._video_source.describe_source().source_reference
-                },
-                status_update_handlers=self._status_update_handlers,
-            )
-            self._attempt_restart()
-
-    def _attempt_restart(self) -> None:
-        succeeded = False
-        while not self._stop and not succeeded:
-            try:
-                self._video_source.restart()
-                succeeded = True
-            except SourceConnectionError as error:
-                payload = {
-                    "error_type": error.__class__.__name__,
-                    "error_message": str(error),
-                    "error_context": "video_frames_generator",
-                }
-                send_inference_pipeline_status_update(
-                    severity=UpdateSeverity.WARNING,
-                    event_type=SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT,
-                    payload=payload,
-                    status_update_handlers=self._status_update_handlers,
-                )
-                logger.warning(
-                    f"Could not connect to video source. Retrying in {RESTART_ATTEMPT_DELAY}s..."
-                )
-                time.sleep(RESTART_ATTEMPT_DELAY)
+    ) -> Generator[List[VideoFrame], None, None]:
+        for video_source in self._video_sources:
+            video_source.start()
+        yield from multiplex_videos(
+            videos=self._video_sources,
+            max_fps=self._max_fps,
+            batch_collection_timeout=self._batch_collection_timeout,
+            should_stop=lambda: self._stop,
+        )
 
 
 def send_inference_pipeline_status_update(

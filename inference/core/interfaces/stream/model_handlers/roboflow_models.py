@@ -1,23 +1,27 @@
-from typing import List
+from typing import Any, List
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import ModelConfig
+from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 
 
 def default_process_frame(
-    video_frame: VideoFrame,
+    video_frame: List[VideoFrame],
     model: OnnxRoboflowInferenceModel,
     inference_config: ModelConfig,
-) -> dict:
+) -> List[dict]:
     postprocessing_args = inference_config.to_postprocessing_params()
-    predictions = model.infer(
-        video_frame.image,
-        **postprocessing_args,
+    predictions = wrap_in_list(
+        model.infer(
+            [f.image for f in video_frame],
+            **postprocessing_args,
+        )
     )
-    if issubclass(type(predictions), list):
-        predictions = predictions[0].dict(
+    return [
+        p.dict(
             by_alias=True,
             exclude_none=True,
         )
-    return predictions
+        for p in predictions
+    ]
