@@ -42,9 +42,6 @@ class GroundingDINO(RoboflowCoreModel):
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
             GROUNDING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
         )
-        # GROUNDING_DINO_CHECKPOINT_PATH = os.path.join(
-        #     GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
-        # )
 
         if not os.path.exists(GROUNDING_DINO_CACHE_DIR):
             os.makedirs(GROUNDING_DINO_CACHE_DIR)
@@ -52,10 +49,6 @@ class GroundingDINO(RoboflowCoreModel):
         if not os.path.exists(GROUNDING_DINO_CONFIG_PATH):
             url = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
             urllib.request.urlretrieve(url, GROUNDING_DINO_CONFIG_PATH)
-
-        # if not os.path.exists(GROUNDING_DINO_CHECKPOINT_PATH):
-        #     url = "https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth"
-        #     urllib.request.urlretrieve(url, GROUNDING_DINO_CHECKPOINT_PATH)
 
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,
@@ -95,6 +88,7 @@ class GroundingDINO(RoboflowCoreModel):
         class_filter: list = None,
         box_threshold=0.5,
         text_threshold=0.5,
+        class_agnostic_nms=CLASS_AGNOSTIC_NMS,
         **kwargs
     ):
         """
@@ -121,7 +115,7 @@ class GroundingDINO(RoboflowCoreModel):
 
         self.class_names = text
 
-        if CLASS_AGNOSTIC_NMS:
+        if class_agnostic_nms:
             detections = detections.with_nms(class_agnostic=True)
         else:
             detections = detections.with_nms()
