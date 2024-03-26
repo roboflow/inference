@@ -697,9 +697,9 @@ class InferencePipeline:
 
     def _dispatch_inference_results(self) -> None:
         while True:
-            inference_results: Optional[
-                Tuple[dict, VideoFrame]
-            ] = self._predictions_queue.get()
+            inference_results: Optional[Tuple[dict, VideoFrame]] = (
+                self._predictions_queue.get()
+            )
             if inference_results is None:
                 self._predictions_queue.task_done()
                 break

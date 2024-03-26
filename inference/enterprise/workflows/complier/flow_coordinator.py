@@ -10,6 +10,7 @@ from inference.enterprise.workflows.constants import STEP_NODE_KIND
 
 
 class StepExecutionCoordinator(metaclass=abc.ABCMeta):
+
     @classmethod
     @abc.abstractmethod
     def init(cls, execution_graph: nx.DiGraph) -> "StepExecutionCoordinator":
@@ -23,6 +24,7 @@ class StepExecutionCoordinator(metaclass=abc.ABCMeta):
 
 
 class SerialExecutionCoordinator(StepExecutionCoordinator):
+
     @classmethod
     def init(cls, execution_graph: nx.DiGraph) -> "StepExecutionCoordinator":
         return cls(execution_graph=execution_graph)
@@ -59,6 +61,7 @@ class SerialExecutionCoordinator(StepExecutionCoordinator):
 
 
 class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
+
     @classmethod
     def init(cls, execution_graph: nx.DiGraph) -> "StepExecutionCoordinator":
         return cls(execution_graph=execution_graph)

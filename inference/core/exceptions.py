@@ -79,6 +79,7 @@ class WorkspaceLoadError(Exception):
 
 
 class InputImageLoadError(Exception):
+
     def __init__(self, message: str, public_message: str):
         super().__init__(message)
         self._public_message = public_message
