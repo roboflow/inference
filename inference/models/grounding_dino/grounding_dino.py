@@ -13,9 +13,9 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import CLASS_AGNOSTIC_NMS, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
-from inference.core.utils.image_utils import load_image_rgb, xyxy_to_xywh
+from inference.core.utils.image_utils import load_image_bgr, xyxy_to_xywh
 
 
 class GroundingDINO(RoboflowCoreModel):
@@ -37,17 +37,17 @@ class GroundingDINO(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-        GROUDNING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
+        GROUNDING_DINO_CACHE_DIR = os.path.join(MODEL_CACHE_DIR, model_id)
 
         GROUNDING_DINO_CONFIG_PATH = os.path.join(
-            GROUDNING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
+            GROUNDING_DINO_CACHE_DIR, "GroundingDINO_SwinT_OGC.py"
         )
         # GROUNDING_DINO_CHECKPOINT_PATH = os.path.join(
         #     GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
         # )
 
-        if not os.path.exists(GROUDNING_DINO_CACHE_DIR):
-            os.makedirs(GROUDNING_DINO_CACHE_DIR)
+        if not os.path.exists(GROUNDING_DINO_CACHE_DIR):
+            os.makedirs(GROUNDING_DINO_CACHE_DIR)
 
         if not os.path.exists(GROUNDING_DINO_CONFIG_PATH):
             url = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
@@ -60,7 +60,7 @@ class GroundingDINO(RoboflowCoreModel):
         self.model = Model(
             model_config_path=GROUNDING_DINO_CONFIG_PATH,
             model_checkpoint_path=os.path.join(
-                GROUDNING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
+                GROUNDING_DINO_CACHE_DIR, "groundingdino_swint_ogc.pth"
             ),
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
@@ -75,7 +75,7 @@ class GroundingDINO(RoboflowCoreModel):
         Returns:
             np.array: The preprocessed image.
         """
-        np_image = load_image_rgb(image)
+        np_image = load_image_bgr(image)
         return np_image
 
     def infer_from_request(
@@ -89,7 +89,13 @@ class GroundingDINO(RoboflowCoreModel):
         return result
 
     def infer(
-        self, image: Any = None, text: list = None, class_filter: list = None, **kwargs
+        self,
+        image: InferenceRequestImage,
+        text: list[str] = None,
+        class_filter: list = None,
+        box_threshold=0.5,
+        text_threshold=0.5,
+        **kwargs
     ):
         """
         Run inference on a provided image.
@@ -109,11 +115,16 @@ class GroundingDINO(RoboflowCoreModel):
         detections = self.model.predict_with_classes(
             image=image,
             classes=text,
-            box_threshold=0.5,
-            text_threshold=0.5,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
         )
 
         self.class_names = text
+
+        if CLASS_AGNOSTIC_NMS:
+            detections = detections.with_nms(class_agnostic=True)
+        else:
+            detections = detections.with_nms()
 
         xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
 
@@ -133,7 +144,9 @@ class GroundingDINO(RoboflowCoreModel):
                     }
                 )
                 for i, pred in enumerate(detections.xyxy)
-                if not class_filter or self.class_names[int(pred[6])] in class_filter
+                if not class_filter
+                or self.class_names[int(pred[6])] in class_filter
+                and detections.class_id[i] is not None
             ],
             image=InferenceResponseImage(width=img_dims[1], height=img_dims[0]),
             time=t2,

@@ -12,4 +12,6 @@ class GroundingDINOInferenceRequest(DynamicClassBaseInferenceRequest):
         text (List[str]): A list of strings.
     """
 
+    box_threshold: Optional[float] = 0.5
     grounding_dino_version_id: Optional[str] = "default"
+    text_threshold: Optional[float] = 0.5

@@ -29,7 +29,11 @@ results = model.infer(
             "type": "url",
             "value": "https://media.roboflow.com/fruit.png",
         },
-        "text": ["apple"]
+        "text": ["apple"],
+
+        # Optional params
+        "box_threshold": 0.5
+        "text_threshold": 0.5
     }
 )
 
@@ -40,8 +44,10 @@ In this code, we load Grounding DINO, run Grounding DINO on an image, and annota
 
 Above, replace:
 
-1. `coffee cup` with the object you want to detect.
-2. `image.jpg` with the path to the image in which you want to detect objects.
+1. `apple` with the object you want to detect.
+2. `fruit.png` with the path to the image in which you want to detect objects.
+
+Additionally, you can tweak the optional `box_threshold` and `class_threshold` params for your specific use case. Both values default to 0.5 if not set. See the <a href="https://github.com/IDEA-Research/GroundingDINO?tab=readme-ov-file#star-explanationstips-for-grounding-dino-inputs-and-outputs">Grounding DINO README</a> for an explanation of the model's thresholds.
 
 To use Grounding DINO with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard. Run the following command to set your API key in your coding environment:
 
