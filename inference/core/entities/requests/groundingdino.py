@@ -16,4 +16,4 @@ class GroundingDINOInferenceRequest(DynamicClassBaseInferenceRequest):
     box_threshold: Optional[float] = 0.5
     grounding_dino_version_id: Optional[str] = "default"
     text_threshold: Optional[float] = 0.5
-    class_agnostic_nms: Optional[bool] = CLASS_AGNOSTIC_NMS 
+    class_agnostic_nms: Optional[bool] = CLASS_AGNOSTIC_NMS

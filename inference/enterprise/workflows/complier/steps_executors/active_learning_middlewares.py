@@ -13,7 +13,6 @@ from inference.enterprise.workflows.entities.steps import (
 
 
 class WorkflowsActiveLearningMiddleware:
-
     def __init__(
         self,
         cache: BaseCache,

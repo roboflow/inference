@@ -119,7 +119,8 @@ class SourceMetadata:
 
 
 class VideoSourceMethod(Protocol):
-    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None: ...
+    def __call__(self, video_source: "VideoSource", *args, **kwargs) -> None:
+        ...
 
 
 def lock_state_transition(
