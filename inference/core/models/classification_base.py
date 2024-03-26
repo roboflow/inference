@@ -136,6 +136,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         Args:
             image (Any): The image or list of images to be processed.
+                - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
             disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
             disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
