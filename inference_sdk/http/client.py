@@ -1011,6 +1011,18 @@ class InferenceHTTPClient:
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        """
+        Triggers inference from workflow specification at the inference HTTP
+        side. Either (`workspace_name` and `workflow_name`) or `workflow_specification` must be
+        provided. In the first case - definition of workflow will be fetched
+        from Roboflow API, in the latter - `workflow_specification` will be
+        used. `images` and `parameters` will be merged into workflow inputs,
+        the distinction is made to make sure the SDK can easily serialise
+        images and prepare a proper payload. Supported images are numpy arrays,
+        PIL.Image and base64 images, links to images and local paths.
+        `excluded_fields` will be added to request to filter out results
+        of workflow execution at the server side.
+        """
         return self._run_workflow(
             workspace_name=workspace_name,
             workflow_name=workflow_name,
@@ -1042,12 +1054,6 @@ class InferenceHTTPClient:
         PIL.Image and base64 images, links to images and local paths.
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
-
-        **Important!**
-        New parameter introduced in v0.9.19: `legacy_endpoints` - enforces usage of
-        old workflow endpoints at inference server side. Use that if for any reason
-        you cannot upgrade inference server version you use. Please note that
-        THIS parameter will be deleted end of Q2 2024 when we sunset the old endpoints.
         """
         return self._run_workflow(
             workspace_name=workspace_name,
