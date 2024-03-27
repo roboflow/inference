@@ -14,26 +14,39 @@ from pydantic import (
 from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.entities.types import (
+    BOOLEAN_KIND,
+    DICTIONARY_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
+    ROBOFLOW_PROJECT,
+    STRING_KIND,
+    FloatZeroToOne,
+    InferenceImageSelector,
+    InferenceParameterSelector,
+    OutputStepImageSelector,
+    StepOutputSelector,
+    StepSelector,
+)
 from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
     validate_field_is_dict_of_strings,
-    validate_field_is_empty_or_selector_or_list_of_string,
-    validate_field_is_in_range_zero_one_or_empty_or_selector,
-    validate_field_is_list_of_selectors,
     validate_field_is_list_of_string,
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
-    validate_field_is_selector_or_one_of_values,
     validate_image_biding,
-    validate_image_is_valid_selector,
     validate_selector_holds_detections,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
     validate_value_is_empty_or_number_in_range_zero_one,
     validate_value_is_empty_or_positive_number,
-    validate_value_is_empty_or_selector_or_positive_number,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -78,46 +91,14 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     model_config = ConfigDict(protected_namespaces=())
     type: Literal["RoboflowModel"]
     name: str
-    image: Union[str, List[str]]
-    model_id: str
-    disable_active_learning: Union[Optional[bool], str] = Field(default=False)
-    active_learning_target_dataset: Optional[str] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def validate_image(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("model_id")
-    @classmethod
-    def model_id_must_be_selector_or_str(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="model_id", allowed_types=[str]
-        )
-        return value
-
-    @field_validator("disable_active_learning")
-    @classmethod
-    def disable_active_learning_must_be_selector_or_bool(
-        cls, value: Any
-    ) -> Union[Optional[bool], str]:
-        validate_field_is_selector_or_has_given_type(
-            field_name="disable_active_learning",
-            allowed_types=[type(None), bool],
-            value=value,
-        )
-        return value
-
-    @field_validator("active_learning_target_dataset")
-    @classmethod
-    def validate_active_learning_configuration_fields(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value,
-            field_name="active_learning_target_dataset",
-            allowed_types=[type(None), str],
-        )
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    model_id: Union[InferenceParameterSelector(kinds=[ROBOFLOW_MODEL_ID_KIND]), str]
+    disable_active_learning: Union[
+        Optional[bool], InferenceParameterSelector(kinds=[BOOLEAN_KIND])
+    ] = Field(default=False)
+    active_learning_target_dataset: Union[
+        Optional[str], InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT])
+    ] = Field(default=None)
 
     def get_type(self) -> str:
         return self.type
@@ -184,15 +165,10 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
 class ClassificationModel(RoboflowModel):
     type: Literal["ClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-
-    @field_validator("confidence")
-    @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.4)
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -227,15 +203,10 @@ class ClassificationModel(RoboflowModel):
 
 class MultiLabelClassificationModel(RoboflowModel):
     type: Literal["MultiLabelClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-
-    @field_validator("confidence")
-    @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.4)
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -270,55 +241,26 @@ class MultiLabelClassificationModel(RoboflowModel):
 
 class ObjectDetectionModel(RoboflowModel):
     type: Literal["ObjectDetectionModel"]
-    class_agnostic_nms: Union[Optional[bool], str] = Field(default=False)
-    class_filter: Union[Optional[List[str]], str] = Field(default=None)
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-    iou_threshold: Union[Optional[float], str] = Field(default=0.3)
-    max_detections: Union[Optional[int], str] = Field(default=300)
-    max_candidates: Union[Optional[int], str] = Field(default=3000)
-
-    @field_validator("class_agnostic_nms")
-    @classmethod
-    def class_agnostic_nms_must_be_selector_or_bool(
-        cls, value: Any
-    ) -> Union[Optional[bool], str]:
-        validate_field_is_selector_or_has_given_type(
-            field_name="class_agnostic_nms",
-            allowed_types=[type(None), bool],
-            value=value,
-        )
-        return value
-
-    @field_validator("class_filter")
-    @classmethod
-    def class_filter_must_be_selector_or_list_of_string(
-        cls, value: Any
-    ) -> Union[Optional[List[str]], str]:
-        validate_field_is_empty_or_selector_or_list_of_string(
-            value=value, field_name="class_filter"
-        )
-        return value
-
-    @field_validator("confidence", "iou_threshold")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="confidence | iou_threshold"
-        )
-        return value
-
-    @field_validator("max_detections", "max_candidates")
-    @classmethod
-    def field_must_be_selector_or_positive_number(
-        cls, value: Any
-    ) -> Union[Optional[int], str]:
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value,
-            field_name="max_detections | max_candidates",
-        )
-        return value
+    class_agnostic_nms: Union[
+        Optional[bool], InferenceParameterSelector(kinds=[BOOLEAN_KIND])
+    ] = Field(default=False)
+    class_filter: Union[
+        Optional[List[str]], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])
+    ] = Field(default=None)
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.4)
+    iou_threshold: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.3)
+    max_detections: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kinds=[INTEGER_KIND])
+    ] = Field(default=300)
+    max_candidates: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kinds=[INTEGER_KIND])
+    ] = Field(default=3000)
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -390,17 +332,10 @@ class ObjectDetectionModel(RoboflowModel):
 
 class KeypointsDetectionModel(ObjectDetectionModel):
     type: Literal["KeypointsDetectionModel"]
-    keypoint_confidence: Union[Optional[float], str] = Field(default=0.0)
-
-    @field_validator("keypoint_confidence")
-    @classmethod
-    def keypoint_confidence_field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="keypoint_confidence"
-        )
-        return value
+    keypoint_confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.0)
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -433,30 +368,14 @@ DECODE_MODES = {"accurate", "tradeoff", "fast"}
 
 class InstanceSegmentationModel(ObjectDetectionModel):
     type: Literal["InstanceSegmentationModel"]
-    mask_decode_mode: Optional[str] = Field(default="accurate")
-    tradeoff_factor: Union[Optional[float], str] = Field(default=0.0)
-
-    @field_validator("mask_decode_mode")
-    @classmethod
-    def mask_decode_mode_must_be_selector_or_one_of_allowed_values(
-        cls, value: Any
-    ) -> Optional[str]:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="mask_decode_mode",
-            selected_values=DECODE_MODES,
-        )
-        return value
-
-    @field_validator("tradeoff_factor")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="tradeoff_factor"
-        )
-        return value
+    mask_decode_mode: Union[
+        Literal["accurate", "tradeoff", "fast"],
+        InferenceParameterSelector(kinds=[STRING_KIND]),
+    ] = Field(default="accurate")
+    tradeoff_factor: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.0)
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -494,13 +413,7 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 class OCRModel(BaseModel, StepInterface):
     type: Literal["OCRModel"]
     name: str
-    image: Union[str, List[str]]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -532,21 +445,14 @@ class OCRModel(BaseModel, StepInterface):
 class Crop(BaseModel, StepInterface):
     type: Literal["Crop"]
     name: str
-    image: Union[str, List[str]]
-    detections: str
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("detections")
-    @classmethod
-    def detections_must_hold_selector(cls, value: Any) -> str:
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`detections` field can only contain selector values")
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    detections: StepOutputSelector(
+        kinds=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -598,11 +504,11 @@ class Operator(Enum):
 class Condition(BaseModel, StepInterface):
     type: Literal["Condition"]
     name: str
-    left: Union[float, int, bool, str, list, set]
+    left: Union[float, int, bool, StepOutputSelector(), str, list, set]
     operator: Operator
-    right: Union[float, int, bool, str, list, set]
-    step_if_true: str
-    step_if_false: str
+    right: Union[float, int, bool, StepOutputSelector(), str, list, set]
+    step_if_true: StepSelector
+    step_if_false: StepSelector
 
     def get_type(self) -> str:
         return self.type
@@ -640,13 +546,7 @@ class BinaryOperator(Enum):
 class QRCodeDetection(BaseModel, StepInterface):
     type: Literal["QRCodeDetection"]
     name: str
-    image: Union[str, List[str]]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
 
     def get_type(self) -> str:
         return self.type
@@ -678,13 +578,7 @@ class QRCodeDetection(BaseModel, StepInterface):
 class BarcodeDetection(BaseModel, StepInterface):
     type: Literal["BarcodeDetection"]
     name: str
-    image: Union[str, List[str]]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
 
     def get_type(self) -> str:
         return self.type
@@ -730,7 +624,13 @@ class CompoundDetectionFilterDefinition(BaseModel):
 class DetectionFilter(BaseModel, StepInterface):
     type: Literal["DetectionFilter"]
     name: str
-    predictions: str
+    predictions: StepOutputSelector(
+        kinds=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    )
     filter_definition: Annotated[
         Union[DetectionFilterDefinition, CompoundDetectionFilterDefinition],
         Field(discriminator="type"),
@@ -768,9 +668,15 @@ class DetectionFilter(BaseModel, StepInterface):
 class DetectionOffset(BaseModel, StepInterface):
     type: Literal["DetectionOffset"]
     name: str
-    predictions: str
-    offset_x: Union[int, str]
-    offset_y: Union[int, str]
+    predictions: StepOutputSelector(
+        kinds=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    )
+    offset_x: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    offset_y: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
 
     def get_input_names(self) -> Set[str]:
         return {"predictions", "offset_x", "offset_y"}
@@ -816,25 +722,11 @@ class DetectionOffset(BaseModel, StepInterface):
 class AbsoluteStaticCrop(BaseModel, StepInterface):
     type: Literal["AbsoluteStaticCrop"]
     name: str
-    image: Union[str, List[str]]
-    x_center: Union[int, str]
-    y_center: Union[int, str]
-    width: Union[int, str]
-    height: Union[int, str]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
-    def validate_crops_coordinates(cls, value: Any) -> str:
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value, field_name="x_center | y_center | width | height"
-        )
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    x_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    y_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    width: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    height: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
 
     def get_type(self) -> str:
         return self.type
@@ -879,27 +771,19 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 class RelativeStaticCrop(BaseModel, StepInterface):
     type: Literal["RelativeStaticCrop"]
     name: str
-    image: Union[str, List[str]]
-    x_center: Union[float, str]
-    y_center: Union[float, str]
-    width: Union[float, str]
-    height: Union[float, str]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
-    def detections_must_hold_selector(cls, value: Any) -> str:
-        if issubclass(type(value), str):
-            if not is_selector(selector_or_value=value):
-                raise ValueError("Field must be either float of valid selector")
-        elif not issubclass(type(value), float):
-            raise ValueError("Field must be either float of valid selector")
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    x_center: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ]
+    y_center: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ]
+    width: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ]
+    height: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ]
 
     def get_type(self) -> str:
         return self.type
@@ -944,25 +828,8 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 class ClipComparison(BaseModel, StepInterface):
     type: Literal["ClipComparison"]
     name: str
-    image: Union[str, List[str]]
-    text: Union[str, List[str]]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("text")
-    @classmethod
-    def text_must_be_valid(cls, value: Any) -> Union[str, List[str]]:
-        if is_selector(selector_or_value=value):
-            return value
-        if issubclass(type(value), list):
-            validate_field_is_list_of_string(value=value, field_name="text")
-        elif not issubclass(type(value), str):
-            raise ValueError("`text` field given must be string or list of strings")
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    text: Union[InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1018,13 +885,35 @@ class AggregationMode(Enum):
 class DetectionsConsensus(BaseModel, StepInterface):
     type: Literal["DetectionsConsensus"]
     name: str
-    predictions: List[str]
-    required_votes: Union[int, str]
-    class_aware: Union[bool, str] = Field(default=True)
-    iou_threshold: Union[float, str] = Field(default=0.3)
-    confidence: Union[float, str] = Field(default=0.0)
-    classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
-    required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
+    predictions: List[
+        StepOutputSelector(
+            kinds=[
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ]
+        ),
+    ] = Field(min_items=1)
+    required_votes: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    class_aware: Union[bool, InferenceParameterSelector(kinds=[BOOLEAN_KIND])] = Field(
+        default=True
+    )
+    iou_threshold: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(default=0.3)
+    confidence: Union[
+        FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(default=0.0)
+    classes_to_consider: Optional[
+        Union[List[str], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])]
+    ] = Field(default=None)
+    required_objects: Optional[
+        Union[
+            PositiveInt,
+            Dict[str, PositiveInt],
+            InferenceParameterSelector(kinds=[INTEGER_KIND, DICTIONARY_KIND]),
+        ]
+    ] = Field(default=None)
     presence_confidence_aggregation: AggregationMode = Field(
         default=AggregationMode.MAX
     )
@@ -1034,82 +923,6 @@ class DetectionsConsensus(BaseModel, StepInterface):
     detections_merge_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE
     )
-
-    @field_validator("predictions")
-    @classmethod
-    def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
-        validate_field_is_list_of_selectors(value=value, field_name="predictions")
-        if len(value) < 1:
-            raise ValueError(
-                "There must be at least 1 `predictions` selectors in consensus step"
-            )
-        return value
-
-    @field_validator("required_votes")
-    @classmethod
-    def required_votes_must_be_selector_or_positive_integer(
-        cls, value: Any
-    ) -> Union[str, int]:
-        if value is None:
-            raise ValueError("Field `required_votes` is required.")
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value, field_name="required_votes"
-        )
-        return value
-
-    @field_validator("class_aware")
-    @classmethod
-    def class_aware_must_be_selector_or_boolean(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="class_aware", allowed_types=[bool]
-        )
-        return value
-
-    @field_validator("iou_threshold", "confidence")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[str, float]:
-        if value is None:
-            raise ValueError("Fields `iou_threshold` and `confidence` cannot be None")
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="iou_threshold | confidence"
-        )
-        return value
-
-    @field_validator("classes_to_consider")
-    @classmethod
-    def classes_to_consider_must_be_empty_or_selector_or_list_of_strings(
-        cls, value: Any
-    ) -> Optional[Union[str, List[str]]]:
-        validate_field_is_empty_or_selector_or_list_of_string(
-            value=value, field_name="classes_to_consider"
-        )
-        return value
-
-    @field_validator("required_objects")
-    @classmethod
-    def required_objects_field_must_be_valid(
-        cls, value: Any
-    ) -> Optional[Union[str, int, Dict[str, int]]]:
-        if value is None:
-            return value
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="required_objects", allowed_types=[int, dict]
-        )
-        if issubclass(type(value), int):
-            validate_value_is_empty_or_positive_number(
-                value=value, field_name="required_objects"
-            )
-            return value
-        elif issubclass(type(value), dict):
-            for k, v in value.items():
-                if v is None:
-                    raise ValueError(f"Field `required_objects[{k}]` must not be None.")
-                validate_value_is_empty_or_positive_number(
-                    value=v, field_name=f"required_objects[{k}]"
-                )
-        return value
 
     def get_input_names(self) -> Set[str]:
         return {
@@ -1254,16 +1067,7 @@ ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
 
 
 class DisabledActiveLearningConfiguration(BaseModel):
-    enabled: bool
-
-    @field_validator("enabled")
-    @classmethod
-    def ensure_only_false_is_valid(cls, value: Any) -> bool:
-        if value is not False:
-            raise ValueError(
-                "One can only specify enabled=False in `DisabledActiveLearningConfiguration`"
-            )
-        return value
+    enabled: Literal[False]
 
 
 class LimitDefinition(BaseModel):
@@ -1353,53 +1157,24 @@ class EnabledActiveLearningConfiguration(BaseModel):
 class ActiveLearningDataCollector(BaseModel, StepInterface):
     type: Literal["ActiveLearningDataCollector"]
     name: str
-    image: str
-    predictions: str
-    target_dataset: str
-    target_dataset_api_key: Optional[str] = Field(default=None)
-    disable_active_learning: Union[bool, str] = Field(default=False)
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    predictions: StepOutputSelector(
+        kinds=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    )
+    target_dataset: Union[InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT]), str]
+    target_dataset_api_key: Union[
+        InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
+    ] = Field(default=None)
+    disable_active_learning: Union[
+        bool, InferenceParameterSelector(kinds=[BOOLEAN_KIND])
+    ] = Field(default=False)
     active_learning_configuration: Optional[
         Union[EnabledActiveLearningConfiguration, DisabledActiveLearningConfiguration]
     ] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("predictions")
-    @classmethod
-    def predictions_must_hold_selector(cls, value: Any) -> str:
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`predictions` field can only contain selector values")
-        return value
-
-    @field_validator("target_dataset")
-    @classmethod
-    def validate_target_dataset_field(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="target_dataset", allowed_types=[str]
-        )
-        return value
-
-    @field_validator("target_dataset_api_key")
-    @classmethod
-    def validate_target_dataset_api_key_field(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value,
-            field_name="target_dataset_api_key",
-            allowed_types=[bool, type(None)],
-        )
-        return value
-
-    @field_validator("disable_active_learning")
-    @classmethod
-    def validate_boolean_flags_or_selectors(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="disable_active_learning", allowed_types=[bool]
-        )
-        return value
 
     def get_type(self) -> str:
         return self.type
@@ -1491,50 +1266,18 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
 class YoloWorld(BaseModel, StepInterface):
     type: Literal["YoloWorld"]
     name: str
-    image: str
-    class_names: Union[str, List[str]]
-    version: Optional[str] = Field(default="l")
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("class_names")
-    @classmethod
-    def validate_class_names(cls, value: Any) -> Union[str, List[str]]:
-        if is_selector(selector_or_value=value):
-            return value
-        if issubclass(type(value), list):
-            validate_field_is_list_of_string(value=value, field_name="class_names")
-            return value
-        raise ValueError(
-            "`class_names` field given must be selector or list of strings"
-        )
-
-    @field_validator("version")
-    @classmethod
-    def validate_model_version(cls, value: Any) -> Optional[str]:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            selected_values={None, "s", "m", "l"},
-            field_name="version",
-        )
-        return value
-
-    @field_validator("confidence")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        if value is None:
-            return None
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="confidence"
-        )
-        return value
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    class_names: Union[
+        InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]
+    ]
+    version: Union[
+        Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
+        InferenceParameterSelector(kinds=[STRING_KIND]),
+    ] = Field(default="l")
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(default=0.4)
 
     def get_input_names(self) -> Set[str]:
         return {"image", "class_names", "version", "confidence"}
@@ -1606,44 +1349,18 @@ class LMMConfig(BaseModel):
 class LMM(BaseModel, StepInterface):
     type: Literal["LMM"]
     name: str
-    image: str
-    prompt: str
-    lmm_type: str
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    prompt: Union[InferenceParameterSelector(kinds=[STRING_KIND]), str]
+    lmm_type: Union[
+        InferenceParameterSelector(kinds=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+    ]
     lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
-    remote_api_key: Optional[str] = Field(default=None)
-    json_output: Optional[Union[str, Dict[str, str]]] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> str:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("prompt")
-    @classmethod
-    def validate_prompt(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="prompt", allowed_types=[str]
-        )
-        return value
-
-    @field_validator("lmm_type")
-    @classmethod
-    def validate_lmm_type(cls, value: Any) -> str:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="lmm_type",
-            selected_values=SUPPORTED_LMMS,
-        )
-        return value
-
-    @field_validator("remote_api_key")
-    @classmethod
-    def validate_remote_api_key(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
-        )
-        return value
+    remote_api_key: Union[
+        InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
+    ] = Field(default=None)
+    json_output: Optional[
+        Union[InferenceParameterSelector(kinds=[DICTIONARY_KIND]), Dict[str, str]]
+    ] = Field(default=None)
 
     @field_validator("json_output")
     @classmethod
@@ -1759,50 +1476,15 @@ class LMM(BaseModel, StepInterface):
 class LMMForClassification(BaseModel, StepInterface):
     type: Literal["LMMForClassification"]
     name: str
-    image: str
-    lmm_type: str
-    classes: Union[List[str], str]
+    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    lmm_type: Union[
+        InferenceParameterSelector(kinds=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+    ]
+    classes: Union[List[str], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])]
     lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
-    remote_api_key: Optional[str] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> str:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("lmm_type")
-    @classmethod
-    def validate_lmm_type(cls, value: Any) -> str:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="lmm_type",
-            selected_values=SUPPORTED_LMMS,
-        )
-        return value
-
-    @field_validator("classes")
-    @classmethod
-    def validate_classes(cls, value: Any) -> Union[List[str], str]:
-        if is_selector(selector_or_value=value):
-            return value
-        validate_field_is_list_of_string(
-            value=value,
-            field_name="classes",
-        )
-        if len(value) == 0:
-            raise ValueError(
-                "`classes` field needs to be non empty list of strings or selector."
-            )
-        return value
-
-    @field_validator("remote_api_key")
-    @classmethod
-    def validate_remote_api_key(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
-        )
-        return value
+    remote_api_key: Union[
+        InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
+    ] = Field(default=None)
 
     def get_input_names(self) -> Set[str]:
         return {

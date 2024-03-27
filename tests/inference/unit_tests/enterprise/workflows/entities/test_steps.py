@@ -3200,7 +3200,7 @@ def test_yolo_world_step_image_validation_when_invalid_version_given(
         _ = YoloWorld.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", [None, "s", "m", "l"])
+@pytest.mark.parametrize("value", ["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"])
 def test_yolo_world_step_image_validation_when_valid_version_given(value: Any) -> None:
     # given
     specification = {

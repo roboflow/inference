@@ -1,5 +1,6 @@
 import networkx as nx
 import pytest
+from pydantic import ValidationError
 
 from inference.enterprise.workflows.complier.graph_parser import (
     add_input_nodes_for_graph,
@@ -30,7 +31,6 @@ from inference.enterprise.workflows.entities.workflows_specification import (
 )
 from inference.enterprise.workflows.errors import (
     AmbiguousPathDetected,
-    InvalidStepInputDetected,
     NodesNotReachingOutputError,
     NotAcyclicGraphError,
     SelectorToUndefinedNodeError,
@@ -727,39 +727,36 @@ def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph
     None
 ):
     # given
-    workflow_specification = WorkflowSpecificationV1.parse_obj(
-        {
-            "version": "1.0",
-            "inputs": [
-                {"type": "InferenceImage", "name": "image"},
-            ],
-            "steps": [
-                {
-                    "type": "ObjectDetectionModel",
-                    "name": "step_1",
-                    "image": "$inputs.image",
-                    "model_id": "vehicle-classification-eapcd/2",
-                },
-                {
-                    "type": "Crop",
-                    "name": "step_2",
-                    "image": "$steps.step_1.predictions",  # should be an image here
-                    "detections": "$inputs.image",  # should be predictions here
-                },
-            ],
-            "outputs": [
-                {
-                    "type": "JsonField",
-                    "name": "crops",
-                    "selector": "$steps.step_2.crops",
-                },
-            ],
-        }
-    )
-
-    # when
-    with pytest.raises(InvalidStepInputDetected):
-        _ = prepare_execution_graph(workflow_specification=workflow_specification)
+    with pytest.raises(ValidationError):
+        _ = WorkflowSpecificationV1.parse_obj(
+            {
+                "version": "1.0",
+                "inputs": [
+                    {"type": "InferenceImage", "name": "image"},
+                ],
+                "steps": [
+                    {
+                        "type": "ObjectDetectionModel",
+                        "name": "step_1",
+                        "image": "$inputs.image",
+                        "model_id": "vehicle-classification-eapcd/2",
+                    },
+                    {
+                        "type": "Crop",
+                        "name": "step_2",
+                        "image": "$steps.step_1.predictions",  # should be an image here
+                        "detections": "$inputs.image",  # should be predictions here
+                    },
+                ],
+                "outputs": [
+                    {
+                        "type": "JsonField",
+                        "name": "crops",
+                        "selector": "$steps.step_2.crops",
+                    },
+                ],
+            }
+        )
 
 
 def test_prepare_execution_graph_when_lmm_with_yolo_world_is_used_along_with_wildcard_output_selector() -> (
