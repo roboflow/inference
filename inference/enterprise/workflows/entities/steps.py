@@ -15,14 +15,21 @@ from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.types import (
+    BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
+    IMAGE_METADATA_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    PARENT_ID_KIND,
+    PREDICTION_TYPE_KIND,
+    QR_CODE_DETECTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT,
     STRING_KIND,
@@ -55,7 +62,16 @@ from inference.enterprise.workflows.errors import (
 )
 
 
+class OutputDefinition(BaseModel):
+    name: str
+    kind: List[str]
+
+
 class StepInterface(GraphNone, metaclass=ABCMeta):
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
     @abstractmethod
     def get_input_names(self) -> Set[str]:
         """
@@ -99,6 +115,12 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     active_learning_target_dataset: Union[
         Optional[str], InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT])
     ] = Field(default=None)
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND])
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -170,6 +192,15 @@ class ClassificationModel(RoboflowModel):
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(default=0.4)
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
+
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
         inputs.add("confidence")
@@ -207,6 +238,14 @@ class MultiLabelClassificationModel(RoboflowModel):
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(default=0.4)
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="predicted_classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -261,6 +300,16 @@ class ObjectDetectionModel(RoboflowModel):
     max_candidates: Union[
         Optional[PositiveInt], InferenceParameterSelector(kinds=[INTEGER_KIND])
     ] = Field(default=3000)
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -337,6 +386,21 @@ class KeypointsDetectionModel(ObjectDetectionModel):
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(default=0.0)
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        outputs = super(cls).describe_outputs()
+        result = []
+        for o in outputs:
+            if o.name != "predictions":
+                result.append(o)
+            else:
+                result.append(
+                    OutputDefinition(
+                        name="predictions", kind=[KEYPOINT_DETECTION_PREDICTION_KIND]
+                    ),
+                )
+        return result
+
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
         inputs.add("keypoint_confidence")
@@ -377,6 +441,21 @@ class InstanceSegmentationModel(ObjectDetectionModel):
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(default=0.0)
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        outputs = super(cls).describe_outputs()
+        result = []
+        for o in outputs:
+            if o.name != "predictions":
+                result.append(o)
+            else:
+                result.append(
+                    OutputDefinition(
+                        name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+                    )
+                )
+        return result
+
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
         inputs.update(["mask_decode_mode", "tradeoff_factor"])
@@ -414,6 +493,14 @@ class OCRModel(BaseModel, StepInterface):
     type: Literal["OCRModel"]
     name: str
     image: Union[InferenceImageSelector, OutputStepImageSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -453,6 +540,13 @@ class Crop(BaseModel, StepInterface):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -548,6 +642,14 @@ class QRCodeDetection(BaseModel, StepInterface):
     name: str
     image: Union[InferenceImageSelector, OutputStepImageSelector]
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[QR_CODE_DETECTION_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
+
     def get_type(self) -> str:
         return self.type
 
@@ -579,6 +681,14 @@ class BarcodeDetection(BaseModel, StepInterface):
     type: Literal["BarcodeDetection"]
     name: str
     image: Union[InferenceImageSelector, OutputStepImageSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[BAR_CODE_DETECTION_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -636,6 +746,22 @@ class DetectionFilter(BaseModel, StepInterface):
         Field(discriminator="type"),
     ]
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
+
     def get_input_names(self) -> Set[str]:
         return {"predictions"}
 
@@ -677,6 +803,22 @@ class DetectionOffset(BaseModel, StepInterface):
     )
     offset_x: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
     offset_y: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {"predictions", "offset_x", "offset_y"}
@@ -734,6 +876,13 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
     def get_input_names(self) -> Set[str]:
         return {"image", "x_center", "y_center", "width", "height"}
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
+
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
 
@@ -785,6 +934,13 @@ class RelativeStaticCrop(BaseModel, StepInterface):
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
     ]
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
+
     def get_type(self) -> str:
         return self.type
 
@@ -830,6 +986,14 @@ class ClipComparison(BaseModel, StepInterface):
     name: str
     image: Union[InferenceImageSelector, OutputStepImageSelector]
     text: Union[InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -923,6 +1087,29 @@ class DetectionsConsensus(BaseModel, StepInterface):
     detections_merge_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE
     )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(
+                name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
+            ),
+            OutputDefinition(
+                name="presence_confidence",
+                kind=[FLOAT_ZERO_TO_ONE_KIND, DICTIONARY_KIND],
+            ),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {
@@ -1282,6 +1469,17 @@ class YoloWorld(BaseModel, StepInterface):
     def get_input_names(self) -> Set[str]:
         return {"image", "class_names", "version", "confidence"}
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
+
     def get_output_names(self) -> Set[str]:
         return {"predictions", "parent_id", "image", "prediction_type"}
 
@@ -1361,6 +1559,16 @@ class LMM(BaseModel, StepInterface):
     json_output: Optional[
         Union[InferenceParameterSelector(kinds=[DICTIONARY_KIND]), Dict[str, str]]
     ] = Field(default=None)
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="*", kind=["*"]),
+        ]
 
     @field_validator("json_output")
     @classmethod
@@ -1485,6 +1693,16 @@ class LMMForClassification(BaseModel, StepInterface):
     remote_api_key: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
     ] = Field(default=None)
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(cls).describe_outputs() + [
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {

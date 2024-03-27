@@ -16,7 +16,12 @@ CLASSIFICATION_PREDICTION_KIND = "classification_prediction"
 OBJECT_DETECTION_PREDICTION_KIND = "object_detection_prediction"
 INSTANCE_SEGMENTATION_PREDICTION_KIND = "instance_segmentation_prediction"
 KEYPOINT_DETECTION_PREDICTION_KIND = "keypoint_detection_prediction"
+QR_CODE_DETECTION_KIND = "qr_code_detection"
+BAR_CODE_DETECTION_KIND = "bar_code_detection"
 
+PREDICTION_TYPE_KIND = "prediction_type"
+PARENT_ID_KIND = "parent_id"
+IMAGE_METADATA_KIND = "image_metadata"
 
 StepSelector = Annotated[
     str,
