@@ -1000,7 +1000,9 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 return await response.json()
 
-    @deprecated(reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024")
+    @deprecated(
+        reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
+    )
     @wrap_errors
     def infer_from_workflow(
         self,
@@ -1057,7 +1059,7 @@ class InferenceHTTPClient:
                 category=InferenceSDKDeprecationWarning,
             )
         named_workflow_specified = (workspace_name is not None) and (
-                workflow_name is not None
+            workflow_name is not None
         )
         if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
@@ -1092,7 +1094,9 @@ class InferenceHTTPClient:
                 url = f"{self.__api_url}/workflows/run"
         else:
             if legacy_endpoints:
-                url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
+                url = (
+                    f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
+                )
             else:
                 url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_name}"
         response = requests.post(

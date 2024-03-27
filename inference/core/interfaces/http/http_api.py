@@ -766,6 +766,7 @@ class HttpInterface(BaseInterface):
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to trigger inference from predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
+                deprecated=True,
             )
             @with_route_exceptions
             async def infer_from_predefined_workflow(
@@ -796,6 +797,7 @@ class HttpInterface(BaseInterface):
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to trigger inference from workflow specification provided in payload",
                 description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
+                deprecated=True,
             )
             @with_route_exceptions
             async def infer_from_workflow(

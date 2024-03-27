@@ -2686,7 +2686,9 @@ def test_get_clip_image_embeddings_when_single_image_given_in_v0_mode(
     )
 
     # when
-    result = http_client.get_clip_image_embeddings(inference_input="/some/image.jpg", clip_version="ViT-B-32")
+    result = http_client.get_clip_image_embeddings(
+        inference_input="/some/image.jpg", clip_version="ViT-B-32"
+    )
 
     # then
     assert (
@@ -2731,7 +2733,8 @@ async def test_get_clip_image_embeddings_async_when_single_image_given_in_v0_mod
 
         # when
         result = await http_client.get_clip_image_embeddings_async(
-            inference_input="/some/image.jpg", clip_version="ViT-B-32",
+            inference_input="/some/image.jpg",
+            clip_version="ViT-B-32",
         )
 
         # then
@@ -2745,7 +2748,7 @@ async def test_get_clip_image_embeddings_async_when_single_image_given_in_v0_mod
             data=None,
             json={
                 "image": {"type": "base64", "value": "base64_image"},
-                "clip_version_id": "ViT-B-32"
+                "clip_version_id": "ViT-B-32",
             },
             headers={"Content-Type": "application/json"},
         )
@@ -2865,7 +2868,9 @@ async def test_get_clip_text_embeddings_async_when_single_text_given() -> None:
         )
 
         # when
-        result = await http_client.get_clip_text_embeddings_async(text="some", clip_version="ViT-B-32")
+        result = await http_client.get_clip_text_embeddings_async(
+            text="some", clip_version="ViT-B-32"
+        )
 
         # then
         assert (
@@ -2988,7 +2993,7 @@ def test_clip_compare_when_both_prompt_and_subject_are_texts(
         prompt=["dog", "house"],
         subject_type="text",
         prompt_type="text",
-        clip_version="ViT-B-32"
+        clip_version="ViT-B-32",
     )
 
     # then
@@ -3028,7 +3033,7 @@ async def test_clip_compare_async_when_both_prompt_and_subject_are_texts() -> No
             prompt=["dog", "house"],
             subject_type="text",
             prompt_type="text",
-            clip_version="ViT-B-32"
+            clip_version="ViT-B-32",
         )
 
         # then
@@ -3284,8 +3289,8 @@ async def test_clip_compare_when_faulty_response_returned() -> None:
     "legacy_endpoints, endpoint_to_use",
     [
         (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow")
-    ]
+        (False, "/my_workspace/workflows/my_workflow"),
+    ],
 )
 def test_infer_from_workflow_when_v0_mode_used(
     requests_mock: Mocker,
@@ -3321,8 +3326,8 @@ def test_infer_from_workflow_when_v0_mode_used(
     "legacy_endpoints, endpoint_to_use",
     [
         (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow")
-    ]
+        (False, "/my_workspace/workflows/my_workflow"),
+    ],
 )
 def test_infer_from_workflow_when_no_parameters_given(
     requests_mock: Mocker,
@@ -3359,8 +3364,8 @@ def test_infer_from_workflow_when_no_parameters_given(
     "legacy_endpoints, endpoint_to_use",
     [
         (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow")
-    ]
+        (False, "/my_workspace/workflows/my_workflow"),
+    ],
 )
 def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
@@ -3423,8 +3428,8 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     "legacy_endpoints, endpoint_to_use",
     [
         (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow")
-    ]
+        (False, "/my_workspace/workflows/my_workflow"),
+    ],
 )
 def test_infer_from_workflow_when_faulty_response_given(
     requests_mock: Mocker,
@@ -3476,10 +3481,7 @@ def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
 @mock.patch.object(client, "load_static_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use",
-    [
-        (True, "/infer/workflows"),
-        (False, "/workflows/run")
-    ]
+    [(True, "/infer/workflows"), (False, "/workflows/run")],
 )
 def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
