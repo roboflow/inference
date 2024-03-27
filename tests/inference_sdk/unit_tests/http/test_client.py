@@ -3306,12 +3306,16 @@ def test_infer_from_workflow_when_v0_mode_used(
             "outputs": {"some": 3},
         },
     )
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
 
     # when
-    result = http_client.infer_from_workflow(
+    result = method(
         workspace_name="my_workspace",
         workflow_name="my_workflow",
-        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3343,12 +3347,16 @@ def test_infer_from_workflow_when_no_parameters_given(
             "outputs": {"some": 3},
         },
     )
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
 
     # when
-    result = http_client.infer_from_workflow(
+    result = method(
         workspace_name="my_workspace",
         workflow_name="my_workflow",
-        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3386,9 +3394,14 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
         [("base64_image_1", 0.5)],
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
 
     # when
-    result = http_client.infer_from_workflow(
+    result = method(
         workspace_name="my_workspace",
         workflow_name="my_workflow",
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
@@ -3396,7 +3409,6 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
             "some": 10,
         },
         excluded_fields=["some"],
-        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3444,13 +3456,17 @@ def test_infer_from_workflow_when_faulty_response_given(
         json={"message": "some"},
         status_code=500,
     )
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
 
     # when
     with pytest.raises(HTTPCallErrorError):
-        _ = http_client.infer_from_workflow(
+        _ = method(
             workspace_name="my_workspace",
             workflow_name="my_workflow",
-            legacy_endpoints=legacy_endpoints,
         )
 
 
@@ -3502,16 +3518,20 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
         [("base64_image_1", 0.5)],
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
 
     # when
-    result = http_client.infer_from_workflow(
+    result = method(
         specification={"my": "specification"},
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
             "some": 10,
         },
         excluded_fields=["some"],
-        legacy_endpoints=legacy_endpoints,
     )
 
     # then

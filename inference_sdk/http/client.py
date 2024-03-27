@@ -1,4 +1,3 @@
-import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -8,7 +7,6 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
-from inference_sdk.config import InferenceSDKDeprecationWarning
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -1012,16 +1010,15 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
-        legacy_endpoints: bool = False,
     ) -> Dict[str, Any]:
-        return self.run_workflow(
+        return self._run_workflow(
             workspace_name=workspace_name,
             workflow_name=workflow_name,
             specification=specification,
             images=images,
             parameters=parameters,
             excluded_fields=excluded_fields,
-            legacy_endpoints=legacy_endpoints,
+            legacy_endpoints=True,
         )
 
     @wrap_errors
@@ -1033,7 +1030,6 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
-        legacy_endpoints: bool = False,
     ) -> Dict[str, Any]:
         """
         Triggers inference from workflow specification at the inference HTTP
@@ -1053,11 +1049,26 @@ class InferenceHTTPClient:
         you cannot upgrade inference server version you use. Please note that
         THIS parameter will be deleted end of Q2 2024 when we sunset the old endpoints.
         """
-        if legacy_endpoints:
-            warnings.warn(
-                "Parameter `legacy_endpoints` will be removed end of Q2",
-                category=InferenceSDKDeprecationWarning,
-            )
+        return self._run_workflow(
+            workspace_name=workspace_name,
+            workflow_name=workflow_name,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=False,
+        )
+
+    def _run_workflow(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_name: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
+    ) -> Dict[str, Any]:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_name is not None
         )
