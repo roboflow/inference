@@ -1054,6 +1054,10 @@ class InferenceHTTPClient:
         PIL.Image and base64 images, links to images and local paths.
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
+
+        **Important!**
+        Method is not compatible with inference server <=0.9.18. Please migrate to newer version of
+        the server before end of Q2 2024. Until that is done - use old method: infer_from_workflow(...).
         """
         return self._run_workflow(
             workspace_name=workspace_name,
