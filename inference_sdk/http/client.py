@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import aiohttp
@@ -520,6 +521,7 @@ class InferenceHTTPClient:
                 results.append(parsed_response_element)
         return unwrap_single_element_list(sequence=results)
 
+    @lru_cache(1000)
     def get_model_description(
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
