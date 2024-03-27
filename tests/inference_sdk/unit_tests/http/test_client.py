@@ -3280,14 +3280,23 @@ async def test_clip_compare_when_faulty_response_returned() -> None:
             )
 
 
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow"),
+        (False, "/my_workspace/workflows/my_workflow")
+    ]
+)
 def test_infer_from_workflow_when_v0_mode_used(
     requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
 ) -> None:
     # given
     api_url = "http://infer.roboflow.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workspace/my_workflow",
+        f"{api_url}{endpoint_to_use}",
         json={
             "outputs": {"some": 3},
         },
@@ -3297,6 +3306,7 @@ def test_infer_from_workflow_when_v0_mode_used(
     result = http_client.infer_from_workflow(
         workspace_name="my_workspace",
         workflow_name="my_workflow",
+        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3307,14 +3317,23 @@ def test_infer_from_workflow_when_v0_mode_used(
     }, "Request payload must contain api key and inputs"
 
 
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow"),
+        (False, "/my_workspace/workflows/my_workflow")
+    ]
+)
 def test_infer_from_workflow_when_no_parameters_given(
     requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workspace/my_workflow",
+        f"{api_url}{endpoint_to_use}",
         json={
             "outputs": {"some": 3},
         },
@@ -3324,6 +3343,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     result = http_client.infer_from_workflow(
         workspace_name="my_workspace",
         workflow_name="my_workflow",
+        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3335,15 +3355,24 @@ def test_infer_from_workflow_when_no_parameters_given(
 
 
 @mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow"),
+        (False, "/my_workspace/workflows/my_workflow")
+    ]
+)
 def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workspace/my_workflow",
+        f"{api_url}{endpoint_to_use}",
         json={
             "outputs": {"some": 3},
         },
@@ -3362,6 +3391,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
             "some": 10,
         },
         excluded_fields=["some"],
+        legacy_endpoints=legacy_endpoints,
     )
 
     # then
@@ -3389,14 +3419,23 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     }, "Request payload must contain api key and inputs"
 
 
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow"),
+        (False, "/my_workspace/workflows/my_workflow")
+    ]
+)
 def test_infer_from_workflow_when_faulty_response_given(
     requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows/my_workspace/my_workflow",
+        f"{api_url}{endpoint_to_use}",
         json={"message": "some"},
         status_code=500,
     )
@@ -3406,6 +3445,7 @@ def test_infer_from_workflow_when_faulty_response_given(
         _ = http_client.infer_from_workflow(
             workspace_name="my_workspace",
             workflow_name="my_workflow",
+            legacy_endpoints=legacy_endpoints,
         )
 
 
@@ -3434,15 +3474,24 @@ def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
 
 
 @mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use",
+    [
+        (True, "/infer/workflows"),
+        (False, "/workflows/run")
+    ]
+)
 def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_excluded_fields_given(
     load_static_inference_input_mock: MagicMock,
     requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
 ) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     requests_mock.post(
-        f"{api_url}/infer/workflows",
+        f"{api_url}{endpoint_to_use}",
         json={
             "outputs": {"some": 3},
         },
@@ -3460,6 +3509,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
             "some": 10,
         },
         excluded_fields=["some"],
+        legacy_endpoints=legacy_endpoints,
     )
 
     # then

@@ -1,3 +1,4 @@
+import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -7,6 +8,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
+from inference_sdk.config import InferenceSDKDeprecationWarning
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -62,6 +64,7 @@ from inference_sdk.http.utils.requests import (
     deduct_api_key_from_string,
     inject_images_into_payload,
 )
+from inference_sdk.utils.decorators import deprecated
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -997,6 +1000,7 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 return await response.json()
 
+    @deprecated(reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024")
     @wrap_errors
     def infer_from_workflow(
         self,
@@ -1006,6 +1010,28 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
+    ) -> Dict[str, Any]:
+        return self.run_workflow(
+            workspace_name=workspace_name,
+            workflow_name=workflow_name,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=legacy_endpoints,
+        )
+
+    @wrap_errors
+    def run_workflow(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_name: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
     ) -> Dict[str, Any]:
         """
         Triggers inference from workflow specification at the inference HTTP
@@ -1018,9 +1044,20 @@ class InferenceHTTPClient:
         PIL.Image and base64 images, links to images and local paths.
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
+
+        **Important!**
+        New parameter introduced in v0.9.19: `legacy_endpoints` - enforces usage of
+        old workflow endpoints at inference server side. Use that if for any reason
+        you cannot upgrade inference server version you use. Please note that
+        THIS parameter will be deleted end of Q2 2024 when we sunset the old endpoints.
         """
+        if legacy_endpoints:
+            warnings.warn(
+                "Parameter `legacy_endpoints` will be removed end of Q2",
+                category=InferenceSDKDeprecationWarning,
+            )
         named_workflow_specified = (workspace_name is not None) and (
-            workflow_name is not None
+                workflow_name is not None
         )
         if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
@@ -1049,9 +1086,15 @@ class InferenceHTTPClient:
         if specification is not None:
             payload["specification"] = specification
         if specification is not None:
-            url = f"{self.__api_url}/infer/workflows"
+            if legacy_endpoints:
+                url = f"{self.__api_url}/infer/workflows"
+            else:
+                url = f"{self.__api_url}/workflows/run"
         else:
-            url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
+            if legacy_endpoints:
+                url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
+            else:
+                url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_name}"
         response = requests.post(
             url,
             json=payload,

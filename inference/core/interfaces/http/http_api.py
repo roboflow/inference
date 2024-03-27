@@ -756,10 +756,16 @@ class HttpInterface(BaseInterface):
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
-                "/infer/workflows/{workspace_name}/{workflow_name}",
+                "/{workspace_name}/workflows/{workflow_name}",
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to trigger inference from predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
+            )
+            @app.post(
+                "/infer/workflows/{workspace_name}/{workflow_name}",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
             )
             @with_route_exceptions
             async def infer_from_predefined_workflow(
@@ -780,10 +786,16 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
+                "/workflows/run",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to trigger inference from workflow specification provided in payload",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body.",
+            )
+            @app.post(
                 "/infer/workflows",
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to trigger inference from workflow specification provided in payload",
-                description="Parses and executes workflow specification, injecting runtime parameters from request body",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
             )
             @with_route_exceptions
             async def infer_from_workflow(

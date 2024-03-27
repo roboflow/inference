@@ -1,7 +1,7 @@
 import functools
 import warnings
 
-from inference.core.warnings import InferenceDeprecationWarning
+from inference_sdk.config import InferenceSDKDeprecationWarning
 
 
 def deprecated(reason: str):
@@ -10,7 +10,7 @@ def deprecated(reason: str):
         def wrapper(*args, **kwargs):
             warnings.warn(
                 f"{func.__name__} is deprecated: {reason}",
-                category=InferenceDeprecationWarning,
+                category=InferenceSDKDeprecationWarning,
                 stacklevel=2,
             )
             return func(*args, **kwargs)

@@ -1,0 +1,2 @@
+class InferenceDeprecationWarning(Warning):
+    pass
