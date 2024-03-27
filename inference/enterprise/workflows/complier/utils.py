@@ -5,8 +5,8 @@ from networkx import DiGraph
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.validators import is_selector
 from inference.enterprise.workflows.entities.workflows_specification import (
+    BlockType,
     InputType,
-    StepType,
 )
 
 
@@ -21,7 +21,7 @@ def construct_input_selector(input_name: str) -> str:
     return f"$inputs.{input_name}"
 
 
-def get_steps_selectors(steps: List[StepType]) -> Set[str]:
+def get_steps_selectors(steps: List[BlockType]) -> Set[str]:
     return {construct_step_selector(step_name=step.name) for step in steps}
 
 
@@ -29,14 +29,14 @@ def construct_step_selector(step_name: str) -> str:
     return f"$steps.{step_name}"
 
 
-def get_steps_input_selectors(steps: List[StepType]) -> Set[str]:
+def get_steps_input_selectors(steps: List[BlockType]) -> Set[str]:
     result = set()
     for step in steps:
         result.update(get_step_input_selectors(step=step))
     return result
 
 
-def get_step_input_selectors(step: StepType) -> Set[str]:
+def get_step_input_selectors(step: BlockType) -> Set[str]:
     result = set()
     for step_input_name in step.get_input_names():
         step_input = getattr(step, step_input_name)
@@ -49,7 +49,7 @@ def get_step_input_selectors(step: StepType) -> Set[str]:
     return result
 
 
-def get_steps_output_selectors(steps: List[StepType]) -> Set[str]:
+def get_steps_output_selectors(steps: List[BlockType]) -> Set[str]:
     result = set()
     for step in steps:
         for output_name in step.get_output_names():

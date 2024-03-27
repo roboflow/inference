@@ -118,7 +118,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(RoboflowModel, cls).describe_outputs() + [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND])
         ]
 
@@ -194,7 +194,7 @@ class ClassificationModel(RoboflowModel):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(ClassificationModel, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name="top", kind=[STRING_KIND]),
             OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
@@ -241,7 +241,7 @@ class MultiLabelClassificationModel(RoboflowModel):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(MultiLabelClassificationModel, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name="predicted_classes", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
@@ -303,7 +303,7 @@ class ObjectDetectionModel(RoboflowModel):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(ObjectDetectionModel, cls).describe_outputs() + [
             OutputDefinition(
                 name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
@@ -388,7 +388,7 @@ class KeypointsDetectionModel(ObjectDetectionModel):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        outputs = super(cls).describe_outputs()
+        outputs = super(KeypointsDetectionModel, cls).describe_outputs()
         result = []
         for o in outputs:
             if o.name != "predictions":
@@ -443,7 +443,7 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        outputs = super(cls).describe_outputs()
+        outputs = super(InstanceSegmentationModel, cls).describe_outputs()
         result = []
         for o in outputs:
             if o.name != "predictions":
@@ -496,7 +496,7 @@ class OCRModel(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(OCRModel, cls).describe_outputs() + [
             OutputDefinition(name="result", kind=[STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
@@ -543,7 +543,7 @@ class Crop(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(Crop, cls).describe_outputs() + [
             OutputDefinition(name="crops", kind=[IMAGE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
@@ -644,7 +644,7 @@ class QRCodeDetection(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(QRCodeDetection, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[QR_CODE_DETECTION_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
@@ -684,7 +684,7 @@ class BarcodeDetection(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(BarcodeDetection, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[BAR_CODE_DETECTION_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
@@ -748,7 +748,7 @@ class DetectionFilter(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(DetectionFilter, cls).describe_outputs() + [
             OutputDefinition(
                 name="predictions",
                 kind=[
@@ -806,7 +806,7 @@ class DetectionOffset(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(DetectionOffset, cls).describe_outputs() + [
             OutputDefinition(
                 name="predictions",
                 kind=[
@@ -878,7 +878,7 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(AbsoluteStaticCrop, cls).describe_outputs() + [
             OutputDefinition(name="crops", kind=[IMAGE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
@@ -936,7 +936,7 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(RelativeStaticCrop, cls).describe_outputs() + [
             OutputDefinition(name="crops", kind=[IMAGE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
@@ -989,7 +989,7 @@ class ClipComparison(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(ClipComparison, cls).describe_outputs() + [
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
@@ -1090,7 +1090,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(DetectionsConsensus, cls).describe_outputs() + [
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions",
@@ -1471,7 +1471,7 @@ class YoloWorld(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(YoloWorld, cls).describe_outputs() + [
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
@@ -1562,7 +1562,7 @@ class LMM(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(LMM, cls).describe_outputs() + [
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
@@ -1696,7 +1696,7 @@ class LMMForClassification(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(cls).describe_outputs() + [
+        return super(LMMForClassification, cls).describe_outputs() + [
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
             OutputDefinition(name="top", kind=[STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),

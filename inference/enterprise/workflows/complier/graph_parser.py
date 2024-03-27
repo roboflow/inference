@@ -23,8 +23,8 @@ from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.steps import StepInterface
 from inference.enterprise.workflows.entities.validators import is_selector
 from inference.enterprise.workflows.entities.workflows_specification import (
+    BlockType,
     InputType,
-    StepType,
     WorkflowSpecificationV1,
 )
 from inference.enterprise.workflows.errors import (
@@ -81,7 +81,7 @@ def add_input_nodes_for_graph(
 
 
 def add_steps_nodes_for_graph(
-    steps: List[StepType],
+    steps: List[BlockType],
     execution_graph: DiGraph,
 ) -> DiGraph:
     for step in steps:

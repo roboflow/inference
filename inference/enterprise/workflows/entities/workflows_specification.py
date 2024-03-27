@@ -34,7 +34,31 @@ from inference.enterprise.workflows.entities.steps import (
 InputType = Annotated[
     Union[InferenceImage, InferenceParameter], Field(discriminator="type")
 ]
-StepType = Annotated[
+
+ALL_BLOCKS_CLASSES = [
+    BarcodeDetection,
+    ClassificationModel,
+    MultiLabelClassificationModel,
+    ObjectDetectionModel,
+    KeypointsDetectionModel,
+    InstanceSegmentationModel,
+    OCRModel,
+    Crop,
+    Condition,
+    DetectionFilter,
+    DetectionOffset,
+    ClipComparison,
+    RelativeStaticCrop,
+    AbsoluteStaticCrop,
+    QRCodeDetection,
+    DetectionsConsensus,
+    ActiveLearningDataCollector,
+    YoloWorld,
+    LMM,
+    LMMForClassification,
+]
+
+BlockType = Annotated[
     Union[
         BarcodeDetection,
         ClassificationModel,
@@ -64,7 +88,7 @@ StepType = Annotated[
 class WorkflowSpecificationV1(BaseModel):
     version: Literal["1.0"]
     inputs: List[InputType]
-    steps: List[StepType]
+    steps: List[BlockType]
     outputs: List[JsonField]
 
 

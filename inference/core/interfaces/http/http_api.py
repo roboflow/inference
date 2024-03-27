@@ -127,8 +127,14 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.introspection import (
+    describe_available_blocks,
+)
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
     WorkflowsActiveLearningMiddleware,
+)
+from inference.enterprise.workflows.entities.blocks_descriptions import (
+    BlocksDescription,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
@@ -812,6 +818,18 @@ class HttpInterface(BaseInterface):
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
                 )
+
+            @app.get(
+                "/workflows/blocks/describe",
+                response_model=BlocksDescription,
+                summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
+                description="Endpoint provides detailed information about workflows building blocks that are "
+                "accessible in the inference server. This information could be used to programmatically "
+                "build / display workflows.",
+            )
+            @with_route_exceptions
+            async def describe_workflows_blocks() -> BlocksDescription:
+                return describe_available_blocks()
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

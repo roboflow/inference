@@ -83,7 +83,7 @@ OutputStepImageSelector = Annotated[
     Field(
         json_schema_extra={
             "reference": True,
-            "selected_element": "output_step",
+            "selected_element": "step_output",
             "kind": [IMAGE_KIND],
         }
     ),
