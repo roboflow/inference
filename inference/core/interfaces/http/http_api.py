@@ -127,14 +127,21 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.graph_parser import prepare_execution_graph
 from inference.enterprise.workflows.complier.introspection import (
     describe_available_blocks,
 )
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
     WorkflowsActiveLearningMiddleware,
 )
+from inference.enterprise.workflows.complier.validator import (
+    validate_workflow_specification,
+)
 from inference.enterprise.workflows.entities.blocks_descriptions import (
     BlocksDescription,
+)
+from inference.enterprise.workflows.entities.workflows_specification import (
+    WorkflowSpecification,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
@@ -830,6 +837,21 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def describe_workflows_blocks() -> BlocksDescription:
                 return describe_available_blocks()
+
+            @app.post(
+                "/workflows/validate",
+                summary="[EXPERIMENTAL] Endpoint to validate",
+                description="Endpoint provides a way to check validity of JSON workflow definition.",
+            )
+            @with_route_exceptions
+            async def validate_workflow(request: WorkflowSpecification) -> dict:
+                validate_workflow_specification(
+                    workflow_specification=request.specification
+                )
+                _ = prepare_execution_graph(
+                    workflow_specification=request.specification
+                )
+                return {"status": "ok"}
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

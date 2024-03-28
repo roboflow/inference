@@ -19,6 +19,7 @@ from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     DICTIONARY_KIND,
+    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     IMAGE_METADATA_KIND,
@@ -598,9 +599,41 @@ class Operator(Enum):
 class Condition(BaseModel, StepInterface):
     type: Literal["Condition"]
     name: str
-    left: Union[float, int, bool, StepOutputSelector(), str, list, set]
+    left: Union[
+        float,
+        int,
+        bool,
+        StepOutputSelector(
+            kinds=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+            ]
+        ),
+        str,
+        list,
+        set,
+    ]
     operator: Operator
-    right: Union[float, int, bool, StepOutputSelector(), str, list, set]
+    right: Union[
+        float,
+        int,
+        bool,
+        StepOutputSelector(
+            kinds=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+            ]
+        ),
+        str,
+        list,
+        set,
+    ]
     step_if_true: StepSelector
     step_if_false: StepSelector
 
@@ -1350,6 +1383,7 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
+            CLASSIFICATION_PREDICTION_KIND,
         ]
     )
     target_dataset: Union[InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT]), str]
