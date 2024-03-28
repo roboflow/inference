@@ -34,9 +34,11 @@ from inference.enterprise.workflows.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT,
     STRING_KIND,
+    WILDCARD_KIND,
     FloatZeroToOne,
     InferenceImageSelector,
     InferenceParameterSelector,
+    Kind,
     OutputStepImageSelector,
     StepOutputSelector,
     StepSelector,
@@ -65,7 +67,7 @@ from inference.enterprise.workflows.errors import (
 
 class OutputDefinition(BaseModel):
     name: str
-    kind: List[str]
+    kind: List[Kind]
 
 
 class StepInterface(GraphNone, metaclass=ABCMeta):
@@ -107,15 +109,29 @@ class StepInterface(GraphNone, metaclass=ABCMeta):
 class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     model_config = ConfigDict(protected_namespaces=())
     type: Literal["RoboflowModel"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
-    model_id: Union[InferenceParameterSelector(kinds=[ROBOFLOW_MODEL_ID_KIND]), str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    model_id: Union[InferenceParameterSelector(kinds=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        Field(description="Roboflow model identifier", examples=["my_priject/3"])
+    )
     disable_active_learning: Union[
         Optional[bool], InferenceParameterSelector(kinds=[BOOLEAN_KIND])
-    ] = Field(default=False)
+    ] = Field(
+        default=False,
+        description="Parameter to decide if Active Learning data sampling is disabled for the model",
+        examples=[True, "$inputs.disable_active_learning"],
+    )
     active_learning_target_dataset: Union[
         Optional[str], InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT])
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
+        "docs for more information",
+        examples=["my_project", "$inputs.al_target_project"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -191,7 +207,11 @@ class ClassificationModel(RoboflowModel):
     confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.4)
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -238,7 +258,11 @@ class MultiLabelClassificationModel(RoboflowModel):
     confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.4)
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -283,24 +307,48 @@ class ObjectDetectionModel(RoboflowModel):
     type: Literal["ObjectDetectionModel"]
     class_agnostic_nms: Union[
         Optional[bool], InferenceParameterSelector(kinds=[BOOLEAN_KIND])
-    ] = Field(default=False)
+    ] = Field(
+        default=False,
+        description="Value to decide if NMS is to be used in class-agnostic mode.",
+        examples=[True, "$inputs.class_agnostic_nms"],
+    )
     class_filter: Union[
         Optional[List[str]], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
+        examples=[["a", "b", "c"], "$inputs.class_filter"],
+    )
     confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.4)
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
     iou_threshold: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.3)
+    ] = Field(
+        default=0.3,
+        description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
+        examples=[0.4, "$inputs.iou_threshold"],
+    )
     max_detections: Union[
         Optional[PositiveInt], InferenceParameterSelector(kinds=[INTEGER_KIND])
-    ] = Field(default=300)
+    ] = Field(
+        default=300,
+        description="Maximum number of detections to return",
+        examples=[300, "$inputs.max_detections"],
+    )
     max_candidates: Union[
         Optional[PositiveInt], InferenceParameterSelector(kinds=[INTEGER_KIND])
-    ] = Field(default=3000)
+    ] = Field(
+        default=3000,
+        description="Maximum number of candidates as NMS input to be taken into account.",
+        examples=[3000, "$inputs.max_candidates"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -385,7 +433,11 @@ class KeypointsDetectionModel(ObjectDetectionModel):
     keypoint_confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.0)
+    ] = Field(
+        default=0.0,
+        description="Confidence threshold to predict keypoint as visible.",
+        examples=[0.3, "$inputs.keypoint_confidence"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -436,11 +488,19 @@ class InstanceSegmentationModel(ObjectDetectionModel):
     mask_decode_mode: Union[
         Literal["accurate", "tradeoff", "fast"],
         InferenceParameterSelector(kinds=[STRING_KIND]),
-    ] = Field(default="accurate")
+    ] = Field(
+        default="accurate",
+        description="Parameter of mask decoding in prediction post-processing.",
+        examples=["accurate", "$inputs.mask_decode_mode"],
+    )
     tradeoff_factor: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.0)
+    ] = Field(
+        default=0.0,
+        description="Post-processing parameter to dictate tradeoff between fast and accurate",
+        examples=[0.3, "$inputs.tradeoff_factor"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -492,8 +552,11 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
 class OCRModel(BaseModel, StepInterface):
     type: Literal["OCRModel"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -532,14 +595,20 @@ class OCRModel(BaseModel, StepInterface):
 
 class Crop(BaseModel, StepInterface):
     type: Literal["Crop"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     detections: StepOutputSelector(
         kinds=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
+    ) = Field(
+        description="Reference to predictions of detection-like model, that can be based of cropping (detection must define RoI - eg: bounding box)",
+        examples=["$steps.my_object_detection_model.predictions"],
     )
 
     @classmethod
@@ -598,7 +667,7 @@ class Operator(Enum):
 
 class Condition(BaseModel, StepInterface):
     type: Literal["Condition"]
-    name: str
+    name: str = Field(description="Unique name of step in workflows")
     left: Union[
         float,
         int,
@@ -615,8 +684,14 @@ class Condition(BaseModel, StepInterface):
         str,
         list,
         set,
-    ]
-    operator: Operator
+    ] = Field(
+        description="Left operand of expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["$steps.classification.top", 3, "some"],
+    )
+    operator: Operator = Field(
+        description="Operator in expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["equal", "in"],
+    )
     right: Union[
         float,
         int,
@@ -633,9 +708,18 @@ class Condition(BaseModel, StepInterface):
         str,
         list,
         set,
-    ]
-    step_if_true: StepSelector
-    step_if_false: StepSelector
+    ] = Field(
+        description="Right operand of expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["$steps.classification.top", 3, "some"],
+    )
+    step_if_true: StepSelector = Field(
+        description="Reference to step which shall be executed if expression evaluates to true",
+        examples=["$steps.on_true"],
+    )
+    step_if_false: StepSelector = Field(
+        description="Reference to step which shall be executed if expression evaluates to false",
+        examples=["$steps.on_false"],
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -672,8 +756,11 @@ class BinaryOperator(Enum):
 
 class QRCodeDetection(BaseModel, StepInterface):
     type: Literal["QRCodeDetection"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -712,8 +799,11 @@ class QRCodeDetection(BaseModel, StepInterface):
 
 class BarcodeDetection(BaseModel, StepInterface):
     type: Literal["BarcodeDetection"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -752,31 +842,61 @@ class BarcodeDetection(BaseModel, StepInterface):
 
 class DetectionFilterDefinition(BaseModel):
     type: Literal["DetectionFilterDefinition"]
-    field_name: str
-    operator: Operator
-    reference_value: Union[float, int, bool, str, list, set]
+    field_name: str = Field(
+        description="Name of detection-like prediction element field to take into filtering expression evaluation: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=["confidence", "width"],
+    )
+    operator: Operator = Field(
+        description="Operator in filtering expression: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=["equal", "in"],
+    )
+    reference_value: Union[float, int, bool, str, list, set] = Field(
+        description="Reference value to take into filtering expression evaluation: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=[0.3, 300],
+    )
 
 
 class CompoundDetectionFilterDefinition(BaseModel):
     type: Literal["CompoundDetectionFilterDefinition"]
-    left: DetectionFilterDefinition
-    operator: BinaryOperator
-    right: DetectionFilterDefinition
+    left: Annotated[
+        Union[DetectionFilterDefinition, "CompoundDetectionFilterDefinition"],
+        Field(
+            discriminator="type",
+            description="Left operand (potentially nested expression) in expression `left bin_operator right`",
+        ),
+    ]
+    operator: BinaryOperator = Field(
+        description="Binary operator in expression `left bin_operator right`",
+        examples=["and", "or"],
+    )
+    right: Annotated[
+        Union[DetectionFilterDefinition, "CompoundDetectionFilterDefinition"],
+        Field(
+            discriminator="type",
+            description="Right operand (potentially nested expression) in expression `left bin_operator right`",
+        ),
+    ]
 
 
 class DetectionFilter(BaseModel, StepInterface):
     type: Literal["DetectionFilter"]
-    name: str
+    name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
         kinds=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
     )
     filter_definition: Annotated[
         Union[DetectionFilterDefinition, CompoundDetectionFilterDefinition],
-        Field(discriminator="type"),
+        Field(
+            discriminator="type",
+            description="Definition of a filter expression to be applied for each element of detection-like predictions to decide if element should persist in the output. Can be used for instance to filter-out bounding boxes based on coordinates.",
+        ),
     ]
 
     @classmethod
@@ -826,16 +946,23 @@ class DetectionFilter(BaseModel, StepInterface):
 
 class DetectionOffset(BaseModel, StepInterface):
     type: Literal["DetectionOffset"]
-    name: str
+    name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
         kinds=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
     )
-    offset_x: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
-    offset_y: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    offset_x: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = (
+        Field(description="Offset for boxes width", examples=[10, "$inputs.offset_x"])
+    )
+    offset_y: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = (
+        Field(description="Offset for boxes height", examples=[10, "$inputs.offset_y"])
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -896,12 +1023,33 @@ class DetectionOffset(BaseModel, StepInterface):
 
 class AbsoluteStaticCrop(BaseModel, StepInterface):
     type: Literal["AbsoluteStaticCrop"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
-    x_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
-    y_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
-    width: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
-    height: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    x_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = (
+        Field(
+            description="Center X of static crop (absolute coordinate)",
+            examples=[40, "$inputs.center_x"],
+        )
+    )
+    y_center: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = (
+        Field(
+            description="Center Y of static crop (absolute coordinate)",
+            examples=[40, "$inputs.center_y"],
+        )
+    )
+    width: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = Field(
+        description="Width of static crop (absolute value)",
+        examples=[40, "$inputs.width"],
+    )
+    height: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])] = (
+        Field(
+            description="Height of static crop (absolute value)",
+            examples=[40, "$inputs.height"],
+        )
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -952,20 +1100,35 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 
 class RelativeStaticCrop(BaseModel, StepInterface):
     type: Literal["RelativeStaticCrop"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     x_center: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ]
+    ] = Field(
+        description="Center X of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_x"],
+    )
     y_center: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ]
+    ] = Field(
+        description="Center Y of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_y"],
+    )
     width: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ]
+    ] = Field(
+        description="Width of static crop (relative value 0.0-1.0)",
+        examples=[0.3, "$inputs.width"],
+    )
     height: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ]
+    ] = Field(
+        description="Height of static crop (relative value 0.0-1.0)",
+        examples=[0.3, "$inputs.height"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -1016,9 +1179,17 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 
 class ClipComparison(BaseModel, StepInterface):
     type: Literal["ClipComparison"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
-    text: Union[InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    text: Union[InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]] = (
+        Field(
+            description="List of texts to calculate similarity against each input image",
+            examples=[["a", "b", "c"], "$inputs.texts"],
+        )
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -1081,7 +1252,7 @@ class AggregationMode(Enum):
 
 class DetectionsConsensus(BaseModel, StepInterface):
     type: Literal["DetectionsConsensus"]
-    name: str
+    name: str = Field(description="Unique name of step in workflows")
     predictions: List[
         StepOutputSelector(
             kinds=[
@@ -1090,35 +1261,68 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         ),
-    ] = Field(min_items=1)
-    required_votes: Union[PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])]
+    ] = Field(
+        min_items=1,
+        description="Reference to detection-like model predictions made against single image to agree on model consensus",
+        examples=[["$steps.a.predictions", "$steps.b.predictions"]],
+    )
+    required_votes: Union[
+        PositiveInt, InferenceParameterSelector(kinds=[INTEGER_KIND])
+    ] = Field(
+        description="Required number of votes for single detection from different models to accept detection as output detection",
+        examples=[2, "$inputs.required_votes"],
+    )
     class_aware: Union[bool, InferenceParameterSelector(kinds=[BOOLEAN_KIND])] = Field(
-        default=True
+        default=True,
+        description="Flag to decide if margin detections is class-aware or only bounding boxes aware",
+        examples=[True, "$inputs.class_aware"],
     )
     iou_threshold: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(default=0.3)
+    ] = Field(
+        default=0.3,
+        description="IoU threshold to consider detections from different models as matching (increasing votes for region)",
+        examples=[0.3, "$inputs.iou_threshold"],
+    )
     confidence: Union[
         FloatZeroToOne, InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(default=0.0)
+    ] = Field(
+        default=0.0,
+        description="Confidence threshold for merged detections",
+        examples=[0.1, "$inputs.confidence"],
+    )
     classes_to_consider: Optional[
         Union[List[str], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Optional list of classes to consider in consensus procedure.",
+        examples=[["a", "b"], "$inputs.classes_to_consider"],
+    )
     required_objects: Optional[
         Union[
             PositiveInt,
             Dict[str, PositiveInt],
             InferenceParameterSelector(kinds=[INTEGER_KIND, DICTIONARY_KIND]),
         ]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="If given, it holds the number of objects that must be present in merged results, to assume that object presence is reached. Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into minimal number of merged detections of given class to assume consensus.",
+        examples=[3, {"a": 7, "b": 2}, "$inputs.required_objects"],
+    )
     presence_confidence_aggregation: AggregationMode = Field(
-        default=AggregationMode.MAX
+        default=AggregationMode.MAX,
+        description="Mode dictating aggregation of confidence scores and classes both in case of object presence deduction procedure.",
+        examples=["max", "min"],
     )
     detections_merge_confidence_aggregation: AggregationMode = Field(
-        default=AggregationMode.AVERAGE
+        default=AggregationMode.AVERAGE,
+        description="Mode dictating aggregation of confidence scores and classes both in case of boxes consensus procedure. One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence, `min` - for the class of detection with min confidence.",
+        examples=["min", "max"],
     )
     detections_merge_coordinates_aggregation: AggregationMode = Field(
-        default=AggregationMode.AVERAGE
+        default=AggregationMode.AVERAGE,
+        description="Mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking largest box.",
+        examples=["min", "max"],
     )
 
     @classmethod
@@ -1366,8 +1570,11 @@ class EnabledActiveLearningConfiguration(BaseModel):
 
 class ActiveLearningDataCollector(BaseModel, StepInterface):
     type: Literal["ActiveLearningDataCollector"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     predictions: StepOutputSelector(
         kinds=[
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -1375,17 +1582,35 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             KEYPOINT_DETECTION_PREDICTION_KIND,
             CLASSIFICATION_PREDICTION_KIND,
         ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
     )
-    target_dataset: Union[InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT]), str]
+    target_dataset: Union[InferenceParameterSelector(kinds=[ROBOFLOW_PROJECT]), str] = (
+        Field(
+            description="name of Roboflow dataset / project to be used as target for collected data",
+            examples=["my_dataset", "$inputs.target_al_dataset"],
+        )
+    )
     target_dataset_api_key: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="API key to be used for data registration. This may help in a scenario when data applicable for Universe models predictions to be saved in private workspaces and for models that were trained in the same workspace (not necessarily within the same project))",
+    )
     disable_active_learning: Union[
         bool, InferenceParameterSelector(kinds=[BOOLEAN_KIND])
-    ] = Field(default=False)
+    ] = Field(
+        default=False,
+        description="boolean flag that can be also reference to input - to arbitrarily disable data collection for specific request - overrides all AL config",
+        examples=[True, "$inputs.disable_active_learning"],
+    )
     active_learning_configuration: Optional[
         Union[EnabledActiveLearningConfiguration, DisabledActiveLearningConfiguration]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Optional configuration of Active Learning data sampling in the exact format explained in Active Learning docs.",
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -1476,19 +1701,33 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
 
 class YoloWorld(BaseModel, StepInterface):
     type: Literal["YoloWorld"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     class_names: Union[
         InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND]), List[str]
-    ]
+    ] = Field(
+        description="List of classes to use YoloWorld model against",
+        examples=[["a", "b", "c"], "$inputs.class_names"],
+    )
     version: Union[
         Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
         InferenceParameterSelector(kinds=[STRING_KIND]),
-    ] = Field(default="l")
+    ] = Field(
+        default="l",
+        description="Variant of YoloWorld model",
+        examples=["l", "$inputs.variant"],
+    )
     confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kinds=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(default=0.4)
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for detections",
+        examples=[0.3, "$inputs.confidence"],
+    )
 
     def get_input_names(self) -> Set[str]:
         return {"image", "class_names", "version", "confidence"}
@@ -1570,19 +1809,37 @@ class LMMConfig(BaseModel):
 
 class LMM(BaseModel, StepInterface):
     type: Literal["LMM"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
-    prompt: Union[InferenceParameterSelector(kinds=[STRING_KIND]), str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    prompt: Union[InferenceParameterSelector(kinds=[STRING_KIND]), str] = Field(
+        description="Holds unconstrained text prompt to LMM mode",
+        examples=["my prompt", "$inputs.prompt"],
+    )
     lmm_type: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ]
-    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
+    ] = Field(
+        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
+    )
+    lmm_config: LMMConfig = Field(
+        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
+    )
     remote_api_key: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+        examples=["xxx-xxx", "$inputs.api_key"],
+    )
     json_output: Optional[
         Union[InferenceParameterSelector(kinds=[DICTIONARY_KIND]), Dict[str, str]]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Holds dictionary that maps name of requested output field into its description",
+        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -1591,7 +1848,7 @@ class LMM(BaseModel, StepInterface):
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
-            OutputDefinition(name="*", kind=["*"]),
+            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
     @field_validator("json_output")
@@ -1707,16 +1964,32 @@ class LMM(BaseModel, StepInterface):
 
 class LMMForClassification(BaseModel, StepInterface):
     type: Literal["LMMForClassification"]
-    name: str
-    image: Union[InferenceImageSelector, OutputStepImageSelector]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     lmm_type: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ]
-    classes: Union[List[str], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])]
-    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
+    ] = Field(
+        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
+    )
+    classes: Union[
+        List[str], InferenceParameterSelector(kinds=[LIST_OF_VALUES_KIND])
+    ] = Field(
+        description="List of classes that LMM shall classify against",
+        examples=[["a", "b"], "$inputs.classes"],
+    )
+    lmm_config: LMMConfig = Field(
+        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
+    )
     remote_api_key: Union[
         InferenceParameterSelector(kinds=[STRING_KIND]), Optional[str]
-    ] = Field(default=None)
+    ] = Field(
+        default=None,
+        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+        examples=["xxx-xxx", "$inputs.api_key"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

@@ -3,6 +3,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.types import Kind
 
 
 class BlockDescription(BaseModel):
@@ -19,3 +20,4 @@ class BlocksDescription(BaseModel):
     blocks: List[BlockDescription] = Field(
         description="List of blocks definitions that can be used to create workflow."
     )
+    declared_kinds: List[Kind]
