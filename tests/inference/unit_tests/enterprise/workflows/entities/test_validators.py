@@ -12,21 +12,15 @@ from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
-    validate_field_is_empty_or_selector_or_list_of_string,
-    validate_field_is_in_range_zero_one_or_empty_or_selector,
-    validate_field_is_list_of_selectors,
     validate_field_is_list_of_string,
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
-    validate_field_is_selector_or_one_of_values,
     validate_image_biding,
-    validate_image_is_valid_selector,
     validate_selector_holds_detections,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
     validate_value_is_empty_or_number_in_range_zero_one,
     validate_value_is_empty_or_positive_number,
-    validate_value_is_empty_or_selector_or_positive_number,
 )
 from inference.enterprise.workflows.errors import (
     InvalidStepInputDetected,
@@ -402,38 +396,6 @@ def test_validate_field_is_one_of_selected_values_when_value_does_not_match_and_
         )
 
 
-def test_validate_field_is_selector_or_one_of_values_when_input_is_selector() -> None:
-    # when
-    validate_field_is_selector_or_one_of_values(
-        value="$inputs.image",
-        field_name="my_field",
-        selected_values={"some", "other"},
-    )
-
-
-def test_validate_field_is_selector_or_one_of_values_when_input_is_matching_value() -> (
-    None
-):
-    # when
-    validate_field_is_selector_or_one_of_values(
-        value="some",
-        field_name="my_field",
-        selected_values={"some", "other"},
-    )
-
-
-def test_validate_field_is_selector_or_one_of_values_when_input_is_not_matching_value() -> (
-    None
-):
-    # when
-    with pytest.raises(ValueError):
-        validate_field_is_selector_or_one_of_values(
-            value=4,
-            field_name="my_field",
-            selected_values={"some", "other"},
-        )
-
-
 @pytest.mark.parametrize("value", [{}, 1.0, 1, "some", set()])
 def test_validate_field_is_list_of_string_when_not_a_list_provided(value: Any) -> None:
     # when
@@ -455,41 +417,6 @@ def test_validate_field_is_list_of_string_when_validation_fails_with_custom_erro
     # when
     with pytest.raises(MyError):
         validate_field_is_list_of_string(value=1, field_name="some", error=MyError)
-
-
-def test_validate_field_is_empty_or_selector_or_list_of_string_when_empty_input_given() -> (
-    None
-):
-    # when
-    validate_field_is_empty_or_selector_or_list_of_string(value=None, field_name="some")
-
-
-def test_validate_field_is_empty_or_selector_or_list_of_string_when_selector_given() -> (
-    None
-):
-    # when
-    validate_field_is_empty_or_selector_or_list_of_string(
-        value="$inputs.some", field_name="some"
-    )
-
-
-def test_validate_field_is_empty_or_selector_or_list_of_string_when_valid_list_given() -> (
-    None
-):
-    # when
-    validate_field_is_empty_or_selector_or_list_of_string(
-        value=["some", "other"], field_name="some"
-    )
-
-
-def test_validate_field_is_empty_or_selector_or_list_of_string_when_invalid_list_given() -> (
-    None
-):
-    # when
-    with pytest.raises(ValueError):
-        validate_field_is_empty_or_selector_or_list_of_string(
-            value=["some", 3], field_name="some"
-        )
 
 
 @pytest.mark.parametrize("value", ["invalid", [], {}, set()])
@@ -548,35 +475,6 @@ def test_validate_value_is_empty_or_positive_number_when_empty_value_provided() 
     )
 
 
-def test_validate_value_is_empty_or_selector_or_positive_number_when_selector_given() -> (
-    None
-):
-    # when
-    validate_value_is_empty_or_selector_or_positive_number(
-        value="$inputs.image",
-        field_name="some",
-    )
-
-
-def test_validate_value_is_empty_or_selector_or_positive_number_when_correct_value_given() -> (
-    None
-):
-    validate_value_is_empty_or_selector_or_positive_number(
-        value=3,
-        field_name="some",
-    )
-
-
-def test_validate_value_is_empty_or_selector_or_positive_number_when_invalid__value_given() -> (
-    None
-):
-    with pytest.raises(ValueError):
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=0,
-            field_name="some",
-        )
-
-
 def test_validate_value_is_empty_or_number_in_range_zero_one_when_empty_value_given() -> (
     None
 ):
@@ -616,76 +514,3 @@ def test_validate_value_is_empty_or_number_in_range_zero_one_when_valid_number_g
 ) -> None:
     # when
     validate_value_is_empty_or_number_in_range_zero_one(value=value)
-
-
-def test_validate_field_is_in_range_zero_one_or_empty_or_selector_when_selector_given() -> (
-    None
-):
-    # when
-    validate_field_is_in_range_zero_one_or_empty_or_selector(value="$inputs.confidence")
-
-
-def test_validate_field_is_in_range_zero_one_or_empty_or_selector_when_correct_value_given() -> (
-    None
-):
-    # when
-    validate_field_is_in_range_zero_one_or_empty_or_selector(value=0.3)
-
-
-def test_validate_field_is_in_range_zero_one_or_empty_or_selector_when_invalid_value_given() -> (
-    None
-):
-    # when
-    with pytest.raises(ValueError):
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=1.1)
-
-
-def test_validate_image_is_valid_selector_when_single_selector_given() -> None:
-    # when
-    validate_image_is_valid_selector(value="$inputs.image")
-
-
-def test_validate_image_is_valid_selector_when_multiple_selectors_given() -> None:
-    validate_image_is_valid_selector(value=["$inputs.image", "$inputs.image2"])
-
-
-def test_validate_image_is_valid_selector_when_invalid_value_provided() -> None:
-    with pytest.raises(ValueError):
-        validate_image_is_valid_selector(value=np.zeros((192, 168, 3)))
-
-
-@pytest.mark.parametrize("value", ["some", 1, 2.0, True, {}, set()])
-def test_validate_field_is_list_of_selectors_when_not_a_list_given(value: Any) -> None:
-    # when
-    with pytest.raises(ValueError):
-        validate_field_is_list_of_selectors(value=value, field_name="my_field")
-
-
-@pytest.mark.parametrize(
-    "value", [["some"], [1], [2.0], [True], [[]], [{}], [set()], ["$inputs.some", 3]]
-)
-def test_validate_field_is_list_of_selectors_when_list_of_invalid_types_given(
-    value: List[Any],
-) -> None:
-    # when
-    with pytest.raises(ValueError):
-        validate_field_is_list_of_selectors(value=value, field_name="my_field")
-
-
-def test_validate_field_is_list_of_selectors_when_invalid_value_given_and_custom_error_provided() -> (
-    None
-):
-    # when
-    with pytest.raises(MyError):
-        validate_field_is_list_of_selectors(
-            value=3, field_name="my_field", error=MyError
-        )
-
-
-def test_validate_field_is_list_of_selectors_when_list_of_selectors_given() -> None:
-    # when
-    validate_field_is_list_of_selectors(
-        value=["$inputs.one", "$inputs.two"], field_name="some"
-    )
-
-    # then - no error

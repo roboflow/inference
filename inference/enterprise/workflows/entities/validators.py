@@ -17,24 +17,6 @@ STEPS_WITH_IMAGE = {
 }
 
 
-def validate_image_is_valid_selector(value: Any, field_name: str = "image") -> None:
-    if issubclass(type(value), list):
-        if any(not is_selector(selector_or_value=e) for e in value):
-            raise ValueError(f"`{field_name}` field can only contain selector values")
-    elif not is_selector(selector_or_value=value):
-        raise ValueError(f"`{field_name}` field can only contain selector values")
-
-
-def validate_field_is_in_range_zero_one_or_empty_or_selector(
-    value: Any, field_name: str = "confidence"
-) -> None:
-    if is_selector(selector_or_value=value) or value is None:
-        return None
-    validate_value_is_empty_or_number_in_range_zero_one(
-        value=value, field_name=field_name
-    )
-
-
 def validate_value_is_empty_or_number_in_range_zero_one(
     value: Any, field_name: str = "confidence", error: Type[Exception] = ValueError
 ) -> None:
@@ -48,14 +30,6 @@ def validate_value_is_empty_or_number_in_range_zero_one(
         return None
     if not (0 <= value <= 1):
         raise error(f"Parameter `{field_name}` must be in range [0.0, 1.0]")
-
-
-def validate_value_is_empty_or_selector_or_positive_number(
-    value: Any, field_name: str
-) -> None:
-    if is_selector(selector_or_value=value):
-        return None
-    validate_value_is_empty_or_positive_number(value=value, field_name=field_name)
 
 
 def validate_value_is_empty_or_positive_number(
@@ -73,23 +47,6 @@ def validate_value_is_empty_or_positive_number(
         raise error(f"Parameter `{field_name}` must be positive (> 0)")
 
 
-def validate_field_is_list_of_selectors(
-    value: Any, field_name: str, error: Type[Exception] = ValueError
-) -> None:
-    if not issubclass(type(value), list):
-        raise error(f"`{field_name}` field must be list")
-    if any(not is_selector(selector_or_value=e) for e in value):
-        raise error(f"Parameter `{field_name}` must be a list of selectors")
-
-
-def validate_field_is_empty_or_selector_or_list_of_string(
-    value: Any, field_name: str
-) -> None:
-    if is_selector(selector_or_value=value) or value is None:
-        return value
-    validate_field_is_list_of_string(value=value, field_name=field_name)
-
-
 def validate_field_is_list_of_string(
     value: Any, field_name: str, error: Type[Exception] = ValueError
 ) -> None:
@@ -97,16 +54,6 @@ def validate_field_is_list_of_string(
         raise error(f"`{field_name}` field must be list")
     if any(not issubclass(type(e), str) for e in value):
         raise error(f"Parameter `{field_name}` must be a list of string")
-
-
-def validate_field_is_selector_or_one_of_values(
-    value: Any, field_name: str, selected_values: set
-) -> None:
-    if is_selector(selector_or_value=value) or value is None:
-        return value
-    validate_field_is_one_of_selected_values(
-        value=value, field_name=field_name, selected_values=selected_values
-    )
 
 
 def validate_field_is_one_of_selected_values(

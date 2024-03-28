@@ -1361,17 +1361,7 @@ class EnabledActiveLearningConfiguration(BaseModel):
     batching_strategy: ActiveLearningBatchingStrategy
     tags: List[str] = Field(default_factory=lambda: [])
     max_image_size: Optional[Tuple[PositiveInt, PositiveInt]] = Field(default=None)
-    jpeg_compression_level: int = Field(default=95)
-
-    @field_validator("jpeg_compression_level")
-    @classmethod
-    def validate_json_compression_level(cls, value: Any) -> int:
-        validate_field_has_given_type(
-            field_name="jpeg_compression_level", allowed_types=[int], value=value
-        )
-        if value <= 0 or value > 100:
-            raise ValueError("`jpeg_compression_level` must be in range [1, 100]")
-        return value
+    jpeg_compression_level: int = Field(default=95, gt=0, le=100)
 
 
 class ActiveLearningDataCollector(BaseModel, StepInterface):
