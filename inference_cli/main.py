@@ -14,6 +14,32 @@ app.add_typer(cloud_app, name="cloud")
 app.add_typer(benchmark_app, name="benchmark")
 
 
+def version_callback(value: bool):
+    if value:
+        from importlib.metadata import version, PackageNotFoundError
+
+        version_msg = ""
+        for package in ['inference', 'inference-sdk', 'inference-cli']:
+            try:
+                package_version = version(package)
+                version_msg += f"{package} version: v{package_version}\n"
+            except PackageNotFoundError:
+                if package == 'inference':
+                    version_msg = f"{package} version: using local install"
+                    break
+        
+        typer.echo(version_msg)
+            
+        raise typer.Exit()
+
+@app.callback()
+def version(
+    version: Annotated[
+        Optional[bool], typer.Option("--version", callback=version_callback, is_eager=True)
+    ] = None,
+):
+    return
+
 @app.command()
 def infer(
     input_reference: Annotated[
