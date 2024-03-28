@@ -1,8 +1,15 @@
 from inference.core.managers.base import ModelManager
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class StubLoaderManager(ModelManager):
-    def add_model(self, model_id: str, api_key: str, model_id_alias=None) -> None:
+    def add_model(
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias=None,
+        quantization=QuantizationMode.unquantized,
+    ) -> None:
         """Adds a new model to the manager.
 
         Args:
@@ -14,5 +21,10 @@ class StubLoaderManager(ModelManager):
         model_class = self.model_registry.get_model(
             model_id_alias if model_id_alias is not None else model_id, api_key
         )
-        model = model_class(model_id=model_id, api_key=api_key, load_weights=False)
+        model = model_class(
+            model_id=model_id,
+            api_key=api_key,
+            load_weights=False,
+            quantization=quantization,
+        )
         self._models[model_id] = model

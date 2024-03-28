@@ -9,16 +9,6 @@ from inference.core.models.object_detection_base import (
 
 class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     box_format = "xyxy"
-
-    @property
-    def weights_file(self) -> str:
-        """Gets the weights file for the YOLO-NAS model.
-
-        Returns:
-            str: Path to the ONNX weights file.
-        """
-        return "weights.onnx"
-
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 

@@ -32,6 +32,7 @@ from inference.core.exceptions import (
 )
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
+from inference.core.models.utils.quantization import QuantizationMode
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -169,6 +170,8 @@ def get_roboflow_model_type(
 class ModelEndpointType(Enum):
     ORT = "ort"
     CORE_MODEL = "core_model"
+    FP16 = "fp16"
+    INT8 = "int8"
 
 
 @wrap_roboflow_api_errors()
@@ -187,8 +190,9 @@ def get_roboflow_model_data(
         params = [
             ("nocache", "true"),
             ("device", device_id),
-            ("dynamic", "true"),
         ]
+        if endpoint_type in [ModelEndpointType.CORE_MODEL, ModelEndpointType.ORT]:
+            params.append(("dynamic", "true"))
         if api_key is not None:
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(

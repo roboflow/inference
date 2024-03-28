@@ -4,6 +4,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class BaseRequest(BaseModel):
@@ -37,6 +38,7 @@ class InferenceRequest(BaseRequest):
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
+    quantization: Optional[QuantizationMode] = QuantizationMode.unquantized
 
 
 class InferenceRequestImage(BaseModel):

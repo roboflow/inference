@@ -3,6 +3,7 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.managers.entities import ModelDescription
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class ServerVersionInfo(BaseModel):
@@ -41,6 +42,11 @@ class ModelDescriptionEntity(BaseModel):
         description="Image input width accepted by the model (if registered).",
     )
 
+    quantization: Optional[QuantizationMode] = Field(
+        QuantizationMode.unquantized,
+        description="Quantization mode of model (one of [unquantized, fp16, int8])",
+    )
+
     @classmethod
     def from_model_description(
         cls, model_description: ModelDescription
@@ -51,6 +57,7 @@ class ModelDescriptionEntity(BaseModel):
             batch_size=model_description.batch_size,
             input_height=model_description.input_height,
             input_width=model_description.input_width,
+            quantization=model_description.quantization,
         )
 
 

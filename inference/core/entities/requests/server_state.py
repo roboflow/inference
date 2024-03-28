@@ -3,6 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class AddModelRequest(BaseModel):
@@ -18,6 +19,7 @@ class AddModelRequest(BaseModel):
     model_id: str = ModelID
     model_type: Optional[str] = ModelType
     api_key: Optional[str] = ApiKey
+    quantization: Optional[QuantizationMode] = QuantizationMode.unquantized
 
 
 class ClearModelRequest(BaseModel):

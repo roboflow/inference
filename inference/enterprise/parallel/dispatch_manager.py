@@ -17,6 +17,7 @@ from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class ResultsChecker:
@@ -140,7 +141,11 @@ class DispatchModelManager(ModelManager):
         return responses[0]
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: str = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: str = None,
+        quantization: QuantizationMode = QuantizationMode.unquantized,
     ) -> None:
         pass
 

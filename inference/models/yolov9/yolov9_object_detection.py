@@ -17,15 +17,6 @@ class YOLOv9ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         weights_file (str): Path to the ONNX weights file.
     """
 
-    @property
-    def weights_file(self) -> str:
-        """Gets the weights file for the YOLOv9 model.
-
-        Returns:
-            str: Path to the ONNX weights file.
-        """
-        return "weights.onnx"
-
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 

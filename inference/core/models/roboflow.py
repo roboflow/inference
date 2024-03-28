@@ -68,6 +68,7 @@ from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.core.models.utils.quantization import QuantizationMode
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -109,6 +110,7 @@ class RoboflowInferenceModel(Model):
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
         load_weights=True,
+        **kwargs
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -262,7 +264,7 @@ class RoboflowInferenceModel(Model):
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
+            endpoint_type=self.model_endpoint_type,
             device_id=self.device_id,
         )
         if "ort" not in api_data.keys():
@@ -305,6 +307,9 @@ class RoboflowInferenceModel(Model):
                 file="keypoints_metadata.json",
                 model_id=self.endpoint,
             )
+    @property
+    def model_endpoint_type(self) -> ModelEndpointType:
+        return ModelEndpointType.ORT
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -528,6 +533,10 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     device_id=self.device_id,
                 )
 
+    @property
+    def model_endpoint_type(self) -> ModelEndpointType:
+        return ModelEndpointType.CORE_MODEL
+
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.
 
@@ -569,7 +578,6 @@ class RoboflowCoreModel(RoboflowInferenceModel):
     def model_artifact_bucket(self):
         return CORE_MODEL_BUCKET
 
-
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
@@ -579,6 +587,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         onnxruntime_execution_providers: List[
             str
         ] = get_onnxruntime_execution_providers(ONNXRUNTIME_EXECUTION_PROVIDERS),
+        quantization: QuantizationMode = QuantizationMode.unquantized,
         *args,
         **kwargs,
     ):
@@ -589,6 +598,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
+        self._quantization = quantization
         super().__init__(model_id, *args, **kwargs)
         if self.load_weights or not self.has_model_metadata:
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
@@ -612,6 +622,19 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
             self.clear_cache()
             raise ModelArtefactError from e
+
+    @property
+    def model_endpoint_type(self) -> ModelEndpointType:
+        if self.quantization == QuantizationMode.unquantized:
+            return ModelEndpointType.ORT
+        elif self.quantization == QuantizationMode.fp16:
+            return ModelEndpointType.FP16
+        elif self.quantization == QuantizationMode.int8:
+            return ModelEndpointType.INT8
+
+    @property
+    def quantization(self) -> QuantizationMode:
+        return self._quantization
 
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
@@ -810,7 +833,12 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         Returns:
             str: The file path to the weights file.
         """
-        return "weights.onnx"
+        if self.quantization == QuantizationMode.unquantized:
+            return "weights.onnx"
+        if self.quantization == QuantizationMode.fp16:
+            return "weights_fp16.onnx"
+        if self.quantization == QuantizationMode.int8:
+            return "weights_int8.onnx"
 
 
 class OnnxRoboflowCoreModel(RoboflowCoreModel):

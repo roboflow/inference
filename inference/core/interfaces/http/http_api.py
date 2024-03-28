@@ -136,6 +136,7 @@ from inference.enterprise.workflows.errors import (
     WorkflowsCompilerError,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.core.models.utils.quantization import QuantizationMode
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -407,7 +408,11 @@ class HttpInterface(BaseInterface):
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
-            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
+            self.model_manager.add_model(
+                de_aliased_model_id,
+                inference_request.api_key,
+                quantization=inference_request.quantization,
+            )
             resp = await self.model_manager.infer_from_request(
                 de_aliased_model_id, inference_request, **kwargs
             )
@@ -457,7 +462,11 @@ class HttpInterface(BaseInterface):
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
             )
-            self.model_manager.add_model(core_model_id, inference_request.api_key)
+            self.model_manager.add_model(
+                core_model_id,
+                inference_request.api_key,
+                quantization=inference_request.quantization,
+            )
             return core_model_id
 
         load_clip_model = partial(load_core_model, core_model="clip")
@@ -588,7 +597,11 @@ class HttpInterface(BaseInterface):
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
-                self.model_manager.add_model(de_aliased_model_id, request.api_key)
+                self.model_manager.add_model(
+                    de_aliased_model_id,
+                    request.api_key,
+                    quantization=request.quantization,
+                )
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -1326,6 +1339,10 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                quantization: Optional[QuantizationMode] = Query(
+                    default=QuantizationMode.unquantized,
+                    description="Quantization mode of the model. One of [unquantized, fp16, int8]",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -1406,7 +1423,10 @@ class HttpInterface(BaseInterface):
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
-                    request_model_id, api_key, model_id_alias=model_id
+                    request_model_id,
+                    api_key,
+                    model_id_alias=model_id,
+                    quantization=quantization,
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
@@ -1477,7 +1497,12 @@ class HttpInterface(BaseInterface):
 
             # Legacy add model endpoint for backwards compatability
             @app.get("/start/{dataset_id}/{version_id}")
-            async def model_add(dataset_id: str, version_id: str, api_key: str = None):
+            async def model_add(
+                dataset_id: str,
+                version_id: str,
+                api_key: str = None,
+                quantization: QuantizationMode = QuantizationMode.unquantized,
+            ):
                 """
                 Starts a model inference session.
 
@@ -1495,7 +1520,9 @@ class HttpInterface(BaseInterface):
                     f"Reached /start/{dataset_id}/{version_id} with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                self.model_manager.add_model(model_id, api_key)
+                self.model_manager.add_model(
+                    model_id, api_key, quantization=quantization
+                )
 
                 return JSONResponse(
                     {

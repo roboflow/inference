@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class BaseInference:
@@ -137,6 +138,10 @@ class Model(BaseInference):
             responses = responses[0]
 
         return responses
+
+    @property
+    def quantization(self) -> QuantizationMode:
+        return QuantizationMode.unquantized
 
     def make_response(
         self, *args, **kwargs

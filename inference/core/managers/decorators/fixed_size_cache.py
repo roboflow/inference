@@ -7,6 +7,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -22,7 +23,11 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue = deque(self.model_manager.keys())
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        quantization: Optional[QuantizationMode] = QuantizationMode.unquantized,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -34,12 +39,30 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id=model_id, model_id_alias=model_id_alias
         )
         if queue_id in self:
-            logger.debug(
-                f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
-            )
-            self._key_queue.remove(queue_id)
-            self._key_queue.append(queue_id)
-            return None
+            if self[queue_id].quantization == quantization:
+                logger.debug(
+                    f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
+                )
+                self._key_queue.remove(queue_id)
+                self._key_queue.append(queue_id)
+                return None
+            else:
+                self._key_queue.remove(queue_id)
+                self._key_queue.append(queue_id)
+                super().remove(queue_id)
+                try:
+                    return super().add_model(
+                        model_id,
+                        api_key,
+                        model_id_alias=model_id_alias,
+                        quantization=quantization,
+                    )
+                except Exception as error:
+                    logger.debug(
+                        f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
+                    )
+                    self._key_queue.remove(queue_id)
+                    raise error
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
         while len(self) >= self.max_size:
@@ -52,7 +75,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
         try:
-            return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
+            return super().add_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                quantization=quantization,
+            )
         except Exception as error:
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."

@@ -21,6 +21,7 @@ from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
+from inference.core.models.utils.quantization import QuantizationMode
 
 
 class ModelManager:
@@ -39,7 +40,11 @@ class ModelManager:
             self.pingback.start()
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        quantization: QuantizationMode = QuantizationMode.unquantized,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -52,14 +57,17 @@ class ModelManager:
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
-            logger.debug(
-                f"ModelManager - model with model_id={resolved_identifier} is already loaded."
-            )
-            return
+            if self._models[resolved_identifier].quantization == quantization:
+                logger.debug(
+                    f"ModelManager - model with model_id={resolved_identifier} and "
+                    f"quantization {quantization.value} is already loaded."
+                )
+                return
         logger.debug("ModelManager - model initialisation...")
         model = self.model_registry.get_model(resolved_identifier, api_key)(
             model_id=model_id,
             api_key=api_key,
+            quantization=quantization
         )
         logger.debug("ModelManager - model successfully loaded.")
         self._models[resolved_identifier] = model
@@ -320,6 +328,7 @@ class ModelManager:
                 batch_size=getattr(model, "batch_size", None),
                 input_width=getattr(model, "img_size_w", None),
                 input_height=getattr(model, "img_size_h", None),
+                quantization=model.quantization
             )
             for model_id, model in self._models.items()
         ]

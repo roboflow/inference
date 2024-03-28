@@ -22,15 +22,6 @@ class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel)
         predict: Performs object detection on the given image using the ONNX session.
     """
 
-    @property
-    def weights_file(self) -> str:
-        """Gets the weights file for the YOLOv8 model.
-
-        Returns:
-            str: Path to the ONNX weights file.
-        """
-        return "weights.onnx"
-
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, ...]:
         """Performs object detection on the given image using the ONNX session.
 
