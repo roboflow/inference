@@ -203,6 +203,12 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
 
 class ClassificationModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow multi-class classification model.",
+            "docs": "https://inference.roboflow.com/workflows/classify_objects",
+        }
+    )
     type: Literal["ClassificationModel"]
     confidence: Union[
         Optional[FloatZeroToOne],
@@ -254,6 +260,12 @@ class ClassificationModel(RoboflowModel):
 
 
 class MultiLabelClassificationModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow multi-label classification model.",
+            "docs": "https://inference.roboflow.com/workflows/classify_objects_multi",
+        }
+    )
     type: Literal["MultiLabelClassificationModel"]
     confidence: Union[
         Optional[FloatZeroToOne],
@@ -304,6 +316,12 @@ class MultiLabelClassificationModel(RoboflowModel):
 
 
 class ObjectDetectionModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow object detection model.",
+            "docs": "https://inference.roboflow.com/workflows/detect_objects",
+        }
+    )
     type: Literal["ObjectDetectionModel"]
     class_agnostic_nms: Union[
         Optional[bool], InferenceParameterSelector(kinds=[BOOLEAN_KIND])
@@ -429,6 +447,12 @@ class ObjectDetectionModel(RoboflowModel):
 
 
 class KeypointsDetectionModel(ObjectDetectionModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow keypoint detection model.",
+            "docs": "https://inference.roboflow.com/workflows/detect_keypoints",
+        }
+    )
     type: Literal["KeypointsDetectionModel"]
     keypoint_confidence: Union[
         Optional[FloatZeroToOne],
@@ -484,6 +508,12 @@ DECODE_MODES = {"accurate", "tradeoff", "fast"}
 
 
 class InstanceSegmentationModel(ObjectDetectionModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow keypoint detection model.",
+            "docs": "https://inference.roboflow.com/workflows/segment_objects",
+        }
+    )
     type: Literal["InstanceSegmentationModel"]
     mask_decode_mode: Union[
         Literal["accurate", "tradeoff", "fast"],
@@ -551,6 +581,12 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
 
 class OCRModel(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow OCR model.",
+            "docs": "https://inference.roboflow.com/workflows/ocr",
+        }
+    )
     type: Literal["OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -594,6 +630,12 @@ class OCRModel(BaseModel, StepInterface):
 
 
 class Crop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block produces dynamic crops based on detections from detections-based model.",
+            "docs": "https://inference.roboflow.com/workflows/crop",
+        }
+    )
     type: Literal["Crop"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -666,6 +708,12 @@ class Operator(Enum):
 
 
 class Condition(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for flow-control in execution graph based on the condition defined in its body. As for now, only capable to make conditions based on output of binary operators that takes two operands. IMPORTANT NOTE: `Condition` block is only capable to operate, when single image is provided to the input of the `workflow` (or more precisely, both `left` and `right` if provided with reference, then the reference can only hold value for a result of operation made against single input). This is to prevent situation when evaluation of condition for multiple images yield different execution paths.",
+            "docs": None,
+        }
+    )
     type: Literal["Condition"]
     name: str = Field(description="Unique name of step in workflows")
     left: Union[
@@ -755,6 +803,12 @@ class BinaryOperator(Enum):
 
 
 class QRCodeDetection(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from QR Code Detection.",
+            "docs": "https://inference.roboflow.com/workflows/detect_qr_codes",
+        }
+    )
     type: Literal["QRCodeDetection"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -798,6 +852,12 @@ class QRCodeDetection(BaseModel, StepInterface):
 
 
 class BarcodeDetection(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from barcode detection.",
+            "docs": None,
+        }
+    )
     type: Literal["BarcodeDetection"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -879,6 +939,12 @@ class CompoundDetectionFilterDefinition(BaseModel):
 
 
 class DetectionFilter(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for filtering detections-based predictions based on conditions defined.",
+            "docs": "https://inference.roboflow.com/workflows/filter_detections",
+        }
+    )
     type: Literal["DetectionFilter"]
     name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
@@ -945,6 +1011,12 @@ class DetectionFilter(BaseModel, StepInterface):
 
 
 class DetectionOffset(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for applying fixed offset on width and height of detections.",
+            "docs": "https://inference.roboflow.com/workflows/offset_detections",
+        }
+    )
     type: Literal["DetectionOffset"]
     name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
@@ -1022,6 +1094,12 @@ class DetectionOffset(BaseModel, StepInterface):
 
 
 class AbsoluteStaticCrop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Responsible for cropping RoIs from images - using absolute coordinates.",
+            "docs": "https://inference.roboflow.com/workflows/absolute_static_crop/",
+        }
+    )
     type: Literal["AbsoluteStaticCrop"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1099,6 +1177,12 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 
 
 class RelativeStaticCrop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Responsible for cropping RoIs from images - using relative coordinates.",
+            "docs": "https://inference.roboflow.com/workflows/absolute_static_crop/",
+        }
+    )
     type: Literal["RelativeStaticCrop"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1178,6 +1262,12 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 
 
 class ClipComparison(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block to execute comparison of Clip embeddings between image and text.",
+            "docs": "https://inference.roboflow.com/workflows/compare_clip_vectors",
+        }
+    )
     type: Literal["ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1251,6 +1341,12 @@ class AggregationMode(Enum):
 
 
 class DetectionsConsensus(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that combines predictions from potentially multiple detections models based on majority vote.",
+            "docs": "https://inference.roboflow.com/workflows/reach_consensus",
+        }
+    )
     type: Literal["DetectionsConsensus"]
     name: str = Field(description="Unique name of step in workflows")
     predictions: List[
@@ -1569,6 +1665,12 @@ class EnabledActiveLearningConfiguration(BaseModel):
 
 
 class ActiveLearningDataCollector(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that enables smart sampling of images and model predictions and registering data in Roboflow project.",
+            "docs": "https://inference.roboflow.com/workflows/active_learning/",
+        }
+    )
     type: Literal["ActiveLearningDataCollector"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1700,6 +1802,12 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
 
 
 class YoloWorld(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use YoloWorld model within `workflows` - providing real-time, zero-shot object detection.",
+            "docs": "https://inference.roboflow.com/workflows/yolo_world",
+        }
+    )
     type: Literal["YoloWorld"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1808,6 +1916,12 @@ class LMMConfig(BaseModel):
 
 
 class LMM(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use chosen LMM model within `workflows` - with arbitrary prompt and possibility to retrieve structured JSON output.",
+            "docs": "https://inference.roboflow.com/workflows/use_lmm/",
+        }
+    )
     type: Literal["LMM"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
@@ -1963,6 +2077,12 @@ class LMM(BaseModel, StepInterface):
 
 
 class LMMForClassification(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use chosen LMM model as zero-shot classifier.",
+            "docs": "https://inference.roboflow.com/workflows/use_lmm_classification",
+        }
+    )
     type: Literal["LMMForClassification"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(

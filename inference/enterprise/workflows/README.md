@@ -244,7 +244,7 @@ submitted. Thanks to that, results can be easily overlay on the input image (for
 ### What kind of steps are available?
 
 #### `ClassificationModel`
-This step represents inference from multi-class classification model.
+This block represents inference from multi-class classification model.
 
 ##### Step parameters
 * `type`: must be `ClassificationModel` (required)

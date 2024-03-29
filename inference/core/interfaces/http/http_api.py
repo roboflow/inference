@@ -70,7 +70,10 @@ from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
 )
-from inference.core.entities.responses.workflows import WorkflowInferenceResponse
+from inference.core.entities.responses.workflows import (
+    WorkflowInferenceResponse,
+    WorkflowValidationStatus,
+)
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
@@ -771,13 +774,13 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/{workspace_name}/workflows/{workflow_name}",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from predefined workflow",
+                summary="Endpoint to run predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @app.post(
                 "/infer/workflows/{workspace_name}/{workflow_name}",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from predefined workflow",
+                summary="[LEGACY] Endpoint to run predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
                 deprecated=True,
             )
@@ -802,13 +805,13 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/workflows/run",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from workflow specification provided in payload",
+                summary="Endpoint to run workflow specification provided in payload",
                 description="Parses and executes workflow specification, injecting runtime parameters from request body.",
             )
             @app.post(
                 "/infer/workflows",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from workflow specification provided in payload",
+                summary="[LEGACY] Endpoint to run workflow specification provided in payload",
                 description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
                 deprecated=True,
             )
@@ -840,18 +843,21 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/workflows/validate",
+                response_model=WorkflowValidationStatus,
                 summary="[EXPERIMENTAL] Endpoint to validate",
                 description="Endpoint provides a way to check validity of JSON workflow definition.",
             )
             @with_route_exceptions
-            async def validate_workflow(request: WorkflowSpecification) -> dict:
+            async def validate_workflow(
+                request: WorkflowSpecification,
+            ) -> WorkflowValidationStatus:
                 validate_workflow_specification(
                     workflow_specification=request.specification
                 )
                 _ = prepare_execution_graph(
                     workflow_specification=request.specification
                 )
-                return {"status": "ok"}
+                return WorkflowValidationStatus(status="ok")
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

@@ -421,7 +421,9 @@ class InferencePipeline:
     def init_with_workflow(
         cls,
         video_reference: Union[str, int],
-        workflow_specification: dict,
+        workflow_specification: Optional[dict] = None,
+        workspace_name: Optional[str] = None,
+        workflow_name: Optional[str] = None,
         api_key: Optional[str] = None,
         image_input_name: str = "image",
         workflows_parameters: Optional[Dict[str, Any]] = None,
@@ -441,7 +443,11 @@ class InferencePipeline:
         Args:
             video_reference (Union[str, int]): Reference of source to be used to make predictions against.
                 It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
-            workflow_specification (dict): Valid specification of workflow. See [workflow docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows)
+            workflow_specification (Optional[dict]): Valid specification of workflow. See [workflow docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows).
+                It can be provided optionally, but if not given, both `workspace_name` and `workflow_name`
+                must be provided.
+            workspace_name (Optional[str]): When using registered workflows - Roboflow workspace name needs to be given.
+            workflow_name (Optional[str]): When using registered workflows - Roboflow workflow name needs to be given.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
             image_input_name (str): Name of input image defined in `workflow_specification`. `InferencePipeline` will be
@@ -482,9 +488,21 @@ class InferencePipeline:
         Throws:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
                 always if connection to stream is lost.
+            * ValueError if workflow specification not provided and registered workflow not pointed out
+            * NotImplementedError if workflow used against multiple videos which is not supported yet
         """
-        if issubclass(type(video_reference), list) and len(list) > 1:
+        if api_key is None:
+            api_key = API_KEY
+        named_workflow_specified = (workspace_name is not None) and (
+            workflow_name is not None
+        )
+        if not (named_workflow_specified != (workflow_specification is not None)):
             raise ValueError(
+                "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
+                "`workflow_specification`, but at least one must be set."
+            )
+        if issubclass(type(video_reference), list) and len(list) > 1:
+            raise NotImplementedError(
                 "Usage of workflows and `InferencePipeline` is experimental feature for now. We do not support "
                 "multiple video sources yet."
             )
@@ -492,10 +510,17 @@ class InferencePipeline:
             from inference.core.interfaces.stream.model_handlers.workflows import (
                 run_video_frame_through_workflow,
             )
+            from inference.core.roboflow_api import get_workflow_specification
             from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
                 WorkflowsActiveLearningMiddleware,
             )
 
+            if workflow_specification is None:
+                workflow_specification = get_workflow_specification(
+                    api_key=api_key,
+                    workspace_id=workspace_name,
+                    workflow_name=workflow_name,
+                )
             workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
                 cache=cache,
             )
