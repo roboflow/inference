@@ -62,7 +62,7 @@ IMAGE_METADATA_KIND = Kind(
 
 StepSelector = Annotated[
     str,
-    StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9]+"),
+    StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9\-]+"),
     Field(
         json_schema_extra={
             "reference": True,
@@ -72,39 +72,39 @@ StepSelector = Annotated[
 ]
 
 
-def StepOutputSelector(kinds: Optional[List[Kind]] = None):
-    if kinds is None:
-        kinds = [WILDCARD_KIND]
+def StepOutputSelector(kind: Optional[List[Kind]] = None):
+    if kind is None:
+        kind = [WILDCARD_KIND]
     json_schema_extra = {
         "reference": True,
         "selected_element": "step_output",
-        "kind": [k.dict() for k in kinds],
+        "kind": [k.dict() for k in kind],
     }
     return Annotated[
         str,
-        StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9]+\.[A-Za-z_*0-9]+$"),
+        StringConstraints(pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"),
         Field(json_schema_extra=json_schema_extra),
     ]
 
 
-def InferenceParameterSelector(kinds: Optional[List[Kind]] = None):
-    if kinds is None:
-        kinds = [WILDCARD_KIND]
+def InferenceParameterSelector(kind: Optional[List[Kind]] = None):
+    if kind is None:
+        kind = [WILDCARD_KIND]
     json_schema_extra = {
         "reference": True,
         "selected_element": "inference_parameter",
-        "kind": [k.dict() for k in kinds],
+        "kind": [k.dict() for k in kind],
     }
     return Annotated[
         str,
-        StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9]+$"),
+        StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9\-]+$"),
         Field(json_schema_extra=json_schema_extra),
     ]
 
 
 InferenceImageSelector = Annotated[
     str,
-    StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9]+$"),
+    StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9\-]+$"),
     Field(
         json_schema_extra={
             "reference": True,
@@ -116,7 +116,7 @@ InferenceImageSelector = Annotated[
 
 OutputStepImageSelector = Annotated[
     str,
-    StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9]+\.[A-Za-z_*0-9]+$"),
+    StringConstraints(pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"),
     Field(
         json_schema_extra={
             "reference": True,

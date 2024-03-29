@@ -60,8 +60,8 @@ nav:
       - YOLO-World (Object Detection): foundation/yolo_world.md
   - Workflows:
     - What is a Workflow?: workflows/about.md
-    - How to Create and Run a Workflow: workflows/create_and_run.md
     - Understanding Workflows: workflows/understanding.md
+    - How to Create and Run a Workflow: workflows/create_and_run.md
     - Supported Blocks:
       - Classify Objects (Single-Class): workflows/classify_objects.md
       - Classify Objects (Multi-Class): workflows/classify_objects_multi.md

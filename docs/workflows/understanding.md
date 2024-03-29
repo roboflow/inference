@@ -59,9 +59,12 @@ When creating `InferenceImage` you do not point a specific image - you just crea
 ### `InferenceParameter`
 Similar to `InferenceImage` - `InferenceParameter` creates a placeholder for a parameters that can be used in runtime to alter execution of workflow graph.
 ```json
-{"type": "InferenceParameter", "name": "confidence_threshold", "default_value": 0.5}
+{"type": "InferenceParameter", "name": "confidence_threshold", "default_value": 0.5, "kind": [{"name": "my_custom_kind"}]}
 ```
 `InferenceParameters` may be optionally defined with default values that will be used, if no actual parameter  of given name is present in user-defined input while executing the workflow graph. Type of parameter is not explicitly defined, but will be checked in runtime, prior to execution based on types of parameters that steps using this parameters can accept.
+
+Concept of `kind` was  introduced in `v0.9.21` - to make it possible to denote types of
+references at high level. See more [in contributor guide](./workflows_contribution.md)
 
 ### How can we define `steps`?
 Compiler supports multiple type of steps (that will be described later), but let's see how to define a simple one, that would be responsible for making prediction from object-detection model:
