@@ -20,7 +20,7 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
 )
-from inference.core.exceptions import CannotInitialiseModelError
+from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
@@ -490,6 +490,8 @@ class InferencePipeline:
                 always if connection to stream is lost.
             * ValueError if workflow specification not provided and registered workflow not pointed out
             * NotImplementedError if workflow used against multiple videos which is not supported yet
+            * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
+                from Roboflow API is needed
         """
         if api_key is None:
             api_key = API_KEY
@@ -516,6 +518,13 @@ class InferencePipeline:
             )
 
             if workflow_specification is None:
+                if api_key is None:
+                    raise MissingApiKeyError(
+                        "Roboflow API key needs to be provided either as parameter or via env variable "
+                        "ROBOFLOW_API_KEY. If you do not know how to get API key - visit "
+                        "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
+                        "retrieve one."
+                    )
                 workflow_specification = get_workflow_specification(
                     api_key=api_key,
                     workspace_id=workspace_name,

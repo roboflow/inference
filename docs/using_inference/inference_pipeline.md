@@ -195,6 +195,18 @@ pipeline.start()
 pipeline.join()
 ```
 
+Additionally, since `v0.9.21`, you can initialise `InferencePipeline` with `workflow` registered
+in Roboflow App - providing your `workspace_name` and `workflow_name`:
+
+```python
+pipeline = InferencePipeline.init_with_workflow(
+    video_reference="./my_video.mp4",
+    workspace_name="<your_workspace>",
+    workflow_name="<your_workflow>",
+    on_prediction=workflows_sink,
+)
+```
+
 ## Sinks
 
 Sinks define what an Inference Pipeline should do with each prediction. A sink is a function with signature:
