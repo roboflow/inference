@@ -490,6 +490,15 @@ CLIENT.unload_all_models()
     inference server start
     ```
 
+!!! warning
+  
+    Method `infer_from_workflow(...)` is deprecated starting from `v0.9.21` and 
+    will be removed end of Q2 2024. Please migrate - the signature is the same, 
+    what changes is underlying inference server endpoint used to run workflow.
+    
+    New method is called `run_workflow(...)` and is compatible with Roboflow hosted
+    API and inverence servers in versions `0.9.21+` 
+
 ```python
 from inference_sdk import InferenceHTTPClient
 
@@ -498,7 +507,8 @@ CLIENT = InferenceHTTPClient(
     "XXX",
 )
 
-CLIENT.infer_from_workflow(
+# for older versions of server than v0.9.21 use: CLIENT.infer_from_workflow(...) 
+CLIENT.run_workflow(
     specification={
         "version": "1.0",
         "inputs": [
