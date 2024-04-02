@@ -528,7 +528,7 @@ CLIENT.run_workflow(
 
 Please note that either `specification` is provided with specification of workflow as described
 [here](https://github.com/roboflow/inference/blob/main/inference/enterprise/deployments/README.md) or 
-both `workspace_name` and `workflow_name` are given to use workflow predefined in Roboflow app. `workspace_name`
+both `workspace_name` and `workflow_id` are given to use workflow predefined in Roboflow app. `workspace_name`
 can be found in Roboflow APP URL once browser shows the main panel of workspace. 
 
 

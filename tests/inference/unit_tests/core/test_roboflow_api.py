@@ -1698,7 +1698,7 @@ def test_get_workflow_specification_when_connection_error_occurs(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
 
@@ -1716,7 +1716,7 @@ def test_get_workflow_specification_when_wrong_api_key_used(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1739,7 +1739,7 @@ def test_get_workflow_specification_when_not_found_returned(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1762,7 +1762,7 @@ def test_get_workflow_specification_when_internal_error_returned(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1785,7 +1785,7 @@ def test_get_workflow_specification_when_malformed_response_returned(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1808,7 +1808,7 @@ def test_get_workflow_specification_when_config_not_provided(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1831,7 +1831,7 @@ def test_get_workflow_specification_when_config_not_parsable(
         _ = get_workflow_specification(
             api_key="my_api_key",
             workspace_id="my_workspace",
-            workflow_name="some_workflow",
+            workflow_id="some_workflow",
         )
 
     # then
@@ -1862,7 +1862,7 @@ def test_get_workflow_specification_when_valid_response_given(
     result = get_workflow_specification(
         api_key="my_api_key",
         workspace_id="my_workspace",
-        workflow_name="some_workflow",
+        workflow_id="some_workflow",
     )
 
     # then

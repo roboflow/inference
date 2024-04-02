@@ -3286,16 +3286,17 @@ async def test_clip_compare_when_faulty_response_returned() -> None:
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints, endpoint_to_use",
+    "legacy_endpoints, endpoint_to_use, parameter_name",
     [
-        (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow"),
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
     ],
 )
 def test_infer_from_workflow_when_v0_mode_used(
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
+    parameter_name: str,
 ) -> None:
     # given
     api_url = "http://infer.roboflow.com"
@@ -3315,7 +3316,7 @@ def test_infer_from_workflow_when_v0_mode_used(
     # when
     result = method(
         workspace_name="my_workspace",
-        workflow_name="my_workflow",
+        **{parameter_name: "my_workflow"},
     )
 
     # then
@@ -3327,16 +3328,17 @@ def test_infer_from_workflow_when_v0_mode_used(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints, endpoint_to_use",
+    "legacy_endpoints, endpoint_to_use, parameter_name",
     [
-        (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow"),
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
     ],
 )
 def test_infer_from_workflow_when_no_parameters_given(
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
+    parameter_name: str,
 ) -> None:
     # given
     api_url = "http://some.com"
@@ -3356,7 +3358,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     # when
     result = method(
         workspace_name="my_workspace",
-        workflow_name="my_workflow",
+        **{parameter_name: "my_workflow"},
     )
 
     # then
@@ -3369,10 +3371,10 @@ def test_infer_from_workflow_when_no_parameters_given(
 
 @mock.patch.object(client, "load_static_inference_input")
 @pytest.mark.parametrize(
-    "legacy_endpoints, endpoint_to_use",
+    "legacy_endpoints, endpoint_to_use, parameter_name",
     [
-        (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow"),
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
     ],
 )
 def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
@@ -3380,6 +3382,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
+    parameter_name: str,
 ) -> None:
     # given
     api_url = "http://some.com"
@@ -3403,12 +3406,12 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     # when
     result = method(
         workspace_name="my_workspace",
-        workflow_name="my_workflow",
         images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
         parameters={
             "some": 10,
         },
         excluded_fields=["some"],
+        **{parameter_name: "my_workflow"},
     )
 
     # then
@@ -3437,16 +3440,17 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints, endpoint_to_use",
+    "legacy_endpoints, endpoint_to_use, parameter_name",
     [
-        (True, "/infer/workflows/my_workspace/my_workflow"),
-        (False, "/my_workspace/workflows/my_workflow"),
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
     ],
 )
 def test_infer_from_workflow_when_faulty_response_given(
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
+    parameter_name: str,
 ) -> None:
     # given
     api_url = "http://some.com"
@@ -3466,7 +3470,7 @@ def test_infer_from_workflow_when_faulty_response_given(
     with pytest.raises(HTTPCallErrorError):
         _ = method(
             workspace_name="my_workspace",
-            workflow_name="my_workflow",
+            **{parameter_name: "my_workflow"},
         )
 
 

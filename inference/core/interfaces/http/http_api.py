@@ -772,13 +772,13 @@ class HttpInterface(BaseInterface):
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
-                "/{workspace_name}/workflows/{workflow_name}",
+                "/{workspace_name}/workflows/{workflow_id}",
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to run predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
             )
             @app.post(
-                "/infer/workflows/{workspace_name}/{workflow_name}",
+                "/infer/workflows/{workspace_name}/{workflow_id}",
                 response_model=WorkflowInferenceResponse,
                 summary="[LEGACY] Endpoint to run predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
@@ -787,14 +787,14 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def infer_from_predefined_workflow(
                 workspace_name: str,
-                workflow_name: str,
+                workflow_id: str,
                 workflow_request: WorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
-                    workflow_name=workflow_name,
+                    workflow_id=workflow_id,
                 )
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,

@@ -423,7 +423,7 @@ class InferencePipeline:
         video_reference: Union[str, int],
         workflow_specification: Optional[dict] = None,
         workspace_name: Optional[str] = None,
-        workflow_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         api_key: Optional[str] = None,
         image_input_name: str = "image",
         workflows_parameters: Optional[Dict[str, Any]] = None,
@@ -444,10 +444,10 @@ class InferencePipeline:
             video_reference (Union[str, int]): Reference of source to be used to make predictions against.
                 It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
             workflow_specification (Optional[dict]): Valid specification of workflow. See [workflow docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows).
-                It can be provided optionally, but if not given, both `workspace_name` and `workflow_name`
+                It can be provided optionally, but if not given, both `workspace_name` and `workflow_id`
                 must be provided.
             workspace_name (Optional[str]): When using registered workflows - Roboflow workspace name needs to be given.
-            workflow_name (Optional[str]): When using registered workflows - Roboflow workflow name needs to be given.
+            workflow_id (Optional[str]): When using registered workflows - Roboflow workflow id needs to be given.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
             image_input_name (str): Name of input image defined in `workflow_specification`. `InferencePipeline` will be
@@ -496,11 +496,11 @@ class InferencePipeline:
         if api_key is None:
             api_key = API_KEY
         named_workflow_specified = (workspace_name is not None) and (
-            workflow_name is not None
+            workflow_id is not None
         )
         if not (named_workflow_specified != (workflow_specification is not None)):
             raise ValueError(
-                "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
+                "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
                 "`workflow_specification`, but at least one must be set."
             )
         if issubclass(type(video_reference), list) and len(list) > 1:
@@ -528,7 +528,7 @@ class InferencePipeline:
                 workflow_specification = get_workflow_specification(
                     api_key=api_key,
                     workspace_id=workspace_name,
-                    workflow_name=workflow_name,
+                    workflow_id=workflow_id,
                 )
             workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
                 cache=cache,

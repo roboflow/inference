@@ -1025,7 +1025,7 @@ class InferenceHTTPClient:
         """
         return self._run_workflow(
             workspace_name=workspace_name,
-            workflow_name=workflow_name,
+            workflow_id=workflow_name,
             specification=specification,
             images=images,
             parameters=parameters,
@@ -1037,7 +1037,7 @@ class InferenceHTTPClient:
     def run_workflow(
         self,
         workspace_name: Optional[str] = None,
-        workflow_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         specification: Optional[dict] = None,
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
@@ -1045,7 +1045,7 @@ class InferenceHTTPClient:
     ) -> Dict[str, Any]:
         """
         Triggers inference from workflow specification at the inference HTTP
-        side. Either (`workspace_name` and `workflow_name`) or `workflow_specification` must be
+        side. Either (`workspace_name` and `workflow_id`) or `workflow_specification` must be
         provided. In the first case - definition of workflow will be fetched
         from Roboflow API, in the latter - `workflow_specification` will be
         used. `images` and `parameters` will be merged into workflow inputs,
@@ -1061,7 +1061,7 @@ class InferenceHTTPClient:
         """
         return self._run_workflow(
             workspace_name=workspace_name,
-            workflow_name=workflow_name,
+            workflow_id=workflow_id,
             specification=specification,
             images=images,
             parameters=parameters,
@@ -1072,7 +1072,7 @@ class InferenceHTTPClient:
     def _run_workflow(
         self,
         workspace_name: Optional[str] = None,
-        workflow_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         specification: Optional[dict] = None,
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
@@ -1080,11 +1080,11 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
     ) -> Dict[str, Any]:
         named_workflow_specified = (workspace_name is not None) and (
-            workflow_name is not None
+            workflow_id is not None
         )
         if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
-                "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
+                "Parameters (`workspace_name`, `workflow_id` / `workflow_name`) can be used mutually exclusive with "
                 "`workflow_specification`, but at least one must be set."
             )
         if images is None:
@@ -1115,11 +1115,9 @@ class InferenceHTTPClient:
                 url = f"{self.__api_url}/workflows/run"
         else:
             if legacy_endpoints:
-                url = (
-                    f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
-                )
+                url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:
-                url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_name}"
+                url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_id}"
         response = requests.post(
             url,
             json=payload,
