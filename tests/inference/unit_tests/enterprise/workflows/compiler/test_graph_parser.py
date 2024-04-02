@@ -525,7 +525,7 @@ def test_prepare_execution_graph_when_graph_is_not_acyclic() -> None:
                     "type": "Crop",
                     "name": "step_2",
                     "image": "$inputs.image",
-                    "detections": "$steps.step_1.predictions",
+                    "predictions": "$steps.step_1.predictions",
                 },
             ],
             "outputs": [
@@ -639,7 +639,7 @@ def test_prepare_execution_graph_when_graph_when_there_is_a_collapse_of_conditio
                     "type": "Crop",
                     "name": "step_4",
                     "image": "$inputs.image",
-                    "detections": "$steps.step_3.predictions",
+                    "predictions": "$steps.step_3.predictions",
                 },  # this step requires the input from step_3 that will be executed conditionally in different branch
             ],
             "outputs": [
@@ -745,7 +745,7 @@ def test_prepare_execution_graph_when_graph_when_steps_connection_make_the_graph
                         "type": "Crop",
                         "name": "step_2",
                         "image": "$steps.step_1.predictions",  # should be an image here
-                        "detections": "$inputs.image",  # should be predictions here
+                        "predictions": "$inputs.image",  # should be predictions here
                     },
                 ],
                 "outputs": [
@@ -785,7 +785,7 @@ def test_prepare_execution_graph_when_lmm_with_yolo_world_is_used_along_with_wil
                     "type": "Crop",
                     "name": "step_2",
                     "image": "$inputs.image",
-                    "detections": "$steps.step_1.predictions",
+                    "predictions": "$steps.step_1.predictions",
                 },
                 {
                     "type": "LMMForClassification",

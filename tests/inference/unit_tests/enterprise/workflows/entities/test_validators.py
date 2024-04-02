@@ -16,7 +16,7 @@ from inference.enterprise.workflows.entities.validators import (
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
     validate_image_biding,
-    validate_selector_holds_detections,
+    validate_selector_holds_detection_predictions,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
     validate_value_is_empty_or_number_in_range_zero_one,
@@ -71,9 +71,11 @@ def test_is_selector_when_selector_provided() -> None:
     assert result is True, "Valid selector expected to be detected"
 
 
-def test_validate_selector_holds_detections_when_not_applicable_field_tested() -> None:
+def test_validate_selector_holds_detection_predictions_when_not_applicable_field_tested() -> (
+    None
+):
     # when
-    validate_selector_holds_detections(
+    validate_selector_holds_detection_predictions(
         step_name="some",
         image_selector="$inputs.image",
         detections_selector="$steps.detect.predictions",
@@ -89,16 +91,16 @@ def test_validate_selector_holds_detections_when_not_applicable_field_tested() -
     # no error raised, as validated field is not `detections`
 
 
-def test_validate_selector_holds_detections_when_detections_field_contains_invalid_step() -> (
+def test_validate_selector_holds_detection_predictions_when_detections_field_contains_invalid_step() -> (
     None
 ):
     # when
     with pytest.raises(InvalidStepInputDetected):
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name="some",
             image_selector="$inputs.image",
             detections_selector="$steps.detect.predictions",
-            field_name="detections",
+            field_name="predictions",
             input_step=Crop(
                 type="Crop",
                 name="my_crop",
@@ -108,16 +110,16 @@ def test_validate_selector_holds_detections_when_detections_field_contains_inval
         )
 
 
-def test_validate_selector_holds_detections_when_detections_selector_does_not_point_predictions_property() -> (
+def test_validate_selector_holds_detection_predictions_when_detections_selector_does_not_point_predictions_property() -> (
     None
 ):
     # when
     with pytest.raises(InvalidStepInputDetected):
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name="some",
             image_selector="$inputs.image",
             detections_selector="$steps.detect.invalid",
-            field_name="detections",
+            field_name="predictions",
             input_step=ObjectDetectionModel(
                 type="ObjectDetectionModel",
                 name="my_crop",
@@ -127,16 +129,16 @@ def test_validate_selector_holds_detections_when_detections_selector_does_not_po
         )
 
 
-def test_validate_selector_holds_detections_when_image_selector_given_and_does_not_match_input_image() -> (
+def test_validate_selector_holds_detection_predictions_when_image_selector_given_and_does_not_match_input_image() -> (
     None
 ):
     # when
     with pytest.raises(InvalidStepInputDetected):
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name="some",
             image_selector="$inputs.image",
             detections_selector="$steps.detect.predictions",
-            field_name="detections",
+            field_name="predictions",
             input_step=ObjectDetectionModel(
                 type="ObjectDetectionModel",
                 name="my_crop",
@@ -146,15 +148,15 @@ def test_validate_selector_holds_detections_when_image_selector_given_and_does_n
         )
 
 
-def test_validate_selector_holds_detections_when_validation_passes_without_verification_of_image() -> (
+def test_validate_selector_holds_detection_predictions_when_validation_passes_without_verification_of_image() -> (
     None
 ):
     # when
-    validate_selector_holds_detections(
+    validate_selector_holds_detection_predictions(
         step_name="some",
         image_selector=None,
         detections_selector="$steps.detect.predictions",
-        field_name="detections",
+        field_name="predictions",
         input_step=ObjectDetectionModel(
             type="ObjectDetectionModel",
             name="my_crop",
@@ -164,15 +166,15 @@ def test_validate_selector_holds_detections_when_validation_passes_without_verif
     )
 
 
-def test_validate_selector_holds_detections_when_validation_passes_with_verification_of_image() -> (
+def test_validate_selector_holds_detection_predictions_when_validation_passes_with_verification_of_image() -> (
     None
 ):
     # when
-    validate_selector_holds_detections(
+    validate_selector_holds_detection_predictions(
         step_name="some",
         image_selector="$inputs.image",
         detections_selector="$steps.detect.predictions",
-        field_name="detections",
+        field_name="predictions",
         input_step=ObjectDetectionModel(
             type="ObjectDetectionModel",
             name="my_crop",
@@ -182,11 +184,11 @@ def test_validate_selector_holds_detections_when_validation_passes_with_verifica
     )
 
 
-def test_validate_selector_holds_detections_when_validation_passes_with_change_of_applicable_fields() -> (
+def test_validate_selector_holds_detection_predictions_when_validation_passes_with_change_of_applicable_fields() -> (
     None
 ):
     # when
-    validate_selector_holds_detections(
+    validate_selector_holds_detection_predictions(
         step_name="some",
         image_selector="$inputs.image",
         detections_selector="$steps.detect.predictions",

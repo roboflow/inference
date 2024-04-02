@@ -161,7 +161,7 @@ def validate_selector_holds_image(
         )
 
 
-def validate_selector_holds_detections(
+def validate_selector_holds_detection_predictions(
     step_name: str,
     image_selector: Optional[str],
     detections_selector: str,
@@ -170,7 +170,7 @@ def validate_selector_holds_detections(
     applicable_fields: Optional[Set[str]] = None,
 ) -> None:
     if applicable_fields is None:
-        applicable_fields = {"detections"}
+        applicable_fields = {"predictions"}
     if field_name not in applicable_fields:
         return None
     if input_step.get_type() not in {

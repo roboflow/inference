@@ -1399,7 +1399,7 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "invalid",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
@@ -1413,7 +1413,7 @@ def test_crop_selector_validation_when_invalid_image_input_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
@@ -1433,14 +1433,14 @@ def test_crop_selector_validation_when_invalid_detections_input_selector_is_give
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
     crop = Crop.parse_obj(data)
     with pytest.raises(InvalidStepInputDetected):
         crop.validate_field_selector(
-            field_name="detections",
+            field_name="predictions",
             input_step=InferenceParameter(type="InferenceParameter", name="detections"),
         )
 
@@ -1451,7 +1451,7 @@ def test_crop_biding_validation_when_invalid_image_input_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when

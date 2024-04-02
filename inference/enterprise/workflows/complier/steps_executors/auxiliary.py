@@ -97,7 +97,7 @@ async def run_crop_step(
         outputs_lookup=outputs_lookup,
     )
     detections = resolve_parameter(
-        selector_or_value=step.detections,
+        selector_or_value=step.predictions,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,
     )

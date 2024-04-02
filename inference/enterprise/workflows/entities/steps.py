@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -52,7 +53,7 @@ from inference.enterprise.workflows.entities.validators import (
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
     validate_image_biding,
-    validate_selector_holds_detections,
+    validate_selector_holds_detection_predictions,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
     validate_value_is_empty_or_number_in_range_zero_one,
@@ -645,7 +646,7 @@ class Crop(BaseModel, StepInterface):
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    detections: StepOutputSelector(
+    predictions: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -654,6 +655,7 @@ class Crop(BaseModel, StepInterface):
     ) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping (detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
+        validation_alias=AliasChoices("predictions", "detections"),
     )
 
     @classmethod
@@ -667,7 +669,7 @@ class Crop(BaseModel, StepInterface):
         return self.type
 
     def get_input_names(self) -> Set[str]:
-        return {"image", "detections"}
+        return {"image", "predictions"}
 
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
@@ -684,10 +686,10 @@ class Crop(BaseModel, StepInterface):
             field_name=field_name,
             input_step=input_step,
         )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=self.image,
-            detections_selector=self.detections,
+            detections_selector=self.predictions,
             field_name=field_name,
             input_step=input_step,
         )
@@ -1007,7 +1009,7 @@ class DetectionFilter(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=None,
             detections_selector=self.predictions,
@@ -1078,7 +1080,7 @@ class DetectionOffset(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=None,
             detections_selector=self.predictions,
@@ -1497,7 +1499,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 raise ExecutionGraphError(
                     f"Attempted to validate selector value for field {field_name}[{index}], but field is not selector."
                 )
-            validate_selector_holds_detections(
+            validate_selector_holds_detection_predictions(
                 step_name=self.name,
                 image_selector=None,
                 detections_selector=self.predictions[index],
