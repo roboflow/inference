@@ -12,7 +12,7 @@ from inference.enterprise.workflows.entities.steps import (
     LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
-    BarcodeDetection,
+    BarcodeDetector,
     ClassificationModel,
     ClipComparison,
     Condition,
@@ -26,7 +26,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    QRCodeDetection,
+    QRCodeDetector,
     RelativeStaticCrop,
     YoloWorld,
 )
@@ -36,7 +36,7 @@ InputType = Annotated[
 ]
 
 ALL_BLOCKS_CLASSES = [
-    BarcodeDetection,
+    BarcodeDetector,
     ClassificationModel,
     MultiLabelClassificationModel,
     ObjectDetectionModel,
@@ -50,7 +50,7 @@ ALL_BLOCKS_CLASSES = [
     ClipComparison,
     RelativeStaticCrop,
     AbsoluteStaticCrop,
-    QRCodeDetection,
+    QRCodeDetector,
     DetectionsConsensus,
     ActiveLearningDataCollector,
     YoloWorld,
@@ -60,7 +60,7 @@ ALL_BLOCKS_CLASSES = [
 
 BlockType = Annotated[
     Union[
-        BarcodeDetection,
+        BarcodeDetector,
         ClassificationModel,
         MultiLabelClassificationModel,
         ObjectDetectionModel,
@@ -74,7 +74,7 @@ BlockType = Annotated[
         ClipComparison,
         RelativeStaticCrop,
         AbsoluteStaticCrop,
-        QRCodeDetection,
+        QRCodeDetector,
         DetectionsConsensus,
         ActiveLearningDataCollector,
         YoloWorld,

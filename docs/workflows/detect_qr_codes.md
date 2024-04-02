@@ -1,9 +1,9 @@
-# `QRCodeDetection`
+# `QRCodeDetector`
 
 Detect the location of QR codes in an image.
 
 ## Step parameters
-* `type`: must be `QRCodeDetection` (required)
+* `type`: must be `QRCodeDetector` (required)
 * `name`: must be unique within all steps - used as identifier (required)
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)

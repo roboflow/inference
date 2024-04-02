@@ -807,14 +807,14 @@ class BinaryOperator(Enum):
     AND = "and"
 
 
-class QRCodeDetection(BaseModel, StepInterface):
+class QRCodeDetector(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "This block represents inference from QR Code Detection.",
             "docs": "https://inference.roboflow.com/workflows/detect_qr_codes",
         }
     )
-    type: Literal["QRCodeDetection"]
+    type: Literal["QRCodeDetector", "QRCodeDetection"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
@@ -823,7 +823,7 @@ class QRCodeDetection(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(QRCodeDetection, cls).describe_outputs() + [
+        return super(QRCodeDetector, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[QR_CODE_DETECTION_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
@@ -856,14 +856,14 @@ class QRCodeDetection(BaseModel, StepInterface):
             validate_image_biding(value=value)
 
 
-class BarcodeDetection(BaseModel, StepInterface):
+class BarcodeDetector(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "This block represents inference from barcode detection.",
             "docs": None,
         }
     )
-    type: Literal["BarcodeDetection"]
+    type: Literal["BarcodeDetector", "BarcodeDetection"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
@@ -872,7 +872,7 @@ class BarcodeDetection(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(BarcodeDetection, cls).describe_outputs() + [
+        return super(BarcodeDetector, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[BAR_CODE_DETECTION_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
