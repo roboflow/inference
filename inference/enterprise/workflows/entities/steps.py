@@ -115,7 +115,10 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(description="Roboflow model identifier", examples=["my_project/3", "$inputs.model"])
+        Field(
+            description="Roboflow model identifier",
+            examples=["my_project/3", "$inputs.model"],
+        )
     )
     disable_active_learning: Union[
         Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
