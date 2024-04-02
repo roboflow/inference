@@ -907,7 +907,17 @@ class DetectionFilterDefinition(BaseModel):
     type: Literal["DetectionFilterDefinition"]
     field_name: str = Field(
         description="Name of detection-like prediction element field to take into filtering expression evaluation: `predictions[<idx>][<field_name>] operator reference_value`",
-        examples=["confidence", "width"],
+        examples=[
+            "x",
+            "y",
+            "width",
+            "height",
+            "confidence",
+            "class",
+            "class_id",
+            "points",
+            "keypoints",
+        ],
     )
     operator: Operator = Field(
         description="Operator in filtering expression: `predictions[<idx>][<field_name>] operator reference_value`",

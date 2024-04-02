@@ -29,3 +29,20 @@ dictating that AL should collect data to a different dataset than the one declar
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 * `prediction_type` - denoting `object-detection` model
+
+## Format of `predictions`
+`predictions` is batch-major list of size `[batch_size, #detections_for_input_image]`.
+Each detection is in format:
+```json
+{
+    "parent_id": "uuid_of_parent_element",
+    "class": "class_determined_by_model",
+    "class_id": 0,
+    "confidence": 1.0,
+    "x": 128.5,
+    "y": 327.8,
+    "width": 200.0,
+    "height": 150.0,
+    "detection_id": "uuid_of_detection"
+}
+```
