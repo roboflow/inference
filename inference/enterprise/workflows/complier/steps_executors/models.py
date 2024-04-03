@@ -58,7 +58,7 @@ from inference.enterprise.workflows.complier.utils import construct_step_selecto
 from inference.enterprise.workflows.entities.steps import (
     GPT_4V_MODEL_TYPE,
     LMM,
-    BarcodeDetection,
+    BarcodeDetector,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -68,10 +68,10 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    QRCodeDetection,
+    QRCodeDetector,
     RoboflowModel,
     StepInterface,
-    YoloWorld,
+    YoloWorldModel,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
@@ -460,7 +460,7 @@ MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR = {
 
 
 async def run_yolo_world_model_step(
-    step: YoloWorld,
+    step: YoloWorldModel,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
@@ -552,7 +552,7 @@ async def get_yolo_world_predictions_from_remote_api(
     class_names: List[str],
     model_version: Optional[str],
     confidence: Optional[float],
-    step: YoloWorld,
+    step: YoloWorldModel,
     api_key: Optional[str],
 ) -> List[dict]:
     api_url = resolve_model_api_url(step=step)
@@ -878,6 +878,8 @@ ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
     "InstanceSegmentationModel": HOSTED_INSTANCE_SEGMENTATION_URL,
     "OCRModel": HOSTED_CORE_MODEL_URL,
     "ClipComparison": HOSTED_CORE_MODEL_URL,
+    "YoloWorld": HOSTED_CORE_MODEL_URL,
+    "YoloWorldModel": HOSTED_CORE_MODEL_URL,
 }
 
 
@@ -1234,8 +1236,8 @@ def resolve_model_api_url(step: StepInterface) -> str:
     return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
 
 
-async def run_qr_code_detection_step(
-    step: QRCodeDetection,
+async def run_qr_code_detector_step(
+    step: QRCodeDetector,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
@@ -1292,8 +1294,8 @@ def detect_qr_codes(
     return predictions
 
 
-async def run_barcode_detection_step(
-    step: BarcodeDetection,
+async def run_barcode_detector_step(
+    step: BarcodeDetector,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,

@@ -22,3 +22,15 @@ dictating that AL should collect data to a different dataset than the one declar
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 * `prediction_type` - denoting `classification` model
+
+
+## Format of `predictions`
+`predictions` is batch-major list of size `[batch_size, #classes_in_the_model]`.
+Each prediction for single class is in format:
+```json
+{
+    "class": "class_determined_by_model",
+    "class_id": 0,
+    "confidence": 1.0,
+}
+```

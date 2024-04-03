@@ -9,7 +9,7 @@ Run Optical Character Recognition on a model.
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
 
 ## Step outputs:
-* `result` - details of predictions
+* `result` - details of predictions (for each input image, single text extracted)
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 * `prediction_type` - denoting `ocr` model

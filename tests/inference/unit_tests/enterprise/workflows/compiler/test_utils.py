@@ -62,7 +62,7 @@ def test_is_condition_step_when_node_type_is_not_condition() -> None:
         definition=Crop(
             type="Crop",
             name="some",
-            image="$images.image",
+            image="$inputs.image",
             detections="$steps.detection.predictions",
         ),
     )
@@ -96,7 +96,7 @@ def test_get_nodes_of_specific_kind() -> None:
         definition=Crop(
             type="Crop",
             name="two",
-            image="$images.image",
+            image="$inputs.image",
             detections="$steps.detection.predictions",
         ),
     )

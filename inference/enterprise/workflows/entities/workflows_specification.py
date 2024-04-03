@@ -12,7 +12,7 @@ from inference.enterprise.workflows.entities.steps import (
     LMM,
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
-    BarcodeDetection,
+    BarcodeDetector,
     ClassificationModel,
     ClipComparison,
     Condition,
@@ -26,17 +26,41 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    QRCodeDetection,
+    QRCodeDetector,
     RelativeStaticCrop,
-    YoloWorld,
+    YoloWorldModel,
 )
 
 InputType = Annotated[
     Union[InferenceImage, InferenceParameter], Field(discriminator="type")
 ]
-StepType = Annotated[
+
+ALL_BLOCKS_CLASSES = [
+    BarcodeDetector,
+    ClassificationModel,
+    MultiLabelClassificationModel,
+    ObjectDetectionModel,
+    KeypointsDetectionModel,
+    InstanceSegmentationModel,
+    OCRModel,
+    Crop,
+    Condition,
+    DetectionFilter,
+    DetectionOffset,
+    ClipComparison,
+    RelativeStaticCrop,
+    AbsoluteStaticCrop,
+    QRCodeDetector,
+    DetectionsConsensus,
+    ActiveLearningDataCollector,
+    YoloWorldModel,
+    LMM,
+    LMMForClassification,
+]
+
+BlockType = Annotated[
     Union[
-        BarcodeDetection,
+        BarcodeDetector,
         ClassificationModel,
         MultiLabelClassificationModel,
         ObjectDetectionModel,
@@ -50,10 +74,10 @@ StepType = Annotated[
         ClipComparison,
         RelativeStaticCrop,
         AbsoluteStaticCrop,
-        QRCodeDetection,
+        QRCodeDetector,
         DetectionsConsensus,
         ActiveLearningDataCollector,
-        YoloWorld,
+        YoloWorldModel,
         LMM,
         LMMForClassification,
     ],
@@ -64,7 +88,7 @@ StepType = Annotated[
 class WorkflowSpecificationV1(BaseModel):
     version: Literal["1.0"]
     inputs: List[InputType]
-    steps: List[StepType]
+    steps: List[BlockType]
     outputs: List[JsonField]
 
 

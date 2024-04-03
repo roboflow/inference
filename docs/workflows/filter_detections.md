@@ -60,3 +60,34 @@ This let user define recursive structure of filters.
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 * `prediction_type` - denoting parent model type
+
+## Format of `predictions`
+`predictions` is batch-major list of size `[batch_size, #detections_for_input_image]`.
+Each detection is in format:
+```json
+{
+    "parent_id": "uuid_of_parent_element",
+    "class": "class_determined_by_model",
+    "class_id": 0,
+    "confidence": 1.0,
+    "x": 128.5,
+    "y": 327.8,
+    "width": 200.0,
+    "height": 150.0,
+    "detection_id": "uuid_of_detection", 
+    "keypoints": [
+      {"x":  30.5, "y":  128.3, "confidence":  0.3, "class_id":  0, "class_name": "ankle"}
+    ],
+    "points": [
+      {"x":  30.5, "y":  128.3}
+    ]      
+}
+```
+
+!!! note
+    
+    `keypoints` field will only be present when `KeypointsDetectionModel` output given
+    `points` field will only be present when `InstanceSegmentationModel` output given
+    
+    While creating `filter_definition` you may use as `field_name` that is present within input 
+    detection dict. Formats of predictions may be checked in input steps' docs.

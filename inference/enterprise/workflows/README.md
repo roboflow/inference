@@ -244,7 +244,7 @@ submitted. Thanks to that, results can be easily overlay on the input image (for
 ### What kind of steps are available?
 
 #### `ClassificationModel`
-This step represents inference from multi-class classification model.
+This block represents inference from multi-class classification model.
 
 ##### Step parameters
 * `type`: must be `ClassificationModel` (required)
@@ -411,11 +411,11 @@ This step produces **dynamic** crops based on detections from detections-based m
 * `name`: must be unique within all steps - used as identifier (required)
 * `image`: must be a reference to input of type `InferenceImage` or `crops` output from steps executing cropping (
 `Crop`, `AbsoluteStaticCrop`, `RelativeStaticCrop`) (required)
-* `detections`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
+* `predictions`: must be a reference to `predictions` property of steps: [`ObjectDetectionModel`, 
 `KeypointsDetectionModel`, `InstanceSegmentationModel`, `DetectionFilter`, `DetectionsConsensus`, `YoloWorld`] (required)
 
 ##### Step outputs:
-* `crops` - `image` cropped based on `detections`
+* `crops` - `image` cropped based on `predictions`
 * `parent_id` - identifier of parent image / associated detection that helps to identify predictions with RoI in case
 of multi-step pipelines
 

@@ -36,7 +36,7 @@ from inference.enterprise.workflows.entities.steps import (
     OCRModel,
     Operator,
     RandomSamplingConfig,
-    YoloWorld,
+    YoloWorldModel,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -1399,7 +1399,7 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "invalid",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
@@ -1413,7 +1413,7 @@ def test_crop_selector_validation_when_invalid_image_input_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
@@ -1433,14 +1433,14 @@ def test_crop_selector_validation_when_invalid_detections_input_selector_is_give
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
     crop = Crop.parse_obj(data)
     with pytest.raises(InvalidStepInputDetected):
         crop.validate_field_selector(
-            field_name="detections",
+            field_name="predictions",
             input_step=InferenceParameter(type="InferenceParameter", name="detections"),
         )
 
@@ -1451,7 +1451,7 @@ def test_crop_biding_validation_when_invalid_image_input_is_given() -> None:
         "type": "Crop",
         "name": "some",
         "image": "$inputs.image",
-        "detections": "$steps.detection.predictions",
+        "predictions": "$steps.detection.predictions",
     }
 
     # when
@@ -3098,6 +3098,33 @@ def test_al_data_collector_validate_target_dataset_api_key_binding_when_provided
 def test_yolo_world_step_configuration_decoding_when_valid_config_is_given() -> None:
     # given
     specification = {
+        "type": "YoloWorldModel",
+        "name": "step_1",
+        "image": "$inputs.image",
+        "class_names": "$inputs.classes",
+        "confidence": "$inputs.confidence",
+        "version": "s",
+    }
+
+    # when
+    result = YoloWorldModel.parse_obj(specification)
+
+    # then
+    assert result == YoloWorldModel(
+        type="YoloWorldModel",
+        name="step_1",
+        image="$inputs.image",
+        class_names="$inputs.classes",
+        version="s",
+        confidence="$inputs.confidence",
+    )
+
+
+def test_yolo_world_step_configuration_decoding_when_valid_config_is_given_for_old_alias() -> (
+    None
+):
+    # given
+    specification = {
         "type": "YoloWorld",
         "name": "step_1",
         "image": "$inputs.image",
@@ -3107,10 +3134,10 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given() -> 
     }
 
     # when
-    result = YoloWorld.parse_obj(specification)
+    result = YoloWorldModel.parse_obj(specification)
 
     # then
-    assert result == YoloWorld(
+    assert result == YoloWorldModel(
         type="YoloWorld",
         name="step_1",
         image="$inputs.image",
@@ -3124,7 +3151,7 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given() -> 
 def test_yolo_world_step_image_validation_when_invalid_image_given(value: Any) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": value,
         "class_names": "$inputs.classes",
@@ -3134,7 +3161,7 @@ def test_yolo_world_step_image_validation_when_invalid_image_given(value: Any) -
 
     # when
     with pytest.raises(ValidationError):
-        _ = YoloWorld.parse_obj(specification)
+        _ = YoloWorldModel.parse_obj(specification)
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
@@ -3143,7 +3170,7 @@ def test_yolo_world_step_image_validation_when_invalid_class_names_given(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": value,
@@ -3153,13 +3180,13 @@ def test_yolo_world_step_image_validation_when_invalid_class_names_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = YoloWorld.parse_obj(specification)
+        _ = YoloWorldModel.parse_obj(specification)
 
 
 def test_yolo_world_step_image_validation_when_valid_class_names_given() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -3168,11 +3195,11 @@ def test_yolo_world_step_image_validation_when_valid_class_names_given() -> None
     }
 
     # when
-    result = YoloWorld.parse_obj(specification)
+    result = YoloWorldModel.parse_obj(specification)
 
     # then
-    assert result == YoloWorld(
-        type="YoloWorld",
+    assert result == YoloWorldModel(
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],
@@ -3187,7 +3214,7 @@ def test_yolo_world_step_image_validation_when_invalid_version_given(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -3197,14 +3224,14 @@ def test_yolo_world_step_image_validation_when_invalid_version_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = YoloWorld.parse_obj(specification)
+        _ = YoloWorldModel.parse_obj(specification)
 
 
-@pytest.mark.parametrize("value", [None, "s", "m", "l"])
+@pytest.mark.parametrize("value", ["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"])
 def test_yolo_world_step_image_validation_when_valid_version_given(value: Any) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -3213,11 +3240,11 @@ def test_yolo_world_step_image_validation_when_valid_version_given(value: Any) -
     }
 
     # when
-    result = YoloWorld.parse_obj(specification)
+    result = YoloWorldModel.parse_obj(specification)
 
     # then
-    assert result == YoloWorld(
-        type="YoloWorld",
+    assert result == YoloWorldModel(
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],
@@ -3232,7 +3259,7 @@ def test_yolo_world_step_image_validation_when_invalid_confidence_given(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -3242,7 +3269,7 @@ def test_yolo_world_step_image_validation_when_invalid_confidence_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = YoloWorld.parse_obj(specification)
+        _ = YoloWorldModel.parse_obj(specification)
 
 
 @pytest.mark.parametrize("value", [None, 0.3, 1.0, 0.0])
@@ -3251,7 +3278,7 @@ def test_yolo_world_step_image_validation_when_valid_confidence_given(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -3260,11 +3287,11 @@ def test_yolo_world_step_image_validation_when_valid_confidence_given(
     }
 
     # when
-    result = YoloWorld.parse_obj(specification)
+    result = YoloWorldModel.parse_obj(specification)
 
     # then
-    assert result == YoloWorld(
-        type="YoloWorld",
+    assert result == YoloWorldModel(
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],
@@ -3276,14 +3303,14 @@ def test_yolo_world_step_image_validation_when_valid_confidence_given(
 def test_yolo_world_step_selector_validation_when_field_is_not_selector() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "s",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
     inpt_step = InferenceParameter(type="InferenceParameter", name="some")
 
     # when
@@ -3294,14 +3321,14 @@ def test_yolo_world_step_selector_validation_when_field_is_not_selector() -> Non
 def test_yolo_world_step_image_selector_validation_when_valid_image_given() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "s",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
     inpt_step = InferenceImage(type="InferenceImage", name="some")
 
     # when
@@ -3313,14 +3340,14 @@ def test_yolo_world_step_image_selector_validation_when_valid_image_given() -> N
 def test_yolo_world_step_image_selector_validation_when_invalid_image_given() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "s",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
     inpt_step = InferenceParameter(type="InferenceParameter", name="some")
 
     # when
@@ -3333,14 +3360,14 @@ def test_yolo_world_step_inference_parameter_selector_validation_when_valid_inpu
 ):
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
     inpt_step = InferenceParameter(type="InferenceParameter", name="version")
 
     # when
@@ -3354,14 +3381,14 @@ def test_yolo_world_step_inference_parameter_selector_validation_when_invalid_in
 ):
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
     inpt_step = InferenceImage(type="InferenceImage", name="version")
 
     # when
@@ -3372,14 +3399,14 @@ def test_yolo_world_step_inference_parameter_selector_validation_when_invalid_in
 def test_yolo_world_step_image_binding_validation_when_input_is_valid() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     step.validate_field_binding(
@@ -3392,14 +3419,14 @@ def test_yolo_world_step_image_binding_validation_when_input_is_valid() -> None:
 def test_yolo_world_step_image_binding_validation_when_input_is_invalid() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     with pytest.raises(VariableTypeError):
@@ -3412,14 +3439,14 @@ def test_yolo_world_step_version_binding_validation_when_input_is_valid(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     step.validate_field_binding(
@@ -3436,14 +3463,14 @@ def test_yolo_world_step_version_binding_validation_when_input_is_invalid(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     with pytest.raises(VariableTypeError):
@@ -3456,14 +3483,14 @@ def test_yolo_world_step_version_binding_validation_when_input_is_invalid(
 def test_yolo_world_step_class_names_binding_validation_when_input_is_valid() -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": "$inputs.classes",
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     step.validate_field_binding(
@@ -3480,14 +3507,14 @@ def test_yolo_world_step_class_names_binding_validation_when_input_is_invalid(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": "$inputs.classes",
         "confidence": 0.3,
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     with pytest.raises(VariableTypeError):
@@ -3500,14 +3527,14 @@ def test_yolo_world_step_confidence_binding_validation_when_input_is_valid(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": "$inputs.conf",
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     step.validate_field_binding(
@@ -3524,14 +3551,14 @@ def test_yolo_world_step_confidence_binding_validation_when_input_is_invalid(
 ) -> None:
     # given
     specification = {
-        "type": "YoloWorld",
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.some",
         "class_names": ["a", "b"],
         "confidence": "$inputs.conf",
         "version": "$inputs.version",
     }
-    step = YoloWorld.parse_obj(specification)
+    step = YoloWorldModel.parse_obj(specification)
 
     # when
     with pytest.raises(VariableTypeError):

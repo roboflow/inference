@@ -62,6 +62,7 @@ from inference_sdk.http.utils.requests import (
     deduct_api_key_from_string,
     inject_images_into_payload,
 )
+from inference_sdk.utils.decorators import deprecated
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -997,6 +998,9 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 return await response.json()
 
+    @deprecated(
+        reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
+    )
     @wrap_errors
     def infer_from_workflow(
         self,
@@ -1019,12 +1023,68 @@ class InferenceHTTPClient:
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
         """
+        return self._run_workflow(
+            workspace_name=workspace_name,
+            workflow_id=workflow_name,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=True,
+        )
+
+    @wrap_errors
+    def run_workflow(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Triggers inference from workflow specification at the inference HTTP
+        side. Either (`workspace_name` and `workflow_id`) or `workflow_specification` must be
+        provided. In the first case - definition of workflow will be fetched
+        from Roboflow API, in the latter - `workflow_specification` will be
+        used. `images` and `parameters` will be merged into workflow inputs,
+        the distinction is made to make sure the SDK can easily serialise
+        images and prepare a proper payload. Supported images are numpy arrays,
+        PIL.Image and base64 images, links to images and local paths.
+        `excluded_fields` will be added to request to filter out results
+        of workflow execution at the server side.
+
+        **Important!**
+        Method is not compatible with inference server <=0.9.18. Please migrate to newer version of
+        the server before end of Q2 2024. Until that is done - use old method: infer_from_workflow(...).
+        """
+        return self._run_workflow(
+            workspace_name=workspace_name,
+            workflow_id=workflow_id,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=False,
+        )
+
+    def _run_workflow(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
+    ) -> Dict[str, Any]:
         named_workflow_specified = (workspace_name is not None) and (
-            workflow_name is not None
+            workflow_id is not None
         )
         if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
-                "Parameters (`workspace_name`, `workflow_name`) can be used mutually exclusive with "
+                "Parameters (`workspace_name`, `workflow_id` / `workflow_name`) can be used mutually exclusive with "
                 "`workflow_specification`, but at least one must be set."
             )
         if images is None:
@@ -1049,9 +1109,15 @@ class InferenceHTTPClient:
         if specification is not None:
             payload["specification"] = specification
         if specification is not None:
-            url = f"{self.__api_url}/infer/workflows"
+            if legacy_endpoints:
+                url = f"{self.__api_url}/infer/workflows"
+            else:
+                url = f"{self.__api_url}/workflows/run"
         else:
-            url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_name}"
+            if legacy_endpoints:
+                url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
+            else:
+                url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_id}"
         response = requests.post(
             url,
             json=payload,

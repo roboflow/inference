@@ -22,14 +22,14 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,
     resolve_model_api_url,
-    run_barcode_detection_step,
+    run_barcode_detector_step,
     run_cog_vlm_prompting,
-    run_qr_code_detection_step,
+    run_qr_code_detector_step,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
 from inference.enterprise.workflows.entities.steps import (
-    BarcodeDetection,
+    BarcodeDetector,
     ClassificationModel,
     ClipComparison,
     InstanceSegmentationModel,
@@ -38,7 +38,7 @@ from inference.enterprise.workflows.entities.steps import (
     MultiLabelClassificationModel,
     ObjectDetectionModel,
     OCRModel,
-    QRCodeDetection,
+    QRCodeDetector,
 )
 
 
@@ -740,7 +740,7 @@ async def test_execute_gpt_4v_request() -> None:
 @pytest.mark.asyncio
 async def test_qr_code_detection() -> None:
     # given
-    step = QRCodeDetection(
+    step = QRCodeDetector(
         type="QRCodeDetection",
         name="some",
         image="$inputs.image",
@@ -751,7 +751,7 @@ async def test_qr_code_detection() -> None:
     )
 
     # when
-    _, result = await run_qr_code_detection_step(
+    _, result = await run_qr_code_detector_step(
         step=step,
         runtime_parameters={
             "image": [
@@ -794,7 +794,7 @@ async def test_qr_code_detection() -> None:
 @pytest.mark.asyncio
 async def test_barcode_detection() -> None:
     # given
-    step = BarcodeDetection(
+    step = BarcodeDetector(
         type="BarcodeDetection",
         name="some",
         image="$inputs.image",
@@ -805,7 +805,7 @@ async def test_barcode_detection() -> None:
     )
 
     # when
-    _, result = await run_barcode_detection_step(
+    _, result = await run_barcode_detector_step(
         step=step,
         runtime_parameters={
             "image": [

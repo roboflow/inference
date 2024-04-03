@@ -70,7 +70,10 @@ from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
 )
-from inference.core.entities.responses.workflows import WorkflowInferenceResponse
+from inference.core.entities.responses.workflows import (
+    WorkflowInferenceResponse,
+    WorkflowValidationStatus,
+)
 from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
@@ -127,8 +130,21 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
 from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.complier.graph_parser import prepare_execution_graph
+from inference.enterprise.workflows.complier.introspection import (
+    describe_available_blocks,
+)
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
     WorkflowsActiveLearningMiddleware,
+)
+from inference.enterprise.workflows.complier.validator import (
+    validate_workflow_specification,
+)
+from inference.enterprise.workflows.entities.blocks_descriptions import (
+    BlocksDescription,
+)
+from inference.enterprise.workflows.entities.workflows_specification import (
+    WorkflowSpecification,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
@@ -756,22 +772,29 @@ class HttpInterface(BaseInterface):
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
-                "/infer/workflows/{workspace_name}/{workflow_name}",
+                "/{workspace_name}/workflows/{workflow_id}",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from predefined workflow",
+                summary="Endpoint to run predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
+            )
+            @app.post(
+                "/infer/workflows/{workspace_name}/{workflow_id}",
+                response_model=WorkflowInferenceResponse,
+                summary="[LEGACY] Endpoint to run predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
+                deprecated=True,
             )
             @with_route_exceptions
             async def infer_from_predefined_workflow(
                 workspace_name: str,
-                workflow_name: str,
+                workflow_id: str,
                 workflow_request: WorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
-                    workflow_name=workflow_name,
+                    workflow_id=workflow_id,
                 )
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
@@ -780,10 +803,17 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
+                "/workflows/run",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to run workflow specification provided in payload",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body.",
+            )
+            @app.post(
                 "/infer/workflows",
                 response_model=WorkflowInferenceResponse,
-                summary="Endpoint to trigger inference from workflow specification provided in payload",
-                description="Parses and executes workflow specification, injecting runtime parameters from request body",
+                summary="[LEGACY] Endpoint to run workflow specification provided in payload",
+                description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
+                deprecated=True,
             )
             @with_route_exceptions
             async def infer_from_workflow(
@@ -798,6 +828,36 @@ class HttpInterface(BaseInterface):
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
                 )
+
+            @app.get(
+                "/workflows/blocks/describe",
+                response_model=BlocksDescription,
+                summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
+                description="Endpoint provides detailed information about workflows building blocks that are "
+                "accessible in the inference server. This information could be used to programmatically "
+                "build / display workflows.",
+            )
+            @with_route_exceptions
+            async def describe_workflows_blocks() -> BlocksDescription:
+                return describe_available_blocks()
+
+            @app.post(
+                "/workflows/validate",
+                response_model=WorkflowValidationStatus,
+                summary="[EXPERIMENTAL] Endpoint to validate",
+                description="Endpoint provides a way to check validity of JSON workflow definition.",
+            )
+            @with_route_exceptions
+            async def validate_workflow(
+                request: WorkflowSpecification,
+            ) -> WorkflowValidationStatus:
+                validate_workflow_specification(
+                    workflow_specification=request.specification
+                )
+                _ = prepare_execution_graph(
+                    workflow_specification=request.specification
+                )
+                return WorkflowValidationStatus(status="ok")
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

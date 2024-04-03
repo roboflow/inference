@@ -1,9 +1,11 @@
 import os
 import uuid
+import warnings
 
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
+from inference.core.warnings import InferenceDeprecationWarning
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -371,3 +373,10 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
+
+INFERENCE_WARNINGS_DISABLED = str2bool(
+    os.getenv("INFERENCE_WARNINGS_DISABLED", "False")
+)
+
+if INFERENCE_WARNINGS_DISABLED:
+    warnings.simplefilter("ignore", InferenceDeprecationWarning)

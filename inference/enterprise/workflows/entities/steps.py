@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -14,26 +15,49 @@ from pydantic import (
 from typing_extensions import Annotated
 
 from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.entities.types import (
+    BAR_CODE_DETECTION_KIND,
+    BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    DICTIONARY_KIND,
+    FLOAT_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
+    IMAGE_METADATA_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    PARENT_ID_KIND,
+    PREDICTION_TYPE_KIND,
+    QR_CODE_DETECTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
+    ROBOFLOW_PROJECT,
+    STRING_KIND,
+    WILDCARD_KIND,
+    FloatZeroToOne,
+    InferenceImageSelector,
+    InferenceParameterSelector,
+    Kind,
+    OutputStepImageSelector,
+    StepOutputSelector,
+    StepSelector,
+)
 from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
     is_selector,
     validate_field_has_given_type,
     validate_field_is_dict_of_strings,
-    validate_field_is_empty_or_selector_or_list_of_string,
-    validate_field_is_in_range_zero_one_or_empty_or_selector,
-    validate_field_is_list_of_selectors,
     validate_field_is_list_of_string,
     validate_field_is_one_of_selected_values,
     validate_field_is_selector_or_has_given_type,
-    validate_field_is_selector_or_one_of_values,
     validate_image_biding,
-    validate_image_is_valid_selector,
-    validate_selector_holds_detections,
+    validate_selector_holds_detection_predictions,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
     validate_value_is_empty_or_number_in_range_zero_one,
     validate_value_is_empty_or_positive_number,
-    validate_value_is_empty_or_selector_or_positive_number,
 )
 from inference.enterprise.workflows.errors import (
     ExecutionGraphError,
@@ -42,7 +66,16 @@ from inference.enterprise.workflows.errors import (
 )
 
 
+class OutputDefinition(BaseModel):
+    name: str
+    kind: List[Kind]
+
+
 class StepInterface(GraphNone, metaclass=ABCMeta):
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
     @abstractmethod
     def get_input_names(self) -> Set[str]:
         """
@@ -77,47 +110,38 @@ class StepInterface(GraphNone, metaclass=ABCMeta):
 class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
     model_config = ConfigDict(protected_namespaces=())
     type: Literal["RoboflowModel"]
-    name: str
-    image: Union[str, List[str]]
-    model_id: str
-    disable_active_learning: Union[Optional[bool], str] = Field(default=False)
-    active_learning_target_dataset: Optional[str] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def validate_image(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("model_id")
-    @classmethod
-    def model_id_must_be_selector_or_str(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="model_id", allowed_types=[str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        Field(
+            description="Roboflow model identifier",
+            examples=["my_project/3", "$inputs.model"],
         )
-        return value
+    )
+    disable_active_learning: Union[
+        Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=False,
+        description="Parameter to decide if Active Learning data sampling is disabled for the model",
+        examples=[True, "$inputs.disable_active_learning"],
+    )
+    active_learning_target_dataset: Union[
+        Optional[str], InferenceParameterSelector(kind=[ROBOFLOW_PROJECT])
+    ] = Field(
+        default=None,
+        description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
+        "docs for more information",
+        examples=["my_project", "$inputs.al_target_project"],
+    )
 
-    @field_validator("disable_active_learning")
     @classmethod
-    def disable_active_learning_must_be_selector_or_bool(
-        cls, value: Any
-    ) -> Union[Optional[bool], str]:
-        validate_field_is_selector_or_has_given_type(
-            field_name="disable_active_learning",
-            allowed_types=[type(None), bool],
-            value=value,
-        )
-        return value
-
-    @field_validator("active_learning_target_dataset")
-    @classmethod
-    def validate_active_learning_configuration_fields(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value,
-            field_name="active_learning_target_dataset",
-            allowed_types=[type(None), str],
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(RoboflowModel, cls).describe_outputs() + [
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND])
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -183,16 +207,30 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 
 
 class ClassificationModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow multi-class classification model.",
+            "docs": "https://inference.roboflow.com/workflows/classify_objects",
+        }
+    )
     type: Literal["ClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.4)
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 
-    @field_validator("confidence")
     @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(ClassificationModel, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -226,16 +264,29 @@ class ClassificationModel(RoboflowModel):
 
 
 class MultiLabelClassificationModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow multi-label classification model.",
+            "docs": "https://inference.roboflow.com/workflows/classify_objects_multi",
+        }
+    )
     type: Literal["MultiLabelClassificationModel"]
-    confidence: Union[Optional[float], str] = Field(default=0.4)
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 
-    @field_validator("confidence")
     @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(MultiLabelClassificationModel, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="predicted_classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -269,56 +320,67 @@ class MultiLabelClassificationModel(RoboflowModel):
 
 
 class ObjectDetectionModel(RoboflowModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow object detection model.",
+            "docs": "https://inference.roboflow.com/workflows/detect_objects",
+        }
+    )
     type: Literal["ObjectDetectionModel"]
-    class_agnostic_nms: Union[Optional[bool], str] = Field(default=False)
-    class_filter: Union[Optional[List[str]], str] = Field(default=None)
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-    iou_threshold: Union[Optional[float], str] = Field(default=0.3)
-    max_detections: Union[Optional[int], str] = Field(default=300)
-    max_candidates: Union[Optional[int], str] = Field(default=3000)
+    class_agnostic_nms: Union[
+        Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=False,
+        description="Value to decide if NMS is to be used in class-agnostic mode.",
+        examples=[True, "$inputs.class_agnostic_nms"],
+    )
+    class_filter: Union[
+        Optional[List[str]], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
+        default=None,
+        description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
+        examples=[["a", "b", "c"], "$inputs.class_filter"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
+    iou_threshold: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.3,
+        description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
+        examples=[0.4, "$inputs.iou_threshold"],
+    )
+    max_detections: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+    ] = Field(
+        default=300,
+        description="Maximum number of detections to return",
+        examples=[300, "$inputs.max_detections"],
+    )
+    max_candidates: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+    ] = Field(
+        default=3000,
+        description="Maximum number of candidates as NMS input to be taken into account.",
+        examples=[3000, "$inputs.max_candidates"],
+    )
 
-    @field_validator("class_agnostic_nms")
     @classmethod
-    def class_agnostic_nms_must_be_selector_or_bool(
-        cls, value: Any
-    ) -> Union[Optional[bool], str]:
-        validate_field_is_selector_or_has_given_type(
-            field_name="class_agnostic_nms",
-            allowed_types=[type(None), bool],
-            value=value,
-        )
-        return value
-
-    @field_validator("class_filter")
-    @classmethod
-    def class_filter_must_be_selector_or_list_of_string(
-        cls, value: Any
-    ) -> Union[Optional[List[str]], str]:
-        validate_field_is_empty_or_selector_or_list_of_string(
-            value=value, field_name="class_filter"
-        )
-        return value
-
-    @field_validator("confidence", "iou_threshold")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="confidence | iou_threshold"
-        )
-        return value
-
-    @field_validator("max_detections", "max_candidates")
-    @classmethod
-    def field_must_be_selector_or_positive_number(
-        cls, value: Any
-    ) -> Union[Optional[int], str]:
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value,
-            field_name="max_detections | max_candidates",
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(ObjectDetectionModel, cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -389,18 +451,36 @@ class ObjectDetectionModel(RoboflowModel):
 
 
 class KeypointsDetectionModel(ObjectDetectionModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow keypoint detection model.",
+            "docs": "https://inference.roboflow.com/workflows/detect_keypoints",
+        }
+    )
     type: Literal["KeypointsDetectionModel"]
-    keypoint_confidence: Union[Optional[float], str] = Field(default=0.0)
+    keypoint_confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.0,
+        description="Confidence threshold to predict keypoint as visible.",
+        examples=[0.3, "$inputs.keypoint_confidence"],
+    )
 
-    @field_validator("keypoint_confidence")
     @classmethod
-    def keypoint_confidence_field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="keypoint_confidence"
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        outputs = super(KeypointsDetectionModel, cls).describe_outputs()
+        result = []
+        for o in outputs:
+            if o.name != "predictions":
+                result.append(o)
+            else:
+                result.append(
+                    OutputDefinition(
+                        name="predictions", kind=[KEYPOINT_DETECTION_PREDICTION_KIND]
+                    ),
+                )
+        return result
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -432,31 +512,44 @@ DECODE_MODES = {"accurate", "tradeoff", "fast"}
 
 
 class InstanceSegmentationModel(ObjectDetectionModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow keypoint detection model.",
+            "docs": "https://inference.roboflow.com/workflows/segment_objects",
+        }
+    )
     type: Literal["InstanceSegmentationModel"]
-    mask_decode_mode: Optional[str] = Field(default="accurate")
-    tradeoff_factor: Union[Optional[float], str] = Field(default=0.0)
+    mask_decode_mode: Union[
+        Literal["accurate", "tradeoff", "fast"],
+        InferenceParameterSelector(kind=[STRING_KIND]),
+    ] = Field(
+        default="accurate",
+        description="Parameter of mask decoding in prediction post-processing.",
+        examples=["accurate", "$inputs.mask_decode_mode"],
+    )
+    tradeoff_factor: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.0,
+        description="Post-processing parameter to dictate tradeoff between fast and accurate",
+        examples=[0.3, "$inputs.tradeoff_factor"],
+    )
 
-    @field_validator("mask_decode_mode")
     @classmethod
-    def mask_decode_mode_must_be_selector_or_one_of_allowed_values(
-        cls, value: Any
-    ) -> Optional[str]:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="mask_decode_mode",
-            selected_values=DECODE_MODES,
-        )
-        return value
-
-    @field_validator("tradeoff_factor")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="tradeoff_factor"
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        outputs = super(InstanceSegmentationModel, cls).describe_outputs()
+        result = []
+        for o in outputs:
+            if o.name != "predictions":
+                result.append(o)
+            else:
+                result.append(
+                    OutputDefinition(
+                        name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+                    )
+                )
+        return result
 
     def get_input_names(self) -> Set[str]:
         inputs = super().get_input_names()
@@ -492,15 +585,26 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 
 
 class OCRModel(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from Roboflow OCR model.",
+            "docs": "https://inference.roboflow.com/workflows/ocr",
+        }
+    )
     type: Literal["OCRModel"]
-    name: str
-    image: Union[str, List[str]]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(OCRModel, cls).describe_outputs() + [
+            OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -530,29 +634,42 @@ class OCRModel(BaseModel, StepInterface):
 
 
 class Crop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block produces dynamic crops based on detections from detections-based model.",
+            "docs": "https://inference.roboflow.com/workflows/crop",
+        }
+    )
     type: Literal["Crop"]
-    name: str
-    image: Union[str, List[str]]
-    detections: str
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    predictions: StepOutputSelector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Reference to predictions of detection-like model, that can be based of cropping (detection must define RoI - eg: bounding box)",
+        examples=["$steps.my_object_detection_model.predictions"],
+        validation_alias=AliasChoices("predictions", "detections"),
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("detections")
-    @classmethod
-    def detections_must_hold_selector(cls, value: Any) -> str:
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`detections` field can only contain selector values")
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(Crop, cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
 
     def get_input_names(self) -> Set[str]:
-        return {"image", "detections"}
+        return {"image", "predictions"}
 
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
@@ -569,10 +686,10 @@ class Crop(BaseModel, StepInterface):
             field_name=field_name,
             input_step=input_step,
         )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=self.image,
-            detections_selector=self.detections,
+            detections_selector=self.predictions,
             field_name=field_name,
             input_step=input_step,
         )
@@ -596,13 +713,66 @@ class Operator(Enum):
 
 
 class Condition(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for flow-control in execution graph based on the condition defined in its body. As for now, only capable to make conditions based on output of binary operators that takes two operands. IMPORTANT NOTE: `Condition` block is only capable to operate, when single image is provided to the input of the `workflow` (or more precisely, both `left` and `right` if provided with reference, then the reference can only hold value for a result of operation made against single input). This is to prevent situation when evaluation of condition for multiple images yield different execution paths.",
+            "docs": None,
+        }
+    )
     type: Literal["Condition"]
-    name: str
-    left: Union[float, int, bool, str, list, set]
-    operator: Operator
-    right: Union[float, int, bool, str, list, set]
-    step_if_true: str
-    step_if_false: str
+    name: str = Field(description="Unique name of step in workflows")
+    left: Union[
+        float,
+        int,
+        bool,
+        StepOutputSelector(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+            ]
+        ),
+        str,
+        list,
+        set,
+    ] = Field(
+        description="Left operand of expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["$steps.classification.top", 3, "some"],
+    )
+    operator: Operator = Field(
+        description="Operator in expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["equal", "in"],
+    )
+    right: Union[
+        float,
+        int,
+        bool,
+        StepOutputSelector(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+            ]
+        ),
+        str,
+        list,
+        set,
+    ] = Field(
+        description="Right operand of expression `left operator right` to evaluate boolean value of condition statement",
+        examples=["$steps.classification.top", 3, "some"],
+    )
+    step_if_true: StepSelector = Field(
+        description="Reference to step which shall be executed if expression evaluates to true",
+        examples=["$steps.on_true"],
+    )
+    step_if_false: StepSelector = Field(
+        description="Reference to step which shall be executed if expression evaluates to false",
+        examples=["$steps.on_false"],
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -637,16 +807,27 @@ class BinaryOperator(Enum):
     AND = "and"
 
 
-class QRCodeDetection(BaseModel, StepInterface):
-    type: Literal["QRCodeDetection"]
-    name: str
-    image: Union[str, List[str]]
+class QRCodeDetector(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from QR Code Detection.",
+            "docs": "https://inference.roboflow.com/workflows/detect_qr_codes",
+        }
+    )
+    type: Literal["QRCodeDetector", "QRCodeDetection"]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(QRCodeDetector, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[QR_CODE_DETECTION_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -675,16 +856,27 @@ class QRCodeDetection(BaseModel, StepInterface):
             validate_image_biding(value=value)
 
 
-class BarcodeDetection(BaseModel, StepInterface):
-    type: Literal["BarcodeDetection"]
-    name: str
-    image: Union[str, List[str]]
+class BarcodeDetector(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block represents inference from barcode detection.",
+            "docs": None,
+        }
+    )
+    type: Literal["BarcodeDetector", "BarcodeDetection"]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(BarcodeDetector, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[BAR_CODE_DETECTION_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -715,26 +907,94 @@ class BarcodeDetection(BaseModel, StepInterface):
 
 class DetectionFilterDefinition(BaseModel):
     type: Literal["DetectionFilterDefinition"]
-    field_name: str
-    operator: Operator
-    reference_value: Union[float, int, bool, str, list, set]
+    field_name: str = Field(
+        description="Name of detection-like prediction element field to take into filtering expression evaluation: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=[
+            "x",
+            "y",
+            "width",
+            "height",
+            "confidence",
+            "class",
+            "class_id",
+            "points",
+            "keypoints",
+        ],
+    )
+    operator: Operator = Field(
+        description="Operator in filtering expression: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=["equal", "in"],
+    )
+    reference_value: Union[float, int, bool, str, list, set] = Field(
+        description="Reference value to take into filtering expression evaluation: `predictions[<idx>][<field_name>] operator reference_value`",
+        examples=[0.3, 300],
+    )
 
 
 class CompoundDetectionFilterDefinition(BaseModel):
     type: Literal["CompoundDetectionFilterDefinition"]
-    left: DetectionFilterDefinition
-    operator: BinaryOperator
-    right: DetectionFilterDefinition
+    left: Annotated[
+        Union[DetectionFilterDefinition, "CompoundDetectionFilterDefinition"],
+        Field(
+            discriminator="type",
+            description="Left operand (potentially nested expression) in expression `left bin_operator right`",
+        ),
+    ]
+    operator: BinaryOperator = Field(
+        description="Binary operator in expression `left bin_operator right`",
+        examples=["and", "or"],
+    )
+    right: Annotated[
+        Union[DetectionFilterDefinition, "CompoundDetectionFilterDefinition"],
+        Field(
+            discriminator="type",
+            description="Right operand (potentially nested expression) in expression `left bin_operator right`",
+        ),
+    ]
 
 
 class DetectionFilter(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for filtering detections-based predictions based on conditions defined.",
+            "docs": "https://inference.roboflow.com/workflows/filter_detections",
+        }
+    )
     type: Literal["DetectionFilter"]
-    name: str
-    predictions: str
+    name: str = Field(description="Unique name of step in workflows")
+    predictions: StepOutputSelector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
+    )
     filter_definition: Annotated[
         Union[DetectionFilterDefinition, CompoundDetectionFilterDefinition],
-        Field(discriminator="type"),
+        Field(
+            discriminator="type",
+            description="Definition of a filter expression to be applied for each element of detection-like predictions to decide if element should persist in the output. Can be used for instance to filter-out bounding boxes based on coordinates.",
+        ),
     ]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(DetectionFilter, cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {"predictions"}
@@ -749,7 +1009,7 @@ class DetectionFilter(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=None,
             detections_selector=self.predictions,
@@ -766,11 +1026,46 @@ class DetectionFilter(BaseModel, StepInterface):
 
 
 class DetectionOffset(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "This block is responsible for applying fixed offset on width and height of detections.",
+            "docs": "https://inference.roboflow.com/workflows/offset_detections",
+        }
+    )
     type: Literal["DetectionOffset"]
-    name: str
-    predictions: str
-    offset_x: Union[int, str]
-    offset_y: Union[int, str]
+    name: str = Field(description="Unique name of step in workflows")
+    predictions: StepOutputSelector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
+    )
+    offset_x: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(description="Offset for boxes width", examples=[10, "$inputs.offset_x"])
+    )
+    offset_y: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(description="Offset for boxes height", examples=[10, "$inputs.offset_y"])
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(DetectionOffset, cls).describe_outputs() + [
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {"predictions", "offset_x", "offset_y"}
@@ -785,7 +1080,7 @@ class DetectionOffset(BaseModel, StepInterface):
             raise ExecutionGraphError(
                 f"Attempted to validate selector value for field {field_name}, but field is not selector."
             )
-        validate_selector_holds_detections(
+        validate_selector_holds_detection_predictions(
             step_name=self.name,
             image_selector=None,
             detections_selector=self.predictions,
@@ -814,33 +1109,51 @@ class DetectionOffset(BaseModel, StepInterface):
 
 
 class AbsoluteStaticCrop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Responsible for cropping RoIs from images - using absolute coordinates.",
+            "docs": "https://inference.roboflow.com/workflows/absolute_static_crop/",
+        }
+    )
     type: Literal["AbsoluteStaticCrop"]
-    name: str
-    image: Union[str, List[str]]
-    x_center: Union[int, str]
-    y_center: Union[int, str]
-    width: Union[int, str]
-    height: Union[int, str]
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
-    def validate_crops_coordinates(cls, value: Any) -> str:
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value, field_name="x_center | y_center | width | height"
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    x_center: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            description="Center X of static crop (absolute coordinate)",
+            examples=[40, "$inputs.center_x"],
         )
-        return value
+    )
+    y_center: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            description="Center Y of static crop (absolute coordinate)",
+            examples=[40, "$inputs.center_y"],
+        )
+    )
+    width: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = Field(
+        description="Width of static crop (absolute value)",
+        examples=[40, "$inputs.width"],
+    )
+    height: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = Field(
+        description="Height of static crop (absolute value)",
+        examples=[40, "$inputs.height"],
+    )
 
     def get_type(self) -> str:
         return self.type
 
     def get_input_names(self) -> Set[str]:
         return {"image", "x_center", "y_center", "width", "height"}
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(AbsoluteStaticCrop, cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_output_names(self) -> Set[str]:
         return {"crops", "parent_id"}
@@ -877,29 +1190,49 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 
 
 class RelativeStaticCrop(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Responsible for cropping RoIs from images - using relative coordinates.",
+            "docs": "https://inference.roboflow.com/workflows/absolute_static_crop/",
+        }
+    )
     type: Literal["RelativeStaticCrop"]
-    name: str
-    image: Union[str, List[str]]
-    x_center: Union[float, str]
-    y_center: Union[float, str]
-    width: Union[float, str]
-    height: Union[float, str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    x_center: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        description="Center X of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_x"],
+    )
+    y_center: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        description="Center Y of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_y"],
+    )
+    width: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        description="Width of static crop (relative value 0.0-1.0)",
+        examples=[0.3, "$inputs.width"],
+    )
+    height: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        description="Height of static crop (relative value 0.0-1.0)",
+        examples=[0.3, "$inputs.height"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("x_center", "y_center", "width", "height")
-    @classmethod
-    def detections_must_hold_selector(cls, value: Any) -> str:
-        if issubclass(type(value), str):
-            if not is_selector(selector_or_value=value):
-                raise ValueError("Field must be either float of valid selector")
-        elif not issubclass(type(value), float):
-            raise ValueError("Field must be either float of valid selector")
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(RelativeStaticCrop, cls).describe_outputs() + [
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
 
     def get_type(self) -> str:
         return self.type
@@ -942,27 +1275,32 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 
 
 class ClipComparison(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block to execute comparison of Clip embeddings between image and text.",
+            "docs": "https://inference.roboflow.com/workflows/compare_clip_vectors",
+        }
+    )
     type: Literal["ClipComparison"]
-    name: str
-    image: Union[str, List[str]]
-    text: Union[str, List[str]]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    text: Union[InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
+        Field(
+            description="List of texts to calculate similarity against each input image",
+            examples=[["a", "b", "c"], "$inputs.texts"],
+        )
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("text")
-    @classmethod
-    def text_must_be_valid(cls, value: Any) -> Union[str, List[str]]:
-        if is_selector(selector_or_value=value):
-            return value
-        if issubclass(type(value), list):
-            validate_field_is_list_of_string(value=value, field_name="text")
-        elif not issubclass(type(value), str):
-            raise ValueError("`text` field given must be string or list of strings")
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(ClipComparison, cls).describe_outputs() + [
+            OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -1016,100 +1354,108 @@ class AggregationMode(Enum):
 
 
 class DetectionsConsensus(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that combines predictions from potentially multiple detections models based on majority vote.",
+            "docs": "https://inference.roboflow.com/workflows/reach_consensus",
+        }
+    )
     type: Literal["DetectionsConsensus"]
-    name: str
-    predictions: List[str]
-    required_votes: Union[int, str]
-    class_aware: Union[bool, str] = Field(default=True)
-    iou_threshold: Union[float, str] = Field(default=0.3)
-    confidence: Union[float, str] = Field(default=0.0)
-    classes_to_consider: Optional[Union[List[str], str]] = Field(default=None)
-    required_objects: Optional[Union[int, Dict[str, int], str]] = Field(default=None)
+    name: str = Field(description="Unique name of step in workflows")
+    predictions: List[
+        StepOutputSelector(
+            kind=[
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ]
+        ),
+    ] = Field(
+        min_items=1,
+        description="Reference to detection-like model predictions made against single image to agree on model consensus",
+        examples=[["$steps.a.predictions", "$steps.b.predictions"]],
+    )
+    required_votes: Union[
+        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
+    ] = Field(
+        description="Required number of votes for single detection from different models to accept detection as output detection",
+        examples=[2, "$inputs.required_votes"],
+    )
+    class_aware: Union[bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Flag to decide if margin detections is class-aware or only bounding boxes aware",
+        examples=[True, "$inputs.class_aware"],
+    )
+    iou_threshold: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        default=0.3,
+        description="IoU threshold to consider detections from different models as matching (increasing votes for region)",
+        examples=[0.3, "$inputs.iou_threshold"],
+    )
+    confidence: Union[
+        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
+        default=0.0,
+        description="Confidence threshold for merged detections",
+        examples=[0.1, "$inputs.confidence"],
+    )
+    classes_to_consider: Optional[
+        Union[List[str], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])]
+    ] = Field(
+        default=None,
+        description="Optional list of classes to consider in consensus procedure.",
+        examples=[["a", "b"], "$inputs.classes_to_consider"],
+    )
+    required_objects: Optional[
+        Union[
+            PositiveInt,
+            Dict[str, PositiveInt],
+            InferenceParameterSelector(kind=[INTEGER_KIND, DICTIONARY_KIND]),
+        ]
+    ] = Field(
+        default=None,
+        description="If given, it holds the number of objects that must be present in merged results, to assume that object presence is reached. Can be selector to `InferenceParameter`, integer value or dictionary with mapping of class name into minimal number of merged detections of given class to assume consensus.",
+        examples=[3, {"a": 7, "b": 2}, "$inputs.required_objects"],
+    )
     presence_confidence_aggregation: AggregationMode = Field(
-        default=AggregationMode.MAX
+        default=AggregationMode.MAX,
+        description="Mode dictating aggregation of confidence scores and classes both in case of object presence deduction procedure.",
+        examples=["max", "min"],
     )
     detections_merge_confidence_aggregation: AggregationMode = Field(
-        default=AggregationMode.AVERAGE
+        default=AggregationMode.AVERAGE,
+        description="Mode dictating aggregation of confidence scores and classes both in case of boxes consensus procedure. One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence, `min` - for the class of detection with min confidence.",
+        examples=["min", "max"],
     )
     detections_merge_coordinates_aggregation: AggregationMode = Field(
-        default=AggregationMode.AVERAGE
+        default=AggregationMode.AVERAGE,
+        description="Mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking largest box.",
+        examples=["min", "max"],
     )
 
-    @field_validator("predictions")
     @classmethod
-    def predictions_must_be_list_of_selectors(cls, value: Any) -> List[str]:
-        validate_field_is_list_of_selectors(value=value, field_name="predictions")
-        if len(value) < 1:
-            raise ValueError(
-                "There must be at least 1 `predictions` selectors in consensus step"
-            )
-        return value
-
-    @field_validator("required_votes")
-    @classmethod
-    def required_votes_must_be_selector_or_positive_integer(
-        cls, value: Any
-    ) -> Union[str, int]:
-        if value is None:
-            raise ValueError("Field `required_votes` is required.")
-        validate_value_is_empty_or_selector_or_positive_number(
-            value=value, field_name="required_votes"
-        )
-        return value
-
-    @field_validator("class_aware")
-    @classmethod
-    def class_aware_must_be_selector_or_boolean(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="class_aware", allowed_types=[bool]
-        )
-        return value
-
-    @field_validator("iou_threshold", "confidence")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[str, float]:
-        if value is None:
-            raise ValueError("Fields `iou_threshold` and `confidence` cannot be None")
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="iou_threshold | confidence"
-        )
-        return value
-
-    @field_validator("classes_to_consider")
-    @classmethod
-    def classes_to_consider_must_be_empty_or_selector_or_list_of_strings(
-        cls, value: Any
-    ) -> Optional[Union[str, List[str]]]:
-        validate_field_is_empty_or_selector_or_list_of_string(
-            value=value, field_name="classes_to_consider"
-        )
-        return value
-
-    @field_validator("required_objects")
-    @classmethod
-    def required_objects_field_must_be_valid(
-        cls, value: Any
-    ) -> Optional[Union[str, int, Dict[str, int]]]:
-        if value is None:
-            return value
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="required_objects", allowed_types=[int, dict]
-        )
-        if issubclass(type(value), int):
-            validate_value_is_empty_or_positive_number(
-                value=value, field_name="required_objects"
-            )
-            return value
-        elif issubclass(type(value), dict):
-            for k, v in value.items():
-                if v is None:
-                    raise ValueError(f"Field `required_objects[{k}]` must not be None.")
-                validate_value_is_empty_or_positive_number(
-                    value=v, field_name=f"required_objects[{k}]"
-                )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(DetectionsConsensus, cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(
+                name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
+            ),
+            OutputDefinition(
+                name="presence_confidence",
+                kind=[FLOAT_ZERO_TO_ONE_KIND, DICTIONARY_KIND],
+            ),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {
@@ -1153,7 +1499,7 @@ class DetectionsConsensus(BaseModel, StepInterface):
                 raise ExecutionGraphError(
                     f"Attempted to validate selector value for field {field_name}[{index}], but field is not selector."
                 )
-            validate_selector_holds_detections(
+            validate_selector_holds_detection_predictions(
                 step_name=self.name,
                 image_selector=None,
                 detections_selector=self.predictions[index],
@@ -1254,16 +1600,7 @@ ACTIVE_LEARNING_DATA_COLLECTOR_ELIGIBLE_SELECTORS = {
 
 
 class DisabledActiveLearningConfiguration(BaseModel):
-    enabled: bool
-
-    @field_validator("enabled")
-    @classmethod
-    def ensure_only_false_is_valid(cls, value: Any) -> bool:
-        if value is not False:
-            raise ValueError(
-                "One can only specify enabled=False in `DisabledActiveLearningConfiguration`"
-            )
-        return value
+    enabled: Literal[False]
 
 
 class LimitDefinition(BaseModel):
@@ -1337,69 +1674,58 @@ class EnabledActiveLearningConfiguration(BaseModel):
     batching_strategy: ActiveLearningBatchingStrategy
     tags: List[str] = Field(default_factory=lambda: [])
     max_image_size: Optional[Tuple[PositiveInt, PositiveInt]] = Field(default=None)
-    jpeg_compression_level: int = Field(default=95)
-
-    @field_validator("jpeg_compression_level")
-    @classmethod
-    def validate_json_compression_level(cls, value: Any) -> int:
-        validate_field_has_given_type(
-            field_name="jpeg_compression_level", allowed_types=[int], value=value
-        )
-        if value <= 0 or value > 100:
-            raise ValueError("`jpeg_compression_level` must be in range [1, 100]")
-        return value
+    jpeg_compression_level: int = Field(default=95, gt=0, le=100)
 
 
 class ActiveLearningDataCollector(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that enables smart sampling of images and model predictions and registering data in Roboflow project.",
+            "docs": "https://inference.roboflow.com/workflows/active_learning/",
+        }
+    )
     type: Literal["ActiveLearningDataCollector"]
-    name: str
-    image: str
-    predictions: str
-    target_dataset: str
-    target_dataset_api_key: Optional[str] = Field(default=None)
-    disable_active_learning: Union[bool, str] = Field(default=False)
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    predictions: StepOutputSelector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+            CLASSIFICATION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Reference to detection-like predictions",
+        examples=["$steps.object_detection_model.predictions"],
+    )
+    target_dataset: Union[InferenceParameterSelector(kind=[ROBOFLOW_PROJECT]), str] = (
+        Field(
+            description="name of Roboflow dataset / project to be used as target for collected data",
+            examples=["my_dataset", "$inputs.target_al_dataset"],
+        )
+    )
+    target_dataset_api_key: Union[
+        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+    ] = Field(
+        default=None,
+        description="API key to be used for data registration. This may help in a scenario when data applicable for Universe models predictions to be saved in private workspaces and for models that were trained in the same workspace (not necessarily within the same project))",
+    )
+    disable_active_learning: Union[
+        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=False,
+        description="boolean flag that can be also reference to input - to arbitrarily disable data collection for specific request - overrides all AL config",
+        examples=[True, "$inputs.disable_active_learning"],
+    )
     active_learning_configuration: Optional[
         Union[EnabledActiveLearningConfiguration, DisabledActiveLearningConfiguration]
-    ] = Field(default=None)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("predictions")
-    @classmethod
-    def predictions_must_hold_selector(cls, value: Any) -> str:
-        if not is_selector(selector_or_value=value):
-            raise ValueError("`predictions` field can only contain selector values")
-        return value
-
-    @field_validator("target_dataset")
-    @classmethod
-    def validate_target_dataset_field(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="target_dataset", allowed_types=[str]
-        )
-        return value
-
-    @field_validator("target_dataset_api_key")
-    @classmethod
-    def validate_target_dataset_api_key_field(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value,
-            field_name="target_dataset_api_key",
-            allowed_types=[bool, type(None)],
-        )
-        return value
-
-    @field_validator("disable_active_learning")
-    @classmethod
-    def validate_boolean_flags_or_selectors(cls, value: Any) -> Union[str, bool]:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="disable_active_learning", allowed_types=[bool]
-        )
-        return value
+    ] = Field(
+        default=None,
+        description="Optional configuration of Active Learning data sampling in the exact format explained in Active Learning docs.",
+    )
 
     def get_type(self) -> str:
         return self.type
@@ -1488,56 +1814,55 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             )
 
 
-class YoloWorld(BaseModel, StepInterface):
-    type: Literal["YoloWorld"]
-    name: str
-    image: str
-    class_names: Union[str, List[str]]
-    version: Optional[str] = Field(default="l")
-    confidence: Union[Optional[float], str] = Field(default=0.4)
-
-    @field_validator("image")
-    @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("class_names")
-    @classmethod
-    def validate_class_names(cls, value: Any) -> Union[str, List[str]]:
-        if is_selector(selector_or_value=value):
-            return value
-        if issubclass(type(value), list):
-            validate_field_is_list_of_string(value=value, field_name="class_names")
-            return value
-        raise ValueError(
-            "`class_names` field given must be selector or list of strings"
-        )
-
-    @field_validator("version")
-    @classmethod
-    def validate_model_version(cls, value: Any) -> Optional[str]:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            selected_values={None, "s", "m", "l"},
-            field_name="version",
-        )
-        return value
-
-    @field_validator("confidence")
-    @classmethod
-    def field_must_be_selector_or_number_from_zero_to_one(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        if value is None:
-            return None
-        validate_field_is_in_range_zero_one_or_empty_or_selector(
-            value=value, field_name="confidence"
-        )
-        return value
+class YoloWorldModel(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use YoloWorld model within `workflows` - providing real-time, zero-shot object detection.",
+            "docs": "https://inference.roboflow.com/workflows/yolo_world",
+        }
+    )
+    type: Literal["YoloWorldModel", "YoloWorld"]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    class_names: Union[
+        InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
+    ] = Field(
+        description="List of classes to use YoloWorld model against",
+        examples=[["a", "b", "c"], "$inputs.class_names"],
+    )
+    version: Union[
+        Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
+        InferenceParameterSelector(kind=[STRING_KIND]),
+    ] = Field(
+        default="l",
+        description="Variant of YoloWorld model",
+        examples=["l", "$inputs.variant"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for detections",
+        examples=[0.3, "$inputs.confidence"],
+    )
 
     def get_input_names(self) -> Set[str]:
         return {"image", "class_names", "version", "confidence"}
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(YoloWorldModel, cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_output_names(self) -> Set[str]:
         return {"predictions", "parent_id", "image", "prediction_type"}
@@ -1604,46 +1929,54 @@ class LMMConfig(BaseModel):
 
 
 class LMM(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use chosen LMM model within `workflows` - with arbitrary prompt and possibility to retrieve structured JSON output.",
+            "docs": "https://inference.roboflow.com/workflows/use_lmm/",
+        }
+    )
     type: Literal["LMM"]
-    name: str
-    image: str
-    prompt: str
-    lmm_type: str
-    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
-    remote_api_key: Optional[str] = Field(default=None)
-    json_output: Optional[Union[str, Dict[str, str]]] = Field(default=None)
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    prompt: Union[InferenceParameterSelector(kind=[STRING_KIND]), str] = Field(
+        description="Holds unconstrained text prompt to LMM mode",
+        examples=["my prompt", "$inputs.prompt"],
+    )
+    lmm_type: Union[
+        InferenceParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+    ] = Field(
+        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
+    )
+    lmm_config: LMMConfig = Field(
+        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
+    )
+    remote_api_key: Union[
+        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+    ] = Field(
+        default=None,
+        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+        examples=["xxx-xxx", "$inputs.api_key"],
+    )
+    json_output: Optional[
+        Union[InferenceParameterSelector(kind=[DICTIONARY_KIND]), Dict[str, str]]
+    ] = Field(
+        default=None,
+        description="Holds dictionary that maps name of requested output field into its description",
+        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> str:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("prompt")
-    @classmethod
-    def validate_prompt(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="prompt", allowed_types=[str]
-        )
-        return value
-
-    @field_validator("lmm_type")
-    @classmethod
-    def validate_lmm_type(cls, value: Any) -> str:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="lmm_type",
-            selected_values=SUPPORTED_LMMS,
-        )
-        return value
-
-    @field_validator("remote_api_key")
-    @classmethod
-    def validate_remote_api_key(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(LMM, cls).describe_outputs() + [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
+        ]
 
     @field_validator("json_output")
     @classmethod
@@ -1757,52 +2090,49 @@ class LMM(BaseModel, StepInterface):
 
 
 class LMMForClassification(BaseModel, StepInterface):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Block that make it possible to use chosen LMM model as zero-shot classifier.",
+            "docs": "https://inference.roboflow.com/workflows/use_lmm_classification",
+        }
+    )
     type: Literal["LMMForClassification"]
-    name: str
-    image: str
-    lmm_type: str
-    classes: Union[List[str], str]
-    lmm_config: LMMConfig = Field(default_factory=lambda: LMMConfig())
-    remote_api_key: Optional[str] = Field(default=None)
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    lmm_type: Union[
+        InferenceParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+    ] = Field(
+        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
+    )
+    classes: Union[
+        List[str], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
+        description="List of classes that LMM shall classify against",
+        examples=[["a", "b"], "$inputs.classes"],
+    )
+    lmm_config: LMMConfig = Field(
+        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
+    )
+    remote_api_key: Union[
+        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+    ] = Field(
+        default=None,
+        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+        examples=["xxx-xxx", "$inputs.api_key"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def image_must_only_hold_selectors(cls, value: Any) -> str:
-        validate_image_is_valid_selector(value=value)
-        return value
-
-    @field_validator("lmm_type")
-    @classmethod
-    def validate_lmm_type(cls, value: Any) -> str:
-        validate_field_is_selector_or_one_of_values(
-            value=value,
-            field_name="lmm_type",
-            selected_values=SUPPORTED_LMMS,
-        )
-        return value
-
-    @field_validator("classes")
-    @classmethod
-    def validate_classes(cls, value: Any) -> Union[List[str], str]:
-        if is_selector(selector_or_value=value):
-            return value
-        validate_field_is_list_of_string(
-            value=value,
-            field_name="classes",
-        )
-        if len(value) == 0:
-            raise ValueError(
-                "`classes` field needs to be non empty list of strings or selector."
-            )
-        return value
-
-    @field_validator("remote_api_key")
-    @classmethod
-    def validate_remote_api_key(cls, value: Any) -> str:
-        validate_field_is_selector_or_has_given_type(
-            value=value, field_name="remote_api_key", allowed_types=[type(None), str]
-        )
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return super(LMMForClassification, cls).describe_outputs() + [
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
 
     def get_input_names(self) -> Set[str]:
         return {

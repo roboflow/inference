@@ -36,12 +36,38 @@ other.
 1. Define the block manifest entity and implement all necessary validation logic
 2. Implement step execution logic
 3. Register the step in [execution engine module](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/complier/execution_engine.py) adding entry to `STEP_TYPE2EXECUTOR_MAPPING`
-4. Register manifest entity in [workflow specification](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/entities/workflows_specification.py) adding entry into `StepType` union
+4. Register manifest entity in [workflow specification](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/entities/workflows_specification.py) adding entry into `StepType` union and `ALL_BLOCKS_CLASSES`
 5. At this step, you should be able to add newly created block into JSON `workflow` definition and run it using one of `workflows` execution entrypoint (Python package function or HTTP endpoint)
 
 Initial design of `workflows` was intended to make compiler and execution engine do heavy-lifting in terms of organising
 execution, but there still may be needs to re-design those core modules if we find corner-cases that are not handled.
 Please report them in [GitHub issues](https://github.com/roboflow/inference/issues).
+
+## Notion of `kind` in `workflows`
+Since `v0.9.21` we introduced a simple type system on top of selectors / references used in `workflows`.
+When defining block manifests (you will learn how to do it in next section) you would be in need to provide
+Pydantic type annotations for block inputs. You will find that sometimes fields will accept
+static values (defined while `workflow` is created), and sometimes you need to refer to element that
+will appear dynamically while `workflow` execution (like the output of previous step, or input parameter).
+Once that is done, you use selector (example `$steps.<step_name>.<output_name>`). As you see, 
+this value in entity definition is string that must match some reg-ex. So the type of value for JSON definition
+of `workflow` would be `str`, but we want to understand what is behind the reference.
+We can define kind as union of simple "types" - but in this case, we understand kind as high-level
+concept, rather than specific type. For instance, among defined kinds we have `object_detection_prediction` that
+represents list of bounding boxes details for each of input image.
+
+Kinds definitions can be found in `inference.enterprise.workflows.entities.types` module.
+
+Kind definition is an object that have `name` (used for matching) and `description` to
+express high-level meaning. Later on we may add additional characteristics.
+
+We have pre-defined type builders for references and we can use them to annotate pydantic
+fields types:
+- `StepOutputSelector(kind=[...])` - to point step output of given kind
+- `InferenceParameterSelector(kind=[...])` - to point `InferenceParameter` input
+- `InferenceImageSelector(kind=[...])` - to point `InferenceImage` input
+- `OutputStepImageSelector` - to point image output by step
+- `StepSelector` - to point whole step
 
 ## How to define block manifest?
 
@@ -53,7 +79,7 @@ Block manifests are located [here](https://github.com/roboflow/inference/blob/ma
 in `inference` repository structure. Creating new one, you should start from:
 
 ```python
-from typing import Literal, Set, Optional, Any
+from typing import Literal, Set, Optional, Any, List
 from pydantic import BaseModel
 from inference.enterprise.workflows.entities.steps import StepInterface
 from inference.enterprise.workflows.entities.base import GraphNone
@@ -62,6 +88,14 @@ class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
     name: str
     ... # place here other inputs that block takes
+    
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        # This method was added as part of transition into new workflows design. 
+        # It is meant to describe static outputs of block without need for init of the class
+        # such that we can generate all blocks descriptions without initialising 
+        # any class with data. Each output should be registered with kind.
+        return []
 
     def get_input_names(self) -> Set[str]:
         ...  # Supposed to give the name of all fields expected to be possible for compiler to plug values into
@@ -92,67 +126,48 @@ We require `type` and `name` fields to be defined. Rest is up to you. Let's assu
 accept image and additional threshold parameter. Then step definition would look like that:
 
 ```python
-from typing import Literal, Union
-from pydantic import BaseModel
+from typing import Literal, Union, Optional
+from pydantic import BaseModel, Field
 from inference.enterprise.workflows.entities.steps import StepInterface
+from inference.enterprise.workflows.entities.types import (
+    InferenceImageSelector, 
+    InferenceParameterSelector,
+    OutputStepImageSelector, 
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND
+)
+
 
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
-    name: str
-    image: str
-    confidence: Union[float, str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 ```
 
 The idea behind `workflows` is to be able to set the parameters directly in JSON definition of steps, but also make it
 possible to defer injection of parameters to `workflows` runtime, when specific values would either been calculated
 or provided by users as additional (static) input. 
 
-What happens with `image` here - we say that it is of type `str`, with intention of that string to hold reference
-to either user input or other step output. That's why we do not have this field of type `np.ndarray` or any other that
-usually holds image data. 
+What happens with `image` here - we say that it reference to input image or to the image output from another step, 
+That's why we do not have this field of type `np.ndarray` or any other that usually holds image data. 
 
 With `confidence`, however, we may want to define the value either in JSON definition of `workflow`, or as a reference.
-That's why we allow either `float` value to be defined or `str`.
 
-We would also want to be able to validate `workflows` definitions using `pydantic` validation engine. To make that happen,
-you need to create custom validator method for specific fields:
-
-```python
-from typing import Literal, Union, Any, List, Optional
-from pydantic import BaseModel, field_validator
-from inference.enterprise.workflows.entities.steps import StepInterface
-from inference.enterprise.workflows.entities.validators import (
-    validate_image_is_valid_selector,
-    validate_field_is_in_range_zero_one_or_empty_or_selector,
-)
-
-class MyStep(BaseModel, StepInterface):
-    type: Literal["MyStep"]
-    name: str
-    image: str
-    confidence: Union[Optional[float], str]
-
-    @field_validator("image")
-    @classmethod
-    def validate_image(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-    
-    @field_validator("confidence")
-    @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
-```
-
-In this example, you can see that our `image` field that hold `str` is only allowed to hold special kind of string - 
-namely selector that refers to specific element of `workflow`.
-
-It would be tedious to create custom validators for each and every field of each and every block. That's why we 
-have module with utils useful for validation that can be chained together to get desired effect. 
-See [`inference.enterprise.workflows.entities.validators` module](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/entities/validators.py)
+We should aim to validate `workflows` definitions using `pydantic` validation engine. To make it 
+possible, we need to create type constraints at the level of type annotations - then
+those information will be exportable to outside world (for instance via the endpoint to
+describe blocks).
 
 
 ### Why do I need other methods from the step interface?
@@ -175,23 +190,39 @@ to validate selectors defined in block fields - in particular type of steps / in
 
 ```python
 from typing import Literal, Union, Optional
-from pydantic import BaseModel
-from inference.enterprise.workflows.entities.steps import StepInterface
+from pydantic import BaseModel, Field
+
 from inference.enterprise.workflows.entities.validators import (
     is_selector,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
 )
-from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.entities.steps import StepInterface, GraphNone
+from inference.enterprise.workflows.entities.types import (
+    InferenceImageSelector, 
+    InferenceParameterSelector,
+    OutputStepImageSelector, 
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND
+)
 from inference.enterprise.workflows.errors import ExecutionGraphError
+
 
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
-    name: str
-    image: str
-    confidence: Union[Optional[float], str]
-    
-    # ... pydantic validation skipped for readability
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
     
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None
@@ -217,6 +248,10 @@ Compiler is going to use `validate_field_selector(...)` only against detected se
 
 Additional parameter, called `index` will only be filled by compiler if specific manifest field is a list of selectors, then validation will happen for each element separately.
 
+!!! note 
+    
+    We have plan to get rid of `validate_field_selector(...)` when we fully apply the notion of kinds
+
 #### Validation of input binding
 
 `validate_field_binding(...)` is used by compiler while substituting selectors with values provided as user input into
@@ -226,19 +261,38 @@ Let's see how we can validate input binding in case of our example block:
 
 ```python
 from typing import Literal, Union, Optional, Any
-from pydantic import BaseModel
-from inference.enterprise.workflows.entities.steps import StepInterface
+from pydantic import BaseModel, Field
+
+from inference.enterprise.workflows.entities.steps import StepInterface, GraphNone
+from inference.enterprise.workflows.entities.types import (
+    InferenceImageSelector, 
+    InferenceParameterSelector,
+    OutputStepImageSelector, 
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND
+)
 from inference.enterprise.workflows.entities.validators import (
     validate_image_biding,
     validate_field_has_given_type
 )
 from inference.enterprise.workflows.errors import VariableTypeError
 
+
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
-    name: str
-    image: str
-    confidence: Union[Optional[float], str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
     
     # ... pydantic validation skipped for readability
     # ... validate_field_selector(...) skipped for readability
@@ -255,15 +309,62 @@ class MyStep(BaseModel, StepInterface):
             )
 ```
 
+!!! note 
+    
+    We have plan to get rid of `validate_field_binding(...)` when we fully apply the notion of kinds
+
+
+#### Defining static output `kind`
+As a consequence of `kind` introduction, we need to implement class method `describe_outputs(...)`. 
+
+```python
+from typing import Literal, Union, Optional, List
+from pydantic import BaseModel, Field
+
+from inference.enterprise.workflows.entities.steps import StepInterface, OutputDefinition
+from inference.enterprise.workflows.entities.types import (
+    InferenceImageSelector, 
+    InferenceParameterSelector,
+    OutputStepImageSelector, 
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    STRING_KIND,
+    PARENT_ID_KIND,
+)
+
+class MyStep(BaseModel, StepInterface):
+    type: Literal["MyStep"]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        # this is just reference implementation - adjust to your step
+        return super(MyStep, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
+```
+
 ### Full implementation of manifest
 ```python
-from typing import Literal, Union, Any, List, Optional, Set
-from pydantic import BaseModel, field_validator
-from inference.enterprise.workflows.entities.steps import StepInterface
+from typing import Literal, Union, Any, Optional, Set, List
+from pydantic import BaseModel, Field
+from inference.enterprise.workflows.entities.steps import StepInterface, OutputDefinition
 from inference.enterprise.workflows.entities.base import GraphNone
 from inference.enterprise.workflows.entities.validators import (
-    validate_image_is_valid_selector,
-    validate_field_is_in_range_zero_one_or_empty_or_selector,
     is_selector,
     validate_selector_holds_image,
     validate_selector_is_inference_parameter,
@@ -271,33 +372,46 @@ from inference.enterprise.workflows.entities.validators import (
     validate_field_has_given_type,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError, VariableTypeError
-
+from inference.enterprise.workflows.entities.types import (
+    InferenceImageSelector, 
+    InferenceParameterSelector,
+    OutputStepImageSelector, 
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    PARENT_ID_KIND,
+)
 
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
-    name: str
-    image: str
-    confidence: Union[Optional[float], str]
+    name: str = Field(description="Unique name of step in workflows")
+    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+        description="Reference at image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.4,
+        description="Confidence threshold for predictions",
+        examples=[0.3, "$inputs.confidence_threshold"],
+    )
 
-    @field_validator("image")
     @classmethod
-    def validate_image(cls, value: Any) -> Union[str, List[str]]:
-        validate_image_is_valid_selector(value=value)
-        return value
-    
-    @field_validator("confidence")
-    @classmethod
-    def confidence_must_be_selector_or_number(
-        cls, value: Any
-    ) -> Union[Optional[float], str]:
-        validate_field_is_in_range_zero_one_or_empty_or_selector(value=value)
-        return value
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        # this is just reference implementation - adjust to your step
+        return super(MyStep, cls).describe_outputs() + [
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+        ]
     
     def get_input_names(self) -> Set[str]:
         return {"image", "confidence"}
 
     def get_output_names(self) -> Set[str]:
-        return {"prediction"}  # adjust this to the use-case
+        # for now must much with describe_outputs(...), but we will get rid of this in the future
+        return {"predictions", "parent_id"}  # adjust this to the use-case
 
     def validate_field_selector(
         self, field_name: str, input_step: GraphNone, index: Optional[int] = None

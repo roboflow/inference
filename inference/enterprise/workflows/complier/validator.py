@@ -10,8 +10,8 @@ from inference.enterprise.workflows.complier.utils import (
 )
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.workflows_specification import (
+    BlockType,
     InputType,
-    StepType,
     WorkflowSpecificationV1,
 )
 from inference.enterprise.workflows.errors import (
@@ -37,7 +37,7 @@ def validate_inputs_names_are_unique(inputs: List[InputType]) -> None:
         raise DuplicatedSymbolError("Found duplicated input parameter names")
 
 
-def validate_steps_names_are_unique(steps: List[StepType]) -> None:
+def validate_steps_names_are_unique(steps: List[BlockType]) -> None:
     steps_selectors = get_steps_selectors(steps=steps)
     if len(steps_selectors) != len(steps):
         raise DuplicatedSymbolError("Found duplicated steps names")

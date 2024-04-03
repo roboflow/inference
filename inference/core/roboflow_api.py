@@ -326,10 +326,10 @@ def get_roboflow_labeling_jobs(
 def get_workflow_specification(
     api_key: str,
     workspace_id: WorkspaceID,
-    workflow_name: str,
+    workflow_id: str,
 ) -> dict:
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_name}",
+        url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
         params=[("api_key", api_key)],
     )
     response = _get_from_url(url=api_url)
