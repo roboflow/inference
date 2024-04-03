@@ -20,11 +20,11 @@ from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
     FlowControl,
     InferenceImageSelector,
@@ -37,12 +37,12 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 class BlockManifest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from Roboflow multi-class classification model.",
-            "docs": "https://inference.roboflow.com/workflows/classify_objects",
+            "description": "This block represents inference from Roboflow multi-label classification model.",
+            "docs": "https://inference.roboflow.com/workflows/classify_objects_multi",
             "block_type": "model",
         }
     )
-    type: Literal["RoboflowClassificationModel"]
+    type: Literal["MultiLabelClassificationModel"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
@@ -102,8 +102,7 @@ class RoboflowClassificationBlock:
         return [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name="top", kind=[STRING_KIND]),
-            OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            OutputDefinition(name="predicted_classes", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
 
