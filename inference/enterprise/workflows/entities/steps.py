@@ -33,7 +33,7 @@ from inference.enterprise.workflows.entities.types import (
     PREDICTION_TYPE_KIND,
     QR_CODE_DETECTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
-    ROBOFLOW_PROJECT,
+    ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     FloatZeroToOne,
@@ -129,7 +129,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        Optional[str], InferenceParameterSelector(kind=[ROBOFLOW_PROJECT])
+        Optional[str], InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND])
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
@@ -1701,7 +1701,7 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    target_dataset: Union[InferenceParameterSelector(kind=[ROBOFLOW_PROJECT]), str] = (
+    target_dataset: Union[InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str] = (
         Field(
             description="name of Roboflow dataset / project to be used as target for collected data",
             examples=["my_dataset", "$inputs.target_al_dataset"],
