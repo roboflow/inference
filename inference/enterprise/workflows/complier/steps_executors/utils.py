@@ -18,7 +18,7 @@ from inference.enterprise.workflows.entities.steps import (
     OCRModel,
     RelativeStaticCrop,
     RoboflowModel,
-    YoloWorld,
+    YoloWorldModel,
 )
 from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,
@@ -38,7 +38,7 @@ def get_image(
         RelativeStaticCrop,
         ClipComparison,
         ActiveLearningDataCollector,
-        YoloWorld,
+        YoloWorldModel,
         LMM,
         LMMForClassification,
     ],

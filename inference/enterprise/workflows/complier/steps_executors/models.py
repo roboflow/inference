@@ -71,7 +71,7 @@ from inference.enterprise.workflows.entities.steps import (
     QRCodeDetector,
     RoboflowModel,
     StepInterface,
-    YoloWorld,
+    YoloWorldModel,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
@@ -460,7 +460,7 @@ MODEL_TYPE2HTTP_CLIENT_CONSTRUCTOR = {
 
 
 async def run_yolo_world_model_step(
-    step: YoloWorld,
+    step: YoloWorldModel,
     runtime_parameters: Dict[str, Any],
     outputs_lookup: OutputsLookup,
     model_manager: ModelManager,
@@ -552,7 +552,7 @@ async def get_yolo_world_predictions_from_remote_api(
     class_names: List[str],
     model_version: Optional[str],
     confidence: Optional[float],
-    step: YoloWorld,
+    step: YoloWorldModel,
     api_key: Optional[str],
 ) -> List[dict]:
     api_url = resolve_model_api_url(step=step)

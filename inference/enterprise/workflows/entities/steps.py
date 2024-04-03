@@ -1814,14 +1814,14 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             )
 
 
-class YoloWorld(BaseModel, StepInterface):
+class YoloWorldModel(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Block that make it possible to use YoloWorld model within `workflows` - providing real-time, zero-shot object detection.",
             "docs": "https://inference.roboflow.com/workflows/yolo_world",
         }
     )
-    type: Literal["YoloWorld"]
+    type: Literal["YoloWorldModel", "YoloWorld"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
@@ -1855,7 +1855,7 @@ class YoloWorld(BaseModel, StepInterface):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return super(YoloWorld, cls).describe_outputs() + [
+        return super(YoloWorldModel, cls).describe_outputs() + [
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
