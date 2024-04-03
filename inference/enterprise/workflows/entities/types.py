@@ -15,7 +15,9 @@ class Kind(BaseModel):
 WILDCARD_KIND = Kind(name="*", description="Equivalent of any element")
 IMAGE_KIND = Kind(name="image", description="Image in workflows")
 ROBOFLOW_MODEL_ID_KIND = Kind(name="roboflow_model_id", description="Roboflow model id")
-ROBOFLOW_PROJECT_KIND = Kind(name="roboflow_model_id", description="Roboflow project name")
+ROBOFLOW_PROJECT_KIND = Kind(
+    name="roboflow_model_id", description="Roboflow project name"
+)
 ROBOFLOW_API_KEY_KIND = Kind(name="roboflow_api_key", description="Roboflow API key")
 FLOAT_ZERO_TO_ONE_KIND = Kind(
     name="float_zero_to_one", description="Float value in range [0.0, 1.0]"
@@ -134,4 +136,3 @@ FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
 class FlowControl(BaseModel):
     mode: Literal["pass", "terminate_branch", "select_step"]
     context: Optional[str] = Field(default=None)
-

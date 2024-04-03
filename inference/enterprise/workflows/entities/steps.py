@@ -1701,11 +1701,11 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    target_dataset: Union[InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str] = (
-        Field(
-            description="name of Roboflow dataset / project to be used as target for collected data",
-            examples=["my_dataset", "$inputs.target_al_dataset"],
-        )
+    target_dataset: Union[
+        InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
+    ] = Field(
+        description="name of Roboflow dataset / project to be used as target for collected data",
+        examples=["my_dataset", "$inputs.target_al_dataset"],
     )
     target_dataset_api_key: Union[
         InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
