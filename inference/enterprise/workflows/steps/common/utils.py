@@ -1,11 +1,6 @@
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-from inference.core.env import (
-    HOSTED_CLASSIFICATION_URL,
-    HOSTED_CORE_MODEL_URL,
-    HOSTED_DETECT_URL,
-    HOSTED_INSTANCE_SEGMENTATION_URL,
-)
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
@@ -99,20 +94,20 @@ def anchor_image_detections_in_parent_coordinates(
     return serialised_result
 
 
-ROBOFLOW_MODEL2HOSTED_ENDPOINT = {
-    "ClassificationModel": HOSTED_CLASSIFICATION_URL,
-    "MultiLabelClassificationModel": HOSTED_CLASSIFICATION_URL,
-    "ObjectDetectionModel": HOSTED_DETECT_URL,
-    "KeypointsDetectionModel": HOSTED_DETECT_URL,
-    "InstanceSegmentationModel": HOSTED_INSTANCE_SEGMENTATION_URL,
-    "OCRModel": HOSTED_CORE_MODEL_URL,
-    "ClipComparison": HOSTED_CORE_MODEL_URL,
-    "YoloWorld": HOSTED_CORE_MODEL_URL,
-    "YoloWorldModel": HOSTED_CORE_MODEL_URL,
-}
-
-
-def resolve_model_api_url(step: StepInterface) -> str:
-    if WORKFLOWS_REMOTE_API_TARGET != "hosted":
-        return LOCAL_INFERENCE_API_URL
-    return ROBOFLOW_MODEL2HOSTED_ENDPOINT[step.get_type()]
+def filter_out_unwanted_classes(
+    serialised_result: List[Dict[str, Any]],
+    classes_to_accept: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    if classes_to_accept is None:
+        return serialised_result
+    classes_to_accept = set(classes_to_accept)
+    results = []
+    for image_result in serialised_result:
+        filtered_image_result = deepcopy(image_result)
+        filtered_image_result["predictions"] = []
+        for prediction in image_result["predictions"]:
+            if prediction["class"] not in classes_to_accept:
+                continue
+            filtered_image_result["predictions"].append(prediction)
+        results.append(filtered_image_result)
+    return results

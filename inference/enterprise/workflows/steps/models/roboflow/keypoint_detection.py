@@ -1,8 +1,13 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import ClassificationInferenceRequest
+from inference.core.entities.requests.inference import (
+    ClassificationInferenceRequest,
+    InstanceSegmentationInferenceRequest,
+    KeypointsDetectionInferenceRequest,
+    ObjectDetectionInferenceRequest,
+)
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -20,16 +25,24 @@ from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_METADATA_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    STRING_KIND,
     FloatZeroToOne,
     FlowControl,
     InferenceImageSelector,
     InferenceParameterSelector,
     OutputStepImageSelector,
+)
+from inference.enterprise.workflows.steps.common.utils import (
+    anchor_detections_in_parent_coordinates,
+    filter_out_unwanted_classes,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
@@ -37,12 +50,12 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 class BlockManifest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from Roboflow multi-label classification model.",
-            "docs": "https://inference.roboflow.com/workflows/classify_objects_multi",
+            "description": "This block represents inference from Roboflow keypoint detection model.",
+            "docs": "https://inference.roboflow.com/workflows/detect_keypoints",
             "block_type": "model",
         }
     )
-    type: Literal["MultiLabelClassificationModel"]
+    type: Literal["KeypointsDetectionModel"]
     name: str = Field(description="Unique name of step in workflows")
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
@@ -54,6 +67,20 @@ class BlockManifest(BaseModel):
             examples=["my_project/3", "$inputs.model"],
         )
     )
+    class_agnostic_nms: Union[
+        Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=False,
+        description="Value to decide if NMS is to be used in class-agnostic mode.",
+        examples=[True, "$inputs.class_agnostic_nms"],
+    )
+    class_filter: Union[
+        Optional[List[str]], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
+        default=None,
+        description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
+        examples=[["a", "b", "c"], "$inputs.class_filter"],
+    )
     confidence: Union[
         Optional[FloatZeroToOne],
         InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
@@ -61,6 +88,36 @@ class BlockManifest(BaseModel):
         default=0.4,
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
+    )
+    iou_threshold: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.3,
+        description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
+        examples=[0.4, "$inputs.iou_threshold"],
+    )
+    max_detections: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+    ] = Field(
+        default=300,
+        description="Maximum number of detections to return",
+        examples=[300, "$inputs.max_detections"],
+    )
+    max_candidates: Union[
+        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+    ] = Field(
+        default=3000,
+        description="Maximum number of candidates as NMS input to be taken into account.",
+        examples=[3000, "$inputs.max_candidates"],
+    )
+    keypoint_confidence: Union[
+        Optional[FloatZeroToOne],
+        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.0,
+        description="Confidence threshold to predict keypoint as visible.",
+        examples=[0.3, "$inputs.keypoint_confidence"],
     )
     disable_active_learning: Union[
         Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
@@ -79,7 +136,7 @@ class BlockManifest(BaseModel):
     )
 
 
-class RoboflowMultiLabelClassificationBlock:
+class RoboflowKeypointDetectionBlock:
 
     def __init__(
         self,
@@ -101,27 +158,41 @@ class RoboflowMultiLabelClassificationBlock:
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
-            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name="predicted_classes", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
         ]
 
     async def run_locally(
         self,
         image: List[dict],
         model_id: str,
+        class_agnostic_nms: Optional[bool],
+        class_filter: Optional[List[str]],
         confidence: Optional[float],
+        iou_threshold: Optional[float],
+        max_detections: Optional[int],
+        max_candidates: Optional[int],
+        keypoint_confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        request = ClassificationInferenceRequest(
+        request = KeypointsDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
             image=image,
-            confidence=confidence,
             disable_active_learning=disable_active_learning,
-            source="workflow-execution",
             active_learning_target_dataset=active_learning_target_dataset,
+            class_agnostic_nms=class_agnostic_nms,
+            class_filter=class_filter,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            max_candidates=max_candidates,
+            keypoint_confidence=keypoint_confidence,
+            source="workflow-execution",
         )
         self._model_manager.add_model(
             model_id=model_id,
@@ -137,15 +208,22 @@ class RoboflowMultiLabelClassificationBlock:
         else:
             serialised_result = [result.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
-            serialised_result=serialised_result,
             image=image,
+            class_filter=class_filter,
+            serialised_result=serialised_result,
         )
 
     async def run_remotely(
         self,
         image: List[dict],
         model_id: str,
+        class_agnostic_nms: Optional[bool],
+        class_filter: Optional[List[str]],
         confidence: Optional[float],
+        iou_threshold: Optional[float],
+        max_detections: Optional[int],
+        max_candidates: Optional[int],
+        keypoint_confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
@@ -161,9 +239,15 @@ class RoboflowMultiLabelClassificationBlock:
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
-            confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
+            class_agnostic_nms=class_agnostic_nms,
+            class_filter=class_filter,
+            confidence_threshold=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            max_candidates=max_candidates,
+            keypoint_confidence_threshold=keypoint_confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
@@ -181,13 +265,19 @@ class RoboflowMultiLabelClassificationBlock:
     def _post_process_result(
         self,
         image: List[dict],
+        class_filter: Optional[List[str]],
         serialised_result: List[dict],
     ) -> List[dict]:
         serialised_result = attach_prediction_type_info(
             results=serialised_result,
-            prediction_type="classification",
+            prediction_type="keypoint-detection",
         )
-        serialised_result = attach_parent_info(
-            image=image, results=serialised_result, nested_key=None
+        serialised_result = filter_out_unwanted_classes(
+            serialised_result=serialised_result,
+            classes_to_accept=class_filter,
         )
-        return serialised_result
+        serialised_result = attach_parent_info(image=image, results=serialised_result)
+        return anchor_detections_in_parent_coordinates(
+            image=image,
+            serialised_result=serialised_result,
+        )
