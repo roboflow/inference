@@ -72,11 +72,12 @@ STEP_TYPE2EXECUTOR_MAPPING = {
     "ClipComparison": run_clip_comparison_step,
     "DetectionsConsensus": run_detections_consensus_step,
     "ActiveLearningDataCollector": run_active_learning_data_collector,
-    "YoloWorld": run_yolo_world_model_step,
+    "YoloWorld": run_yolo_world_model_step,  # left for the time being, to be removed
+    "YoloWorldModel": run_yolo_world_model_step,
     "LMM": run_lmm_step,
     "LMMForClassification": run_lmm_for_classification_step,
     "QRCodeDetection": run_qr_code_detector_step,  # left for the time being, to be removed
-    "QRCodeDetector": run_qr_code_detector_step,  # left for the time being, to be removed
+    "QRCodeDetector": run_qr_code_detector_step,
     "BarcodeDetection": run_barcode_detector_step,  # left for the time being, to be removed
     "BarcodeDetector": run_barcode_detector_step,
 }

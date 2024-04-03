@@ -28,7 +28,7 @@ from inference.enterprise.workflows.entities.steps import (
     OCRModel,
     QRCodeDetector,
     RelativeStaticCrop,
-    YoloWorld,
+    YoloWorldModel,
 )
 
 InputType = Annotated[
@@ -53,7 +53,7 @@ ALL_BLOCKS_CLASSES = [
     QRCodeDetector,
     DetectionsConsensus,
     ActiveLearningDataCollector,
-    YoloWorld,
+    YoloWorldModel,
     LMM,
     LMMForClassification,
 ]
@@ -77,7 +77,7 @@ BlockType = Annotated[
         QRCodeDetector,
         DetectionsConsensus,
         ActiveLearningDataCollector,
-        YoloWorld,
+        YoloWorldModel,
         LMM,
         LMMForClassification,
     ],
