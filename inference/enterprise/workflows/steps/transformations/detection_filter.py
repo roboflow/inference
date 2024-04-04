@@ -1,10 +1,8 @@
-import itertools
 from copy import deepcopy
 from typing import Annotated, Any, Callable, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.utils.image_utils import load_image
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_ID_KEY,
 )
@@ -17,7 +15,6 @@ from inference.enterprise.workflows.entities.types import (
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     FlowControl,
-    InferenceParameterSelector,
     StepOutputSelector,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError
@@ -26,9 +23,6 @@ from inference.enterprise.workflows.steps.common.operators import (
     OPERATORS_FUNCTIONS,
     BinaryOperator,
     Operator,
-)
-from inference.enterprise.workflows.steps.common.utils import (
-    extract_origin_size_from_images,
 )
 
 
@@ -108,14 +102,14 @@ class BlockManifest(BaseModel):
         ),
     ]
     image_metadata: Annotated[
-        Union[StepOutputSelector(kind=IMAGE_METADATA_KIND),],
+        StepOutputSelector(kind=[IMAGE_METADATA_KIND]),
         Field(
             description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.image"],
         ),
     ]
     prediction_type: Annotated[
-        Union[StepOutputSelector(kind=PREDICTION_TYPE_KIND),],
+        Union[StepOutputSelector(kind=[PREDICTION_TYPE_KIND])],
         Field(
             description="Type of `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.prediction_type"],
@@ -147,7 +141,7 @@ class DetectionFilterBlock:
 
     async def run_locally(
         self,
-        predictions: List[dict],
+        predictions: List[List[dict]],
         filter_definition: Union[
             DetectionFilterDefinition, CompoundDetectionFilterDefinition
         ],

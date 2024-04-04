@@ -25,6 +25,7 @@ from inference.enterprise.workflows.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
+    TOP_CLASS_KIND,
     FloatZeroToOne,
     FlowControl,
     InferenceImageSelector,
@@ -102,7 +103,7 @@ class RoboflowClassificationBlock:
         return [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
             OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]

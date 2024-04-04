@@ -52,14 +52,14 @@ class BlockManifest(BaseModel):
         Field(description="Offset for boxes height", examples=[10, "$inputs.offset_y"])
     )
     image_metadata: Annotated[
-        Union[StepOutputSelector(kind=IMAGE_METADATA_KIND),],
+        StepOutputSelector(kind=[IMAGE_METADATA_KIND]),
         Field(
             description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.image"],
         ),
     ]
     prediction_type: Annotated[
-        Union[StepOutputSelector(kind=PREDICTION_TYPE_KIND),],
+        StepOutputSelector(kind=[PREDICTION_TYPE_KIND]),
         Field(
             description="Type of `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.prediction_type"],
@@ -91,7 +91,7 @@ class DetectionOffsetBlock:
 
     async def run_locally(
         self,
-        predictions: List[dict],
+        predictions: List[List[dict]],
         offset_x: int,
         offset_y: int,
         image_metadata: List[dict],

@@ -28,6 +28,10 @@ LIST_OF_VALUES_KIND = Kind(
 BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag")
 INTEGER_KIND = Kind(name="integer", description="Integer value")
 STRING_KIND = Kind(name="string", description="String value")
+TOP_CLASS_KIND = Kind(
+    name="top_class",
+    description="String value representing top class predicted by classification model",
+)
 FLOAT_KIND = Kind(name="float", description="Float value")
 DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
 CLASSIFICATION_PREDICTION_KIND = Kind(

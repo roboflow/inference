@@ -35,6 +35,7 @@ from inference.enterprise.workflows.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
+    TOP_CLASS_KIND,
     WILDCARD_KIND,
     FloatZeroToOne,
     InferenceImageSelector,
@@ -227,7 +228,7 @@ class ClassificationModel(RoboflowModel):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return super(ClassificationModel, cls).describe_outputs() + [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
             OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
@@ -1695,7 +1696,7 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
-            CLASSIFICATION_PREDICTION_KIND,
+            TOP_CLASS_KIND,
         ]
     ) = Field(
         description="Reference to detection-like predictions",
@@ -2128,7 +2129,7 @@ class LMMForClassification(BaseModel, StepInterface):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return super(LMMForClassification, cls).describe_outputs() + [
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
-            OutputDefinition(name="top", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),

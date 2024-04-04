@@ -79,7 +79,7 @@ class CropBlock:
     async def run_locally(
         self,
         image: List[dict],
-        predictions: List[dict],
+        predictions: List[List[dict]],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         decoded_images = [load_image(e) for e in image]
         decoded_images = [
@@ -99,7 +99,7 @@ class CropBlock:
 
 def crop_image(
     image: np.ndarray,
-    predictions: List[dict],
+    predictions: List[List[dict]],
     origin_size: dict,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
