@@ -1,5 +1,7 @@
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
@@ -111,3 +113,29 @@ def filter_out_unwanted_classes(
             filtered_image_result["predictions"].append(prediction)
         results.append(filtered_image_result)
     return results
+
+
+def extract_origin_size_from_images(
+    input_images: List[Union[dict, np.ndarray]],
+    decoded_images: List[np.ndarray],
+) -> List[Dict[str, int]]:
+    result = []
+    for input_image, decoded_image in zip(input_images, decoded_images):
+        if (
+            issubclass(type(input_image), dict)
+            and ORIGIN_COORDINATES_KEY in input_image
+        ):
+            result.append(input_image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY])
+        else:
+            result.append(
+                {HEIGHT_KEY: decoded_image.shape[0], WIDTH_KEY: decoded_image.shape[1]}
+            )
+    return result
+
+
+def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
+    x_min = round(detection["x"] - detection[WIDTH_KEY] / 2)
+    y_min = round(detection["y"] - detection[HEIGHT_KEY] / 2)
+    x_max = round(x_min + detection[WIDTH_KEY])
+    y_max = round(y_min + detection[HEIGHT_KEY])
+    return x_min, y_min, x_max, y_max
