@@ -16,7 +16,9 @@ def parse_workflow_definition(
     raw_workflow_definition: dict,
 ) -> ParsedWorkflowDefinition:
     workflow_definition_class = build_workflow_definition_entity()
-    workflow_definition = workflow_definition_class.parse_obj(raw_workflow_definition)
+    workflow_definition = workflow_definition_class.model_validate(
+        raw_workflow_definition
+    )
     return ParsedWorkflowDefinition(
         version=workflow_definition.version,
         inputs=workflow_definition.inputs,

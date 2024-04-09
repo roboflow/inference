@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Tuple, Type
 
 import networkx as nx
 
@@ -51,6 +51,15 @@ class SelectorDefinition:
 
 
 @dataclass(frozen=True)
+class InputSubstitution:
+    input_parameter_name: str
+    step_manifest: WorkflowBlockManifest
+    manifest_property: str
+
+
+@dataclass(frozen=True)
 class CompiledWorkflow:
+    workflow_definition: ParsedWorkflowDefinition
     execution_graph: nx.DiGraph
     steps: List[InitialisedStep]
+    input_substitutions: List[InputSubstitution]

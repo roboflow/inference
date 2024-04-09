@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple, Type, Union
 
 from openai import BaseModel
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from inference.core import logger
 from inference.enterprise.workflows.entities.steps import OutputDefinition
@@ -10,6 +10,10 @@ from inference.enterprise.workflows.entities.types import FlowControl
 
 
 class WorkflowBlockManifest(BaseModel):
+    model_config = ConfigDict(
+        validate_assignment=True,
+    )
+
     type: str
     name: str = Field(description="Unique name of step in workflows")
 

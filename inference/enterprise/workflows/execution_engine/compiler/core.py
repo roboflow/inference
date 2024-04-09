@@ -1,11 +1,19 @@
-from typing import Any, Dict
+from collections import defaultdict
+from typing import Any, Dict, List, Tuple
 
+import networkx as nx
+
+from inference.enterprise.workflows.complier.utils import construct_input_selector
+from inference.enterprise.workflows.constants import STEP_NODE_KIND
+from inference.enterprise.workflows.entities.inputs import InferenceParameter
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
     load_initializers,
     load_workflow_blocks,
 )
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
+    InputSubstitution,
+    ParsedWorkflowDefinition,
 )
 from inference.enterprise.workflows.execution_engine.compiler.graph_constructor import (
     prepare_execution_graph,
@@ -25,13 +33,13 @@ from inference.enterprise.workflows.execution_engine.debugger.core import (
 
 
 def compile_workflow(
-    raw_workflow_definition: dict,
+    workflow_definition: dict,
     init_parameters: Dict[str, Any],
 ) -> CompiledWorkflow:
     available_blocks = load_workflow_blocks()
     initializers = load_initializers()
     parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=raw_workflow_definition,
+        raw_workflow_definition=workflow_definition,
     )
     validate_workflow_specification(workflow_definition=parsed_workflow_definition)
     execution_graph = prepare_execution_graph(
@@ -44,8 +52,53 @@ def compile_workflow(
         explicit_init_parameters=init_parameters,
         initializers=initializers,
     )
+    input_substitutions = collect_input_substitutions(
+        workflow_definition=parsed_workflow_definition, execution_graph=execution_graph
+    )
     dump_execution_graph(execution_graph=execution_graph)
     return CompiledWorkflow(
+        workflow_definition=parsed_workflow_definition,
         execution_graph=execution_graph,
         steps=steps,
+        input_substitutions=input_substitutions,
     )
+
+
+def collect_input_substitutions(
+    workflow_definition: ParsedWorkflowDefinition,
+    execution_graph: nx.DiGraph,
+) -> List[InputSubstitution]:
+    result = []
+    for declared_input in workflow_definition.inputs:
+        if not issubclass(type(declared_input), InferenceParameter):
+            continue
+        input_substitutions = collect_substitutions_for_selected_input(
+            execution_graph=execution_graph,
+            input_name=declared_input.name,
+        )
+        result.extend(input_substitutions)
+    return result
+
+
+def collect_substitutions_for_selected_input(
+    execution_graph: nx.DiGraph,
+    input_name: str,
+) -> List[InputSubstitution]:
+    input_selector = construct_input_selector(input_name=input_name)
+    related_steps = [
+        execution_graph.nodes[node]["definition"]
+        for node in execution_graph.neighbors(input_selector)
+        if execution_graph.nodes[node]["kind"] == STEP_NODE_KIND
+    ]
+    substitutions = []
+    for step in related_steps:
+        for field in step.__fields__:
+            if getattr(step, field) != input_selector:
+                continue
+            substitution = InputSubstitution(
+                input_parameter_name=input_name,
+                step_manifest=step,
+                manifest_property=field,
+            )
+            substitutions.append(substitution)
+    return substitutions

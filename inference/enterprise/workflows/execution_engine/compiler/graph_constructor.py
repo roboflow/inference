@@ -42,9 +42,6 @@ from inference.enterprise.workflows.execution_engine.compiler.manifest_schema_pa
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_types,
 )
-from inference.enterprise.workflows.execution_engine.debugger.core import (
-    dump_execution_graph,
-)
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -62,7 +59,6 @@ def prepare_execution_graph(
         workflow_definition=workflow_definition,
         manifest_class2block_class=manifest_class2block_class,
     )
-    dump_execution_graph(execution_graph=execution_graph)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
     verify_each_node_reach_at_least_one_output(
