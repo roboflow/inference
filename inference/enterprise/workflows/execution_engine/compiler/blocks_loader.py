@@ -1,37 +1,19 @@
 import importlib
 import os
-from typing import Annotated, Any, Callable, Dict, List, Literal, Type, Union
-
-from pydantic import BaseModel, Field, create_model
+from typing import Any, Callable, Dict, List
 
 from inference.enterprise.workflows.core_steps.loader import load_blocks_classes
 from inference.enterprise.workflows.entities.blocks_descriptions import (
     BlockDescription,
     BlocksDescription,
 )
-from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import WILDCARD_KIND, Kind
-from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
-
-
-def build_workflow_definition_entity() -> Type[BaseModel]:
-    blocks = load_workflow_blocks()
-    steps_manifests = tuple(block.manifest_class for block in blocks)
-    block_manifest_types_union = Union[steps_manifests]
-    block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
-    return create_model(
-        "WorkflowSpecificationV1",
-        version=(Literal["1.0"], ...),
-        inputs=(List[InputType], ...),
-        steps=(List[block_type], ...),
-        outputs=(List[JsonField], ...),
-    )
 
 
 def describe_available_blocks() -> BlocksDescription:

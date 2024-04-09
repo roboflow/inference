@@ -9,6 +9,8 @@ from inference.enterprise.workflows.entities.workflows_specification import (
     InputType,
 )
 
+FLOW_CONTROL_NODE_KEY = "flow_control_node"
+
 
 def get_input_parameters_selectors(inputs: List[InputType]) -> Set[str]:
     return {
@@ -82,6 +84,15 @@ def construct_selector_pointing_step_output(selector: str, new_output: str) -> s
     return f"{selector}.{new_output}"
 
 
+def is_step_selector(selector_or_value: Any) -> bool:
+    if not is_selector(selector_or_value=selector_or_value):
+        return False
+    return (
+        selector_or_value.startswith("$steps.")
+        and len(selector_or_value.split(".")) == 2
+    )
+
+
 def is_step_output_selector(selector_or_value: Any) -> bool:
     if not is_selector(selector_or_value=selector_or_value):
         return False
@@ -105,3 +116,7 @@ def get_nodes_of_specific_kind(execution_graph: DiGraph, kind: str) -> Set[str]:
 
 def is_condition_step(execution_graph: DiGraph, node: str) -> bool:
     return execution_graph.nodes[node]["definition"].type == "Condition"
+
+
+def get_last_chunk_of_selector(selector: str) -> str:
+    return selector.split(".")[-1]

@@ -30,10 +30,11 @@ class WorkflowBlock(ABC):
     def describe_outputs(cls) -> List[OutputDefinition]:
         pass
 
+    @classmethod
     def get_actual_outputs(
-        self, manifest: WorkflowBlockManifest
+        cls, manifest: WorkflowBlockManifest
     ) -> List[OutputDefinition]:
-        return []
+        return cls.describe_outputs()
 
     @abstractmethod
     async def run_locally(

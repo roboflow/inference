@@ -1,6 +1,9 @@
 from dataclasses import dataclass
-from typing import Type
+from typing import List, Optional, Type
 
+from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.types import Kind
+from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -20,3 +23,26 @@ class InitialisedStep:
     block_specification: BlockSpecification
     manifest: WorkflowBlockManifest
     step: WorkflowBlock
+
+
+@dataclass(frozen=True)
+class ParsedWorkflowDefinition:
+    version: str
+    inputs: List[InputType]
+    steps: List[WorkflowBlockManifest]
+    outputs: List[JsonField]
+
+
+@dataclass(frozen=True)
+class ReferenceDefinition:
+    selected_element: str
+    kind: List[Kind]
+
+
+@dataclass(frozen=True)
+class SelectorDefinition:
+    step_name: str
+    property: str
+    index: Optional[int]
+    selector: str
+    allowed_references: List[ReferenceDefinition]

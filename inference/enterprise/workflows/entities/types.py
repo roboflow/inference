@@ -68,13 +68,15 @@ IMAGE_METADATA_KIND = Kind(
     description="Dictionary with image metadata required by supervision",
 )
 
+STEP_AS_SELECTED_ELEMENT = "step"
+
 StepSelector = Annotated[
     str,
     StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9\-]+"),
     Field(
         json_schema_extra={
             "reference": True,
-            "selected_element": "step",
+            "selected_element": STEP_AS_SELECTED_ELEMENT,
         }
     ),
 ]

@@ -124,8 +124,9 @@ class LMMBlock(WorkflowBlock):
             OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
+    @classmethod
     def get_actual_outputs(
-        self, manifest: WorkflowBlockManifest
+        cls, manifest: WorkflowBlockManifest
     ) -> List[OutputDefinition]:
         result = [
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
