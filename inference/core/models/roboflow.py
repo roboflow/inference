@@ -592,6 +592,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         super().__init__(model_id, *args, **kwargs)
         if self.load_weights or not self.has_model_metadata:
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
+            expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
                     ep = (
@@ -604,6 +605,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                             "trt_fp16_enable": True,
                         },
                     )
+                expanded_execution_providers.append(ep)
+            self.onnxruntime_execution_providers = expanded_execution_providers
+
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
         try:
