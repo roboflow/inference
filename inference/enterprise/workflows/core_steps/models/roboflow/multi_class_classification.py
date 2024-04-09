@@ -44,7 +44,8 @@ class BlockManifest(WorkflowBlockManifest):
             "description": "This block represents inference from Roboflow multi-class classification model.",
             "docs": "https://inference.roboflow.com/workflows/classify_objects",
             "block_type": "model",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["RoboflowClassificationModel"]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(

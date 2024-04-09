@@ -57,7 +57,8 @@ class BlockManifest(WorkflowBlockManifest):
             "description": "This block represents inference from Roboflow keypoint detection model.",
             "docs": "https://inference.roboflow.com/workflows/detect_keypoints",
             "block_type": "model",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["KeypointsDetectionModel"]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(

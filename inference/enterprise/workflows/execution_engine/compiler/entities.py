@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import List, Optional, Type
 
+import networkx as nx
+
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.types import Kind
 from inference.enterprise.workflows.entities.workflows_specification import InputType
@@ -46,3 +48,9 @@ class SelectorDefinition:
     index: Optional[int]
     selector: str
     allowed_references: List[ReferenceDefinition]
+
+
+@dataclass(frozen=True)
+class CompiledWorkflow:
+    execution_graph: nx.DiGraph
+    steps: List[InitialisedStep]

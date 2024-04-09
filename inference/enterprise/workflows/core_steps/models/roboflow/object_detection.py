@@ -55,7 +55,8 @@ class BlockManifest(WorkflowBlockManifest):
             "description": "This block represents inference from Roboflow object detection model.",
             "docs": "https://inference.roboflow.com/workflows/detect_objects",
             "block_type": "model",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["ObjectDetectionModel"]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(

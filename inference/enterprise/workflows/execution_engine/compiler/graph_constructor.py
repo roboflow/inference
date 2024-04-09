@@ -13,7 +13,6 @@ from inference.enterprise.workflows.complier.utils import (
     get_last_chunk_of_selector,
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
-    is_condition_step,
     is_input_selector,
     is_step_output_selector,
     is_step_selector,
@@ -24,9 +23,7 @@ from inference.enterprise.workflows.constants import (
     STEP_NODE_KIND,
 )
 from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.steps import StepInterface
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
-from inference.enterprise.workflows.entities.validators import is_selector
 from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.errors import (
     AmbiguousPathDetected,
@@ -45,6 +42,9 @@ from inference.enterprise.workflows.execution_engine.compiler.manifest_schema_pa
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_types,
 )
+from inference.enterprise.workflows.execution_engine.debugger.core import (
+    dump_execution_graph,
+)
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -62,13 +62,14 @@ def prepare_execution_graph(
         workflow_definition=workflow_definition,
         manifest_class2block_class=manifest_class2block_class,
     )
+    dump_execution_graph(execution_graph=execution_graph)
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
-    verify_each_node_reach_at_least_one_output(execution_graph=execution_graph)
-    verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
-    verify_that_steps_are_connected_with_compatible_inputs(
-        execution_graph=execution_graph
+    verify_each_node_reach_at_least_one_output(
+        execution_graph=execution_graph,
+        manifest_class2block_class=manifest_class2block_class,
     )
+    verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     return execution_graph
 
 
@@ -183,6 +184,9 @@ def add_edge_for_step(
     other_node_selector = get_step_selector_from_its_output(
         step_output_selector=step_selector_definition.selector
     )
+    print(
+        f"CONSIDERING: {other_node_selector} -> {step_selector}",
+    )
     verify_edge_is_created_between_existing_nodes(
         execution_graph=execution_graph,
         start=step_selector,
@@ -246,6 +250,7 @@ def add_edge_for_step(
         actual=actual_input_kind,
         error_message=error_message,
     )
+    execution_graph.add_edge(other_node_selector, step_selector)
     return execution_graph
 
 
@@ -305,13 +310,15 @@ def verify_edge_is_created_between_existing_nodes(
 
 def verify_each_node_reach_at_least_one_output(
     execution_graph: DiGraph,
+    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> None:
     all_nodes = set(execution_graph.nodes())
     output_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
     )
     nodes_without_outputs = get_nodes_that_do_not_produce_outputs(
-        execution_graph=execution_graph
+        execution_graph=execution_graph,
+        manifest_class2block_class=manifest_class2block_class,
     )
     nodes_that_must_be_reached = output_nodes.union(nodes_without_outputs)
     nodes_reaching_output = (
@@ -328,17 +335,23 @@ def verify_each_node_reach_at_least_one_output(
         )
 
 
-def get_nodes_that_do_not_produce_outputs(execution_graph: DiGraph) -> Set[str]:
+def get_nodes_that_do_not_produce_outputs(
+    execution_graph: DiGraph,
+    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
+) -> Set[str]:
     # assumption is that nodes without outputs will produce some side effect and shall be
     # treated as output nodes while checking if there is no dangling steps in graph
     step_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=STEP_NODE_KIND
     )
-    return {
-        step_node
-        for step_node in step_nodes
-        if len(execution_graph.nodes[step_node]["definition"].get_output_names()) == 0
-    }
+    result = set()
+    for step_node in step_nodes:
+        step_manifest = execution_graph.nodes[step_node]["definition"]
+        step_manifest_type = type(step_manifest)
+        block_type = manifest_class2block_class[step_manifest_type]
+        if len(block_type.get_actual_outputs(step_manifest)) == 0:
+            result.add(step_node)
+    return result
 
 
 def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
@@ -382,11 +395,11 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     From those steps we trace what sequence of steps would lead to execution of problematic one.
     For each problematic node we take its parent nodes. Then, we analyse paths from
     those parent nodes in reversed topological order (from those nodes towards entry nodes
-    of execution graph). While our analysis, on each path we denote `Condition` steps and
+    of execution graph). While our analysis, on each path we denote control flow steps and
     result of condition evaluation that must have been observed in runtime, to reach
     the problematic node while graph execution in normal direction. If we detect that
-    for any `Condition` step we would need to output both True and False (more than one registered
-    next step of `Condition` step) - we raise error.
+    for any control flow step we would need to output multiple values at time (more than one registered
+    next step of control flow step) - we raise error.
     To detect problem (2) - we only let number of different condition steps considered be the number of
     max condition steps in a single path from origin to parent of problematic step.
 
@@ -499,63 +512,12 @@ def denote_condition_steps_successors_in_normal_flow(
         return condition_steps_successors, conditions_steps
     previous_node = reversed_flow_path[0]
     for node in reversed_flow_path[1:]:
-        if is_condition_step(execution_graph=reversed_steps_graph, node=node):
+        if is_flow_control_step(execution_graph=reversed_steps_graph, node=node):
             condition_steps_successors[node].add(previous_node)
             conditions_steps += 1
         previous_node = node
     return condition_steps_successors, conditions_steps
 
 
-def verify_that_steps_are_connected_with_compatible_inputs(
-    execution_graph: nx.DiGraph,
-) -> None:
-    steps_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph,
-        kind=STEP_NODE_KIND,
-    )
-    for step in steps_nodes:
-        verify_step_inputs_selectors(step=step, execution_graph=execution_graph)
-
-
-def verify_step_inputs_selectors(step: str, execution_graph: nx.DiGraph) -> None:
-    step_definition = execution_graph.nodes[step]["definition"]
-    all_inputs = step_definition.get_input_names()
-    for input_step in all_inputs:
-        input_selector_or_value = getattr(step_definition, input_step)
-        if issubclass(type(input_selector_or_value), list):
-            for idx, single_selector_or_value in enumerate(input_selector_or_value):
-                validate_step_definition_input(
-                    step_definition=step_definition,
-                    input_name=input_step,
-                    execution_graph=execution_graph,
-                    input_selector_or_value=single_selector_or_value,
-                    index=idx,
-                )
-        else:
-            validate_step_definition_input(
-                step_definition=step_definition,
-                input_name=input_step,
-                execution_graph=execution_graph,
-                input_selector_or_value=input_selector_or_value,
-            )
-
-
-def validate_step_definition_input(
-    step_definition: StepInterface,
-    input_name: str,
-    execution_graph: nx.DiGraph,
-    input_selector_or_value: Any,
-    index: Optional[int] = None,
-) -> None:
-    if not is_selector(selector_or_value=input_selector_or_value):
-        return None
-    if is_step_output_selector(selector_or_value=input_selector_or_value):
-        input_selector_or_value = get_step_selector_from_its_output(
-            step_output_selector=input_selector_or_value
-        )
-    input_node_definition = execution_graph.nodes[input_selector_or_value]["definition"]
-    step_definition.validate_field_selector(
-        field_name=input_name,
-        input_step=input_node_definition,
-        index=index,
-    )
+def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
+    return execution_graph.nodes[node].get(FLOW_CONTROL_NODE_KEY, False)
