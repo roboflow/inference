@@ -699,12 +699,26 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
+            
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
+                has_trt = False
+                for p in providers:
+                    if isinstance(p, tuple):
+                        name = p[0]
+                    else:
+                        name = p
+                    if name == "TensorrtExecutionProvider":
+                        has_trt = True
+                
+                session_options = onnxruntime.SessionOptions()
+                if has_trt:
+                    session_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
+                    sess_options=session_options
                 )
             except Exception as e:
                 self.clear_cache()
