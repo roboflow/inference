@@ -131,7 +131,7 @@ def lock_state_transition(
 
 
 class CV2VideoFrameGrabber(VideoFrameGrabber):
-    def __init__(self, video: str | int):
+    def __init__(self, video: Union[str, int]):
         self.stream = cv2.VideoCapture(video)
 
     def isOpened(self) -> bool:

@@ -86,6 +86,6 @@ class VideoFrameGrabber:
         raise NotImplementedError
     
     def initialize_source_properties(self, properties: Dict[str, float]):
-        raise NotImplementedError
+        pass
 
 VideoSourceIdentifier = Union[str, int, Callable[[], VideoFrameGrabber]]
