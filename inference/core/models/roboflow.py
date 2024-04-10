@@ -13,7 +13,6 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.cache import cache
-from inference.core.models.utils.onnx import has_trt
 from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
@@ -59,6 +58,7 @@ from inference.core.models.utils.batching import (
     calculate_input_elements,
     create_batches,
 )
+from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
