@@ -14,7 +14,9 @@ def get_step_selectors(step: WorkflowBlockManifest) -> List[SelectorDefinition]:
     result = []
     for property_name, property_definition in openapi_schema["properties"].items():
         property_value = getattr(step, property_name)
+        print(f"Step: {step.name}, property: {property_name}, value: {property_value}")
         if "items" in property_definition:
+            print("Found items")
             selectors = retrieve_selectors_from_property(
                 step_name=step.name,
                 property_name=property_name,
@@ -44,10 +46,11 @@ def retrieve_selectors_from_property(
         selector = retrieve_selector_from_property(
             step_name=step_name,
             property_name=property_name,
-            property_value=property_value,
+            property_value=element,
             property_definition=property_definition["items"],
             index=index,
         )
+        print(f"index: {index}, element: {element}, selector: {selector}")
         if selector is not None:
             result.append(selector)
     return result
@@ -61,8 +64,10 @@ def retrieve_selector_from_property(
     index: Optional[int] = None,
 ) -> Optional[SelectorDefinition]:
     if not is_selector(property_value):
+        print("Not a selector!")
         return None
     if "reference" in property_definition:
+        print("reference in property_definition")
         allowed_references = [
             ReferenceDefinition(
                 selected_element=property_definition["selected_element"],

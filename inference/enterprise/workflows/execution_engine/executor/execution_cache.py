@@ -42,7 +42,7 @@ class StepCache:
         self,
         property_name: str,
     ) -> List[Any]:
-        if property_name not in self._step_name:
+        if property_name not in self._cache_content:
             raise KeyError(f"{property_name} - TODO: error handling")
         return self._cache_content[property_name]
 
@@ -70,12 +70,14 @@ class ExecutionCache:
     def register_step(
         self, step_name: str, output_definitions: List[OutputDefinition]
     ) -> None:
+        print(f"Registering: {step_name}")
         if self.contains_step(step_name=step_name):
             return None
         step_cache = StepCache.init(
             step_name=step_name,
             output_definitions=output_definitions,
         )
+        print("Saving cache")
         self._cache_content[step_name] = step_cache
 
     def register_step_outputs(

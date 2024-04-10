@@ -42,6 +42,9 @@ from inference.enterprise.workflows.execution_engine.compiler.manifest_schema_pa
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_types,
 )
+from inference.enterprise.workflows.execution_engine.debugger.core import (
+    dump_execution_graph,
+)
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -61,6 +64,7 @@ def prepare_execution_graph(
     )
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
+    dump_execution_graph(execution_graph=execution_graph)
     verify_each_node_reach_at_least_one_output(
         execution_graph=execution_graph,
         manifest_class2block_class=manifest_class2block_class,
@@ -145,6 +149,7 @@ def add_steps_edges(
 ) -> DiGraph:
     for step in workflow_definition.steps:
         step_selectors = get_step_selectors(step=step)
+        print(f"step: {step.name} -> {step_selectors}")
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
             step_name=step.name,
@@ -212,9 +217,12 @@ def add_edge_for_step(
             "definition"
         ].kind
     else:
-        referred_node_manifest = execution_graph.nodes[
+        referred_step_selector = get_step_selector_from_its_output(
             step_selector_definition.selector
-        ]["definition"]
+        )
+        referred_node_manifest = execution_graph.nodes[referred_step_selector][
+            "definition"
+        ]
         referred_node_manifest_type = type(referred_node_manifest)
         block_class_for_referred_node = manifest_class2block_class[
             referred_node_manifest_type

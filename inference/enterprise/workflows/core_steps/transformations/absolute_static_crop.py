@@ -1,40 +1,31 @@
-import itertools
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
-    DETECTION_ID_KEY,
-    HEIGHT_KEY,
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_ID_KEY,
-    WIDTH_KEY,
 )
 from inference.enterprise.workflows.core_steps.common.utils import (
-    detection_to_xyxy,
     extract_origin_size_from_images,
 )
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     FlowControl,
     InferenceImageSelector,
     InferenceParameterSelector,
     OutputStepImageSelector,
-    StepOutputSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,

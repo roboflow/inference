@@ -211,7 +211,7 @@ class RoboflowObjectDetectionBlock(WorkflowBlock):
 
     async def run_remotely(
         self,
-        image: List[dict],
+        image: List[Dict[str, Any]],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],

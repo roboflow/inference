@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, Union
 
 import networkx as nx
 
@@ -34,7 +34,7 @@ from inference.enterprise.workflows.execution_engine.debugger.core import (
 
 def compile_workflow(
     workflow_definition: dict,
-    init_parameters: Dict[str, Any],
+    init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
 ) -> CompiledWorkflow:
     available_blocks = load_workflow_blocks()
     initializers = load_initializers()

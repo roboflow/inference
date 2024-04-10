@@ -25,43 +25,6 @@ class StepExecutionCoordinator(metaclass=abc.ABCMeta):
         pass
 
 
-class SerialExecutionCoordinator(StepExecutionCoordinator):
-
-    @classmethod
-    def init(cls, execution_graph: nx.DiGraph) -> "StepExecutionCoordinator":
-        return cls(execution_graph=execution_graph)
-
-    def __init__(self, execution_graph: nx.DiGraph):
-        self._execution_graph = execution_graph.copy()
-        self._discarded_steps: Set[str] = set()
-        self.__order: Optional[List[str]] = None
-        self.__step_pointer = 0
-
-    def get_steps_to_execute_next(
-        self, steps_to_discard: Set[str]
-    ) -> Optional[List[str]]:
-        if self.__order is None:
-            self.__establish_execution_order()
-        self._discarded_steps.update(steps_to_discard)
-        next_step = None
-        while self.__step_pointer < len(self.__order):
-            candidate_step = self.__order[self.__step_pointer]
-            self.__step_pointer += 1
-            if candidate_step in self._discarded_steps:
-                continue
-            return [candidate_step]
-        return next_step
-
-    def __establish_execution_order(self) -> None:
-        step_nodes = get_nodes_of_specific_kind(
-            execution_graph=self._execution_graph, kind=STEP_NODE_KIND
-        )
-        self.__order = [
-            n for n in nx.topological_sort(self._execution_graph) if n in step_nodes
-        ]
-        self.__step_pointer = 0
-
-
 class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
 
     @classmethod
@@ -115,12 +78,20 @@ def construct_steps_flow_graph(execution_graph: nx.DiGraph) -> nx.DiGraph:
         execution_graph=execution_graph, kind=STEP_NODE_KIND
     )
     for step_node in step_nodes:
+        has_predecessors = False
         for predecessor in execution_graph.predecessors(step_node):
             start_node = predecessor if predecessor in step_nodes else "start"
             steps_flow_graph.add_edge(start_node, step_node)
+            has_predecessors = True
+        if not has_predecessors:
+            steps_flow_graph.add_edge("start", step_node)
+        has_successors = False
         for successor in execution_graph.successors(step_node):
             end_node = successor if successor in step_nodes else "end"
             steps_flow_graph.add_edge(step_node, end_node)
+            has_successors = True
+        if not has_successors:
+            steps_flow_graph.add_edge(step_node, "end")
     return steps_flow_graph
 
 
@@ -166,7 +137,7 @@ def get_next_steps_to_execute(
 
 
 def handle_flow_control(
-    current_step: str,
+    current_step_selector: str,
     flow_control: FlowControl,
     execution_graph: nx.DiGraph,
 ) -> Set[str]:
@@ -174,12 +145,12 @@ def handle_flow_control(
     if flow_control.mode == "terminate_branch":
         nodes_to_discard = get_all_nodes_in_execution_path(
             execution_graph=execution_graph,
-            source=current_step,
+            source=current_step_selector,
             include_source=False,
         )
     elif flow_control.mode == "select_step":
         nodes_to_discard = handle_execution_branch_selection(
-            current_step=current_step,
+            current_step=current_step_selector,
             execution_graph=execution_graph,
             selected_next_step=flow_control.context,
         )
@@ -195,7 +166,9 @@ def handle_execution_branch_selection(
     if selected_next_step is None:
         raise ValueError("TODO")
     for neighbour in execution_graph.neighbors(current_step):
-        if execution_graph.nodes[execution_graph].get("kind") != STEP_NODE_KIND:
+        if execution_graph.nodes[neighbour].get("kind") != STEP_NODE_KIND:
+            continue
+        if neighbour == selected_next_step:
             continue
         neighbour_execution_path = get_all_nodes_in_execution_path(
             execution_graph=execution_graph, source=neighbour

@@ -1,6 +1,6 @@
 import importlib
 import os
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 from inference.enterprise.workflows.core_steps.loader import load_blocks_classes
 from inference.enterprise.workflows.entities.blocks_descriptions import (
@@ -100,7 +100,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     ]
 
 
-def load_initializers() -> Dict[str, Callable[[None], Any]]:
+def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
     plugins_to_load = os.getenv(WORKFLOWS_PLUGINS_ENV)
     if plugins_to_load is None:
         return {}

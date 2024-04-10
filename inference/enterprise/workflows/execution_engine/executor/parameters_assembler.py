@@ -10,6 +10,8 @@ from inference.enterprise.workflows.execution_engine.executor.execution_cache im
 )
 from inference.enterprise.workflows.prototypes.block import WorkflowBlockManifest
 
+EXCLUDED_FIELDS = {"type", "name"}
+
 
 def assembly_step_parameters(
     step_manifest: WorkflowBlockManifest,
@@ -17,7 +19,7 @@ def assembly_step_parameters(
     execution_cache: ExecutionCache,
     accepts_batch_input: bool,
 ) -> Dict[str, Any]:
-    manifest_dict = step_manifest.dict(exclude={"type", "name"})
+    manifest_dict = get_manifest_fields_values(step_manifest=step_manifest)
     result = {}
     for key, value in manifest_dict.items():
         if is_step_output_selector(selector_or_value=value):
@@ -31,6 +33,15 @@ def assembly_step_parameters(
                 selector=value, runtime_parameters=runtime_parameters
             )
         result[key] = value
+    return result
+
+
+def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str, Any]:
+    result = {}
+    for field in step_manifest.__fields__:
+        if field in EXCLUDED_FIELDS:
+            continue
+        result[field] = getattr(step_manifest, field)
     return result
 
 

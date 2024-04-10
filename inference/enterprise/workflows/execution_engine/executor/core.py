@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Set
 from inference.core import logger
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
+from inference.enterprise.workflows.complier.utils import get_last_chunk_of_selector
 from inference.enterprise.workflows.entities.types import FlowControl
 from inference.enterprise.workflows.errors import ExecutionEngineError
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
@@ -118,11 +119,12 @@ async def execute_step(
     step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
     logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
-    step_instance = workflow.steps[step].step
-    step_manifest = workflow.steps[step].manifest
+    step_name = get_last_chunk_of_selector(selector=step)
+    step_instance = workflow.steps[step_name].step
+    step_manifest = workflow.steps[step_name].manifest
     step_outputs = step_instance.get_actual_outputs(step_manifest)
     execution_cache.register_step(
-        step_name=step,
+        step_name=step_name,
         output_definitions=step_outputs,
     )
     step_parameters = assembly_step_parameters(
@@ -142,11 +144,11 @@ async def execute_step(
     else:
         step_outputs, flow_control = step_result, FlowControl(mode="pass")
     execution_cache.register_step_outputs(
-        step_name=step,
+        step_name=step_name,
         outputs=step_outputs,
     )
     nodes_to_discard = handle_flow_control(
-        current_step=step,
+        current_step_selector=step,
         flow_control=flow_control,
         execution_graph=workflow.execution_graph,
     )
