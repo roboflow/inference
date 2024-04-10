@@ -25,6 +25,7 @@ from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
     VideoFrame,
+    VideoSourceIdentifier
 )
 from inference.core.interfaces.camera.utils import multiplex_videos
 from inference.core.interfaces.camera.video_source import (
@@ -69,11 +70,13 @@ class SinkMode(Enum):
     SEQUENTIAL = "sequential"
 
 
+
+
 class InferencePipeline:
     @classmethod
     def init(
         cls,
-        video_reference: Union[str, int, List[Union[str, int]]],
+        video_reference: Union[VideoSourceIdentifier, List[VideoSourceIdentifier]],
         model_id: str,
         on_prediction: SinkHandler = None,
         api_key: Optional[str] = None,
@@ -576,7 +579,7 @@ class InferencePipeline:
     @classmethod
     def init_with_custom_logic(
         cls,
-        video_reference: Union[str, int, List[Union[str, int]]],
+        video_reference: Union[VideoSourceIdentifier, List[VideoSourceIdentifier]],
         on_video_frame: InferenceHandler,
         on_prediction: SinkHandler = None,
         on_pipeline_start: Optional[Callable[[], None]] = None,

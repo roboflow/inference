@@ -7,6 +7,7 @@ from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Union
 
 import cv2
+from numpy import ndarray
 import supervision as sv
 
 from inference.core import logger
@@ -18,9 +19,12 @@ from inference.core.env import (
     DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
 )
 from inference.core.interfaces.camera.entities import (
+    SourceProperties,
     StatusUpdate,
     UpdateSeverity,
     VideoFrame,
+    VideoFrameGrabber,
+    VideoSourceIdentifier
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
@@ -102,15 +106,6 @@ class BufferConsumptionStrategy(Enum):
 
 
 @dataclass(frozen=True)
-class SourceProperties:
-    width: int
-    height: int
-    total_frames: int
-    is_file: bool
-    fps: float
-
-
-@dataclass(frozen=True)
 class SourceMetadata:
     source_properties: Optional[SourceProperties]
     source_reference: str
@@ -135,11 +130,43 @@ def lock_state_transition(
     return locked_executor
 
 
+class CV2VideoFrameGrabber(VideoFrameGrabber):
+    def __init__(self, video: str | int):
+        self.stream = cv2.VideoCapture(video)
+
+    def isOpened(self) -> bool:
+        return self.stream.isOpened()
+    
+    def grab(self) -> bool:
+        return self.stream.grab()
+    
+    def retrieve(self) -> tuple[bool, ndarray]:
+        return self.stream.retrieve()
+    
+    def initialize_source_properties(self, properties: Dict[str, float]) -> None:
+        for property_id, value in properties.items():
+            cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
+            self.stream.set(cv2_id, value)
+
+    def discover_source_properties(self) -> SourceProperties:
+        width = int(self.stream.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = self.stream.get(cv2.CAP_PROP_FPS)
+        total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
+        return SourceProperties(
+            width=width,
+            height=height,
+            total_frames=total_frames,
+            is_file=total_frames > 0,
+            fps=fps,
+        )
+
+
 class VideoSource:
     @classmethod
     def init(
         cls,
-        video_reference: Union[str, int],
+        video_reference: VideoSourceIdentifier,
         buffer_size: int = DEFAULT_BUFFER_SIZE,
         status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]] = None,
         buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
@@ -285,7 +312,7 @@ class VideoSource:
 
     def __init__(
         self,
-        stream_reference: Union[str, int],
+        stream_reference: VideoSourceIdentifier,
         frames_buffer: Queue,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
         buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
@@ -294,7 +321,7 @@ class VideoSource:
         source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
-        self._video: Optional[cv2.VideoCapture] = None
+        self._video: Optional[VideoFrameGrabber] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
@@ -530,22 +557,23 @@ class VideoSource:
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
-        self._video: Optional[cv2.VideoCapture] = None
+        self._video: Optional[VideoFrameGrabber] = None
         self._source_properties: Optional[SourceProperties] = None
         self._start()
 
     def _start(self) -> None:
         self._change_state(target_state=StreamState.INITIALISING)
-        self._video = cv2.VideoCapture(self._stream_reference)
+        if callable(self._stream_reference):
+            self._video = self._stream_reference()
+        else:
+            self._video = CV2VideoFrameGrabber(self._stream_reference)
         if not self._video.isOpened():
             self._change_state(target_state=StreamState.ERROR)
             raise SourceConnectionError(
                 f"Cannot connect to video source under reference: {self._stream_reference}"
             )
-        initialize_source_properties(
-            video=self._video, properties=self._video_source_properties
-        )
-        self._source_properties = discover_source_properties(stream=self._video)
+        self._video.initialize_source_properties(self._video_source_properties)
+        self._source_properties = self._video.discover_source_properties()
         self._video_consumer.reset(source_properties=self._source_properties)
         if self._source_properties.is_file:
             self._set_file_mode_consumption_strategies()
@@ -773,7 +801,7 @@ class VideoConsumer:
 
     def consume_frame(
         self,
-        video: cv2.VideoCapture,
+        video: VideoFrameGrabber,
         declared_source_fps: Optional[float],
         buffer: Queue,
         frames_buffering_allowed: bool,
@@ -814,7 +842,7 @@ class VideoConsumer:
 
     def _consume_stream_frame(
         self,
-        video: cv2.VideoCapture,
+        video: VideoFrameGrabber,
         declared_source_fps: Optional[float],
         frame_timestamp: datetime,
         buffer: Queue,
@@ -924,7 +952,7 @@ class VideoConsumer:
     def _process_stream_frame_dropping_oldest(
         self,
         frame_timestamp: datetime,
-        video: cv2.VideoCapture,
+        video: VideoFrameGrabber,
         buffer: Queue,
         source_id: Optional[int],
     ) -> bool:
@@ -941,28 +969,6 @@ class VideoConsumer:
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
         )
-
-
-def initialize_source_properties(
-    video: cv2.VideoCapture, properties: Dict[str, float]
-) -> None:
-    for property_id, value in properties.items():
-        cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
-        video.set(cv2_id, value)
-
-
-def discover_source_properties(stream: cv2.VideoCapture) -> SourceProperties:
-    width = int(stream.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = stream.get(cv2.CAP_PROP_FPS)
-    total_frames = int(stream.get(cv2.CAP_PROP_FRAME_COUNT))
-    return SourceProperties(
-        width=width,
-        height=height,
-        total_frames=total_frames,
-        is_file=total_frames > 0,
-        fps=fps,
-    )
 
 
 def get_from_queue(
@@ -1063,7 +1069,7 @@ def send_video_source_status_update(
 def decode_video_frame_to_buffer(
     frame_timestamp: datetime,
     frame_id: int,
-    video: cv2.VideoCapture,
+    video: VideoFrameGrabber,
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
