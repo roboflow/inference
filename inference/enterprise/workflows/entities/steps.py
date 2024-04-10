@@ -209,6 +209,7 @@ class RoboflowModel(BaseModel, StepInterface, metaclass=ABCMeta):
 class ClassificationModel(RoboflowModel):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run a classification model.",
             "docs": "https://inference.roboflow.com/workflows/classify_objects",
         }
@@ -266,6 +267,7 @@ class ClassificationModel(RoboflowModel):
 class MultiLabelClassificationModel(RoboflowModel):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run a multi-label classification model.",
             "docs": "https://inference.roboflow.com/workflows/classify_objects_multi",
         }
@@ -322,6 +324,7 @@ class MultiLabelClassificationModel(RoboflowModel):
 class ObjectDetectionModel(RoboflowModel):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Detect objects using an object detection model.",
             "docs": "https://inference.roboflow.com/workflows/detect_objects",
         }
@@ -453,6 +456,7 @@ class ObjectDetectionModel(RoboflowModel):
 class KeypointsDetectionModel(ObjectDetectionModel):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run inference on a keypoint detection model.",
             "docs": "https://inference.roboflow.com/workflows/detect_keypoints",
         }
@@ -514,6 +518,7 @@ DECODE_MODES = {"accurate", "tradeoff", "fast"}
 class InstanceSegmentationModel(ObjectDetectionModel):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run an instance segmentation model.",
             "docs": "https://inference.roboflow.com/workflows/segment_objects",
         }
@@ -587,6 +592,7 @@ class InstanceSegmentationModel(ObjectDetectionModel):
 class OCRModel(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run Optical Character Recognition on a model.",
             "docs": "https://inference.roboflow.com/workflows/ocr",
         }
@@ -636,6 +642,7 @@ class OCRModel(BaseModel, StepInterface):
 class Crop(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "transformation",
             "description": "Create dynamic crops based on detections from a detections-based model.",
             "docs": "https://inference.roboflow.com/workflows/crop",
         }
@@ -715,6 +722,7 @@ class Operator(Enum):
 class Condition(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "flow_control",
             "description": "Control the flow of a workflow based on the result of a step.",
             "docs": "https://inference.roboflow.com/workflows/condition",
         }
@@ -810,6 +818,7 @@ class BinaryOperator(Enum):
 class QRCodeDetector(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Detect the location of QR codes in an image.",
             "docs": "https://inference.roboflow.com/workflows/detect_qr_codes",
         }
@@ -859,6 +868,7 @@ class QRCodeDetector(BaseModel, StepInterface):
 class BarcodeDetector(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Detect the location of barcodes in an image.",
             "docs": None,
         }
@@ -956,6 +966,7 @@ class CompoundDetectionFilterDefinition(BaseModel):
 class DetectionFilter(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "transformation",
             "description": "Filter predictions from detection models based on defined conditions.",
             "docs": "https://inference.roboflow.com/workflows/filter_detections",
         }
@@ -1028,6 +1039,7 @@ class DetectionFilter(BaseModel, StepInterface):
 class DetectionOffset(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "transformation",
             "description": "Apply a fixed offset on the width and height of detections.",
             "docs": "https://inference.roboflow.com/workflows/offset_detections",
         }
@@ -1111,6 +1123,7 @@ class DetectionOffset(BaseModel, StepInterface):
 class AbsoluteStaticCrop(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "transformation",
             "description": "Use absolute coordinates for cropping.",
             "docs": "https://inference.roboflow.com/workflows/absolute_static_crop",
         }
@@ -1192,6 +1205,7 @@ class AbsoluteStaticCrop(BaseModel, StepInterface):
 class RelativeStaticCrop(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "transformation",
             "description": "Use relative coordinates for cropping.",
             "docs": "https://inference.roboflow.com/workflows/absolute_static_crop",
         }
@@ -1277,6 +1291,7 @@ class RelativeStaticCrop(BaseModel, StepInterface):
 class ClipComparison(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Compare CLIP image and text embeddings.",
             "docs": "https://inference.roboflow.com/workflows/compare_clip_vectors",
         }
@@ -1356,6 +1371,7 @@ class AggregationMode(Enum):
 class DetectionsConsensus(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "fusion",
             "description": "Combine predictions from multiple detection models to make a decision about object presence.",
             "docs": "https://inference.roboflow.com/workflows/reach_consensus",
         }
@@ -1680,6 +1696,7 @@ class EnabledActiveLearningConfiguration(BaseModel):
 class ActiveLearningDataCollector(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "sink",
             "description": "Collect data and predictions that flow through workflows for use in active learning.",
             "docs": "https://inference.roboflow.com/workflows/active_learning",
         }
@@ -1817,6 +1834,7 @@ class ActiveLearningDataCollector(BaseModel, StepInterface):
 class YoloWorldModel(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run a zero-shot object detection model.",
             "docs": "https://inference.roboflow.com/workflows/yolo_world",
         }
@@ -1931,6 +1949,7 @@ class LMMConfig(BaseModel):
 class LMM(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run a large language model.",
             "docs": "https://inference.roboflow.com/workflows/use_lmm",
         }
@@ -2092,6 +2111,7 @@ class LMM(BaseModel, StepInterface):
 class LMMForClassification(BaseModel, StepInterface):
     model_config = ConfigDict(
         json_schema_extra={
+            "block_type": "model",
             "description": "Run a large language model for classification.",
             "docs": "https://inference.roboflow.com/workflows/use_lmm_classification",
         }
