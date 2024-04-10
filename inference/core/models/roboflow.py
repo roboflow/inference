@@ -13,6 +13,7 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.cache import cache
+from inference.core.models.utils.onnx import has_trt
 from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
@@ -703,17 +704,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
-                has_trt = False
-                for p in providers:
-                    if isinstance(p, tuple):
-                        name = p[0]
-                    else:
-                        name = p
-                    if name == "TensorrtExecutionProvider":
-                        has_trt = True
-
                 session_options = onnxruntime.SessionOptions()
-                if has_trt:
+                # TensorRT does better graph optimization for its EP than onnx
+                if has_trt(providers):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
