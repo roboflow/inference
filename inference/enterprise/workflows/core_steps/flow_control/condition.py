@@ -108,3 +108,6 @@ class ConditionBlock(WorkflowBlock):
         next_step = step_if_true if evaluation_result else step_if_false
         flow_control = FlowControl(mode="select_step", context=next_step)
         return [], flow_control
+
+    def accepts_batch_input(self) -> bool:
+        return False

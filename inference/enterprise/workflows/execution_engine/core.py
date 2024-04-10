@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import AbstractEventLoop
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.execution_engine.compiler.core import (
@@ -9,6 +9,7 @@ from inference.enterprise.workflows.execution_engine.compiler.core import (
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
 )
+from inference.enterprise.workflows.execution_engine.executor.core import run_workflow
 from inference.enterprise.workflows.execution_engine.executor.runtime_input_assembler import (
     assembly_runtime_parameters,
 )
@@ -67,7 +68,9 @@ class ExecutionEngine:
             self.run_async(runtime_parameters=runtime_parameters)
         )
 
-    async def run_async(self, runtime_parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def run_async(
+        self, runtime_parameters: Dict[str, Any]
+    ) -> Dict[str, List[Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
@@ -75,4 +78,10 @@ class ExecutionEngine:
         validate_runtime_input(
             runtime_parameters=runtime_parameters,
             input_substitutions=self._compiled_workflow.input_substitutions,
+        )
+        return await run_workflow(
+            workflow=self._compiled_workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=self._max_concurrent_steps,
+            step_execution_mode=self._step_execution_mode,
         )

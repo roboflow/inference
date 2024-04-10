@@ -90,6 +90,12 @@ def anchor_image_detections_in_parent_coordinates(
     for detection in serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
         detection["x"] += parent_left_top_x
         detection["y"] += parent_left_top_y
+        for point in detection.get("points", []):
+            point["x"] += parent_left_top_x
+            point["y"] += parent_left_top_y
+        for point in detection.get("keypoints", []):
+            point["x"] += parent_left_top_x
+            point["y"] += parent_left_top_y
     serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]

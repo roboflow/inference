@@ -55,11 +55,12 @@ def compile_workflow(
     input_substitutions = collect_input_substitutions(
         workflow_definition=parsed_workflow_definition, execution_graph=execution_graph
     )
+    steps_by_name = {step.manifest.name: step for step in steps}
     dump_execution_graph(execution_graph=execution_graph)
     return CompiledWorkflow(
         workflow_definition=parsed_workflow_definition,
         execution_graph=execution_graph,
-        steps=steps,
+        steps=steps_by_name,
         input_substitutions=input_substitutions,
     )
 

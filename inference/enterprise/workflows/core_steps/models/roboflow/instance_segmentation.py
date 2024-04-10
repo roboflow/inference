@@ -172,6 +172,10 @@ class RoboflowInstanceSegmentationBlock(WorkflowBlock):
             OutputDefinition(
                 name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
             ),
+            OutputDefinition(
+                name="predictions_parent_coordinates",
+                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
         ]
@@ -275,7 +279,9 @@ class RoboflowInstanceSegmentationBlock(WorkflowBlock):
         )
         if not issubclass(type(results), list):
             results = [results]
-        return self._post_process_result(image=image, serialised_result=results)
+        return self._post_process_result(
+            image=image, class_filter=class_filter, serialised_result=results
+        )
 
     def _post_process_result(
         self,

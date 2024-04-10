@@ -1,5 +1,4 @@
-from enum import Enum
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 from inference.enterprise.workflows.complier.utils import (
     get_last_chunk_of_selector,
@@ -7,10 +6,6 @@ from inference.enterprise.workflows.complier.utils import (
     is_step_output_selector,
 )
 from inference.enterprise.workflows.entities.steps import OutputDefinition
-
-
-class OutputPlaceholder(Enum):
-    EMPTY = "empty"
 
 
 class StepCache:
@@ -25,7 +20,7 @@ class StepCache:
     def __init__(
         self,
         step_name: str,
-        cache_content: Dict[str, Union[List[Any], OutputPlaceholder]],
+        cache_content: Dict[str, List[Any]],
     ):
         self._step_name = step_name
         self._cache_content = cache_content
@@ -43,14 +38,10 @@ class StepCache:
         except KeyError as e:
             raise e  # TODO: error handling
 
-    def register_empty_output(self) -> None:
-        for key in self._cache_content:
-            self._cache_content[key] = OutputPlaceholder.EMPTY
-
     def get_outputs(
         self,
         property_name: str,
-    ) -> Union[List[Any], OutputPlaceholder]:
+    ) -> List[Any]:
         if property_name not in self._step_name:
             raise KeyError(f"{property_name} - TODO: error handling")
         return self._cache_content[property_name]
@@ -94,19 +85,8 @@ class ExecutionCache:
             raise RuntimeError("TODO: error handling")
         self._cache_content[step_name].register_outputs(outputs=outputs)
 
-    def register_empty_outputs(self, step_name: str) -> None:
-        if not self.contains_step(step_name=step_name):
-            raise RuntimeError("TODO: error handling")
-        self._cache_content[step_name].register_empty_output()
-
-    def is_output_empty(self, selector: str) -> bool:
-        if not self.contains_value(selector_or_value=selector):
-            raise RuntimeError("TODO: error handling")
-        output = self.get_output(selector=selector)
-        return output is OutputPlaceholder.EMPTY
-
-    def get_output(self, selector: str) -> Union[List[Any], OutputPlaceholder]:
-        if not self.contains_value(selector_or_value=selector):
+    def get_output(self, selector: str) -> List[Any]:
+        if not self.contains_value(selector=selector):
             raise RuntimeError("TODO: error handling")
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
@@ -118,16 +98,14 @@ class ExecutionCache:
             raise RuntimeError("TODO: error handling")
         return self._cache_content[step_name].get_all_outputs()
 
-    def contains_value(self, selector_or_value: Any) -> bool:
-        if not is_step_output_selector(selector_or_value=selector_or_value):
+    def contains_value(self, selector: Any) -> bool:
+        if not is_step_output_selector(selector_or_value=selector):
             return False
-        step_selector = get_step_selector_from_its_output(
-            step_output_selector=selector_or_value
-        )
+        step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if not self.contains_step(step_name=step_name):
             return False
-        property_name = get_last_chunk_of_selector(selector=selector_or_value)
+        property_name = get_last_chunk_of_selector(selector=selector)
         return self._cache_content[step_name].is_property_defined(
             property_name=property_name
         )

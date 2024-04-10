@@ -57,3 +57,6 @@ class WorkflowBlock(ABC):
             "Block has no implementation for run_remotely() method - using run_locally() instead"
         )
         return await self.run_locally(*args, **kwargs)
+
+    def accepts_batch_input(self) -> bool:
+        return True

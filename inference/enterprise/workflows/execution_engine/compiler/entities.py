@@ -61,5 +61,5 @@ class InputSubstitution:
 class CompiledWorkflow:
     workflow_definition: ParsedWorkflowDefinition
     execution_graph: nx.DiGraph
-    steps: List[InitialisedStep]
+    steps: Dict[str, InitialisedStep]
     input_substitutions: List[InputSubstitution]
