@@ -16,7 +16,7 @@ WILDCARD_KIND = Kind(name="*", description="Equivalent of any element")
 IMAGE_KIND = Kind(name="image", description="Image in workflows")
 ROBOFLOW_MODEL_ID_KIND = Kind(name="roboflow_model_id", description="Roboflow model id")
 ROBOFLOW_PROJECT_KIND = Kind(
-    name="roboflow_model_id", description="Roboflow project name"
+    name="roboflow_project", description="Roboflow project name"
 )
 ROBOFLOW_API_KEY_KIND = Kind(name="roboflow_api_key", description="Roboflow API key")
 FLOAT_ZERO_TO_ONE_KIND = Kind(

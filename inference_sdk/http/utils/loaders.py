@@ -39,11 +39,17 @@ def load_directory_inference_input(
     directory_path: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
-    for path in sv.list_files_with_extensions(
-        directory=directory_path,
-        extensions=image_extensions,
-    ):
-        yield path, cv2.imread(path.as_posix())
+    paths = {
+        path.as_posix().lower()
+        for path in sv.list_files_with_extensions(
+            directory=directory_path,
+            extensions=image_extensions,
+        )
+    }
+    # making a set due to case-insensitive behaviour of Windows
+    # see: https://stackoverflow.com/questions/7199039/file-paths-in-windows-environment-not-case-sensitive
+    for path in paths:
+        yield path, cv2.imread(path)
 
 
 def load_static_inference_input(

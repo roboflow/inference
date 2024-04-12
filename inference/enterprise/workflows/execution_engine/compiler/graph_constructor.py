@@ -64,7 +64,6 @@ def prepare_execution_graph(
     )
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
-    dump_execution_graph(execution_graph=execution_graph)
     verify_each_node_reach_at_least_one_output(
         execution_graph=execution_graph,
         manifest_class2block_class=manifest_class2block_class,
