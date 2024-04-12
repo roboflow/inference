@@ -1,6 +1,10 @@
 from typing import Any, Dict, List
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineRuntimeError,
+    InvalidBlockBehaviourError,
+)
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
@@ -29,21 +33,14 @@ class StepCache:
         self,
         outputs: List[Dict[str, Any]],
     ) -> None:
-        try:
-            for output in outputs:
-                for key in self._cache_content:
-                    self._cache_content[key].append(output[key])
-        except ValueError as e:
-            raise e  # TODO: error handling
-        except KeyError as e:
-            raise e  # TODO: error handling
+        for output in outputs:
+            for key in self._cache_content:
+                self._cache_content[key].append(output[key])
 
     def get_outputs(
         self,
         property_name: str,
     ) -> List[Any]:
-        if property_name not in self._cache_content:
-            raise KeyError(f"{property_name} - TODO: error handling")
         return self._cache_content[property_name]
 
     def get_all_outputs(self) -> List[Dict[str, Any]]:
@@ -70,34 +67,84 @@ class ExecutionCache:
     def register_step(
         self, step_name: str, output_definitions: List[OutputDefinition]
     ) -> None:
-        print(f"Registering: {step_name}")
         if self.contains_step(step_name=step_name):
             return None
         step_cache = StepCache.init(
             step_name=step_name,
             output_definitions=output_definitions,
         )
-        print("Saving cache")
         self._cache_content[step_name] = step_cache
 
     def register_step_outputs(
         self, step_name: str, outputs: List[Dict[str, Any]]
     ) -> None:
         if not self.contains_step(step_name=step_name):
-            raise RuntimeError("TODO: error handling")
-        self._cache_content[step_name].register_outputs(outputs=outputs)
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to register outputs for "
+                f"step {step_name} which was not previously registered in cache. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        try:
+            self._cache_content[step_name].register_outputs(outputs=outputs)
+        except TypeError as e:
+            raise InvalidBlockBehaviourError(
+                public_message=f"Block implementing step {step_name} should return outputs which are lists of "
+                f"dicts, but the type of output does not much expectation.",
+                context="workflow_execution | step_output_registration",
+                inner_error=e,
+            ) from e
+        except KeyError as e:
+            raise InvalidBlockBehaviourError(
+                public_message=f"Block implementing step {step_name} should return outputs which are lists of "
+                f"dicts and the keys in each element must match block output definition. "
+                f"Missing key: {e}",
+                context="workflow_execution | step_output_registration",
+                inner_error=e,
+            ) from e
 
     def get_output(self, selector: str) -> List[Any]:
         if not self.contains_value(selector=selector):
-            raise RuntimeError("TODO: error handling")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get output which is not registered using "
+                f"step {selector}. That behavior should be prevented by workflows compiler, so "
+                f"this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
         property_name = get_last_chunk_of_selector(selector=selector)
-        return self._cache_content[step_name].get_outputs(property_name=property_name)
+        try:
+            return self._cache_content[step_name].get_outputs(
+                property_name=property_name
+            )
+        except KeyError as e:
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to retrieve outputs for "
+                f"step {step_name} using selector {selector}. Selector usage in workflow definition "
+                f"should be validated by compiler - if that's not the case - you've just detected bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            ) from e
 
     def get_all_step_outputs(self, step_name: str) -> List[Dict[str, Any]]:
         if not self.contains_step(step_name=step_name):
-            raise RuntimeError("TODO: error handling")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get all outputs from step {step_name} "
+                f"which is not register in cache. That behavior should be prevented by "
+                f"workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         return self._cache_content[step_name].get_all_outputs()
 
     def contains_value(self, selector: Any) -> bool:

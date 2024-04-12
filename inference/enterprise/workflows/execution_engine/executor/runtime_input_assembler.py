@@ -10,7 +10,10 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
 )
 from inference.enterprise.workflows.entities.inputs import InferenceImage
 from inference.enterprise.workflows.entities.workflows_specification import InputType
-from inference.enterprise.workflows.errors import InvalidStepInputDetected
+from inference.enterprise.workflows.errors import (
+    InvalidStepInputDetected,
+    RuntimeInputError,
+)
 
 
 def assembly_runtime_parameters(
@@ -36,8 +39,10 @@ def assembly_input_image(
     parameter: str, image: Any
 ) -> List[Dict[str, Union[str, np.ndarray]]]:
     if image is None:
-        raise InvalidStepInputDetected(
-            f"Detected runtime parameter `{parameter}` defined as `InferenceImage` which is not provided."
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            f"`InferenceImage`, but value is not provided.",
+            context="workflow_execution | runtime_input_validation",
         )
     if not issubclass(type(image), list):
         return [_assembly_input_image(parameter=parameter, image=image)]
@@ -62,8 +67,11 @@ def _assembly_input_image(
             IMAGE_VALUE_KEY: image,
             PARENT_ID_KEY: parent,
         }
-    raise InvalidStepInputDetected(
-        f"Detected runtime parameter `{parameter}` defined as `InferenceImage` with type {type(image)} that is invalid."
+    raise RuntimeInputError(
+        public_message=f"Detected runtime parameter `{parameter}` defined as `InferenceImage` "
+        f"with type {type(image)} that is invalid. Workflows accept only np.arrays "
+        f"and dicts with keys `type` and `value` compatible with `inference` (or list of them).",
+        context="workflow_execution | runtime_input_validation",
     )
 
 

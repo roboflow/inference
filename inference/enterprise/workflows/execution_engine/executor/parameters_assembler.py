@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+from inference.enterprise.workflows.errors import ExecutionEngineNotImplementedError
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     is_input_selector,
@@ -27,6 +28,7 @@ def assembly_step_parameters(
                 selector=value,
                 execution_cache=execution_cache,
                 accepts_batch_input=accepts_batch_input,
+                step_name=step_manifest.name,
             )
         elif is_input_selector(selector_or_value=value):
             value = retrieve_value_from_runtime_input(
@@ -46,15 +48,23 @@ def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str
 
 
 def retrieve_step_output(
-    selector: str, execution_cache: ExecutionCache, accepts_batch_input: bool
+    selector: str,
+    execution_cache: ExecutionCache,
+    accepts_batch_input: bool,
+    step_name: str,
 ) -> Any:
     value = execution_cache.get_output(selector=selector)
     if accepts_batch_input:
         return value
     if issubclass(type(value), list):
         if len(value) > 1:
-            raise RuntimeError(
-                f"{selector} points to batch input which is not accepted"
+            raise ExecutionEngineNotImplementedError(
+                public_message=f"Step `{step_name}` defines input pointing to {selector} which "
+                f"ships batch input of size larger than one, but at the same time workflow block "
+                f"used to implement the step does not accept batch input. That may be "
+                f"for instance the case for steps with flow-control, as workflows execution engine "
+                f"does not support yet branching when control-flow decision is made element-wise.",
+                context="workflow_execution | steps_parameters_assembling",
             )
         return value[0]
     return value

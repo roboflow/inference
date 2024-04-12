@@ -22,19 +22,15 @@ def construct_workflow_output(
 ) -> Dict[str, List[Any]]:
     result = {}
     for node in workflow_definition.outputs:
-        print(f"Getting output: {node.name} -> {node.selector}")
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node.selector
         )
         step_name = get_last_chunk_of_selector(selector=step_selector)
-        print(f"step_name: {step_name}")
         cache_contains_step = execution_cache.contains_step(step_name=step_name)
         if not cache_contains_step:
-            print("\tCache miss")
             result[node.name] = []
             continue
         if node.selector.endswith(".*"):
-            print("\tWildcard detected")
             result[node.name] = construct_wildcard_output(
                 step_name=step_name,
                 execution_cache=execution_cache,
@@ -42,7 +38,6 @@ def construct_workflow_output(
                 is CoordinatesSystem.PARENT,
             )
             continue
-        print("\tdetected construct_specific_property_output()")
         result[node.name] = construct_specific_property_output(
             selector=node.selector,
             execution_cache=execution_cache,

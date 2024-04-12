@@ -149,3 +149,35 @@ class DanglingExecutionBranchError(ExecutionGraphStructureError):
 
 class ConditionalBranchesClashError(ExecutionGraphStructureError):
     pass
+
+
+class UnknownManifestType(WorkflowCompilerError):
+    pass
+
+
+class BlockInitParameterNotProvidedError(WorkflowCompilerError):
+    pass
+
+
+class WorkflowExecutionEngineError(WorkflowError):
+    pass
+
+
+class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
+    pass
+
+
+class StepExecutionError(WorkflowExecutionEngineError):
+    pass
+
+
+class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):
+    pass
+
+
+class ExecutionEngineNotImplementedError(WorkflowExecutionEngineError):
+    pass
+
+
+class RuntimeInputError(WorkflowExecutionEngineError):
+    pass

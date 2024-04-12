@@ -1,5 +1,10 @@
 from typing import Any, Callable, Dict, List, Union
 
+from inference.enterprise.workflows.errors import (
+    BlockInitParameterNotProvidedError,
+    BlockInterfaceError,
+    UnknownManifestType,
+)
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
@@ -19,9 +24,10 @@ def initialise_steps(
     initialised_steps = []
     for step_manifest in steps_manifest:
         if type(step_manifest) not in available_bocks_by_manifest_class:
-            raise ValueError(
-                f"Provided step manifest of type ({type(step_manifest)}) "
-                f"which is not compatible with registered workflow blocks."
+            raise UnknownManifestType(
+                public_message=f"Provided step manifest of type ({type(step_manifest)}) "
+                f"which is not compatible with registered workflow blocks.",
+                context="workflow_compilation | steps_initialisation",
             )
         block_specification = available_bocks_by_manifest_class[type(step_manifest)]
         initialised_step = initialise_step(
@@ -47,7 +53,16 @@ def initialise_step(
         explicit_init_parameters=explicit_init_parameters,
         initializers=initializers,
     )
-    step = block_specification.block_class(**init_parameters_values)
+    try:
+        step = block_specification.block_class(**init_parameters_values)
+    except TypeError as e:
+        raise BlockInterfaceError(
+            public_message=f"While initialisation of step {step_manifest.name} of type: {step_manifest.type} there "
+            f"was an error in creating instance of workflow block. One of parameters defined "
+            f"({list(init_parameters_values.keys())}) was invalid. Details: {e}",
+            context="workflow_compilation | steps_initialisation",
+            inner_error=e,
+        ) from e
     return InitialisedStep(
         block_specification=block_specification,
         manifest=step_manifest,
@@ -85,9 +100,10 @@ def retrieve_init_parameter_values(
         return call_if_callable(initializers[full_parameter_name])
     if block_init_parameter in explicit_init_parameters:
         return call_if_callable(explicit_init_parameters[block_init_parameter])
-    raise ValueError(
-        f"Could not resolve init parameter {block_init_parameter} to initialise "
-        f"step from plugin: {block_source}."
+    raise BlockInitParameterNotProvidedError(
+        public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
+        f"step from plugin: {block_source}.",
+        context="workflow_compilation | steps_initialisation",
     )
 
 

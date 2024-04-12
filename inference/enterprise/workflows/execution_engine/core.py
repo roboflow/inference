@@ -27,7 +27,6 @@ class ExecutionEngine:
         init_parameters: Optional[Dict[str, Any]] = None,
         max_concurrent_steps: int = 1,
         step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
-        serialise_output: bool = False,
     ) -> "ExecutionEngine":
         if init_parameters is None:
             init_parameters = {}
@@ -39,7 +38,6 @@ class ExecutionEngine:
             compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
             step_execution_mode=step_execution_mode,
-            serialise_output=serialise_output,
         )
 
     def __init__(
@@ -47,12 +45,10 @@ class ExecutionEngine:
         compiled_workflow: CompiledWorkflow,
         max_concurrent_steps: int,
         step_execution_mode: StepExecutionMode,
-        serialise_output: bool,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
         self._step_execution_mode = step_execution_mode
-        self._serialise_output = serialise_output
 
     def run(
         self,

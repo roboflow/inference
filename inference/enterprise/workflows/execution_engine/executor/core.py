@@ -6,7 +6,11 @@ from inference.core import logger
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
 from inference.enterprise.workflows.entities.types import FlowControl
-from inference.enterprise.workflows.errors import ExecutionEngineError
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineError,
+    StepExecutionError,
+    WorkflowError,
+)
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
 )
@@ -106,10 +110,14 @@ async def safe_execute_step(
             execution_cache=execution_cache,
             step_execution_mode=step_execution_mode,
         )
+    except WorkflowError as error:
+        raise error
     except Exception as error:
         logger.exception(f"Execution of step {step} encountered error.")
-        raise ExecutionEngineError(
-            f"Error during execution of step: {step}."
+        raise StepExecutionError(
+            public_message=f"Error during execution of step: {step}. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
         ) from error
 
 
