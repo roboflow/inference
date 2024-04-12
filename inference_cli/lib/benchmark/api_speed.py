@@ -171,7 +171,7 @@ def execute_api_request(
             batch_size=request_batch_size, duration=duration
         )
         status_code = exc.__class__.__name__
-        if isinstance(exc, requests.exceptions.HTTPError):
+        if issubclass(exc, requests.exceptions.HTTPError):
             status_code = str(exc.response.status_code)
 
         results_collector.register_error(batch_size=request_batch_size, status_code=status_code)
