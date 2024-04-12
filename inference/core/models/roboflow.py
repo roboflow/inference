@@ -58,6 +58,7 @@ from inference.core.models.utils.batching import (
     calculate_input_elements,
     create_batches,
 )
+from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
@@ -592,6 +593,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         super().__init__(model_id, *args, **kwargs)
         if self.load_weights or not self.has_model_metadata:
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
+            expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
                     ep = (
@@ -604,6 +606,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                             "trt_fp16_enable": True,
                         },
                     )
+                expanded_execution_providers.append(ep)
+            self.onnxruntime_execution_providers = expanded_execution_providers
+
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
         try:
@@ -695,12 +700,20 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
+
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
+                session_options = onnxruntime.SessionOptions()
+                # TensorRT does better graph optimization for its EP than onnx
+                if has_trt(providers):
+                    session_options.graph_optimization_level = (
+                        onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+                    )
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
+                    sess_options=session_options,
                 )
             except Exception as e:
                 self.clear_cache()
