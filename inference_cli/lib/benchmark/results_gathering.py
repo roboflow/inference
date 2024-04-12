@@ -1,3 +1,4 @@
+from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
@@ -97,12 +98,12 @@ class ResultsCollector:
             else stats[0][0]
         )
 
-        error_status_codes = {}
+        error_status_codes = defaultdict(int)
         errors_number = 0
         for e in errors:
             if e[0] < start:
                 continue
-            error_status_codes[e[2]] = error_status_codes.setdefault(e[2], 0) + 1
+            error_status_codes[e[2]] += 1
             errors_number += 1
 
         error_rate = round(errors_number / inferences_made * 100, 2)
