@@ -6,9 +6,11 @@ from typing import List, Optional, Set
 import networkx as nx
 from networkx import DiGraph
 
-from inference.enterprise.workflows.complier.utils import get_nodes_of_specific_kind
 from inference.enterprise.workflows.constants import STEP_NODE_KIND
 from inference.enterprise.workflows.entities.types import FlowControl
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_nodes_of_specific_kind,
+)
 
 
 class StepExecutionCoordinator(metaclass=abc.ABCMeta):

@@ -1,9 +1,11 @@
 from typing import Annotated, List, Literal, Type, Union
 
+import pydantic
 from pydantic import BaseModel, Field, create_model
 
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.workflows_specification import InputType
+from inference.enterprise.workflows.errors import WorkflowSyntaxError
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
     load_workflow_blocks,
 )
@@ -16,15 +18,22 @@ def parse_workflow_definition(
     raw_workflow_definition: dict,
 ) -> ParsedWorkflowDefinition:
     workflow_definition_class = build_workflow_definition_entity()
-    workflow_definition = workflow_definition_class.model_validate(
-        raw_workflow_definition
-    )
-    return ParsedWorkflowDefinition(
-        version=workflow_definition.version,
-        inputs=workflow_definition.inputs,
-        steps=workflow_definition.steps,
-        outputs=workflow_definition.outputs,
-    )
+    try:
+        workflow_definition = workflow_definition_class.model_validate(
+            raw_workflow_definition
+        )
+        return ParsedWorkflowDefinition(
+            version=workflow_definition.version,
+            inputs=workflow_definition.inputs,
+            steps=workflow_definition.steps,
+            outputs=workflow_definition.outputs,
+        )
+    except pydantic.ValidationError as e:
+        raise WorkflowSyntaxError(
+            public_message="Could not parse workflow definition. Details provided in inner error.",
+            context="workflow_compilation | workflow_definition_parsing",
+            inner_error=e,
+        ) from e
 
 
 def build_workflow_definition_entity() -> Type[BaseModel]:

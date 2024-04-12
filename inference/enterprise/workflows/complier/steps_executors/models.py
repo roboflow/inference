@@ -54,7 +54,6 @@ from inference.enterprise.workflows.complier.steps_executors.utils import (
     make_batches,
     resolve_parameter,
 )
-from inference.enterprise.workflows.complier.utils import construct_step_selector
 from inference.enterprise.workflows.entities.steps import (
     GPT_4V_MODEL_TYPE,
     LMM,
@@ -74,6 +73,9 @@ from inference.enterprise.workflows.entities.steps import (
     YoloWorldModel,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    construct_step_selector,
+)
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 MODEL_TYPE2PREDICTION_TYPE = {

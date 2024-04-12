@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from inference.enterprise.workflows.complier.utils import (
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     is_input_selector,
     is_step_output_selector,

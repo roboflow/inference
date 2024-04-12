@@ -1,9 +1,7 @@
-from collections import defaultdict
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Union
 
 import networkx as nx
 
-from inference.enterprise.workflows.complier.utils import construct_input_selector
 from inference.enterprise.workflows.constants import STEP_NODE_KIND
 from inference.enterprise.workflows.entities.inputs import InferenceParameter
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
@@ -23,6 +21,9 @@ from inference.enterprise.workflows.execution_engine.compiler.steps_initialiser 
 )
 from inference.enterprise.workflows.execution_engine.compiler.syntactic_parser import (
     parse_workflow_definition,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    construct_input_selector,
 )
 from inference.enterprise.workflows.execution_engine.compiler.validator import (
     validate_workflow_specification,

@@ -1,13 +1,5 @@
 from typing import List
 
-from inference.enterprise.workflows.complier.utils import (
-    get_input_parameters_selectors,
-    get_output_names,
-    get_output_selectors,
-    get_steps_input_selectors,
-    get_steps_output_selectors,
-    get_steps_selectors,
-)
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.workflows_specification import (
     BlockType,
@@ -17,6 +9,14 @@ from inference.enterprise.workflows.entities.workflows_specification import (
 from inference.enterprise.workflows.errors import (
     DuplicatedSymbolError,
     InvalidReferenceError,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_input_parameters_selectors,
+    get_output_names,
+    get_output_selectors,
+    get_steps_input_selectors,
+    get_steps_output_selectors,
+    get_steps_selectors,
 )
 
 

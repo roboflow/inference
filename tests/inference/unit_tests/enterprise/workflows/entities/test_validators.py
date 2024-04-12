@@ -1,12 +1,9 @@
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 import pytest
 
-from inference.enterprise.workflows.entities.inputs import (
-    InferenceImage,
-    InferenceParameter,
-)
+from inference.enterprise.workflows.entities.inputs import InferenceImage, InferenceParameter
 from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
 from inference.enterprise.workflows.entities.validators import (
     get_last_selector_chunk,

@@ -4,16 +4,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import networkx as nx
 from networkx import DiGraph
 
-from inference.enterprise.workflows.complier.utils import (
-    construct_input_selector,
-    construct_output_name,
-    construct_step_selector,
-    get_nodes_of_specific_kind,
-    get_step_input_selectors,
-    get_step_selector_from_its_output,
-    is_condition_step,
-    is_step_output_selector,
-)
 from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
@@ -32,6 +22,16 @@ from inference.enterprise.workflows.errors import (
     NodesNotReachingOutputError,
     NotAcyclicGraphError,
     SelectorToUndefinedNodeError,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    construct_input_selector,
+    construct_output_name,
+    construct_step_selector,
+    get_nodes_of_specific_kind,
+    get_step_input_selectors,
+    get_step_selector_from_its_output,
+    is_condition_step,
+    is_step_output_selector,
 )
 
 

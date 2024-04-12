@@ -120,3 +120,7 @@ def is_condition_step(execution_graph: DiGraph, node: str) -> bool:
 
 def get_last_chunk_of_selector(selector: str) -> str:
     return selector.split(".")[-1]
+
+
+def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
+    return execution_graph.nodes[node].get(FLOW_CONTROL_NODE_KEY, False)

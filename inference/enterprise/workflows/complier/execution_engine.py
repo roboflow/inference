@@ -43,17 +43,17 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
 )
 from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
-from inference.enterprise.workflows.complier.utils import (
-    get_nodes_of_specific_kind,
-    get_step_selector_from_its_output,
-    is_condition_step,
-)
 from inference.enterprise.workflows.constants import OUTPUT_NODE_KIND
 from inference.enterprise.workflows.entities.outputs import CoordinatesSystem
 from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import (
     ExecutionEngineError,
     WorkflowsCompilerRuntimeError,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_nodes_of_specific_kind,
+    get_step_selector_from_its_output,
+    is_condition_step,
 )
 
 STEP_TYPE2EXECUTOR_MAPPING = {

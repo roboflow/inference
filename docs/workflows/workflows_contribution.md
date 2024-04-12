@@ -552,7 +552,6 @@ name you should save list of results - ordered by the order of images in the `im
 
 Let's see how that would look like in practice:
 
-
 ```python
 from typing import Dict, Any, Optional, Tuple
 from inference.core.managers.base import ModelManager
@@ -565,18 +564,19 @@ from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
     resolve_parameter,
 )
-from inference.enterprise.workflows.complier.utils import construct_step_selector
+from inference.enterprise.workflows.execution_engine.compiler.utils import construct_step_selector
 
 
 async def run_my_step(
-    step: MyStep,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-    step_execution_mode: StepExecutionMode,
+        step: MyStep,
+        runtime_parameters: Dict[str, Any],
+        outputs_lookup: OutputsLookup,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
-    images = get_image(   # image always is returned in list - single entry format {"type": "...", "value": "..."} matches image representation in `inference` server
+    images = get_image(
+        # image always is returned in list - single entry format {"type": "...", "value": "..."} matches image representation in `inference` server
         step=step,
         runtime_parameters=runtime_parameters,
         outputs_lookup=outputs_lookup,

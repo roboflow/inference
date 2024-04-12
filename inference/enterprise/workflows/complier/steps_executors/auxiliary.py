@@ -35,11 +35,6 @@ from inference.enterprise.workflows.complier.steps_executors.utils import (
     get_image,
     resolve_parameter,
 )
-from inference.enterprise.workflows.complier.utils import (
-    construct_selector_pointing_step_output,
-    construct_step_selector,
-    is_step_output_selector,
-)
 from inference.enterprise.workflows.entities.steps import (
     AbsoluteStaticCrop,
     ActiveLearningDataCollector,
@@ -57,6 +52,11 @@ from inference.enterprise.workflows.entities.steps import (
 )
 from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import ExecutionGraphError
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    construct_selector_pointing_step_output,
+    construct_step_selector,
+    is_step_output_selector,
+)
 
 OPERATORS = {
     Operator.EQUAL: lambda a, b: a == b,

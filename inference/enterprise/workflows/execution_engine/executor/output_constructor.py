@@ -3,13 +3,13 @@ from typing import Any, Dict, List
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_COORDINATES_SUFFIX,
 )
-from inference.enterprise.workflows.complier.utils import (
-    get_last_chunk_of_selector,
-    get_step_selector_from_its_output,
-)
 from inference.enterprise.workflows.entities.outputs import CoordinatesSystem
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_last_chunk_of_selector,
+    get_step_selector_from_its_output,
 )
 from inference.enterprise.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,

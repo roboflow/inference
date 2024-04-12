@@ -5,11 +5,13 @@ from typing import Any, Dict, List, Set
 from inference.core import logger
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
-from inference.enterprise.workflows.complier.utils import get_last_chunk_of_selector
 from inference.enterprise.workflows.entities.types import FlowControl
 from inference.enterprise.workflows.errors import ExecutionEngineError
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_last_chunk_of_selector,
 )
 from inference.enterprise.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,

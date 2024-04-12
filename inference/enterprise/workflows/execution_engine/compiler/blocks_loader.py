@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 from typing import Any, Callable, Dict, List, Union
 
@@ -7,8 +8,11 @@ from inference.enterprise.workflows.entities.blocks_descriptions import (
     BlockDescription,
     BlocksDescription,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
-from inference.enterprise.workflows.entities.types import WILDCARD_KIND, Kind
+from inference.enterprise.workflows.entities.types import Kind
+from inference.enterprise.workflows.errors import (
+    PluginInterfaceError,
+    PluginLoadingError,
+)
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
@@ -22,10 +26,7 @@ def describe_available_blocks() -> BlocksDescription:
     result = []
     for block in blocks:
         block_manifest = block.manifest_class.schema()
-        if hasattr(block.block_class, "describe_outputs"):
-            outputs_manifest = block.block_class.describe_outputs()
-        else:
-            outputs_manifest = [OutputDefinition(name="*", kind=[WILDCARD_KIND])]
+        outputs_manifest = block.block_class.describe_outputs()
         declared_kinds.extend(
             get_kinds_declared_for_block(block_manifest=block_manifest)
         )
@@ -42,7 +43,9 @@ def describe_available_blocks() -> BlocksDescription:
 def get_kinds_declared_for_block(block_manifest: dict) -> List[Kind]:
     result = []
     for property_name, property_definition in block_manifest["properties"].items():
-        union_elements = property_definition.get("anyOf", [property_definition])
+        union_elements = property_definition.get(
+            "anyOf", property_definition.get("oneOf", [property_definition])
+        )
         for element in union_elements:
             for raw_kind in element.get("kind", []):
                 parsed_kind = Kind.model_validate(raw_kind)
@@ -82,8 +85,20 @@ def load_plugins_blocks() -> List[BlockSpecification]:
 def load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     try:
         return _load_blocks_from_plugin(plugin_name=plugin_name)
-    except Exception as e:
-        raise e
+    except ImportError as e:
+        raise PluginLoadingError(
+            public_message=f"It is not possible to load workflow plugin `{plugin_name}`. "
+            f"Make sure the library providing custom step is correctly installed in Python environment.",
+            context="workflow_compilation | blocks_loading",
+            inner_error=e,
+        ) from e
+    except AttributeError as e:
+        raise PluginInterfaceError(
+            public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
+            f"interface correctly and cannot be loaded.",
+            context="workflow_compilation | blocks_loading",
+            inner_error=e,
+        ) from e
 
 
 def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
@@ -112,9 +127,15 @@ def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
 
 def load_initializers_from_plugin(plugin_name: str) -> Dict[str, Callable[[None], Any]]:
     try:
+        logging.info(f"Loading workflows initializers from plugin {plugin_name}")
         return _load_initializers_from_plugin(plugin_name=plugin_name)
-    except Exception as e:
-        raise e
+    except ImportError as e:
+        raise PluginLoadingError(
+            public_message=f"It is not possible to load workflow plugin `{plugin_name}`. "
+            f"Make sure the library providing custom step is correctly installed in Python environment.",
+            context="workflow_compilation | blocks_loading",
+            inner_error=e,
+        ) from e
 
 
 def _load_initializers_from_plugin(

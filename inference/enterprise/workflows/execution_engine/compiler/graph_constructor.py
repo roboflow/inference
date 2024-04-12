@@ -1,35 +1,24 @@
 import itertools
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Dict, List, Set, Tuple, Type
 
 import networkx as nx
 from networkx import DiGraph
 
-from inference.enterprise.workflows.complier.utils import (
-    FLOW_CONTROL_NODE_KEY,
-    construct_input_selector,
-    construct_output_name,
-    construct_step_selector,
-    get_last_chunk_of_selector,
-    get_nodes_of_specific_kind,
-    get_step_selector_from_its_output,
-    is_input_selector,
-    is_step_output_selector,
-    is_step_selector,
-)
 from inference.enterprise.workflows.constants import (
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
 from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
+from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.errors import (
     AmbiguousPathDetected,
-    NodesNotReachingOutputError,
-    NotAcyclicGraphError,
-    SelectorToUndefinedNodeError,
+    ConditionalBranchesClashError,
+    DanglingExecutionBranchError,
+    ExecutionGraphStructureError,
+    InvalidReferenceTargetError,
 )
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
@@ -42,8 +31,18 @@ from inference.enterprise.workflows.execution_engine.compiler.manifest_schema_pa
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_types,
 )
-from inference.enterprise.workflows.execution_engine.debugger.core import (
-    dump_execution_graph,
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    FLOW_CONTROL_NODE_KEY,
+    construct_input_selector,
+    construct_output_name,
+    construct_step_selector,
+    get_last_chunk_of_selector,
+    get_nodes_of_specific_kind,
+    get_step_selector_from_its_output,
+    is_flow_control_step,
+    is_input_selector,
+    is_step_output_selector,
+    is_step_selector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -63,7 +62,12 @@ def prepare_execution_graph(
         manifest_class2block_class=manifest_class2block_class,
     )
     if not nx.is_directed_acyclic_graph(execution_graph):
-        raise NotAcyclicGraphError(f"Detected cycle in execution graph.")
+        raise ExecutionGraphStructureError(
+            public_message=f"Detected cycle in execution graph. This means that there is output from one "
+            f"step that is connected to input of other step creating loop in the graph that would "
+            f"never end if executed.",
+            context="workflow_compilation | execution_graph_construction",
+        )
     verify_each_node_reach_at_least_one_output(
         execution_graph=execution_graph,
         manifest_class2block_class=manifest_class2block_class,
@@ -147,8 +151,7 @@ def add_steps_edges(
     manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     for step in workflow_definition.steps:
-        step_selectors = get_step_selectors(step=step)
-        print(f"step: {step.name} -> {step_selectors}")
+        step_selectors = get_step_selectors(step_manifest=step)
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
             step_name=step.name,
@@ -181,62 +184,35 @@ def add_edge_for_step(
     step_selector_definition: SelectorDefinition,
     manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
-    other_node_selector = get_step_selector_from_its_output(
+    other_step_selector = get_step_selector_from_its_output(
         step_output_selector=step_selector_definition.selector
-    )
-    print(
-        f"CONSIDERING: {other_node_selector} -> {step_selector}",
     )
     verify_edge_is_created_between_existing_nodes(
         execution_graph=execution_graph,
         start=step_selector,
-        end=other_node_selector,
-    )
-    this_steps_allow_referencing_steps = (
-        len(
-            [
-                definition
-                for definition in step_selector_definition.allowed_references
-                if definition.selected_element == STEP_AS_SELECTED_ELEMENT
-            ]
-        )
-        > 0
+        end=other_step_selector,
     )
     if is_step_selector(step_selector_definition.selector):
-        if not this_steps_allow_referencing_steps:
-            raise ValueError(
-                f"Detected reference to other step in definition of step {step_selector}. "
-                f"This is not allowed, as step manifest do not define any properties of type `StepSelector`."
-            )
-        execution_graph.add_edge(step_selector, other_node_selector)
-        execution_graph.nodes[step_selector][FLOW_CONTROL_NODE_KEY] = True
-        return execution_graph
+        return establish_flow_control_edge(
+            step_selector=step_selector,
+            step_selector_definition=step_selector_definition,
+            execution_graph=execution_graph,
+        )
     if is_input_selector(step_selector_definition.selector):
         actual_input_kind = execution_graph.nodes[step_selector_definition.selector][
             "definition"
         ].kind
     else:
-        referred_step_selector = get_step_selector_from_its_output(
-            step_selector_definition.selector
+        other_step_manifest: WorkflowBlockManifest = execution_graph.nodes[
+            other_step_selector
+        ]["definition"]
+        actual_input_kind = get_kind_of_value_provided_in_step_output(
+            step_manifest=other_step_manifest,
+            step_property=get_last_chunk_of_selector(
+                selector=step_selector_definition.selector
+            ),
+            manifest_class2block_class=manifest_class2block_class,
         )
-        referred_node_manifest = execution_graph.nodes[referred_step_selector][
-            "definition"
-        ]
-        referred_node_manifest_type = type(referred_node_manifest)
-        block_class_for_referred_node = manifest_class2block_class[
-            referred_node_manifest_type
-        ]
-        referred_node_outputs = block_class_for_referred_node.get_actual_outputs(
-            manifest=referred_node_manifest
-        )
-        other_node_property = get_last_chunk_of_selector(
-            selector=step_selector_definition.selector
-        )
-        actual_input_kind = []
-        for output in referred_node_outputs:
-            if output.name != other_node_property:
-                continue
-            actual_input_kind.extend(output.kind)
     expected_input_kind = list(
         itertools.chain.from_iterable(
             ref.kind for ref in step_selector_definition.allowed_references
@@ -253,8 +229,65 @@ def add_edge_for_step(
         actual=actual_input_kind,
         error_message=error_message,
     )
-    execution_graph.add_edge(other_node_selector, step_selector)
+    execution_graph.add_edge(other_step_selector, step_selector)
     return execution_graph
+
+
+def establish_flow_control_edge(
+    step_selector: str,
+    step_selector_definition: SelectorDefinition,
+    execution_graph: DiGraph,
+) -> DiGraph:
+    if not step_definition_allows_flow_control_references(
+        step_selector_definition=step_selector_definition
+    ):
+        raise ExecutionGraphStructureError(
+            public_message=f"Detected reference to other step in manifest of step {step_selector}. "
+            f"This is not allowed, as step manifest does not define any properties of type `StepSelector` "
+            f"allowing for defining connections between steps that represent flow control in `workflows`.",
+            context="workflow_compilation | execution_graph_construction",
+        )
+    other_node_selector = get_step_selector_from_its_output(
+        step_output_selector=step_selector_definition.selector
+    )
+    execution_graph.add_edge(step_selector, other_node_selector)
+    execution_graph.nodes[step_selector][FLOW_CONTROL_NODE_KEY] = True
+    return execution_graph
+
+
+def step_definition_allows_flow_control_references(
+    step_selector_definition: SelectorDefinition,
+) -> bool:
+    return (
+        len(
+            [
+                definition
+                for definition in step_selector_definition.allowed_references
+                if definition.selected_element == STEP_AS_SELECTED_ELEMENT
+            ]
+        )
+        > 0
+    )
+
+
+def get_kind_of_value_provided_in_step_output(
+    step_manifest: WorkflowBlockManifest,
+    step_property: str,
+    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
+) -> List[Kind]:
+    referred_node_manifest_type = type(step_manifest)
+    block_class_for_referred_node = manifest_class2block_class[
+        referred_node_manifest_type
+    ]
+    referred_node_outputs = block_class_for_referred_node.get_actual_outputs(
+        manifest=step_manifest
+    )
+    actual_kind = []
+    for output in referred_node_outputs:
+        if output.name != step_property:
+            continue
+        actual_kind.extend(output.kind)
+    return actual_kind
 
 
 def add_edges_for_step_inputs(
@@ -302,12 +335,14 @@ def verify_edge_is_created_between_existing_nodes(
     end: str,
 ) -> None:
     if not execution_graph.has_node(start):
-        raise SelectorToUndefinedNodeError(
-            f"Graph definition contains selector {start} that points to not defined element."
+        raise InvalidReferenceTargetError(
+            public_message=f"Graph definition contains selector {start} that points to not defined element.",
+            context="workflow_compilation | execution_graph_construction",
         )
     if not execution_graph.has_node(end):
-        raise SelectorToUndefinedNodeError(
-            f"Graph definition contains selector {end} that points to not defined element."
+        raise InvalidReferenceTargetError(
+            public_message=f"Graph definition contains selector {end} that points to not defined element.",
+            context="workflow_compilation | execution_graph_construction",
         )
 
 
@@ -332,9 +367,10 @@ def verify_each_node_reach_at_least_one_output(
     )
     nodes_not_reaching_output = all_nodes.difference(nodes_reaching_output)
     if len(nodes_not_reaching_output) > 0:
-        raise NodesNotReachingOutputError(
-            f"Detected {len(nodes_not_reaching_output)} nodes not reaching any of output node:"
-            f"{nodes_not_reaching_output}."
+        raise DanglingExecutionBranchError(
+            public_message=f"Detected {len(nodes_not_reaching_output)} nodes not reaching any of output node:"
+            f"{nodes_not_reaching_output}.",
+            context="workflow_compilation | execution_graph_construction",
         )
 
 
@@ -382,7 +418,7 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     A -> IF <             \
               \ -> E -> F -> G -> H
     where node G requires node C even though IF branched the execution. In other
-    words - the problem emerges if a node of kind STEP has a parent (node from which
+    words - the problem (1) emerges if a node of kind STEP has a parent (node from which
     it can be achieved) of kind STEP and this parent is in a different branch (point out that
     we allow for a single step to have multiple steps as input, but they must be at the same
     execution path - for instance if D requires an output from C and B - this is allowed).
@@ -391,24 +427,24 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     execution (2).
 
 
-    We need to detect that situation upfront, such that we can raise error of ambiguous execution path
+    We need to detect that situations upfront, such that we can raise error of ambiguous execution path
     rather than run time-consuming computations that will end up in error.
 
-    To detect problem, first we detect steps with more than one parent step.
-    From those steps we trace what sequence of steps would lead to execution of problematic one.
-    For each problematic node we take its parent nodes. Then, we analyse paths from
-    those parent nodes in reversed topological order (from those nodes towards entry nodes
-    of execution graph). While our analysis, on each path we denote control flow steps and
-    result of condition evaluation that must have been observed in runtime, to reach
-    the problematic node while graph execution in normal direction. If we detect that
-    for any control flow step we would need to output multiple values at time (more than one registered
-    next step of control flow step) - we raise error.
-    To detect problem (2) - we only let number of different condition steps considered be the number of
-    max condition steps in a single path from origin to parent of problematic step.
+    To detect problem (1), first we detect steps with more than one parent step.
+    From those steps we trace what sequence of steps would lead to execution engine reaching them.
+    We analyse paths from those parent nodes in reversed topological order (from those nodes towards entry
+    nodes of execution graph). While our analysis, on each path we denote control flow steps and
+    result of evaluation that must have been observed in runtime (which next step in normal flow must be
+    chosen to form the path). If we detect that for any control flow step we would need to output multiple
+    values at time (more than one registered next step of control flow step) - we raise error.
+
+    To detect problem (2) - we only let number of all different condition steps spotted in our traversal of
+    execution graph (while checking (1)) to be the max number condition steps in a single path from graph start node
+    to parent of problematic step with >= 2 parents.
 
     Beware that the latter part of algorithm has quite bad time complexity in general case.
     Worst part of algorithm runs at O(V^4) - at least taking coarse, worst-case estimations.
-    In fact, there is not so bad:
+    In fact, for reasonable workflows we can expect this is not so bad:
     * The number of step nodes with multiple parents that we loop over in main loop, reduces the number of
     steps we iterate through in inner loops, as we are dealing with DAG (with quite limited amount of edges)
     and for each multi-parent node takes at least two other nodes (to construct a suspicious group) -
@@ -420,7 +456,7 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     )  # O(V+E)
     if len(steps_with_more_than_one_parent) == 0:
         return None
-    reversed_steps_graph = construct_reversed_steps_graph(
+    reversed_steps_graph = construct_reversed_graph_with_steps_only(
         execution_graph=execution_graph
     )  # O(V+E)
     reversed_topological_order = list(
@@ -449,7 +485,7 @@ def detect_steps_with_more_than_one_parent_step(execution_graph: DiGraph) -> Set
     return {key for key, value in steps_parents.items() if len(value) > 1}
 
 
-def construct_reversed_steps_graph(execution_graph: DiGraph) -> DiGraph:
+def construct_reversed_graph_with_steps_only(execution_graph: DiGraph) -> DiGraph:
     reversed_steps_graph = execution_graph.reverse()
     for node, node_data in list(reversed_steps_graph.nodes(data=True)):
         if node_data.get("kind") != STEP_NODE_KIND:
@@ -462,65 +498,68 @@ def verify_multi_parent_step_execution_paths(
     reversed_topological_order: List[str],
     step: str,
 ) -> None:
-    condition_steps_successors = defaultdict(set)
-    max_conditions_steps = 0
-    for normal_flow_predecessor in reversed_steps_graph.successors(step):  # O(V)
+    control_flow_steps_successors = defaultdict(set)
+    max_conditions_steps_in_execution_branch = 0
+    for parent_of_investigated_step in reversed_steps_graph.successors(step):  # O(V)
         reversed_flow_path = (
-            construct_reversed_path_to_multi_parent_step_parent(  # O(E) -> O(V^2)
-                reversed_steps_graph=reversed_steps_graph,
-                reversed_topological_order=reversed_topological_order,
-                parent_step=normal_flow_predecessor,
+            construct_path_to_step_through_selected_parent(  # O(E) -> O(V^2)
+                graph=reversed_steps_graph,
+                topological_order=reversed_topological_order,
+                parent_step=parent_of_investigated_step,
                 step=step,
             )
         )
         (
-            condition_steps_successors,
+            control_flow_steps_successors,
             condition_steps,
-        ) = denote_condition_steps_successors_in_normal_flow(  # O(V)
+        ) = denote_flow_control_steps_successors_in_normal_flow(  # O(V)
             reversed_steps_graph=reversed_steps_graph,
             reversed_flow_path=reversed_flow_path,
-            condition_steps_successors=condition_steps_successors,
+            control_flow_steps_successors=control_flow_steps_successors,
         )
-        max_conditions_steps = max(condition_steps, max_conditions_steps)
-    if len(condition_steps_successors) > max_conditions_steps:
-        raise AmbiguousPathDetected(
-            f"In execution graph, detected collision of branches that originate in different condition steps."
+        max_conditions_steps_in_execution_branch = max(
+            condition_steps, max_conditions_steps_in_execution_branch
         )
-    for condition_step, potential_next_steps in condition_steps_successors.items():
+    if len(control_flow_steps_successors) > max_conditions_steps_in_execution_branch:
+        raise ConditionalBranchesClashError(
+            public_message=f"In execution graph, detected collision of branches that originate "
+            f"in different flow-control steps. When using flow control step you create "
+            f"a sub-workflow, which cannot reach any step from the outside.",
+            context="workflow_compilation | execution_graph_construction",
+        )
+    for condition_step, potential_next_steps in control_flow_steps_successors.items():
         if len(potential_next_steps) > 1:
-            raise AmbiguousPathDetected(
-                f"In execution graph, condition step: {condition_step} creates ambiguous execution paths."
+            raise ConditionalBranchesClashError(
+                public_message=f"In execution graph, in flow-control step: {condition_step} there are originated "
+                f"workflow branches that clashes together.",
+                context="workflow_compilation | execution_graph_construction",
             )
 
 
-def construct_reversed_path_to_multi_parent_step_parent(
-    reversed_steps_graph: nx.DiGraph,
-    reversed_topological_order: List[str],
+def construct_path_to_step_through_selected_parent(
+    graph: nx.DiGraph,
+    topological_order: List[str],
     parent_step: str,
     step: str,
 ) -> List[str]:
-    normal_flow_path_nodes = nx.descendants(reversed_steps_graph, parent_step)
+    normal_flow_path_nodes = nx.descendants(graph, parent_step)
     normal_flow_path_nodes.add(parent_step)
     normal_flow_path_nodes.add(step)
-    return [n for n in reversed_topological_order if n in normal_flow_path_nodes]
+    return [n for n in topological_order if n in normal_flow_path_nodes]
 
 
-def denote_condition_steps_successors_in_normal_flow(
+def denote_flow_control_steps_successors_in_normal_flow(
     reversed_steps_graph: nx.DiGraph,
     reversed_flow_path: List[str],
-    condition_steps_successors: Dict[str, Set[str]],
+    control_flow_steps_successors: Dict[str, Set[str]],
 ) -> Tuple[Dict[str, Set[str]], int]:
     conditions_steps = 0
     if len(reversed_flow_path) == 0:
-        return condition_steps_successors, conditions_steps
+        return control_flow_steps_successors, conditions_steps
     previous_node = reversed_flow_path[0]
     for node in reversed_flow_path[1:]:
         if is_flow_control_step(execution_graph=reversed_steps_graph, node=node):
-            condition_steps_successors[node].add(previous_node)
+            control_flow_steps_successors[node].add(previous_node)
             conditions_steps += 1
         previous_node = node
-    return condition_steps_successors, conditions_steps
-
-
-def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
-    return execution_graph.nodes[node].get(FLOW_CONTROL_NODE_KEY, False)
+    return control_flow_steps_successors, conditions_steps

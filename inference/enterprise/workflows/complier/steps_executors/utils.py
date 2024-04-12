@@ -3,11 +3,6 @@ from typing import Any, Dict, Generator, Iterable, List, TypeVar, Union
 import numpy as np
 
 from inference.enterprise.workflows.complier.steps_executors.types import OutputsLookup
-from inference.enterprise.workflows.complier.utils import (
-    get_step_selector_from_its_output,
-    is_input_selector,
-    is_step_output_selector,
-)
 from inference.enterprise.workflows.entities.steps import (
     LMM,
     AbsoluteStaticCrop,
@@ -25,6 +20,11 @@ from inference.enterprise.workflows.entities.validators import (
     is_selector,
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_step_selector_from_its_output,
+    is_input_selector,
+    is_step_output_selector,
+)
 
 T = TypeVar("T")
 

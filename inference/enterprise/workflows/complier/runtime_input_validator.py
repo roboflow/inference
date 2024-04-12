@@ -9,15 +9,15 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
     IMAGE_VALUE_KEY,
     PARENT_ID_KEY,
 )
-from inference.enterprise.workflows.complier.utils import (
-    get_nodes_of_specific_kind,
-    is_input_selector,
-)
 from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
 from inference.enterprise.workflows.entities.validators import get_last_selector_chunk
 from inference.enterprise.workflows.errors import (
     InvalidStepInputDetected,
     RuntimeParameterMissingError,
+)
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
+    get_nodes_of_specific_kind,
+    is_input_selector,
 )
 
 

@@ -1,11 +1,11 @@
 from typing import Any, Dict, List
 
-from inference.enterprise.workflows.complier.utils import (
+from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
     is_step_output_selector,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
 
 
 class StepCache:
