@@ -6,6 +6,7 @@ from threading import Thread
 from typing import Callable, List, Optional
 
 import numpy as np
+import requests
 from tqdm import tqdm
 
 from inference_cli.lib.benchmark.results_gathering import (
@@ -164,12 +165,16 @@ def execute_api_request(
         results_collector.register_inference_duration(
             batch_size=request_batch_size, duration=duration
         )
-    except Exception:
+    except Exception as exc:
         duration = time.time() - start
         results_collector.register_inference_duration(
             batch_size=request_batch_size, duration=duration
         )
-        results_collector.register_error(batch_size=request_batch_size)
+        status_code = exc.__class__.__name__
+        if issubclass(exc, requests.exceptions.HTTPError):
+            status_code = str(exc.response.status_code)
+
+        results_collector.register_error(batch_size=request_batch_size, status_code=status_code)
 
 
 def display_benchmark_statistics(
