@@ -18,6 +18,7 @@ base_url = os.environ.get("BASE_URL", "http://localhost")
 
 MINIMUM_FPS = int(os.environ.get("MINIMUM_FPS", 1))
 
+
 def bool_env(val):
     if isinstance(val, bool):
         return val
@@ -54,17 +55,17 @@ def test_speed():
         for _ in range(250):
             start = time.time()
             res = requests.post(
-                    f"{base_url}:{port}/coco/3?"
-                    + "&".join(
-                        [
-                            f"api_key={api_key}",
-                            f"confidence=0.5",
-                            f"overlap=0.5",
-                        ]
-                    ),
-                    data=img_str,
-                    headers={"Content-Type": "application/json"},
-                )
+                f"{base_url}:{port}/coco/3?"
+                + "&".join(
+                    [
+                        f"api_key={api_key}",
+                        f"confidence=0.5",
+                        f"overlap=0.5",
+                    ]
+                ),
+                data=img_str,
+                headers={"Content-Type": "application/json"},
+            )
             try:
                 res.raise_for_status()
                 times.append(time.time() - start)
@@ -81,6 +82,7 @@ def test_speed():
     except Exception as e:
         raise Exception(f"Error in speed test: {e}")
 
+
 @pytest.fixture(scope="session", autouse=True)
 def setup():
     try:
@@ -89,7 +91,7 @@ def setup():
         success = True
     except:
         success = False
-    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
+    MAX_WAIT = int(os.getenv("MAX_WAIT", 30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
@@ -103,4 +105,3 @@ def setup():
             success = False
         if waited > MAX_WAIT:
             raise Exception("Test server failed to start")
-

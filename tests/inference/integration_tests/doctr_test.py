@@ -27,10 +27,12 @@ TESTS = [
     }
 ]
 
+
 def bool_env(val):
     if isinstance(val, bool):
         return val
     return val.lower() in ["true", "1", "t", "y", "yes"]
+
 
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_DOCTR_TEST", False)), reason="Skipping DocTR test"
@@ -74,7 +76,7 @@ def setup():
         success = True
     except:
         success = False
-    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
+    MAX_WAIT = int(os.getenv("MAX_WAIT", 30))
     waited = 0
     while not success:
         print("Waiting for server to start...")
