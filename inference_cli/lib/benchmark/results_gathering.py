@@ -36,7 +36,7 @@ class InferenceStatistics:
             p75_inference_latency_ms=self.p75_inference_latency_ms,
             p90_inference_latency_ms=self.p90_inference_latency_ms,
             error_rate=self.error_rate,
-            error_status_codes=str(self.error_status_codes),
+            error_status_codes=self.error_status_codes,
         )
 
 
