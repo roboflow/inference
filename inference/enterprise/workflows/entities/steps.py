@@ -69,7 +69,7 @@ from inference.enterprise.workflows.errors import (
 
 class OutputDefinition(BaseModel):
     name: str
-    kind: List[Kind]
+    kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
 
 
 class StepInterface(GraphNone, metaclass=ABCMeta):

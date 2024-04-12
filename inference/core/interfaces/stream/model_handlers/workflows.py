@@ -11,6 +11,7 @@ from inference.enterprise.workflows.complier.entities import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
     WorkflowsActiveLearningMiddleware,
 )
+from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 
 
 def run_video_frame_through_workflow(
@@ -43,3 +44,19 @@ def run_video_frame_through_workflow(
             background_tasks=background_tasks,
         )
     ]
+
+
+def run_workflow(
+    video_frames: List[VideoFrame],
+    workflows_parameters: Optional[dict],
+    execution_engine: ExecutionEngine,
+    image_input_name: str,
+) -> List[dict]:
+    if len(video_frames) > 1:
+        logger.warning(
+            f"Workflows in InferencePipeline do not support multiple video sources. Using the first video frame."
+        )
+    if workflows_parameters is None:
+        workflows_parameters = {}
+    workflows_parameters[image_input_name] = video_frames[0].image
+    return [execution_engine.run(runtime_parameters=workflows_parameters)]
