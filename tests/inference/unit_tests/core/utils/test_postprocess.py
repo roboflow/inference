@@ -531,6 +531,8 @@ def test_post_process_polygons_when_stretching_resize_used() -> None:
         ([[(10, 10), (20, 20), (10, 20)]], (200, 20), (200, 200), {}, np.array([[(100, 10), (200, 20), (100, 20)]]), DoesNotRaise()),  # rectangular -> square (inflate horizontally)
         ([[(10, 100), (20, 200), (10, 200)]], (1000, 100), (100, 100), {}, np.array([[(10, 10), (20, 20), (10, 20)]]), DoesNotRaise()),  # rectangular -> square (shrink vertically)
         ([[(100, 10), (200, 20), (100, 20)]], (100, 1000), (100, 100), {}, np.array([[(10, 10), (20, 20), (10, 20)]]), DoesNotRaise()),  # rectangular -> square (shrink horizontally)
+        ([[(10, 10), (20, 20), (10, 20)]], (100, 200), (100*10.8, 200*9.6), {}, np.array([[(10*9.6, 10*10.8), (20*9.6, 20*10.8), (10*9.6, 20*10.8)]]), DoesNotRaise()),  # rectangular -> rectangular (inflate)
+        ([[(10, 10), (20, 20), (10, 20)]], (1080, 1920), (1080/10.8, 1920/9.6), {}, np.array([[(10/9.6, 10/10.8), (20/9.6, 20/10.8), (10/9.6, 20/10.8)]]), DoesNotRaise()),  # rectangular -> rectangular (shrink)
     ]
 )
 def test_post_process_polygons(polygons: List[List[Tuple[XCoord, YCoord]]], infer_shape: Tuple[Height, Width], origin_shape: Tuple[Height, Width], preproc: Dict[str, Any], expected_result: np.array, expected_exception: Exception) -> None:
