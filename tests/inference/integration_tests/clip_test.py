@@ -19,6 +19,7 @@ def bool_env(val):
         return val
     return val.lower() in ["true", "1", "t", "y", "yes"]
 
+
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_CLIP_TEST", False)), reason="Skipping CLIP test"
 )
@@ -71,7 +72,7 @@ def setup():
         success = True
     except:
         success = False
-    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
+    MAX_WAIT = int(os.getenv("MAX_WAIT", 30))
     waited = 0
     while not success:
         print("Waiting for server to start...")

@@ -53,7 +53,7 @@ def legacy_infer_with_image_url(
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
                     f"image={test['image_url']}",
-                    f'format={test.get("format", "json")}'
+                    f'format={test.get("format", "json")}',
                 ]
             )
         ),
@@ -78,7 +78,7 @@ def legacy_infer_with_base64_image(
                     f"api_key={api_key}",
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
-                    f'format={test.get("format", "json")}'
+                    f'format={test.get("format", "json")}',
                 ]
             ),
             data=img_str,
@@ -104,7 +104,7 @@ def legacy_infer_with_multipart_form_image(
                     f"api_key={api_key}",
                     f"confidence={test['confidence']}",
                     f"overlap={test['iou_threshold']}",
-                    f"format={test.get('format', 'json')}"
+                    f"format={test.get('format', 'json')}",
                 ]
             ),
             data=m,
@@ -153,7 +153,7 @@ def infer_request_with_base64_image(
         "confidence": test["confidence"],
         "iou_threshold": test["iou_threshold"],
         "api_key": api_key,
-        "visualize_predictions": test.get("format") is not None
+        "visualize_predictions": test.get("format") is not None,
     }
     return (
         requests.post(
@@ -461,10 +461,14 @@ def test_detection(test, res_function):
         raise Exception(f"Error in test {test['description']}: {e}")
 
 
-VISUALIZATION_TEST_PARAMS = [p for p in DETECTION_TEST_PARAMS if p[0]["type"] != "classification"]
+VISUALIZATION_TEST_PARAMS = [
+    p for p in DETECTION_TEST_PARAMS if p[0]["type"] != "classification"
+]
+
+
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_VISUALISATION_TESTS", False)),
-    reason="Skipping visualisation test"
+    reason="Skipping visualisation test",
 )
 @pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
 def test_visualization(test, res_function):
@@ -515,7 +519,7 @@ def setup():
     except:
         success = False
 
-    MAX_WAIT = int(os.getenv("MAX_WAIT",30))
+    MAX_WAIT = int(os.getenv("MAX_WAIT", 30))
     waited = 0
     while not success:
         print("Waiting for server to start...")

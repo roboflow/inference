@@ -64,7 +64,9 @@ def test_yolo_world_v1_m_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_roboflow(results)
     # then
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05,
+        detection_results.xyxy,
+        expected_detections.xyxy,
+        atol=0.05,
     ), "Boxes coordinates detection differ"
     assert np.allclose(
         detection_results.confidence, expected_detections.confidence, atol=1e-4
