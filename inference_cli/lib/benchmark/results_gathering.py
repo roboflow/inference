@@ -1,12 +1,12 @@
 from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 STATISTICS_FORMAT = """
-avg: {average_inference_latency_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}
+avg: {average_inference_latency_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}\t| errors: {error_status_codes}
 """.strip()
 
 
@@ -25,6 +25,7 @@ class InferenceStatistics:
     requests_per_second: float
     images_per_second: float
     error_rate: float
+    error_status_codes: Dict[str, int]
 
     def to_string(self) -> str:
         return STATISTICS_FORMAT.format(
@@ -34,6 +35,7 @@ class InferenceStatistics:
             p75_inference_latency_ms=self.p75_inference_latency_ms,
             p90_inference_latency_ms=self.p90_inference_latency_ms,
             error_rate=self.error_rate,
+            error_status_codes=self.error_status_codes,
         )
 
 
@@ -43,7 +45,7 @@ class ResultsCollector:
         self._benchmark_start: Optional[datetime] = None
         self._inference_details: List[Tuple[datetime, int, float]] = []
         self._benchmark_end: Optional[datetime] = None
-        self._errors: List[Tuple[datetime, int]] = []
+        self._errors: List[Tuple[datetime, int, str]] = []
 
     def start_benchmark(self) -> None:
         if self._benchmark_start is None:
@@ -52,8 +54,8 @@ class ResultsCollector:
     def register_inference_duration(self, batch_size: int, duration: float) -> None:
         self._inference_details.append((datetime.now(), batch_size, duration))
 
-    def register_error(self, batch_size: int) -> None:
-        self._errors.append((datetime.now(), batch_size))
+    def register_error(self, batch_size: int, status_code: str) -> None:
+        self._errors.append((datetime.now(), batch_size, status_code))
 
     def stop_benchmark(self) -> None:
         if self._benchmark_end is None:
@@ -94,7 +96,15 @@ class ResultsCollector:
             if window is None or len(stats) < window
             else stats[0][0]
         )
-        errors_number = len([e for e in errors if e[0] >= start])
+
+        error_status_codes = {}
+        errors_number = 0
+        for e in errors:
+            if e[0] < start:
+                continue
+            error_status_codes[e[2]] = error_status_codes.setdefault(e[2], 0) + 1
+            errors_number += 1
+
         error_rate = round(errors_number / inferences_made * 100, 2)
         duration = (end_time - start).total_seconds()
         requests_per_second = round(inferences_made / duration, 1)
@@ -113,4 +123,5 @@ class ResultsCollector:
             requests_per_second=requests_per_second,
             images_per_second=images_per_second,
             error_rate=error_rate,
+            error_status_codes=error_status_codes,
         )
