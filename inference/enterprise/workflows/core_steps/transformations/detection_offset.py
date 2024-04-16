@@ -1,8 +1,9 @@
 from copy import deepcopy
-from typing import Annotated, Any, Callable, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Literal, Tuple, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     DETECTION_ID_KEY,

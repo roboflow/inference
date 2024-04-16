@@ -1,7 +1,8 @@
 from copy import deepcopy
-from typing import Annotated, Any, Callable, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_ID_KEY,

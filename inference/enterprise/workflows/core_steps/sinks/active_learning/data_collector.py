@@ -1,7 +1,8 @@
-from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from fastapi import BackgroundTasks
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, confloat
+from typing_extensions import Annotated
 
 from inference.core.utils.image_utils import load_image
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
