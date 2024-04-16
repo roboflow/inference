@@ -2,7 +2,6 @@ import statistics
 from collections import Counter, defaultdict
 from enum import Enum
 from typing import (
-    Annotated,
     Any,
     Dict,
     Generator,
@@ -14,6 +13,7 @@ from typing import (
     Type,
     Union,
 )
+from typing_extensions import Annotated
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
