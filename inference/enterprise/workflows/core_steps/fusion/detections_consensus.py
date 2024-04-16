@@ -13,10 +13,10 @@ from typing import (
     Type,
     Union,
 )
-from typing_extensions import Annotated
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from typing_extensions import Annotated
 
 from inference.enterprise.workflows.complier.steps_executors.constants import (
     DETECTION_ID_KEY,
