@@ -1,40 +1,48 @@
-import itertools
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+# `workflows block` creation crash course
 
-import numpy as np
+At start, we need to see what is required to be implemented (via `block` base class interface). That would
+be the following methods:
+```python
+class WorkflowBlock(ABC):
+
+    @classmethod
+    @abstractmethod
+    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        pass
+
+    @abstractmethod
+    async def run_locally(
+        self,
+        *args,
+        **kwargs,
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        pass
+```
+
+Let's start from input manifest assuming we want to build cropping `block`. We would need the following as
+input:
+* image - in `workflows` it may come as selector either to workflow input or other step output
+* predictions - predictions with bounding boxes (made against the image) - that we can use to crop
+
+Implementation:
+```python
+from typing import Literal, Union
+
 from pydantic import AliasChoices, ConfigDict, Field
-
-from inference.core.utils.image_utils import ImageType, load_image
-from inference.enterprise.workflows.complier.steps_executors.constants import (
-    CENTER_X_KEY,
-    CENTER_Y_KEY,
-    DETECTION_ID_KEY,
-    HEIGHT_KEY,
-    IMAGE_TYPE_KEY,
-    IMAGE_VALUE_KEY,
-    ORIGIN_COORDINATES_KEY,
-    ORIGIN_SIZE_KEY,
-    PARENT_ID_KEY,
-    WIDTH_KEY,
-)
-from inference.enterprise.workflows.core_steps.common.utils import (
-    detection_to_xyxy,
-    extract_origin_size_from_images,
-)
-from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    PARENT_ID_KIND,
-    FlowControl,
     InferenceImageSelector,
     OutputStepImageSelector,
     StepOutputSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
-    WorkflowBlock,
     WorkflowBlockManifest,
 )
 
@@ -64,6 +72,17 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.my_object_detection_model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
+```
+
+Then we define implementation starting from class method that will provide manifest:
+
+```python
+from typing import Type
+
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 class CropBlock(WorkflowBlock):
@@ -71,6 +90,24 @@ class CropBlock(WorkflowBlock):
     @classmethod
     def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+```
+
+As an output we are going to provide cropped images, so we need to declare tha:
+
+```python
+from typing import List
+
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlock,
+    OutputDefinition
+)
+from inference.enterprise.workflows.entities.types import (
+    IMAGE_KIND,
+    PARENT_ID_KIND,
+)
+
+
+class CropBlock(WorkflowBlock):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -78,6 +115,24 @@ class CropBlock(WorkflowBlock):
             OutputDefinition(name="crops", kind=[IMAGE_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
+```
+
+In the current version, it is required to define `parent_id` for each element that we output from steps.
+
+Finally, we need to provide implementation for the logic:
+```python
+from typing import List, Tuple, Any
+import itertools
+import numpy as np
+
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlock,
+    FlowControl,
+)
+
+
+class CropBlock(WorkflowBlock):
+
 
     async def run_locally(
         self,
@@ -101,7 +156,6 @@ class CropBlock(WorkflowBlock):
         if len(result) == 0:
             return result, FlowControl(mode="terminate_branch")
         return result, FlowControl(mode="pass")
-
 
 def crop_image(
     image: np.ndarray,
@@ -130,3 +184,13 @@ def crop_image(
             }
         )
     return crops
+```
+
+Point out few details:
+* image come as list of dicts - each element is standard `inference` image description ("type" and "value" provided
+so `inference` loader can be used)
+* results of steps are provided as **list of dicts** - each element of that list ships two keys - `crops` 
+and `parent_id` - which are exactly matching outputs that we defined previously.
+* we use `FlowControl` here - which is totally optional, but if result is a tuple with second element being
+`FlowControl` object - step may influence execution of `wokrflow` - in this case, we decide to `terminate_branch`
+(stop computations that follows this `step`) - given that we are not able to find any crops after processing.
