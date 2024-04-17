@@ -100,7 +100,8 @@ Result is build from the outputs of all models. Always one of field `step_3_pred
     "specification": {
         "version": "1.0",
         "inputs": [
-            {"type": "InferenceImage", "name": "image"}
+            {"type": "InferenceImage", "name": "image"},
+            {"type": "InferenceParameter", "name": "confidence_threshold"}
         ],
         "steps": [
             {
@@ -125,7 +126,7 @@ Result is build from the outputs of all models. Always one of field `step_3_pred
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
                 "confidence": 0.5,
-                "iou_threshold": 0.4
+                "iou_threshold": "$inputs.confidence_threshold"
             },
             {
                 "type": "ObjectDetectionModel",
