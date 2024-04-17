@@ -7,8 +7,8 @@ from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Union
 
 import cv2
-from numpy import ndarray
 import supervision as sv
+from numpy import ndarray
 
 from inference.core import logger
 from inference.core.env import (
@@ -23,8 +23,8 @@ from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
     VideoFrame,
-    VideoFrameGrabber,
-    VideoSourceIdentifier
+    VideoFrameProducer,
+    VideoSourceIdentifier,
 )
 from inference.core.interfaces.camera.exceptions import (
     EndOfStreamError,
@@ -130,19 +130,19 @@ def lock_state_transition(
     return locked_executor
 
 
-class CV2VideoFrameGrabber(VideoFrameGrabber):
+class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self.stream = cv2.VideoCapture(video)
 
     def isOpened(self) -> bool:
         return self.stream.isOpened()
-    
+
     def grab(self) -> bool:
         return self.stream.grab()
-    
+
     def retrieve(self) -> tuple[bool, ndarray]:
         return self.stream.retrieve()
-    
+
     def initialize_source_properties(self, properties: Dict[str, float]) -> None:
         for property_id, value in properties.items():
             cv2_id = getattr(cv2, "CAP_PROP_" + property_id.upper())
@@ -321,7 +321,7 @@ class VideoSource:
         source_id: Optional[int],
     ):
         self._stream_reference = stream_reference
-        self._video: Optional[VideoFrameGrabber] = None
+        self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._frames_buffer = frames_buffer
         self._status_update_handlers = status_update_handlers
@@ -557,7 +557,7 @@ class VideoSource:
         self._change_state(target_state=StreamState.RESTARTING)
         self._playback_allowed = Event()
         self._frames_buffering_allowed = True
-        self._video: Optional[VideoFrameGrabber] = None
+        self._video: Optional[VideoFrameProducer] = None
         self._source_properties: Optional[SourceProperties] = None
         self._start()
 
@@ -566,7 +566,7 @@ class VideoSource:
         if callable(self._stream_reference):
             self._video = self._stream_reference()
         else:
-            self._video = CV2VideoFrameGrabber(self._stream_reference)
+            self._video = CV2VideoFrameProducer(self._stream_reference)
         if not self._video.isOpened():
             self._change_state(target_state=StreamState.ERROR)
             raise SourceConnectionError(
@@ -801,7 +801,7 @@ class VideoConsumer:
 
     def consume_frame(
         self,
-        video: VideoFrameGrabber,
+        video: VideoFrameProducer,
         declared_source_fps: Optional[float],
         buffer: Queue,
         frames_buffering_allowed: bool,
@@ -842,7 +842,7 @@ class VideoConsumer:
 
     def _consume_stream_frame(
         self,
-        video: VideoFrameGrabber,
+        video: VideoFrameProducer,
         declared_source_fps: Optional[float],
         frame_timestamp: datetime,
         buffer: Queue,
@@ -952,7 +952,7 @@ class VideoConsumer:
     def _process_stream_frame_dropping_oldest(
         self,
         frame_timestamp: datetime,
-        video: VideoFrameGrabber,
+        video: VideoFrameProducer,
         buffer: Queue,
         source_id: Optional[int],
     ) -> bool:
@@ -1069,7 +1069,7 @@ def send_video_source_status_update(
 def decode_video_frame_to_buffer(
     frame_timestamp: datetime,
     frame_id: int,
-    video: VideoFrameGrabber,
+    video: VideoFrameProducer,
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],

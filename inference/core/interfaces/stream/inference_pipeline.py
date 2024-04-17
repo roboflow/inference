@@ -25,7 +25,7 @@ from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
     VideoFrame,
-    VideoSourceIdentifier
+    VideoSourceIdentifier,
 )
 from inference.core.interfaces.camera.utils import multiplex_videos
 from inference.core.interfaces.camera.video_source import (
@@ -68,8 +68,6 @@ class SinkMode(Enum):
     ADAPTIVE = "adaptive"
     BATCH = "batch"
     SEQUENTIAL = "sequential"
-
-
 
 
 class InferencePipeline:

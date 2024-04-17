@@ -1,6 +1,9 @@
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
-from inference.core.interfaces.camera.entities import StatusUpdate, VideoSourceIdentifier
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    VideoSourceIdentifier,
+)
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
