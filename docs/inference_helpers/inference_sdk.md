@@ -502,9 +502,10 @@ CLIENT.unload_all_models()
 ```python
 from inference_sdk import InferenceHTTPClient
 
+# Replace ROBOFLOW_API_KEY with your Roboflow API Key
 CLIENT = InferenceHTTPClient(
-    "http://127.0.0.1:9001",
-    "XXX",
+    api_url="http://localhost:9001",
+    api_key="ROBOFLOW_API_KEY"
 )
 
 # for older versions of server than v0.9.21 use: CLIENT.infer_from_workflow(...) 
