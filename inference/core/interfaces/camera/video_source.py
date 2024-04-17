@@ -161,6 +161,9 @@ class CV2VideoFrameProducer(VideoFrameProducer):
             fps=fps,
         )
 
+    def release(self):
+        self.stream.release()
+
 
 class VideoSource:
     @classmethod
