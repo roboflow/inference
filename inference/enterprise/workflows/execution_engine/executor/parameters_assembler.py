@@ -54,6 +54,8 @@ def retrieve_step_output(
     step_name: str,
 ) -> Any:
     value = execution_cache.get_output(selector=selector)
+    if not execution_cache.output_represent_batch(selector=selector):
+        value = value[0]
     if accepts_batch_input:
         return value
     if issubclass(type(value), list):

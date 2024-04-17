@@ -40,6 +40,10 @@ class WorkflowBlock(ABC):
     ) -> List[OutputDefinition]:
         return cls.describe_outputs()
 
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
     @abstractmethod
     async def run_locally(
         self,
@@ -57,6 +61,3 @@ class WorkflowBlock(ABC):
             "Block has no implementation for run_remotely() method - using run_locally() instead"
         )
         return await self.run_locally(*args, **kwargs)
-
-    def accepts_batch_input(self) -> bool:
-        return True

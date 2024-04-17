@@ -136,6 +136,7 @@ async def execute_step(
     execution_cache.register_step(
         step_name=step_name,
         output_definitions=step_outputs,
+        compatible_with_batches=step_instance.accepts_batch_input(),
     )
     step_parameters = assembly_step_parameters(
         step_manifest=step_manifest,

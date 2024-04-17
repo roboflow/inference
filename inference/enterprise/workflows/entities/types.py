@@ -13,7 +13,7 @@ class Kind(BaseModel):
 
 
 WILDCARD_KIND = Kind(name="*", description="Equivalent of any element")
-IMAGE_KIND = Kind(name="image", description="Image in workflows")
+IMAGE_KIND = Kind(name="Batch[image]", description="Image in workflows")
 ROBOFLOW_MODEL_ID_KIND = Kind(name="roboflow_model_id", description="Roboflow model id")
 ROBOFLOW_PROJECT_KIND = Kind(
     name="roboflow_project", description="Roboflow project name"
@@ -28,43 +28,47 @@ LIST_OF_VALUES_KIND = Kind(
 BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag")
 INTEGER_KIND = Kind(name="integer", description="Integer value")
 STRING_KIND = Kind(name="string", description="String value")
+BATCH_OF_STRING_KIND = Kind(name="Batch[string]", description="String value")
 TOP_CLASS_KIND = Kind(
-    name="top_class",
+    name="Batch[top_class]",
     description="String value representing top class predicted by classification model",
 )
 FLOAT_KIND = Kind(name="float", description="Float value")
 DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
+BATCH_OF_DICTIONARY_KIND = Kind(name="Batch[dictionary]", description="Dictionary")
 CLASSIFICATION_PREDICTION_KIND = Kind(
-    name="classification_prediction",
+    name="Batch[classification_prediction]",
     description="'predictions' key from Roboflow classifier output",
 )
 OBJECT_DETECTION_PREDICTION_KIND = Kind(
-    name="object_detection_prediction",
+    name="Batch[object_detection_prediction]",
     description="'predictions' key from Roboflow object detection model output",
 )
 INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
-    name="instance_segmentation_prediction",
+    name="Batch[instance_segmentation_prediction]",
     description="'predictions' key from Roboflow instance segmentation model output",
 )
 KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
-    name="keypoint_detection_prediction",
+    name="Batch[keypoint_detection_prediction]",
     description="'predictions' key from Roboflow keypoint detection model output",
 )
 QR_CODE_DETECTION_KIND = Kind(
-    name="qr_code_detection", description="Roboflow prediction with QR code detection"
+    name="Batch[qr_code_detection]",
+    description="Roboflow prediction with QR code detection",
 )
 BAR_CODE_DETECTION_KIND = Kind(
-    name="bar_code_detection", description="Roboflow prediction with barcode detection"
+    name="Batch[bar_code_detection]",
+    description="Roboflow prediction with barcode detection",
 )
 
 PREDICTION_TYPE_KIND = Kind(
-    name="prediction_type", description="String value with type of prediction"
+    name="Batch[prediction_type]", description="String value with type of prediction"
 )
 PARENT_ID_KIND = Kind(
-    name="parent_id", description="Identifier of parent for step output"
+    name="Batch[parent_id]", description="Identifier of parent for step output"
 )
 IMAGE_METADATA_KIND = Kind(
-    name="image_metadata",
+    name="Batch[image_metadata]",
     description="Dictionary with image metadata required by supervision",
 )
 

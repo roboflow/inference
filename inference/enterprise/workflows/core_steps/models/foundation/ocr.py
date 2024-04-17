@@ -27,6 +27,7 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 )
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_STRING_KIND,
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
@@ -89,7 +90,7 @@ class OCRModelBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]

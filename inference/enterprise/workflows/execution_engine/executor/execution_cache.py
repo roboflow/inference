@@ -16,7 +16,9 @@ class StepCache:
 
     @classmethod
     def init(
-        cls, step_name: str, output_definitions: List[OutputDefinition]
+        cls,
+        step_name: str,
+        output_definitions: List[OutputDefinition],
     ) -> "StepCache":
         cache_content = {output.name: [] for output in output_definitions}
         return cls(step_name=step_name, cache_content=cache_content)
@@ -59,13 +61,21 @@ class ExecutionCache:
 
     @classmethod
     def init(cls) -> "ExecutionCache":
-        return cls(cache_content={})
+        return cls(cache_content={}, batches_compatibility={})
 
-    def __init__(self, cache_content: Dict[str, StepCache]):
+    def __init__(
+        self,
+        cache_content: Dict[str, StepCache],
+        batches_compatibility: Dict[str, bool],
+    ):
         self._cache_content = cache_content
+        self._batches_compatibility = batches_compatibility
 
     def register_step(
-        self, step_name: str, output_definitions: List[OutputDefinition]
+        self,
+        step_name: str,
+        output_definitions: List[OutputDefinition],
+        compatible_with_batches: bool,
     ) -> None:
         if self.contains_step(step_name=step_name):
             return None
@@ -74,6 +84,7 @@ class ExecutionCache:
             output_definitions=output_definitions,
         )
         self._cache_content[step_name] = step_cache
+        self._batches_compatibility[step_name] = compatible_with_batches
 
     def register_step_outputs(
         self, step_name: str, outputs: List[Dict[str, Any]]
@@ -146,6 +157,21 @@ class ExecutionCache:
                 context="workflow_execution | step_output_registration",
             )
         return self._cache_content[step_name].get_all_outputs()
+
+    def output_represent_batch(self, selector: str) -> bool:
+        if not self.contains_value(selector=selector):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get batches compatibility status "
+                f"from step {selector} which is not register in cache. That behavior should be prevented by "
+                f"workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        step_selector = get_step_selector_from_its_output(step_output_selector=selector)
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        return self._batches_compatibility[step_name]
 
     def contains_value(self, selector: Any) -> bool:
         if not is_step_output_selector(selector_or_value=selector):
