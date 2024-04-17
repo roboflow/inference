@@ -14,6 +14,9 @@ class BlockDescription(BaseModel):
     outputs_manifest: List[OutputDefinition] = Field(
         description="Definition of step outputs and their kinds"
     )
+    fully_qualified_class_name: str = Field(
+        description="Fully qualified class name of block implementation."
+    )
 
 
 class BlocksDescription(BaseModel):

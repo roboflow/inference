@@ -34,6 +34,7 @@ def describe_available_blocks() -> BlocksDescription:
             BlockDescription(
                 block_manifest=block_manifest,
                 outputs_manifest=outputs_manifest,
+                fully_qualified_class_name=block.identifier,
             )
         )
     declared_kinds = list(set(declared_kinds))

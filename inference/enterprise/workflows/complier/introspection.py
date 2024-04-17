@@ -12,6 +12,8 @@ from inference.enterprise.workflows.entities.types import WILDCARD_KIND, Kind
 from inference.enterprise.workflows.entities.workflows_specification import (
     ALL_BLOCKS_CLASSES,
 )
+from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import \
+    get_full_type_name
 
 
 def describe_available_blocks() -> BlocksDescription:
@@ -31,6 +33,7 @@ def describe_available_blocks() -> BlocksDescription:
             BlockDescription(
                 block_manifest=block_manifest,
                 outputs_manifest=outputs_manifest,
+                fully_qualified_class_name=get_full_type_name(t=type(block)),
             )
         )
     declared_kinds = list(set(declared_kinds))
