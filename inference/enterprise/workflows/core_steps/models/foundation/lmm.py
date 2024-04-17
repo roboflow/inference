@@ -24,7 +24,6 @@ from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_STRING_KIND,
-    BATCH_OF_STRING_STRING_KIND,
     DICTIONARY_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
@@ -123,7 +122,7 @@ class LMMBlock(WorkflowBlock):
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[BATCH_OF_DICTIONARY_KIND]),
-            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_STRING_KIND]),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
