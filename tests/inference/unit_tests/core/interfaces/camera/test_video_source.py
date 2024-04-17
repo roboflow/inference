@@ -29,7 +29,7 @@ from inference.core.interfaces.camera.video_source import (
     VideoConsumer,
     VideoSource,
     decode_video_frame_to_buffer,
-    discover_source_properties,
+    CV2VideoFrameProducer,
     drop_single_frame_from_buffer,
     get_fps_if_tick_happens_now,
     get_from_queue,
@@ -119,10 +119,10 @@ def test_discover_source_properties_when_local_file_given(
     local_video_path: str,
 ) -> None:
     # given
-    video = cv2.VideoCapture(local_video_path)
+    video = CV2VideoFrameProducer(local_video_path)
 
     # when
-    result = discover_source_properties(stream=video)
+    result = video.discover_source_properties()
 
     # then
     assert result.is_file is True, "Path refers to video file, not stream"
