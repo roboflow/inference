@@ -44,6 +44,10 @@ class WorkflowBlock(ABC):
     def accepts_batch_input(cls) -> bool:
         return True
 
+    @classmethod
+    def produces_batch_output(cls) -> bool:
+        return True
+
     @abstractmethod
     async def run_locally(
         self,
