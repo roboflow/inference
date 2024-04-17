@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
 
 import cv2
 import supervision as sv
@@ -140,7 +140,7 @@ class CV2VideoFrameProducer(VideoFrameProducer):
     def grab(self) -> bool:
         return self.stream.grab()
 
-    def retrieve(self) -> tuple[bool, ndarray]:
+    def retrieve(self) -> Tuple[bool, ndarray]:
         return self.stream.retrieve()
 
     def initialize_source_properties(self, properties: Dict[str, float]) -> None:
