@@ -5,18 +5,19 @@ import requests
 from pathlib import Path
 from PIL import Image
 
-from batch_regression_test import (
-    INFER_RESPONSE_FUNCTIONS
-)
+from batch_regression_test import INFER_RESPONSE_FUNCTIONS
 
 PORT = os.getenv("PORT", 9001)
 BASE_URL = os.getenv("BASE_URL", "http://localhost")
+
 
 def main():
     # Utility function to populate the expected responses for the tests. This likely shouldn't be run very often and should only be run when hosted inference is in working order.
 
     # Load tests.json
-    with open(os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "r") as f:
+    with open(
+        os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "r"
+    ) as f:
         tests = json.load(f)
 
     # Iterate through list of tests
@@ -31,7 +32,11 @@ def main():
             test["expected_response"] = dict()
             for response_function in INFER_RESPONSE_FUNCTIONS:
                 response, image_type = response_function(
-                    test, port=PORT, api_key=api_key, base_url=BASE_URL, batch_size=test["batch_size"]
+                    test,
+                    port=PORT,
+                    api_key=api_key,
+                    base_url=BASE_URL,
+                    batch_size=test["batch_size"],
                 )
                 try:
                     response.raise_for_status()
@@ -45,7 +50,9 @@ def main():
             del test["pil_image"]
 
     # Save the response to a file
-    with open(os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "w") as f:
+    with open(
+        os.path.join(Path(__file__).resolve().parent, "batch_tests.json"), "w"
+    ) as f:
         json.dump(tests, f, indent=4)
 
 
