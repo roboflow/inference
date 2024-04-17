@@ -1268,7 +1268,7 @@ def test_source_properties_initialized_on_video_source_using_string_values(
     source.start()
 
     # then
-    source._video.set.assert_has_calls(
+    source._video.stream.set.assert_has_calls(
         [
             call(cv2.CAP_PROP_FRAME_WIDTH, 1281),
             call(cv2.CAP_PROP_FRAME_HEIGHT, 721),
