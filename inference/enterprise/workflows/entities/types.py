@@ -26,6 +26,7 @@ LIST_OF_VALUES_KIND = Kind(
     name="list_of_values", description="List of values of any types"
 )
 BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag")
+BATCH_OF_BOOLEAN_KIND = Kind(name="Batch[boolean]", description="Boolean flag batch")
 INTEGER_KIND = Kind(name="integer", description="Integer value")
 STRING_KIND = Kind(name="string", description="String value")
 BATCH_OF_STRING_KIND = Kind(name="Batch[string]", description="String value")
