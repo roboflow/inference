@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union, Tuple
 
 import numpy as np
 
@@ -74,7 +74,7 @@ class VideoFrameProducer:
     def grab(self) -> bool:
         raise NotImplementedError
 
-    def retrieve(self) -> tuple[bool, np.ndarray]:
+    def retrieve(self) -> Tuple[bool, np.ndarray]:
         raise NotImplementedError
 
     def release(self):
