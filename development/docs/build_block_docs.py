@@ -1,6 +1,7 @@
 import os
 import re
 from typing import List, Tuple
+from collections import defaultdict
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
@@ -29,6 +30,11 @@ BLOCK_DOCUMENTATION_TEMPLATE = """
 ## User Configuration
 
 {block_inputs}
+
+## Available Connections
+
+- inputs: {input_connections}
+- outputs: {output_connections}
 
 ## Input Bindings
 
@@ -190,6 +196,103 @@ def create_directory_if_not_exists(directory_path: str) -> None:
         os.makedirs(directory_path)
 
 
+def get_references_for_blocks(description) -> list:
+    result = []
+    for block in description["blocks"]:
+        block_title = get_class_name(block["fully_qualified_class_name"])
+        for property_name, property_definition in block["block_manifest"]["properties"].items():
+            union_elements = property_definition.get("anyOf", [property_definition])
+            for element in union_elements:
+                if not element.get("reference", False):
+                    continue
+                result.append((block_title, property_name, element["selected_element"], [e["name"] for e in element.get("kind", [])]))
+    return result
+
+
+def get_outputs_for_blocks(description) -> list:
+    result = []
+    for block in description["blocks"]:
+        block_title = get_class_name(block["fully_qualified_class_name"])
+        for output in block["outputs_manifest"]:
+            result.append((block_title, output["name"], output["kind"]))
+    return result
+
+
+def get_allowed_connections(
+    start_block: str,
+    blocks_references: list,
+    blocks_outputs: list,
+) -> list:
+    kind_major_step_output_references = defaultdict(list)
+    for block_type, field_name, selected_element, kind in blocks_references:
+        if selected_element != "step_output":
+            continue
+        for k in kind:
+            kind_major_step_output_references[k].append((block_type, field_name))
+    result = []
+    for output in blocks_outputs:
+        if output[0] != start_block:
+            continue
+        start_block_output_name = output[1]
+        for kind in output[2]:
+            considered_matches = kind_major_step_output_references.get(kind["name"], []) + kind_major_step_output_references.get("*", [])
+            for block_type, field_name in considered_matches:
+                if field_name == "*":
+                    continue
+                result.append((start_block, start_block_output_name, block_type, field_name))
+    return list(set(result))
+
+
+def describe_block(blocks_references, blocks_outputs, block_description):
+    block_data = {}
+
+    block_manifest = block_description["block_manifest"]
+    output_manifest = block_description["outputs_manifest"]
+
+    block_data["name"] = get_class_name(block_description["fully_qualified_class_name"])
+    block_data["inputs"] = []
+    for property_name, property_description in block_manifest["properties"].items():
+        block_data["inputs"].append(property_name)
+
+    block_data["outputs"] = []
+    for output in output_manifest:
+        block_data["outputs"].append(output['name'])
+
+    allowed_connections = get_allowed_connections(
+        get_class_name(block_description["fully_qualified_class_name"]),
+        blocks_references=blocks_references,
+        blocks_outputs=blocks_outputs,
+    )
+    block_data["connections"] = [connection[2] for connection in allowed_connections]
+    return block_data
+
+
+def compile_compatible_blocks(blocks_references, blocks_outputs, blocks_descriptions):
+    input_blocks = {}
+    output_blocks = {}
+
+    for block in blocks_descriptions.blocks:
+        block_data = describe_block(blocks_references, blocks_outputs, block.dict())
+        block_name = get_class_name(block.dict()["fully_qualified_class_name"])
+
+        for compatible_output_block in block_data["connections"]:
+            if compatible_output_block not in input_blocks:
+                input_blocks[compatible_output_block] = []
+            if block_name not in output_blocks:
+                output_blocks[block_name] = []
+
+            input_blocks[compatible_output_block].append(block_name)
+            output_blocks[block_name].append(compatible_output_block)
+
+    for k, v in input_blocks.items():
+        input_blocks[k] = list(set(v))
+
+    for k, v in output_blocks.items():
+        output_blocks[k] = list(set(v))
+
+    return input_blocks, output_blocks
+
+
 create_directory_if_not_exists(BLOCK_DOCUMENTATION_DIRECTORY)
 
 lines = read_lines_from_file(path=BLOCK_DOCUMENTATION_FILE)
@@ -203,6 +306,15 @@ if len(lines_with_token_indexes) != 2:
 [start_index, end_index] = lines_with_token_indexes
 
 block_card_lines = []
+
+blocks_descriptions = describe_available_blocks()
+blocks_references = get_references_for_blocks(blocks_descriptions.dict())
+blocks_outputs = get_outputs_for_blocks(blocks_descriptions.dict())
+compatible_input_blocks, compatible_output_blocks = compile_compatible_blocks(
+    blocks_references,
+    blocks_outputs,
+    blocks_descriptions
+)
 
 for block in describe_available_blocks().blocks:
     block_class_name = get_class_name(block.fully_qualified_class_name)
@@ -221,7 +333,9 @@ for block in describe_available_blocks().blocks:
         class_name=block_class_name,
         description=long_description,
         block_inputs=format_block_inputs(block.block_manifest),
-        block_outputs=format_block_outputs(block.outputs_manifest)
+        block_outputs=format_block_outputs(block.outputs_manifest),
+        input_connections=str(compatible_input_blocks[block_class_name]) if block_class_name in compatible_input_blocks else "",
+        output_connections=str(compatible_output_blocks[block_class_name]) if block_class_name in compatible_output_blocks else ""
     )
     with open(documentation_file_path, 'w') as documentation_file:
         documentation_file.write(documentation_content)
