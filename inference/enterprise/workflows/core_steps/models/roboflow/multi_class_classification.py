@@ -38,11 +38,23 @@ from inference.enterprise.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
+LONG_DESCRIPTION = """
+Run inference on a single-class classification model hosted on or uploaded to Roboflow.
+
+You can query any model that is private to your account, or any public model available 
+on [Roboflow Universe](https://universe.roboflow.com).
+
+You will need to set your Roboflow API key in your Inference environment to use this 
+block. To learn more about setting your Roboflow API key, [refer to the Inference 
+documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from Roboflow multi-class classification model.",
-            "docs": "https://inference.roboflow.com/workflows/classify_objects",
+            "short_description": "Run a classification model.",
+            "long_description": LONG_DESCRIPTION,
             "block_type": "model",
         },
         protected_namespaces=(),

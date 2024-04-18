@@ -1,14 +1,9 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.inference import (
-    ClassificationInferenceRequest,
-    ObjectDetectionInferenceRequest,
-)
 from inference.core.env import (
-    HOSTED_CLASSIFICATION_URL,
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
@@ -21,28 +16,13 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
     attach_prediction_type_info,
     load_core_model,
 )
-from inference.enterprise.workflows.core_steps.common.utils import (
-    anchor_detections_in_parent_coordinates,
-    filter_out_unwanted_classes,
-)
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    BOOLEAN_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
-    IMAGE_METADATA_KIND,
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
-    ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    FloatZeroToOne,
     FlowControl,
     InferenceImageSelector,
-    InferenceParameterSelector,
     OutputStepImageSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
@@ -52,11 +32,26 @@ from inference.enterprise.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
+LONG_DESCRIPTION = """
+Retrieve the characters in an image using Optical Character Recognition (OCR).
+
+This block returns the text within an image.
+
+You may want to use this block in combination with a detections-based block (i.e. 
+ObjectDetectionBlock). An object detetcion model could isolate specific regions from an 
+image (i.e. a shipping container ID in a logistics use case) for further processing. 
+You can then use a CropBlock to crop the region of interest before running OCR.
+
+Using a detections model then croipping detections allows you to isolate your analysis 
+on particular regions of an image.
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from Roboflow OCR model.",
-            "docs": "https://inference.roboflow.com/workflows/ocr",
+            "short_description": "Run Optical Character Recognition on a model.",
+            "long_description": LONG_DESCRIPTION,
             "block_type": "model",
         }
     )

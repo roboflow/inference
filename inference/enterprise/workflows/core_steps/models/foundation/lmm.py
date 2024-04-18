@@ -55,11 +55,29 @@ class LMMConfig(BaseModel):
     gpt_model_version: str = Field(default="gpt-4-vision-preview")
 
 
+LONG_DESCRIPTION = """
+Ask a question to a Large Multimodal Model (LMM) with an image and text.
+
+You can specify arbitrary text prompts to an LMMBlock.
+
+The LLMBlock supports two LMMs:
+
+- OpenAI's GPT-4 with Vision, and;
+- CogVLM.
+
+You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
+need to provide an API key to use CogVLM.
+
+_If you want to classify an image into one or more categories, we recommend using the 
+dedicated LMMForClassificationBlock._
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that make it possible to use chosen LMM model within `workflows` - with arbitrary prompt and possibility to retrieve structured JSON output.",
-            "docs": "https://inference.roboflow.com/workflows/use_lmm/",
+            "short_description": "Run a large language model.",
+            "long_description": LONG_DESCRIPTION,
             "block_type": "model",
         }
     )

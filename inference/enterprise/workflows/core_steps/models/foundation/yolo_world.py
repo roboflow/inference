@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
@@ -41,11 +41,25 @@ from inference.enterprise.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 
+LONG_DESCRIPTION = """
+Run YOLO-World, a zero-shot object detection model, on an image.
+
+YOLO-World accepts one or more text classes you want to identify in an image. The model 
+returns the location of objects that meet the specified class, if YOLO-World is able to 
+identify objects of that class.
+
+We recommend experimenting with YOLO-World to evaluate the model on your use case 
+before using this block in production. For avice on how to effectively prompt 
+YOLO-World, refer to the [Roboflow YOLO-World prompting 
+guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that make it possible to use YoloWorld model within `workflows` - providing real-time, zero-shot object detection.",
-            "docs": "https://inference.roboflow.com/workflows/yolo_world",
+            "short_description": "Run a zero-shot object detection model.",
+            "long_description": LONG_DESCRIPTION,
             "block_type": "model",
         }
     )

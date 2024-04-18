@@ -197,7 +197,10 @@ block_card_lines = []
 for block in describe_available_blocks().blocks:
     block_class_name = get_class_name(block.fully_qualified_class_name)
     block_type = block.block_manifest['block_type']
-    block_description = block.block_manifest['description']
+
+    short_description = block.block_manifest.get('short_description', '')
+    long_description = block.block_manifest.get('long_description', '')
+
     documentation_file_name = camel_to_snake(block_class_name) + '.md'
     documentation_file_path = os.path.join(
         BLOCK_DOCUMENTATION_DIRECTORY,
@@ -205,7 +208,7 @@ for block in describe_available_blocks().blocks:
     )
     documentation_content = BLOCK_DOCUMENTATION_TEMPLATE.format(
         class_name=block_class_name,
-        description=block_description,
+        description=long_description,
         block_inputs=format_block_inputs(block.block_manifest),
         block_outputs=format_block_outputs(block.outputs_manifest)
     )
@@ -215,7 +218,7 @@ for block in describe_available_blocks().blocks:
     block_card_line = BLOCK_CARD_TEMPLATE.format(
         data_url=camel_to_snake(block_class_name),
         data_name=block_class_name_to_block_title(block_class_name),
-        data_desc=block_description,
+        data_desc=short_description,
         data_labels=block_type.upper(),
         data_authors=''
     )

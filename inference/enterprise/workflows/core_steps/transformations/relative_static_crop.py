@@ -34,11 +34,21 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 
 
+LONG_DESCRIPTION = """
+Crop a Region of Interest (RoI) from an image, using relative coordinates.
+
+This is useful when placed after an ObjectDetection block as part of a multi-stage 
+workflow. For example, you could use an ObjectDetection block to detect objects, then 
+the RelativeStaticCrop block to crop objects, then an OCR block to run character 
+recognition on each of the individual cropped regions.
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Responsible for cropping RoIs from images - using relative coordinates.",
-            "docs": "https://inference.roboflow.com/workflows/absolute_static_crop/",
+            "short_description": "Use relative coordinates for cropping.",
+            "long_description": LONG_DESCRIPTION,
             "block_type": "transformation",
         }
     )

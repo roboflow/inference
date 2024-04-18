@@ -30,11 +30,22 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 
 
+LONG_DESCRIPTION = """
+Apply a fixed offset to the width and height of a detection.
+
+You can use this block to add padding around the result of a detection. This is useful 
+to ensure that you can analyze bounding boxes that may be within the region of an 
+object instead of being around an object.
+"""
+
+SHORT_DESCRIPTION = "Apply a fixed offset on the width and height of detections."
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block is responsible for applying fixed offset on width and height of detections.",
-            "docs": "https://inference.roboflow.com/workflows/offset_detections",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
             "block_type": "transformation",
         }
     )

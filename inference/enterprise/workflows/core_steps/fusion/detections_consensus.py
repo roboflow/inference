@@ -56,11 +56,25 @@ class AggregationMode(Enum):
     MIN = "min"
 
 
+LONG_DESCRIPTION = """
+Combine detections from multiple detection-based models based on a majority vote 
+strategy.
+
+This block is useful if you have multiple specialized models that you want to consult 
+to determine whether a certain object is present in an image.
+
+See the table below to explore the values you can use to configure the consensus block.
+"""
+
+SHORT_DESCRIPTION = ("Combine predictions from multiple detections models to make a "
+                     "decision about object presence.")
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that combines predictions from potentially multiple detections models based on majority vote.",
-            "docs": "https://inference.roboflow.com/workflows/reach_consensus",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
             "block_type": "fusion",
         }
     )

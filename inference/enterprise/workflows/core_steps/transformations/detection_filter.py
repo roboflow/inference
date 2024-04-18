@@ -79,11 +79,38 @@ class CompoundDetectionFilterDefinition(BaseModel):
     ]
 
 
+LONG_DESCRIPTION = """
+Filter detections from a detections-based block based on specified conditions.
+
+This block is useful to filter out detections that may not be useful for your project. 
+You can filter on the basis of:
+
+- Coordinates of a detection
+- Confidence of a detection
+
+You can use the following comparison statements in a DetectionFilterBlock:
+
+- `equal` (field value equal to `reference_value`)
+- `not_equal`
+- `lower_than`
+- `greater_than`
+- `lower_or_equal_than`
+- `greater_or_equal_than`
+- `in`
+- `str_starts_with`
+- `str_ends_with`
+- `str_contains`
+"""
+
+SHORT_DESCRIPTION = ("Filter predictions from detection models based on defined "
+                     "conditions.")
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block is responsible for filtering detections-based predictions based on conditions defined.",
-            "docs": "https://inference.roboflow.com/workflows/filter_detections",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
             "block_type": "transformation",
         }
     )
