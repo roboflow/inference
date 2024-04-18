@@ -141,8 +141,8 @@ def load_image_from_string(
         if max_height is None or max_width is None:
             with open(reference, 'rb') as f:
                 img_bytes = f.read()
-                img_base64_str = encode_base_64(payload=img_bytes)
-                return img_base64_str, None
+            img_base64_str = encode_base_64(payload=img_bytes)
+            return img_base64_str, None
         
         local_image = cv2.imread(reference)
         if local_image is None:
