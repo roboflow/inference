@@ -62,6 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "short_description": "Run inference on a keypoint detection model.",
             "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),

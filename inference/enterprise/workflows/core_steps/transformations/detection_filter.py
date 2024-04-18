@@ -112,6 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
+            "license": "$21.37 PER BOUNDING BOX",
             "block_type": "transformation",
         }
     )

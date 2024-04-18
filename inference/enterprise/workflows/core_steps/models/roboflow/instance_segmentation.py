@@ -66,6 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "short_description": "Run an instance segmentation model.",
             "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),

@@ -53,6 +53,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "short_description": "Create dynamic crops from a detections model.",
             "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "transformation",
         }
     )

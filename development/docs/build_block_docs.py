@@ -1,13 +1,11 @@
+import os
+import re
 from typing import List, Tuple
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
     describe_available_blocks,
 )
-
-import re
-import os
-
 
 BLOCK_DOCUMENTATION_FILE = os.path.join(os.getcwd(), 'docs', 'workflows', 'blocks.md')
 BLOCK_DOCUMENTATION_DIRECTORY = os.path.join(os.getcwd(), 'docs', 'workflows', 'blocks')
@@ -208,7 +206,8 @@ block_card_lines = []
 
 for block in describe_available_blocks().blocks:
     block_class_name = get_class_name(block.fully_qualified_class_name)
-    block_type = block.block_manifest['block_type']
+    block_type = block.block_manifest['block_type'].upper()
+    block_license = block.block_manifest['license'].upper()
 
     short_description = block.block_manifest.get('short_description', '')
     long_description = block.block_manifest.get('long_description', '')
@@ -231,7 +230,7 @@ for block in describe_available_blocks().blocks:
         data_url=camel_to_snake(block_class_name),
         data_name=block_class_name_to_block_title(block_class_name),
         data_desc=short_description,
-        data_labels=block_type.upper(),
+        data_labels=", ".join([block_type, block_license]),
         data_authors=''
     )
     block_card_lines.append(block_card_line)

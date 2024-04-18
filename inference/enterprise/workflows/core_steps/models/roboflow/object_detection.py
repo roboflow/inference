@@ -60,6 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "short_description": "Detect objects using an object detection model.",
             "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),
