@@ -84,26 +84,33 @@ TYPE_MAPPING = {
     "integer": "int",
     "boolean": "bool",
     "string": "str",
+    "null": "None",
 }
 
 
 def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
     global_result = []
     properties = block_definition['properties']
-    for k, v in properties.items():
-        ref_appears = False
-        if k == 'type':
+    for property_name, property_definition in properties.items():
+        if property_name == 'type':
             continue
-        if 'items' in v:
-            if "reference" in v["items"]:
-                ref_appears = True
+        if property_definition.get("type") in TYPE_MAPPING:
+            result = TYPE_MAPPING[property_definition["type"]]
+            global_result.append((property_name, result, property_definition.get("description", "not available"), False))
+            continue
+        if 'items' in property_definition:
+            if "reference" in property_definition["items"]:
                 continue
-            t_name, ref_appears = create_array_typing(v["items"])
-            global_result.append((k, t_name, v.get("description", "not available", ref_appears)))
+            t_name, ref_appears = create_array_typing(property_definition["items"])
+            global_result.append((property_name, t_name, property_definition.get("description", "not available", ref_appears)))
             continue
-        if 'anyOf' in v or 'oneOf' in v or 'allOf' in v:
-            x = v.get('anyOf', []) + v.get('oneOf', []) + v.get('allOf', [])
+        if 'anyOf' in property_definition or 'oneOf' in property_definition or 'allOf' in property_definition:
+            x = property_definition.get('anyOf', []) + \
+                property_definition.get('oneOf', []) + \
+                property_definition.get('allOf', [])
             primitive_types = [e for e in x if "reference" not in e]
+            if len(primitive_types) == 0:
+                continue
             ref_appears = len(primitive_types) != len(x)
             result = []
             for t in primitive_types:
@@ -117,19 +124,24 @@ def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
                 else:
                     t_name = "unknown"
                 result.append(t_name)
-            result = ", ".join(result)
+            result = set(result)
+            if "None" in result:
+                high_level_type = "Optional"
+                result.remove("None")
+            else:
+                high_level_type = "Union"
+            result_str = ", ".join(list(result))
             if len(primitive_types) > 1:
-                result = f"Union[{result}]"
-            global_result.append((k, result, v.get("description", "not available"), ref_appears))
-        if 'reference' in v:
+                result_str = f"{high_level_type}[{result_str}]"
+            global_result.append((property_name, result_str, property_definition.get("description", "not available"), ref_appears))
+        if 'reference' in property_definition:
             continue
     return global_result
 
 
 def create_array_typing(array_definition: dict) -> Tuple[str, bool]:
     ref_appears = False
-    high_level_type = "Set" if array_definition.get("uniqueItems",
-                                                    False) is True else "List"
+    high_level_type = "Set" if array_definition.get("uniqueItems", False) is True else "List"
     if len(array_definition["items"]) == 0:
         return f"{high_level_type}[Any]", ref_appears
     if "type" in array_definition["items"]:
@@ -150,7 +162,7 @@ def format_block_inputs(outputs_manifest: dict) -> str:
     data = format_inputs(outputs_manifest)
     rows = []
     for name, kind, description, ref_appear in data:
-        rows.append(f"| `{name}` | `{kind}` | {description}. | {ref_appear}")
+        rows.append(f"| `{name}` | `{kind}` | {description}. | {ref_appear} |")
 
     return '\n'.join(USER_CONFIGURATION_HEADER + rows)
 
