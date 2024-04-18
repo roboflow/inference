@@ -41,7 +41,7 @@ from inference.core.interfaces.stream.entities import (
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
-from inference.core.interfaces.stream.model_handlers.workflows import run_workflow
+from inference.core.interfaces.stream.model_handlers.workflows import WorkflowRunner
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.utils import prepare_video_sources
 from inference.core.interfaces.stream.watchdog import (
@@ -561,8 +561,9 @@ class InferencePipeline:
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
             )
+            workflow_runner = WorkflowRunner()
             on_video_frame = partial(
-                run_workflow,
+                workflow_runner.run_workflow,
                 workflows_parameters=workflows_parameters,
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,

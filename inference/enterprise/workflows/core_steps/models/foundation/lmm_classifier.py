@@ -19,6 +19,7 @@ from inference.enterprise.workflows.entities.steps import (
     OutputDefinition,
 )
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_STRING_KIND,
     IMAGE_METADATA_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
@@ -111,7 +112,7 @@ class LMMForClassificationBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
