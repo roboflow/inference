@@ -1,7 +1,7 @@
 import os
 import re
-from typing import List, Tuple
 from collections import defaultdict
+from typing import List, Tuple, Optional
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
@@ -39,7 +39,7 @@ BLOCK_DOCUMENTATION_TEMPLATE = """
 ## Input Bindings
 
 | **Name** | **Kind** | **Description** |
-|:---------|:---------|:----------------|
+{block_input_bindings}
 
 ## Output Bindings
 
@@ -90,6 +90,74 @@ TYPE_MAPPING = {
     "string": "str",
     "null": "None",
 }
+
+
+def get_input_bindings(block_definition: dict) -> List[Tuple[str, str, str]]:
+    global_result = []
+    properties = block_definition['properties']
+    for property_name, property_definition in properties.items():
+        if property_name == 'type':
+            continue
+        if property_definition.get("type") in TYPE_MAPPING:
+            continue
+        if 'items' in property_definition:
+            if "reference" in property_definition["items"]:
+                t_name = format_kinds_string(property_definition.get("kind", [])),
+                global_result.append((
+                    property_name,
+                    f"List[{t_name}]",
+                    property_definition.get("description", "not available")
+                ))
+                continue
+            t_name = create_array_typing_for_bindings(property_definition["items"])
+            if t_name is not None:
+                global_result.append(
+                    (property_name, t_name, property_definition.get("description", "not available")))
+            continue
+        if 'anyOf' in property_definition or 'oneOf' in property_definition or 'allOf' in property_definition:
+            x = property_definition.get('anyOf', []) + \
+                property_definition.get('oneOf', []) + \
+                property_definition.get('allOf', [])
+            non_primitive_types = [e for e in x if "reference" in e]
+            if len(non_primitive_types) == 0:
+                continue
+            all_kinds = []
+            for t in non_primitive_types:
+                all_kinds.extend(t.get("kind", []))
+            result_str = format_kinds_string(all_kinds)
+            global_result.append(
+                (property_name, result_str, property_definition.get("description", "not available")))
+        if 'reference' in property_definition:
+            global_result.append((
+                property_name,
+                format_kinds_string(property_definition.get("kind", [])),
+                property_definition.get("description", "not available")
+            ))
+            continue
+    return global_result
+
+
+def create_array_typing_for_bindings(array_definition: dict) -> Optional[str]:
+    x = array_definition.get('anyOf', []) + \
+        array_definition.get('oneOf', []) + \
+        array_definition.get('allOf', [])
+    non_primitive_types = [e for e in x if "reference" in e]
+    if len(non_primitive_types) == 0:
+        return None
+    all_kinds = []
+    for t in non_primitive_types:
+        all_kinds.extend(t.get("kind", []))
+    return format_kinds_string(all_kinds)
+
+
+def format_kinds_string(kind_definition: list) -> str:
+    result = [k["name"] for k in kind_definition]
+    if len(result) == 0:
+        return "step"
+    if len(result) > 1:
+        result = ", ".join(set(result))
+        return f"Union[{result}]"
+    return result[0]
 
 
 def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
@@ -169,6 +237,14 @@ def format_block_inputs(outputs_manifest: dict) -> str:
         rows.append(f"| `{name}` | `{kind}` | {description}. | {ref_appear} |")
 
     return '\n'.join(USER_CONFIGURATION_HEADER + rows)
+
+
+def format_input_bindings(block_definition: dict) -> str:
+    data = get_input_bindings(block_definition)
+    rows = []
+    for name, kind, description in data:
+        rows.append(f"| `{name}` | `{kind}` | {description}. |")
+    return '\n'.join(rows)
 
 
 def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
@@ -333,6 +409,7 @@ for block in describe_available_blocks().blocks:
         class_name=block_class_name,
         description=long_description,
         block_inputs=format_block_inputs(block.block_manifest),
+        block_input_bindings=format_input_bindings(block.block_manifest),
         block_outputs=format_block_outputs(block.outputs_manifest),
         input_connections=str(compatible_input_blocks[block_class_name]) if block_class_name in compatible_input_blocks else "",
         output_connections=str(compatible_output_blocks[block_class_name]) if block_class_name in compatible_output_blocks else ""
