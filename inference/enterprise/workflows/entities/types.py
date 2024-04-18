@@ -25,6 +25,10 @@ FLOAT_ZERO_TO_ONE_KIND = Kind(
 LIST_OF_VALUES_KIND = Kind(
     name="list_of_values", description="List of values of any types"
 )
+BATCH_OF_SERIALISED_PAYLOAD = Kind(
+    name="Batch[serialised_payload]",
+    description="List of serialised elements that can be registered in the sink",
+)
 BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag")
 BATCH_OF_BOOLEAN_KIND = Kind(name="Batch[boolean]", description="Boolean flag batch")
 INTEGER_KIND = Kind(name="integer", description="Integer value")
