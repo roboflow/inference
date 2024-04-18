@@ -23,19 +23,48 @@ def assembly_step_parameters(
     manifest_dict = get_manifest_fields_values(step_manifest=step_manifest)
     result = {}
     for key, value in manifest_dict.items():
-        if is_step_output_selector(selector_or_value=value):
-            value = retrieve_step_output(
-                selector=value,
+        if issubclass(type(value), list):
+            value = [
+                retrieve_value(
+                    value=v,
+                    step_name=step_manifest.name,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                    accepts_batch_input=accepts_batch_input,
+                )
+                for v in value
+            ]
+        else:
+            value = retrieve_value(
+                value=value,
+                step_name=step_manifest.name,
+                runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 accepts_batch_input=accepts_batch_input,
-                step_name=step_manifest.name,
-            )
-        elif is_input_selector(selector_or_value=value):
-            value = retrieve_value_from_runtime_input(
-                selector=value, runtime_parameters=runtime_parameters
             )
         result[key] = value
     return result
+
+
+def retrieve_value(
+    value: Any,
+    step_name: str,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+    accepts_batch_input: bool,
+) -> Any:
+    if is_step_output_selector(selector_or_value=value):
+        value = retrieve_step_output(
+            selector=value,
+            execution_cache=execution_cache,
+            accepts_batch_input=accepts_batch_input,
+            step_name=step_name,
+        )
+    elif is_input_selector(selector_or_value=value):
+        value = retrieve_value_from_runtime_input(
+            selector=value, runtime_parameters=runtime_parameters
+        )
+    return value
 
 
 def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str, Any]:
