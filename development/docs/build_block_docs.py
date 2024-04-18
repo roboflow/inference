@@ -103,7 +103,7 @@ def get_input_bindings(block_definition: dict) -> List[Tuple[str, str, str]]:
             continue
         if 'items' in property_definition:
             if "reference" in property_definition["items"]:
-                t_name = format_kinds_string(property_definition.get("kind", [])),
+                t_name = format_kinds_string(property_definition["items"].get("kind", []))
                 global_result.append((
                     property_name,
                     f"List[{t_name}]",
