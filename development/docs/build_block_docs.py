@@ -175,7 +175,7 @@ def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
             if "reference" in property_definition["items"]:
                 continue
             t_name, ref_appears = create_array_typing(property_definition["items"])
-            global_result.append((property_name, t_name, property_definition.get("description", "not available", ref_appears)))
+            global_result.append((property_name, t_name, property_definition.get("description", "not available"), ref_appears))
             continue
         if 'anyOf' in property_definition or 'oneOf' in property_definition or 'allOf' in property_definition:
             x = property_definition.get('anyOf', []) + \
@@ -215,7 +215,7 @@ def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
 def create_array_typing(array_definition: dict) -> Tuple[str, bool]:
     ref_appears = False
     high_level_type = "Set" if array_definition.get("uniqueItems", False) is True else "List"
-    if len(array_definition["items"]) == 0:
+    if len(array_definition.get("items", [])) == 0:
         return f"{high_level_type}[Any]", ref_appears
     if "type" in array_definition["items"]:
         if "reference" in array_definition["items"]:
