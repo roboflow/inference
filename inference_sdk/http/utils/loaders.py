@@ -143,7 +143,6 @@ def load_image_from_string(
                 img_bytes = f.read()
             img_base64_str = encode_base_64(payload=img_bytes)
             return img_base64_str, None
-        
         local_image = cv2.imread(reference)
         if local_image is None:
             raise EncodingError(f"Could not load image from {reference}")
