@@ -1,6 +1,9 @@
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
-from inference.core.interfaces.camera.entities import StatusUpdate
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    VideoSourceIdentifier,
+)
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -11,7 +14,7 @@ T = TypeVar("T")
 
 
 def prepare_video_sources(
-    video_reference: Union[str, int, List[Union[str, int]]],
+    video_reference: Union[VideoSourceIdentifier, List[VideoSourceIdentifier]],
     video_source_properties: Optional[
         Union[Dict[str, float], List[Optional[Dict[str, float]]]]
     ],
@@ -59,7 +62,7 @@ def broadcast_elements(
 
 
 def initialise_video_sources(
-    video_reference: List[Union[str, int]],
+    video_reference: List[VideoSourceIdentifier],
     video_source_properties: List[Optional[Dict[str, float]]],
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
