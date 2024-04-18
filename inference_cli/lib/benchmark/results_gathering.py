@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 STATISTICS_FORMAT = """
-avg: {average_inference_latency_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}\t| errors: {error_status_codes}
+avg: {average_inference_latency_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}\t| {error_status_codes}
 """.strip()
 
 
@@ -124,5 +124,5 @@ class ResultsCollector:
             requests_per_second=requests_per_second,
             images_per_second=images_per_second,
             error_rate=error_rate,
-            error_status_codes=error_status_codes,
+            error_status_codes=", ".join(f"{exc}: {count}" for exc, count in error_status_codes.items()),
         )
