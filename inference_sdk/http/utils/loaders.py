@@ -139,7 +139,7 @@ def load_image_from_string(
         )
     if os.path.exists(reference):
         if max_height is None or max_width is None:
-            with open(reference, 'rb') as f:
+            with open(reference, "rb") as f:
                 img_bytes = f.read()
             img_base64_str = encode_base_64(payload=img_bytes)
             return img_base64_str, None
