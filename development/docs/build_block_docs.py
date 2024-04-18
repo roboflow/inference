@@ -17,11 +17,6 @@ USER_CONFIGURATION_HEADER = [
     "|:---------|:---------|:----------------|:-----|"
 ]
 
-BLOCK_OUTPUTS_HEADER = [
-    "| **Name** | **Kind** | **Description** |",
-    "|:---------|:---------|:----------------|"
-]
-
 BLOCK_DOCUMENTATION_TEMPLATE = """
 # {class_name}
 
@@ -33,18 +28,23 @@ BLOCK_DOCUMENTATION_TEMPLATE = """
 
 ## Available Connections
 
+Check what blocks you can connect to `{class_name}`.
+
 - inputs: {input_connections}
 - outputs: {output_connections}
 
-## Input Bindings
+The available connections depend on its binding kinds. Check what binding kinds 
+`{class_name}` has.
 
-| **Name** | **Kind** | **Description** |
-|:---------|:---------|:----------------|
+??? tip "Bindings"
+
+    - input
+    
 {block_input_bindings}
 
-## Output Bindings
-
-{block_outputs}
+    - output
+    
+{block_output_bindings}
 """
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>'
@@ -244,7 +244,7 @@ def format_input_bindings(block_definition: dict) -> str:
     data = get_input_bindings(block_definition)
     rows = []
     for name, kind, description in data:
-        rows.append(f"| `{name}` | `{kind}` | {description}. |")
+        rows.append(f"        - `{name}` (`{kind}`): {description}.")
     return '\n'.join(rows)
 
 
@@ -255,13 +255,13 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
         if len(output.kind) == 1:
             kind = output.kind[0].name
             description = output.kind[0].description
-            rows.append(f"| `{output.name}` | `{kind}` | {description}. |")
+            rows.append(f"        - `{output.name}` (`{kind}`): {description}.")
         else:
             kind = ', '.join([k.name for k in output.kind])
             description = ' or '.join([f"{k.description} if `{k.name}`" for k in output.kind])
-            rows.append(f"| `{output.name}` | `Union[{kind}]` | {description}. |")
+            rows.append(f"        - `{output.name}` (`Union[{kind}]`): {description}.")
 
-    return '\n'.join(BLOCK_OUTPUTS_HEADER + rows)
+    return '\n'.join(rows)
 
 
 def get_class_name(fully_qualified_name: str) -> str:
@@ -408,8 +408,8 @@ compatible_input_blocks, compatible_output_blocks = compile_compatible_blocks(
 
 for block in describe_available_blocks().blocks:
     block_class_name = get_class_name(block.fully_qualified_class_name)
-    block_type = block.block_manifest['block_type'].upper()
-    block_license = block.block_manifest['license'].upper()
+    block_type = block.block_manifest.get('block_type', '').upper()
+    block_license = block.block_manifest.get('license', '').upper()
 
     short_description = block.block_manifest.get('short_description', '')
     long_description = block.block_manifest.get('long_description', '')
@@ -424,7 +424,7 @@ for block in describe_available_blocks().blocks:
         description=long_description,
         block_inputs=format_block_inputs(block.block_manifest),
         block_input_bindings=format_input_bindings(block.block_manifest),
-        block_outputs=format_block_outputs(block.outputs_manifest),
+        block_output_bindings=format_block_outputs(block.outputs_manifest),
         input_connections=format_block_connections(compatible_input_blocks.get(block_class_name)),
         output_connections=format_block_connections(compatible_output_blocks.get(block_class_name))
     )
