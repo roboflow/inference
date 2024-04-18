@@ -138,6 +138,12 @@ def load_image_from_string(
             url=reference, max_height=max_height, max_width=max_width
         )
     if os.path.exists(reference):
+        if max_height is None or max_width is None:
+            with open(reference, 'rb') as f:
+                img_bytes = f.read()
+                img_base64_str = encode_base_64(payload=img_bytes)
+                return img_base64_str, None
+        
         local_image = cv2.imread(reference)
         if local_image is None:
             raise EncodingError(f"Could not load image from {reference}")
