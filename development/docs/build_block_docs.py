@@ -39,6 +39,7 @@ BLOCK_DOCUMENTATION_TEMPLATE = """
 ## Input Bindings
 
 | **Name** | **Kind** | **Description** |
+|:---------|:---------|:----------------|
 {block_input_bindings}
 
 ## Output Bindings
