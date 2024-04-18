@@ -370,6 +370,19 @@ def compile_compatible_blocks(blocks_references, blocks_outputs, blocks_descript
     return input_blocks, output_blocks
 
 
+def format_block_connections(connections: List[str]) -> str:
+    if not connections:
+        return "None"
+
+    connections = [
+        f"[`{connection}`](/workflows/blocks/{camel_to_snake(connection)})"
+        for connection
+        in connections
+    ]
+
+    return ", ".join(connections)
+
+
 create_directory_if_not_exists(BLOCK_DOCUMENTATION_DIRECTORY)
 
 lines = read_lines_from_file(path=BLOCK_DOCUMENTATION_FILE)
@@ -412,8 +425,8 @@ for block in describe_available_blocks().blocks:
         block_inputs=format_block_inputs(block.block_manifest),
         block_input_bindings=format_input_bindings(block.block_manifest),
         block_outputs=format_block_outputs(block.outputs_manifest),
-        input_connections=str(compatible_input_blocks[block_class_name]) if block_class_name in compatible_input_blocks else "",
-        output_connections=str(compatible_output_blocks[block_class_name]) if block_class_name in compatible_output_blocks else ""
+        input_connections=format_block_connections(compatible_input_blocks.get(block_class_name)),
+        output_connections=format_block_connections(compatible_output_blocks.get(block_class_name))
     )
     with open(documentation_file_path, 'w') as documentation_file:
         documentation_file.write(documentation_content)
