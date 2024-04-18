@@ -102,8 +102,9 @@ You can use the following comparison statements in a DetectionFilterBlock:
 - `str_contains`
 """
 
-SHORT_DESCRIPTION = ("Filter predictions from detection models based on defined "
-                     "conditions.")
+SHORT_DESCRIPTION = (
+    "Filter predictions from detection models based on defined " "conditions."
+)
 
 
 class BlockManifest(WorkflowBlockManifest):

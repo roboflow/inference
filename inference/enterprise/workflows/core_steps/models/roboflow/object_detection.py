@@ -2,9 +2,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import (
-    ObjectDetectionInferenceRequest,
-)
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -44,7 +42,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-
 
 LONG_DESCRIPTION = """
 Run inference on a multi-label classification model hosted on or uploaded to Roboflow.

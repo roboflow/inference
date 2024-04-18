@@ -49,7 +49,6 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
-
 LONG_DESCRIPTION = """
 Run inference on an instance segmentation model hosted on or uploaded to Roboflow.
 

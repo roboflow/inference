@@ -40,7 +40,6 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
-
 LONG_DESCRIPTION = """
 Run YOLO-World, a zero-shot object detection model, on an image.
 

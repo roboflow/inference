@@ -109,8 +109,10 @@ class EnabledActiveLearningConfiguration(BaseModel):
     jpeg_compression_level: int = Field(default=95, gt=0, le=100)
 
 
-SHORT_DESCRIPTION = ("Collect data and predictions that flow through workflows for use "
-                     "in active learning.")
+SHORT_DESCRIPTION = (
+    "Collect data and predictions that flow through workflows for use "
+    "in active learning."
+)
 
 LONG_DESCRIPTION = """
 Sample images and model predictions from a workflow and upload them back to a Roboflow 

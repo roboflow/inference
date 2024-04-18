@@ -66,8 +66,10 @@ to determine whether a certain object is present in an image.
 See the table below to explore the values you can use to configure the consensus block.
 """
 
-SHORT_DESCRIPTION = ("Combine predictions from multiple detections models to make a "
-                     "decision about object presence.")
+SHORT_DESCRIPTION = (
+    "Combine predictions from multiple detections models to make a "
+    "decision about object presence."
+)
 
 
 class BlockManifest(WorkflowBlockManifest):

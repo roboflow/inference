@@ -38,7 +38,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Create dynamic crops from an image based on detections from detections-based model.
 

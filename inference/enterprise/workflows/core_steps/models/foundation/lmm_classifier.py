@@ -36,7 +36,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Classify an image into one or more categories using a Large Multimodal Model (LMM).
 

@@ -37,7 +37,6 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
-
 LONG_DESCRIPTION = """
 Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
 

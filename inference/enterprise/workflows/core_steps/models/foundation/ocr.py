@@ -39,7 +39,6 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
-
 LONG_DESCRIPTION = """
 Retrieve the characters in an image using Optical Character Recognition (OCR).
 

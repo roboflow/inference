@@ -21,7 +21,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Detect the location of a QR code.
 

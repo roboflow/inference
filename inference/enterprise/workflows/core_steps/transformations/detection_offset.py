@@ -29,7 +29,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Apply a fixed offset to the width and height of a detection.
 

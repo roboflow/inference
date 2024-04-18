@@ -35,7 +35,6 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
-
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
 

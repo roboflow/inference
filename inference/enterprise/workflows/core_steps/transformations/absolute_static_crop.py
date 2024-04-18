@@ -32,7 +32,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Crop a Region of Interest (RoI) from an image, using absolute coordinates.
 

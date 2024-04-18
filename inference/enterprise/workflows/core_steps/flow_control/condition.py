@@ -22,7 +22,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 Create a branch of logic that runs only when a specified condition is met.
 
