@@ -38,12 +38,22 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+Create dynamic crops from an image based on detections from detections-based model.
+
+This is useful when placed after an ObjectDetection block as part of a multi-stage 
+workflow. For example, you could use an ObjectDetection block to detect objects, then 
+the CropBlock block to crop objects, then an OCR block to run character recognition on 
+each of the individual cropped regions.
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block produces dynamic crops based on detections from detections-based model.",
-            "docs": "https://inference.roboflow.com/workflows/crop",
+            "short_description": "Create dynamic crops from a detections model.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "transformation",
         }
     )

@@ -22,12 +22,33 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+Create a branch of logic that runs only when a specified condition is met.
+
+This block is the "if statement" in Workflows.
+
+This block is responsible for flow-control in execution graph based on the condition 
+defined in its body.
+
+Right now, this block is only capable to make conditions based on output of binary 
+operators that takes two operands. 
+
+*The `Condition` block only works whena  single image is provided to the input of the 
+`workflow` (or more precisely, both `left` and `right` if provided with reference, 
+then the reference can only hold value for a result of operation made against single 
+input). This is to prevent a situation when evaluation of condition for multiple 
+images yield different execution paths.*
+"""
+
+SHORT_DESCRIPTION = "Control the flow of a workflow based on the result of a step."
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block is responsible for flow-control in execution graph based on the condition defined in its body. As for now, only capable to make conditions based on output of binary operators that takes two operands. IMPORTANT NOTE: `Condition` block is only capable to operate, when single image is provided to the input of the `workflow` (or more precisely, both `left` and `right` if provided with reference, then the reference can only hold value for a result of operation made against single input). This is to prevent situation when evaluation of condition for multiple images yield different execution paths.",
-            "docs": None,
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "flow_control",
         }
     )

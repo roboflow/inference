@@ -20,7 +20,7 @@ ROBOFLOW_PROJECT_KIND = Kind(
 )
 ROBOFLOW_API_KEY_KIND = Kind(name="roboflow_api_key", description="Roboflow API key")
 FLOAT_ZERO_TO_ONE_KIND = Kind(
-    name="float_zero_to_one", description="Float value in range [0.0, 1.0]"
+    name="float_zero_to_one", description="`float` value in range `[0.0, 1.0]`"
 )
 LIST_OF_VALUES_KIND = Kind(
     name="list_of_values", description="List of values of any types"
@@ -43,19 +43,19 @@ DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
 BATCH_OF_DICTIONARY_KIND = Kind(name="Batch[dictionary]", description="Dictionary")
 CLASSIFICATION_PREDICTION_KIND = Kind(
     name="Batch[classification_prediction]",
-    description="'predictions' key from Roboflow classifier output",
+    description="`'predictions'` key from Roboflow classifier output",
 )
 OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[object_detection_prediction]",
-    description="'predictions' key from Roboflow object detection model output",
+    description="`'predictions'` key from Roboflow object detection model output",
 )
 INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="Batch[instance_segmentation_prediction]",
-    description="'predictions' key from Roboflow instance segmentation model output",
+    description="`'predictions'` key from Roboflow instance segmentation model output",
 )
 KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[keypoint_detection_prediction]",
-    description="'predictions' key from Roboflow keypoint detection model output",
+    description="`'predictions'` key from Roboflow keypoint detection model output",
 )
 QR_CODE_DETECTION_KIND = Kind(
     name="Batch[qr_code_detection]",

@@ -21,12 +21,22 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+Detect the location of a QR code.
+
+This block is useful for manufacturing and consumer packaged goods projects where you 
+need to detect a barcode region in an image. You can then apply an AbsoluteStaticCrop 
+or Crop block to isolate each barcode then apply fugher processing (i.e. read a QR code 
+with a custom block).
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from QR Code Detection.",
-            "docs": "https://inference.roboflow.com/workflows/detect_qr_codes",
+            "short_description": "Detect the location of QR codes in an image.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         }
     )

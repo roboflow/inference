@@ -109,11 +109,35 @@ class EnabledActiveLearningConfiguration(BaseModel):
     jpeg_compression_level: int = Field(default=95, gt=0, le=100)
 
 
+SHORT_DESCRIPTION = (
+    "Collect data and predictions that flow through workflows for use "
+    "in active learning."
+)
+
+LONG_DESCRIPTION = """
+Sample images and model predictions from a workflow and upload them back to a Roboflow 
+project.
+
+This block is useful for:
+
+1. Gathering data for use in training a new model, from scratch, or;
+2. Gathering data to improve an existing model.
+
+This block uses an Active Learning Configuration to determine how to configure active 
+learning. The Configuration specification allows you to determine a sampling strategy, 
+such s random sampling or threshold sampling.
+
+To learn more about active learning configurations, refer to the Inference Active 
+Learning Configuration documentation.
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that enables smart sampling of images and model predictions and registering data in Roboflow project.",
-            "docs": "https://inference.roboflow.com/workflows/active_learning/",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "sink",
         }
     )

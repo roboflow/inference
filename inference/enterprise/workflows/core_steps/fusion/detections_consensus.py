@@ -56,11 +56,28 @@ class AggregationMode(Enum):
     MIN = "min"
 
 
+LONG_DESCRIPTION = """
+Combine detections from multiple detection-based models based on a majority vote 
+strategy.
+
+This block is useful if you have multiple specialized models that you want to consult 
+to determine whether a certain object is present in an image.
+
+See the table below to explore the values you can use to configure the consensus block.
+"""
+
+SHORT_DESCRIPTION = (
+    "Combine predictions from multiple detections models to make a "
+    "decision about object presence."
+)
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that combines predictions from potentially multiple detections models based on majority vote.",
-            "docs": "https://inference.roboflow.com/workflows/reach_consensus",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "fusion",
         }
     )
@@ -78,13 +95,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like model predictions made against single image to agree on model consensus",
         examples=[["$steps.a.predictions", "$steps.b.predictions"]],
     )
-    image_metadata: Annotated[
-        StepOutputSelector(kind=[IMAGE_METADATA_KIND]),
-        Field(
-            description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.image"],
-        ),
-    ]
+    image_metadata: StepOutputSelector(kind=[IMAGE_METADATA_KIND]) = Field(
+        description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
+        examples=["$steps.detection.image"],
+    )
     required_votes: Union[
         PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
     ] = Field(

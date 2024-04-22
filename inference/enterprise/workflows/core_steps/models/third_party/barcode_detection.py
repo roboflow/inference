@@ -22,12 +22,22 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+Detect the location of barcodes in an image.
+
+This block is useful for manufacturing and consumer packaged goods projects where you 
+need to detect a barcode region in an image. You can then apply an AbsoluteStaticCrop 
+or Crop block to isolate each barcode then apply further processing (i.e. OCR of the 
+characters on a barcode).
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from barcode detection.",
-            "docs": None,
+            "short_description": "Run Optical Character Recognition on a model.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         }
     )

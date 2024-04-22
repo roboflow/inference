@@ -36,12 +36,30 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+Classify an image into one or more categories using a Large Multimodal Model (LMM).
+
+You can specify arbitrary classes to an LMMBlock.
+
+The LLMBlock supports two LMMs:
+
+- OpenAI's GPT-4 with Vision, and;
+- CogVLM.
+
+You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
+need to provide an API key to use CogVLM.
+
+_If you want to ask an LMM an arbitrary question about an image, we recommend using the 
+dedicated LMMForClassificationBlock._
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block that make it possible to use chosen LMM model as zero-shot classifier.",
-            "docs": "https://inference.roboflow.com/workflows/use_lmm_classification",
+            "short_description": "Run a large language model for classification.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         }
     )

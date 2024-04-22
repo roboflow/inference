@@ -35,12 +35,24 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceHTTPClient
 
+LONG_DESCRIPTION = """
+Use the OpenAI CLIP zero-shot classification model to classify images.
+
+This block accepts an image and a list of text prompts. The block then returns the 
+similarity of each text label to the provided image.
+
+This block is useful for classifying images without having to train a fine-tuned 
+classification model. For example, you could use CLIP to classify the type of vehicle 
+in an image, or if an image contains NSFW material.
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Block to execute comparison of Clip embeddings between image and text.",
-            "docs": "https://inference.roboflow.com/workflows/compare_clip_vectors",
+            "short_description": "Compare CLIP image and text embeddings.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         }
     )

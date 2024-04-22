@@ -1,11 +1,8 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import (
-    ClassificationInferenceRequest,
-    ObjectDetectionInferenceRequest,
-)
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -25,7 +22,6 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_METADATA_KIND,
     INTEGER_KIND,
@@ -35,7 +31,6 @@ from inference.enterprise.workflows.entities.types import (
     PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
     FlowControl,
     InferenceImageSelector,
@@ -48,12 +43,24 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
+LONG_DESCRIPTION = """
+Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
+
+You can query any model that is private to your account, or any public model available 
+on [Roboflow Universe](https://universe.roboflow.com).
+
+You will need to set your Roboflow API key in your Inference environment to use this 
+block. To learn more about setting your Roboflow API key, [refer to the Inference 
+documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+"""
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "This block represents inference from Roboflow object detection model.",
-            "docs": "https://inference.roboflow.com/workflows/detect_objects",
+            "short_description": "Detect objects using an object detection model.",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),

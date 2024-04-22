@@ -60,6 +60,7 @@ nav:
       - YOLO-World (Object Detection): foundation/yolo_world.md
   - Workflows:
     - What is a Workflow?: workflows/about.md
+    - Blocks: workflows/blocks.md
     - Understanding Workflows: workflows/understanding.md
     - How to Create and Run a Workflow: workflows/create_and_run.md
     - Supported Blocks:
