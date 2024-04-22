@@ -36,12 +36,15 @@ def dump_json(
 
 
 def dump_text_lines(
-    path: str, content: List[str], allow_override: bool = False
+    path: str,
+    content: List[str],
+    allow_override: bool = False,
+    lines_connector: str = "\n",
 ) -> None:
     ensure_write_is_allowed(path=path, allow_override=allow_override)
     ensure_parent_dir_exists(path=path)
     with open(path, "w") as f:
-        f.write("\n".join(content))
+        f.write(lines_connector.join(content))
 
 
 def dump_bytes(path: str, content: bytes, allow_override: bool = False) -> None:
