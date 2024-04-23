@@ -22,17 +22,17 @@ def describe_available_blocks() -> BlocksDescription:
     blocks = []
     declared_kinds = []
     for block in all_blocks_classes:
-        block_manifest = block.schema()
+        block_schema = block.schema()
         if hasattr(block, "describe_outputs"):
             outputs_manifest = block.describe_outputs()
         else:
             outputs_manifest = [OutputDefinition(name="*", kind=[WILDCARD_KIND])]
-        declared_kinds.extend(
-            get_kinds_declared_for_block(block_manifest=block_manifest)
-        )
+        declared_kinds.extend(get_kinds_declared_for_block(block_schema=block_schema))
         blocks.append(
             BlockDescription(
-                block_manifest=block_manifest,
+                manifest_class=type(block),
+                block_class=type(block),
+                block_schema=block_schema,
                 outputs_manifest=outputs_manifest,
                 fully_qualified_class_name=get_full_type_name(t=type(block)),
             )
@@ -45,9 +45,9 @@ def get_available_bocks_classes() -> List[BaseModel]:
     return copy(ALL_BLOCKS_CLASSES)
 
 
-def get_kinds_declared_for_block(block_manifest: dict) -> List[Kind]:
+def get_kinds_declared_for_block(block_schema: dict) -> List[Kind]:
     result = []
-    for property_name, property_definition in block_manifest["properties"].items():
+    for property_name, property_definition in block_schema["properties"].items():
         union_elements = property_definition.get("anyOf", [property_definition])
         for element in union_elements:
             for raw_kind in element.get("kind", []):

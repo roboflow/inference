@@ -14,7 +14,6 @@ from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.errors import (
-    AmbiguousPathDetected,
     ConditionalBranchesClashError,
     DanglingExecutionBranchError,
     ExecutionGraphStructureError,
@@ -23,10 +22,6 @@ from inference.enterprise.workflows.errors import (
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
     ParsedWorkflowDefinition,
-    SelectorDefinition,
-)
-from inference.enterprise.workflows.execution_engine.compiler.manifest_schema_parser import (
-    get_step_selectors,
 )
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_types,
@@ -43,6 +38,12 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     is_input_selector,
     is_step_output_selector,
     is_step_selector,
+)
+from inference.enterprise.workflows.execution_engine.introspection.entities import (
+    SelectorDefinition,
+)
+from inference.enterprise.workflows.execution_engine.introspection.manifest_schema_parser import (
+    get_step_selectors,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -220,7 +221,7 @@ def add_edge_for_step(
     )
     error_message = (
         f"Failed to validate reference provided for step: {step_selector} regarding property: "
-        f"{step_selector_definition.property} with value: {step_selector_definition.selector}. "
+        f"{step_selector_definition.property_name} with value: {step_selector_definition.selector}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
         f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
     )

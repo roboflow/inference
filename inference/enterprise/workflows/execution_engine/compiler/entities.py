@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Type
 
 import networkx as nx
 
 from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.types import Kind
 from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -33,21 +32,6 @@ class ParsedWorkflowDefinition:
     inputs: List[InputType]
     steps: List[WorkflowBlockManifest]
     outputs: List[JsonField]
-
-
-@dataclass(frozen=True)
-class ReferenceDefinition:
-    selected_element: str
-    kind: List[Kind]
-
-
-@dataclass(frozen=True)
-class SelectorDefinition:
-    step_name: str
-    property: str
-    index: Optional[int]
-    selector: str
-    allowed_references: List[ReferenceDefinition]
 
 
 @dataclass(frozen=True)

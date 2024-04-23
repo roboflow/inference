@@ -33,7 +33,7 @@ defined in its body.
 Right now, this block is only capable to make conditions based on output of binary 
 operators that takes two operands. 
 
-*The `Condition` block only works whena  single image is provided to the input of the 
+*The `Condition` block only works when a  single image is provided to the input of the 
 `workflow` (or more precisely, both `left` and `right` if provided with reference, 
 then the reference can only hold value for a result of operation made against single 
 input). This is to prevent a situation when evaluation of condition for multiple 

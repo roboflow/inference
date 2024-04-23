@@ -1,16 +1,19 @@
 import os
 import re
-from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
-from inference.enterprise.workflows.entities.blocks_descriptions import (
-    BlocksDescription,
-)
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
     describe_available_blocks,
 )
+from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
+    discover_blocks_connections,
+)
+from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
+    parse_block_manifest_schema,
+)
+from inference.enterprise.workflows.prototypes.block import WorkflowBlock
 
 DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(
@@ -67,7 +70,7 @@ BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-nam
 
 
 def main() -> None:
-    create_directory_if_not_exists(BLOCK_DOCUMENTATION_DIRECTORY)
+    os.makedirs(BLOCK_DOCUMENTATION_DIRECTORY, exist_ok=True)
     lines = read_text_file(
         path=BLOCK_DOCUMENTATION_FILE,
         split_lines=True,
@@ -76,20 +79,17 @@ def main() -> None:
         documentation_lines=lines,
     )
     block_card_lines = []
-    blocks_descriptions = describe_available_blocks()
-    blocks_references = get_references_for_blocks(blocks_descriptions.dict())
-    blocks_outputs = get_outputs_for_blocks(blocks_descriptions.dict())
-    compatible_input_blocks, compatible_output_blocks = retrieve_compatible_blocks(
-        blocks_references, blocks_outputs, blocks_descriptions
+    blocks_description = describe_available_blocks()
+    blocks_connections = discover_blocks_connections(
+        blocks_description=blocks_description
     )
-
-    for block in describe_available_blocks().blocks:
+    for block in blocks_description.blocks:
         block_class_name = get_class_name(block.fully_qualified_class_name)
-        block_type = block.block_manifest.get("block_type", "").upper()
-        block_license = block.block_manifest.get("license", "").upper()
+        block_type = block.block_schema.get("block_type", "").upper()
+        block_license = block.block_schema.get("license", "").upper()
 
-        short_description = block.block_manifest.get("short_description", "")
-        long_description = block.block_manifest.get("long_description", "")
+        short_description = block.block_schema.get("short_description", "")
+        long_description = block.block_schema.get("long_description", "")
 
         documentation_file_name = camel_to_snake(block_class_name) + ".md"
         documentation_file_path = os.path.join(
@@ -98,14 +98,18 @@ def main() -> None:
         documentation_content = BLOCK_DOCUMENTATION_TEMPLATE.format(
             class_name=block_class_name,
             description=long_description,
-            block_inputs=format_block_inputs(block.block_manifest),
-            block_input_bindings=format_input_bindings(block.block_manifest),
+            block_inputs=format_block_inputs(block.block_schema),
+            block_input_bindings=format_input_bindings(block.block_schema),
             block_output_bindings=format_block_outputs(block.outputs_manifest),
             input_connections=format_block_connections(
-                compatible_input_blocks.get(block_class_name, [])
+                connections=blocks_connections.input_connections.block_wise[
+                    block.block_class
+                ]
             ),
             output_connections=format_block_connections(
-                compatible_output_blocks.get(block_class_name, [])
+                connections=blocks_connections.output_connections.block_wise[
+                    block.block_class
+                ]
             ),
         )
         with open(documentation_file_path, "w") as documentation_file:
@@ -164,214 +168,25 @@ def block_class_name_to_block_title(name: str) -> str:
     return " ".join(words)
 
 
-TYPE_MAPPING = {
-    "number": "float",
-    "integer": "int",
-    "boolean": "bool",
-    "string": "str",
-    "null": "None",
-}
-
-
-def get_input_bindings(block_definition: dict) -> List[Tuple[str, str, str]]:
-    global_result = []
-    properties = block_definition["properties"]
-    for property_name, property_definition in properties.items():
-        if property_name == "type":
-            continue
-        if "reference" in property_definition:
-            global_result.append(
-                (
-                    property_name,
-                    format_kinds_string(property_definition.get("kind", [])),
-                    property_definition.get("description", "not available"),
-                )
-            )
-            continue
-        if property_definition.get("type") in TYPE_MAPPING:
-            continue
-        if "items" in property_definition:
-            if "reference" in property_definition["items"]:
-                t_name = format_kinds_string(
-                    property_definition["items"].get("kind", [])
-                )
-                global_result.append(
-                    (
-                        property_name,
-                        f"List[{t_name}]",
-                        property_definition.get("description", "not available"),
-                    )
-                )
-                continue
-            t_name = create_typing_for_bindings(property_definition["items"])
-            if t_name is not None:
-                global_result.append(
-                    (
-                        property_name,
-                        t_name,
-                        property_definition.get("description", "not available"),
-                    )
-                )
-            continue
-        if (
-            "anyOf" in property_definition
-            or "oneOf" in property_definition
-            or "allOf" in property_definition
-        ):
-            result_str = create_typing_for_bindings(
-                property_definition=property_definition,
-            )
-            global_result.append(
-                (
-                    property_name,
-                    result_str,
-                    property_definition.get("description", "not available"),
-                )
-            )
-    return global_result
-
-
-def create_typing_for_bindings(property_definition: dict) -> Optional[str]:
-    x = (
-        property_definition.get("anyOf", [])
-        + property_definition.get("oneOf", [])
-        + property_definition.get("allOf", [])
-    )
-    non_primitive_types = [e for e in x if "reference" in e]
-    if len(non_primitive_types) == 0:
-        return None
-    all_kinds = []
-    for t in non_primitive_types:
-        all_kinds.extend(t.get("kind", []))
-    return format_kinds_string(all_kinds)
-
-
-def format_kinds_string(kind_definition: list) -> str:
-    result = [k["name"] for k in kind_definition]
-    if len(result) == 0:
-        return "step"
-    if len(result) > 1:
-        result = ", ".join(set(result))
-        return f"Union[{result}]"
-    return result[0]
-
-
-def format_inputs(block_definition: dict) -> List[Tuple[str, str, str, bool]]:
-    global_result = []
-    properties = block_definition["properties"]
-    for property_name, property_definition in properties.items():
-        if "reference" in property_definition:
-            continue
-        if property_name == "type":
-            continue
-        if property_definition.get("type") in TYPE_MAPPING:
-            result = TYPE_MAPPING[property_definition["type"]]
-            global_result.append(
-                (
-                    property_name,
-                    result,
-                    property_definition.get("description", "not available"),
-                    False,
-                )
-            )
-            continue
-        if "items" in property_definition:
-            if "reference" in property_definition["items"]:
-                continue
-            t_name, ref_appears = create_array_typing(property_definition["items"])
-            global_result.append(
-                (
-                    property_name,
-                    t_name,
-                    property_definition.get("description", "not available"),
-                    ref_appears,
-                )
-            )
-            continue
-        if (
-            "anyOf" in property_definition
-            or "oneOf" in property_definition
-            or "allOf" in property_definition
-        ):
-            x = (
-                property_definition.get("anyOf", [])
-                + property_definition.get("oneOf", [])
-                + property_definition.get("allOf", [])
-            )
-            primitive_types = [e for e in x if "reference" not in e]
-            if len(primitive_types) == 0:
-                continue
-            ref_appears = len(primitive_types) != len(x)
-            result = []
-            for t in primitive_types:
-                if "$ref" in t:
-                    t_name = t["$ref"].split("/")[-1]
-                elif t["type"] in TYPE_MAPPING:
-                    t_name = TYPE_MAPPING[t["type"]]
-                elif t["type"] == "array":
-                    t_name, ref_appears_nested = create_array_typing(t)
-                    ref_appears = ref_appears or ref_appears_nested
-                else:
-                    t_name = "unknown"
-                result.append(t_name)
-            result = set(result)
-            if "None" in result:
-                high_level_type = "Optional"
-                result.remove("None")
-            else:
-                high_level_type = "Union"
-            result_str = ", ".join(list(result))
-            if len(primitive_types) > 1:
-                result_str = f"{high_level_type}[{result_str}]"
-            global_result.append(
-                (
-                    property_name,
-                    result_str,
-                    property_definition.get("description", "not available"),
-                    ref_appears,
-                )
-            )
-    return global_result
-
-
-def create_array_typing(array_definition: dict) -> Tuple[str, bool]:
-    ref_appears = False
-    high_level_type = (
-        "Set" if array_definition.get("uniqueItems", False) is True else "List"
-    )
-    if len(array_definition.get("items", [])) == 0:
-        return f"{high_level_type}[Any]", ref_appears
-    if "type" not in array_definition["items"]:
-        return "unknown", ref_appears
-    if "reference" in array_definition["items"]:
-        ref_appears = True
-    if "$ref" in array_definition["items"]["type"]:
-        t_name = array_definition["items"]["type"]["$ref"].split("/")[-1]
-    elif array_definition["items"]["type"] in TYPE_MAPPING:
-        t_name = TYPE_MAPPING[array_definition["items"]["type"]]
-    elif array_definition["items"]["type"] == "array":
-        t_name = create_array_typing(array_definition["items"]["type"])
-    else:
-        t_name = "unknown"
-    return f"{high_level_type}[{t_name}]", ref_appears
-
-
-def format_block_inputs(outputs_manifest: dict) -> str:
-    data = format_inputs(outputs_manifest)
+def format_block_inputs(block_schema: dict) -> str:
+    parsed_schema = parse_block_manifest_schema(schema=block_schema)
     rows = []
-    for name, kind, description, ref_appear in data:
+    for input_description in parsed_schema.primitive_types.values():
+        ref_appear = input_description.property_name in parsed_schema.selectors
         rows.append(
-            f"| `{name}` | `{kind}` | {description}. | {'✅' if ref_appear else '❌'} |"
+            f"| `{input_description.property_name}` | `{input_description.type_annotation}` | "
+            f"{input_description.property_description}. | {'✅' if ref_appear else '❌'} |"
         )
-
     return "\n".join(USER_CONFIGURATION_HEADER + rows)
 
 
-def format_input_bindings(block_definition: dict) -> str:
-    data = get_input_bindings(block_definition)
+def format_input_bindings(block_schema: dict) -> str:
+    parsed_schema = parse_block_manifest_schema(schema=block_schema)
     rows = []
-    for name, kind, description in data:
-        rows.append(f"        - `{name}` (`{kind}`): {description}.")
+    for selector in parsed_schema.selectors.values():
+        rows.append(
+            f"        - `{selector.property_name}` (`{selector.to_type_annotation()}`): {selector.property_description}."
+        )
     return "\n".join(rows)
 
 
@@ -397,134 +212,11 @@ def get_class_name(fully_qualified_name: str) -> str:
     return fully_qualified_name.split(".")[-1]
 
 
-def create_directory_if_not_exists(directory_path: str) -> None:
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-
-
-def get_references_for_blocks(description) -> list:
-    result = []
-    for block in description["blocks"]:
-        block_title = get_class_name(block["fully_qualified_class_name"])
-        for property_name, property_definition in block["block_manifest"][
-            "properties"
-        ].items():
-            union_elements = property_definition.get("anyOf", [property_definition])
-            for element in union_elements:
-                if not element.get("reference", False):
-                    continue
-                result.append(
-                    (
-                        block_title,
-                        property_name,
-                        element["selected_element"],
-                        [e["name"] for e in element.get("kind", [])],
-                    )
-                )
-    return result
-
-
-def get_outputs_for_blocks(description) -> list:
-    result = []
-    for block in description["blocks"]:
-        block_title = get_class_name(block["fully_qualified_class_name"])
-        for output in block["outputs_manifest"]:
-            result.append((block_title, output["name"], output["kind"]))
-    return result
-
-
-def get_allowed_connections(
-    start_block: str,
-    blocks_references: list,
-    blocks_outputs: list,
-) -> list:
-    kind_major_step_output_references = defaultdict(list)
-    for block_type, field_name, selected_element, kind in blocks_references:
-        if selected_element != "step_output":
-            continue
-        for k in kind:
-            kind_major_step_output_references[k].append((block_type, field_name))
-    result = []
-    for output in blocks_outputs:
-        if output[0] != start_block:
-            continue
-        start_block_output_name = output[1]
-        for kind in output[2]:
-            considered_matches = kind_major_step_output_references.get(
-                kind["name"], []
-            ) + kind_major_step_output_references.get("*", [])
-            for block_type, field_name in considered_matches:
-                if field_name == "*":
-                    continue
-                result.append(
-                    (start_block, start_block_output_name, block_type, field_name)
-                )
-    return list(set(result))
-
-
-def describe_block(
-    blocks_references: list,
-    blocks_outputs: list,
-    block_description: dict,
-) -> dict:
-    block_data = {}
-
-    block_manifest = block_description["block_manifest"]
-    output_manifest = block_description["outputs_manifest"]
-
-    block_data["name"] = get_class_name(block_description["fully_qualified_class_name"])
-    block_data["inputs"] = []
-    for property_name, property_description in block_manifest["properties"].items():
-        block_data["inputs"].append(property_name)
-
-    block_data["outputs"] = []
-    for output in output_manifest:
-        block_data["outputs"].append(output["name"])
-
-    allowed_connections = get_allowed_connections(
-        get_class_name(block_description["fully_qualified_class_name"]),
-        blocks_references=blocks_references,
-        blocks_outputs=blocks_outputs,
-    )
-    block_data["connections"] = [connection[2] for connection in allowed_connections]
-    return block_data
-
-
-def retrieve_compatible_blocks(
-    blocks_references: list,
-    blocks_outputs: list,
-    blocks_descriptions: BlocksDescription,
-) -> Tuple[Dict[str, list], Dict[str, list]]:
-    input_blocks = {}
-    output_blocks = {}
-
-    for block in blocks_descriptions.blocks:
-        block_data = describe_block(blocks_references, blocks_outputs, block.dict())
-        block_name = get_class_name(block.dict()["fully_qualified_class_name"])
-
-        for compatible_output_block in block_data["connections"]:
-            if compatible_output_block not in input_blocks:
-                input_blocks[compatible_output_block] = []
-            if block_name not in output_blocks:
-                output_blocks[block_name] = []
-
-            input_blocks[compatible_output_block].append(block_name)
-            output_blocks[block_name].append(compatible_output_block)
-
-    for k, v in input_blocks.items():
-        input_blocks[k] = list(set(v))
-
-    for k, v in output_blocks.items():
-        output_blocks[k] = list(set(v))
-
-    return input_blocks, output_blocks
-
-
-def format_block_connections(connections: List[str]) -> str:
+def format_block_connections(connections: Set[Type[WorkflowBlock]]) -> str:
     if len(connections) == 0:
         return "None"
     connections = [
-        f"[`{connection}`](/workflows/blocks/{camel_to_snake(connection)})"
+        f"[`{connection.__name__}`](/workflows/blocks/{camel_to_snake(connection.__name__)})"
         for connection in connections
     ]
     return ", ".join(connections)

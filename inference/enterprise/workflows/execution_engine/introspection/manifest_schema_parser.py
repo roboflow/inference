@@ -6,7 +6,7 @@ from inference.enterprise.workflows.errors import (
     BlockInterfaceError,
     PluginInterfaceError,
 )
-from inference.enterprise.workflows.execution_engine.compiler.entities import (
+from inference.enterprise.workflows.execution_engine.introspection.entities import (
     ReferenceDefinition,
     SelectorDefinition,
 )
@@ -115,7 +115,7 @@ def retrieve_selector_from_simple_property(
         )
     return SelectorDefinition(
         step_name=step_name,
-        property=property_name,
+        property_name=property_name,
         index=index,
         selector=property_value,
         allowed_references=allowed_references,
@@ -137,7 +137,7 @@ def retrieve_selector_from_property_with_specific_type(
     ]
     return SelectorDefinition(
         step_name=step_name,
-        property=property_name,
+        property_name=property_name,
         index=index,
         selector=property_value,
         allowed_references=allowed_references,

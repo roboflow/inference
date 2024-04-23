@@ -12,6 +12,9 @@ class Kind(BaseModel):
         return self.name.__hash__() + self.description.__hash__()
 
 
+REFERENCE_KEY = "reference"
+SELECTED_ELEMENT_KEY = "selected_element"
+KIND_KEY = "kind"
 WILDCARD_KIND = Kind(name="*", description="Equivalent of any element")
 IMAGE_KIND = Kind(name="Batch[image]", description="Image in workflows")
 ROBOFLOW_MODEL_ID_KIND = Kind(name="roboflow_model_id", description="Roboflow model id")
@@ -78,14 +81,15 @@ IMAGE_METADATA_KIND = Kind(
 )
 
 STEP_AS_SELECTED_ELEMENT = "step"
+STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
 
 StepSelector = Annotated[
     str,
     StringConstraints(pattern=r"^\$steps\.[A-Za-z_0-9\-]+"),
     Field(
         json_schema_extra={
-            "reference": True,
-            "selected_element": STEP_AS_SELECTED_ELEMENT,
+            REFERENCE_KEY: True,
+            SELECTED_ELEMENT_KEY: STEP_AS_SELECTED_ELEMENT,
         }
     ),
 ]
@@ -95,9 +99,9 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
         kind = [WILDCARD_KIND]
     json_schema_extra = {
-        "reference": True,
-        "selected_element": "step_output",
-        "kind": [k.dict() for k in kind],
+        REFERENCE_KEY: True,
+        SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
+        KIND_KEY: [k.dict() for k in kind],
     }
     return Annotated[
         str,
@@ -110,9 +114,9 @@ def InferenceParameterSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
         kind = [WILDCARD_KIND]
     json_schema_extra = {
-        "reference": True,
-        "selected_element": "inference_parameter",
-        "kind": [k.dict() for k in kind],
+        REFERENCE_KEY: True,
+        SELECTED_ELEMENT_KEY: "inference_parameter",
+        KIND_KEY: [k.dict() for k in kind],
     }
     return Annotated[
         str,
@@ -126,9 +130,9 @@ InferenceImageSelector = Annotated[
     StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9\-]+$"),
     Field(
         json_schema_extra={
-            "reference": True,
-            "selected_element": "inference_image",
-            "kind": [IMAGE_KIND.dict()],
+            REFERENCE_KEY: True,
+            SELECTED_ELEMENT_KEY: "inference_image",
+            KIND_KEY: [IMAGE_KIND.dict()],
         }
     ),
 ]
@@ -138,9 +142,9 @@ OutputStepImageSelector = Annotated[
     StringConstraints(pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"),
     Field(
         json_schema_extra={
-            "reference": True,
-            "selected_element": "step_output",
-            "kind": [IMAGE_KIND.dict()],
+            REFERENCE_KEY: True,
+            SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
+            KIND_KEY: [IMAGE_KIND.dict()],
         }
     ),
 ]

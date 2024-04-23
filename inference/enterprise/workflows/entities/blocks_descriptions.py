@@ -1,13 +1,19 @@
-from typing import List
+from typing import List, Type
 
 from pydantic import BaseModel, Field
 
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import Kind
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 class BlockDescription(BaseModel):
-    block_manifest: dict = Field(
+    manifest_class: Type[WorkflowBlockManifest]
+    block_class: Type[WorkflowBlock]
+    block_schema: dict = Field(
         description="OpenAPI specification of block manifest that "
         "can be used to create workflow step in JSON definition."
     )

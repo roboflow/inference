@@ -25,14 +25,14 @@ def describe_available_blocks() -> BlocksDescription:
     declared_kinds = []
     result = []
     for block in blocks:
-        block_manifest = block.manifest_class.schema()
+        block_schema = block.manifest_class.schema()
         outputs_manifest = block.block_class.describe_outputs()
-        declared_kinds.extend(
-            get_kinds_declared_for_block(block_manifest=block_manifest)
-        )
+        declared_kinds.extend(get_kinds_declared_for_block(block_manifest=block_schema))
         result.append(
             BlockDescription(
-                block_manifest=block_manifest,
+                manifest_class=block.manifest_class,
+                block_class=block.block_class,
+                block_schema=block_schema,
                 outputs_manifest=outputs_manifest,
                 fully_qualified_class_name=block.identifier,
             )
