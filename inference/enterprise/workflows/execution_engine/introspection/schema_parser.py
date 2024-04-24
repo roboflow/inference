@@ -1,4 +1,5 @@
-from collections import OrderedDict
+import itertools
+from collections import OrderedDict, defaultdict
 from dataclasses import replace
 from typing import Dict, List, Optional, Type
 
@@ -10,7 +11,7 @@ from inference.enterprise.workflows.entities.types import (
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     BlockManifestMetadata,
-    PrimitiveTypeMetadata,
+    PrimitiveTypeDefinition,
     ReferenceDefinition,
     SelectorDefinition,
 )
@@ -45,7 +46,7 @@ def parse_block_manifest_schema(schema: dict) -> BlockManifestMetadata:
     )
 
 
-def retrieve_primitives_from_schema(schema: dict) -> Dict[str, PrimitiveTypeMetadata]:
+def retrieve_primitives_from_schema(schema: dict) -> Dict[str, PrimitiveTypeDefinition]:
     result = []
     for property_name, property_definition in schema["properties"].items():
         if property_name in EXCLUDED_PROPERTIES:
@@ -72,7 +73,7 @@ def retrieve_primitive_type_from_simple_property(
     property_name: str,
     property_description: str,
     property_definition: dict,
-) -> Optional[PrimitiveTypeMetadata]:
+) -> Optional[PrimitiveTypeDefinition]:
     if REFERENCE_KEY in property_definition:
         return None
     if "items" in property_definition:
@@ -91,13 +92,13 @@ def retrieve_primitive_type_from_simple_property(
         )
     if property_definition.get("type") in TYPE_MAPPING:
         type_name = TYPE_MAPPING[property_definition["type"]]
-        return PrimitiveTypeMetadata(
+        return PrimitiveTypeDefinition(
             property_name=property_name,
             property_description=property_description,
             type_annotation=type_name,
         )
     if "$ref" in property_definition:
-        return PrimitiveTypeMetadata(
+        return PrimitiveTypeDefinition(
             property_name=property_name,
             property_description=property_description,
             type_annotation=property_definition["$ref"].split("/")[-1],
@@ -114,7 +115,7 @@ def retrieve_primitive_type_from_simple_property(
             property_description=property_description,
             property_definition=property_definition,
         )
-    return PrimitiveTypeMetadata(
+    return PrimitiveTypeDefinition(
         property_name=property_name,
         property_description=property_description,
         type_annotation="Any",
@@ -125,7 +126,7 @@ def retrieve_primitive_type_from_union_property(
     property_name: str,
     property_description: str,
     union_definition: dict,
-) -> Optional[PrimitiveTypeMetadata]:
+) -> Optional[PrimitiveTypeDefinition]:
     union_types = (
         union_definition.get("anyOf", [])
         + union_definition.get("oneOf", [])
@@ -153,7 +154,7 @@ def retrieve_primitive_type_from_union_property(
     final_type_name = ", ".join(list(type_names))
     if len(type_names) > 1:
         final_type_name = f"{high_level_type}[{final_type_name}]"
-    return PrimitiveTypeMetadata(
+    return PrimitiveTypeDefinition(
         property_name=property_name,
         property_description=property_description,
         type_annotation=final_type_name,
@@ -164,7 +165,7 @@ def retrieve_primitive_type_from_dict_property(
     property_name: str,
     property_description: str,
     property_definition: dict,
-) -> Optional[PrimitiveTypeMetadata]:
+) -> Optional[PrimitiveTypeDefinition]:
     if "additionalProperties" in property_definition:
         dict_value_type = retrieve_primitive_type_from_simple_property(
             property_name=property_name,
@@ -173,12 +174,12 @@ def retrieve_primitive_type_from_dict_property(
         )
         if dict_value_type is None:
             return None
-        return PrimitiveTypeMetadata(
+        return PrimitiveTypeDefinition(
             property_name=property_name,
             property_description=property_description,
             type_annotation=f"Dict[{dict_value_type.type_annotation}]",
         )
-    return PrimitiveTypeMetadata(
+    return PrimitiveTypeDefinition(
         property_name=property_name,
         property_description=property_description,
         type_annotation=f"dict",
@@ -196,6 +197,7 @@ def retrieve_selectors_from_schema(schema: dict) -> Dict[str, SelectorDefinition
                 property_name=property_name,
                 property_description=property_description,
                 property_definition=property_definition["items"],
+                is_list_element=True,
             )
         else:
             selector = retrieve_selectors_from_simple_property(
@@ -212,6 +214,7 @@ def retrieve_selectors_from_simple_property(
     property_name: str,
     property_description: str,
     property_definition: dict,
+    is_list_element: bool = False,
 ) -> Optional[SelectorDefinition]:
     if REFERENCE_KEY in property_definition:
         allowed_references = [
@@ -227,18 +230,24 @@ def retrieve_selectors_from_simple_property(
             property_name=property_name,
             property_description=property_description,
             allowed_references=allowed_references,
+            is_list_element=is_list_element,
         )
     if "items" in property_definition:
+        if is_list_element:
+            # ignoring nested references above first level of depth
+            return None
         return retrieve_selectors_from_simple_property(
             property_name=property_name,
             property_description=property_description,
             property_definition=property_definition["items"],
+            is_list_element=True,
         )
     if property_defines_union(property_definition=property_definition):
         return retrieve_selectors_from_union_definition(
             property_name=property_name,
             property_description=property_description,
             union_definition=property_definition,
+            is_list_element=is_list_element,
         )
     return None
 
@@ -255,24 +264,48 @@ def retrieve_selectors_from_union_definition(
     property_name: str,
     property_description: str,
     union_definition: dict,
+    is_list_element: bool,
 ) -> Optional[SelectorDefinition]:
     union_types = (
         union_definition.get("anyOf", [])
         + union_definition.get("oneOf", [])
         + union_definition.get("allOf", [])
     )
-    non_primitive_union_types = [e for e in union_types if e.get(REFERENCE_KEY) is True]
-    allowed_references = []
-    for union_type in non_primitive_union_types:
-        reference_definition = ReferenceDefinition(
-            selected_element=union_type[SELECTED_ELEMENT_KEY],
-            kind=[Kind.model_validate(k) for k in union_type.get(KIND_KEY)],
+    results = []
+    for type_definition in union_types:
+        result = retrieve_selectors_from_simple_property(
+            property_name=property_name,
+            property_description=property_description,
+            property_definition=type_definition,
+            is_list_element=is_list_element,
         )
-        allowed_references.append(reference_definition)
-    if len(allowed_references) == 0:
+        if result is None:
+            continue
+        results.append(result)
+    results_references = list(
+        itertools.chain.from_iterable(r.allowed_references for r in results)
+    )
+    results_references_by_selected_element = defaultdict(set)
+    for reference in results_references:
+        results_references_by_selected_element[reference.selected_element].update(
+            reference.kind
+        )
+    merged_references = []
+    for (
+        reference_selected_element,
+        kind,
+    ) in results_references_by_selected_element.items():
+        merged_references.append(
+            ReferenceDefinition(
+                selected_element=reference_selected_element,
+                kind=list(kind),
+            )
+        )
+    if len(merged_references) == 0:
         return None
     return SelectorDefinition(
         property_name=property_name,
         property_description=property_description,
-        allowed_references=allowed_references,
+        allowed_references=merged_references,
+        is_list_element=is_list_element,
     )

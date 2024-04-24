@@ -5,11 +5,13 @@ from inference.enterprise.workflows.entities.blocks_descriptions import (
     BlocksDescription,
 )
 from inference.enterprise.workflows.entities.types import (
+    STEP_AS_SELECTED_ELEMENT,
     STEP_OUTPUT_AS_SELECTED_ELEMENT,
     WILDCARD_KIND,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     BlockManifestMetadata,
+    BlockPropertyDefinition,
     BlocksConnections,
     DiscoveredConnections,
 )
@@ -26,9 +28,13 @@ def discover_blocks_connections(
     output_kind2schemas = get_all_outputs_kind_major(
         blocks_description=blocks_description
     )
-    input_kind2schemas = get_all_inputs_kind_major(
+    detailed_input_kind2schemas = get_all_inputs_kind_major(
         blocks_description=blocks_description,
         all_schemas=all_schemas,
+    )
+    coarse_input_kind2schemas = convert_kinds_mapping_to_block_wise_format(
+        detailed_input_kind2schemas=detailed_input_kind2schemas,
+        compatible_elements={STEP_OUTPUT_AS_SELECTED_ELEMENT},
     )
     input_property_wise_connections = {}
     output_property_wise_connections = {}
@@ -43,7 +49,7 @@ def discover_blocks_connections(
         output_property_wise_connections[manifest_type] = (
             discover_block_output_connections(
                 starting_block=manifest_type,
-                input_kind2schemas=input_kind2schemas,
+                input_kind2schemas=coarse_input_kind2schemas,
             )
         )
     input_block_wise_connections = (
@@ -67,6 +73,7 @@ def discover_blocks_connections(
     return DiscoveredConnections(
         input_connections=input_connections,
         output_connections=output_connections,
+        kinds_connections=detailed_input_kind2schemas,
     )
 
 
@@ -94,24 +101,28 @@ def get_all_outputs_kind_major(
 def get_all_inputs_kind_major(
     blocks_description: BlocksDescription,
     all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
-) -> Dict[str, Set[Type[WorkflowBlock]]]:
+) -> Dict[str, Set[BlockPropertyDefinition]]:
     kind_major_step_inputs = defaultdict(set)
     for block_description in blocks_description.blocks:
-        if len(all_schemas[block_description.block_class].selectors) > 0:
-            kind_major_step_inputs[WILDCARD_KIND.name].add(
-                block_description.block_class
-            )
         for selector in all_schemas[block_description.block_class].selectors.values():
             for allowed_reference in selector.allowed_references:
-                if (
-                    allowed_reference.selected_element
-                    != STEP_OUTPUT_AS_SELECTED_ELEMENT
-                ):
+                if allowed_reference.selected_element == STEP_AS_SELECTED_ELEMENT:
                     continue
                 for single_kind in allowed_reference.kind:
                     kind_major_step_inputs[single_kind.name].add(
-                        block_description.block_class
+                        BlockPropertyDefinition(
+                            block_type=block_description.block_class,
+                            property_name=selector.property_name,
+                            compatible_element=allowed_reference.selected_element,
+                        )
                     )
+                kind_major_step_inputs[WILDCARD_KIND.name].add(
+                    BlockPropertyDefinition(
+                        block_type=block_description.block_class,
+                        property_name=selector.property_name,
+                        compatible_element=allowed_reference.selected_element,
+                    )
+                )
     return kind_major_step_inputs
 
 
@@ -158,4 +169,17 @@ def convert_property_connections_to_block_wise_connections(
         for property_connections in properties_connections.values():
             block_connections.update(property_connections)
         result[block_type] = block_connections
+    return result
+
+
+def convert_kinds_mapping_to_block_wise_format(
+    detailed_input_kind2schemas: Dict[str, Set[BlockPropertyDefinition]],
+    compatible_elements: Set[str],
+) -> Dict[str, Set[Type[WorkflowBlock]]]:
+    result = defaultdict(set)
+    for kind_name, block_properties_definitions in detailed_input_kind2schemas.items():
+        for definition in block_properties_definitions:
+            if definition.compatible_element not in compatible_elements:
+                continue
+            result[kind_name].add(definition.block_type)
     return result

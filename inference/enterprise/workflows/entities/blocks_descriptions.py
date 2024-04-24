@@ -20,8 +20,12 @@ class BlockDescription(BaseModel):
     outputs_manifest: List[OutputDefinition] = Field(
         description="Definition of step outputs and their kinds"
     )
+    block_source: str = Field(description="Name of source plugin that defines block")
     fully_qualified_class_name: str = Field(
         description="Fully qualified class name of block implementation."
+    )
+    human_friendly_block_name: str = Field(
+        description="Field generated based on class name providing human-friendly name of the block."
     )
 
 

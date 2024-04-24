@@ -61,6 +61,7 @@ nav:
   - Workflows:
     - What is a Workflow?: workflows/about.md
     - Blocks: workflows/blocks.md
+    - Kinds: workflows/kinds.md
     - Understanding Workflows: workflows/understanding.md
     - How to Create and Run a Workflow: workflows/create_and_run.md
     - Supported Blocks:

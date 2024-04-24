@@ -16,31 +16,20 @@ class SelectorDefinition:
     property_name: str
     property_description: str
     allowed_references: List[ReferenceDefinition]
-
-    def to_type_annotation(self) -> str:
-        type_annotation_chunks = set()
-        for allowed_reference in self.allowed_references:
-            if allowed_reference.selected_element == STEP_AS_SELECTED_ELEMENT:
-                type_annotation_chunks.add("step")
-                continue
-            for kind in allowed_reference.kind:
-                type_annotation_chunks.add(kind.name)
-        type_annotation_str = ", ".join(type_annotation_chunks)
-        if len(type_annotation_chunks) > 1:
-            return f"Union[{type_annotation_str}]"
-        return type_annotation_str
+    is_list_element: bool
 
 
 @dataclass(frozen=True)
-class SelectorMetadata:
+class ParsedSelector:
     definition: SelectorDefinition
     step_name: str
+    property_name: str
     value: str
     index: Optional[int]
 
 
 @dataclass(frozen=True)
-class PrimitiveTypeMetadata:
+class PrimitiveTypeDefinition:
     property_name: str
     property_description: str
     type_annotation: str
@@ -48,7 +37,7 @@ class PrimitiveTypeMetadata:
 
 @dataclass(frozen=True)
 class BlockManifestMetadata:
-    primitive_types: Dict[str, PrimitiveTypeMetadata]
+    primitive_types: Dict[str, PrimitiveTypeDefinition]
     selectors: Dict[str, SelectorDefinition]
 
 
@@ -59,6 +48,14 @@ class BlocksConnections:
 
 
 @dataclass(frozen=True)
+class BlockPropertyDefinition:
+    block_type: Type[WorkflowBlock]
+    property_name: str
+    compatible_element: str
+
+
+@dataclass(frozen=True)
 class DiscoveredConnections:
     input_connections: BlocksConnections
     output_connections: BlocksConnections
+    kinds_connections: Dict[str, Set[BlockPropertyDefinition]]

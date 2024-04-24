@@ -42,7 +42,7 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     SelectorDefinition,
 )
-from inference.enterprise.workflows.execution_engine.introspection.manifest_schema_parser import (
+from inference.enterprise.workflows.execution_engine.introspection.selectors_parser import (
     get_step_selectors,
 )
 from inference.enterprise.workflows.prototypes.block import (

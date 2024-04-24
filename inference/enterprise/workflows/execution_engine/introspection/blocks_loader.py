@@ -1,6 +1,7 @@
 import importlib
 import logging
 import os
+from collections import Counter
 from typing import Any, Callable, Dict, List, Union
 
 from inference.enterprise.workflows.core_steps.loader import load_blocks_classes
@@ -16,6 +17,10 @@ from inference.enterprise.workflows.errors import (
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
+from inference.enterprise.workflows.execution_engine.introspection.utils import (
+    build_human_friendly_block_name,
+    get_full_type_name,
+)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 
@@ -28,16 +33,24 @@ def describe_available_blocks() -> BlocksDescription:
         block_schema = block.manifest_class.schema()
         outputs_manifest = block.block_class.describe_outputs()
         declared_kinds.extend(get_kinds_declared_for_block(block_manifest=block_schema))
+        for output in outputs_manifest:
+            declared_kinds.extend(output.kind)
         result.append(
             BlockDescription(
                 manifest_class=block.manifest_class,
                 block_class=block.block_class,
                 block_schema=block_schema,
                 outputs_manifest=outputs_manifest,
+                block_source=block.block_source,
                 fully_qualified_class_name=block.identifier,
+                human_friendly_block_name=build_human_friendly_block_name(
+                    fully_qualified_name=block.identifier,
+                ),
             )
         )
+    _validate_loaded_blocks_names_uniqueness(blocks=result)
     declared_kinds = list(set(declared_kinds))
+    _validate_used_kinds_uniqueness(declared_kinds=declared_kinds)
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
 
 
@@ -45,7 +58,10 @@ def get_kinds_declared_for_block(block_manifest: dict) -> List[Kind]:
     result = []
     for property_name, property_definition in block_manifest["properties"].items():
         union_elements = property_definition.get(
-            "anyOf", property_definition.get("oneOf", [property_definition])
+            "anyOf",
+            property_definition.get(
+                "oneOf", property_definition.get("allOf", [property_definition])
+            ),
         )
         for element in union_elements:
             for raw_kind in element.get("kind", []):
@@ -150,9 +166,31 @@ def _load_initializers_from_plugin(
     }
 
 
-def get_full_type_name(t: type) -> str:
-    t_class = t.__name__
-    t_module = t.__module__
-    if t_module == "builtins":
-        return t_class.__qualname__
-    return t_module + "." + t.__qualname__
+def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> None:
+    block_names_lookup = {}
+    for block in blocks:
+        if block.human_friendly_block_name in block_names_lookup:
+            clashing_block = block_names_lookup[block.human_friendly_block_name]
+            raise PluginLoadingError(
+                public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
+                f"name {block.fully_qualified_class_name} clashes in terms of "
+                f"the class name with other block - defined in "
+                f"{clashing_block.block_source} with fully qualified class name: "
+                f"{clashing_block.fully_qualified_class_name}.",
+                context="workflow_compilation | blocks_loading",
+            )
+        block_names_lookup[block.human_friendly_block_name] = block
+    return None
+
+
+def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
+    kinds_names_counter = Counter(k.name for k in declared_kinds)
+    non_unique_kinds = [k for k, v in kinds_names_counter.items() if v > 1]
+    if len(non_unique_kinds) > 0:
+        raise PluginLoadingError(
+            public_message=f"Loaded plugins blocks define kinds causing names clash "
+            f"(problematic kinds: {non_unique_kinds}). This is most likely caused "
+            f"by loading plugins that defines custom kinds which accidentally hold "
+            f"the same name.",
+            context="workflow_compilation | blocks_loading",
+        )

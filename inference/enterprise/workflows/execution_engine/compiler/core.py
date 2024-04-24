@@ -4,10 +4,6 @@ import networkx as nx
 
 from inference.enterprise.workflows.constants import STEP_NODE_KIND
 from inference.enterprise.workflows.entities.inputs import InferenceParameter
-from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
-    load_initializers,
-    load_workflow_blocks,
-)
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
     InputSubstitution,
@@ -30,6 +26,10 @@ from inference.enterprise.workflows.execution_engine.compiler.validator import (
 )
 from inference.enterprise.workflows.execution_engine.debugger.core import (
     dump_execution_graph,
+)
+from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+    load_initializers,
+    load_workflow_blocks,
 )
 
 

@@ -7,11 +7,11 @@ from typing_extensions import Annotated
 from inference.enterprise.workflows.entities.outputs import JsonField
 from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.errors import WorkflowSyntaxError
-from inference.enterprise.workflows.execution_engine.compiler.blocks_loader import (
-    load_workflow_blocks,
-)
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
+)
+from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+    load_workflow_blocks,
 )
 
 
