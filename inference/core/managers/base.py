@@ -29,6 +29,7 @@ class ModelManager:
     def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
+        self.pingback = None
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -37,8 +38,6 @@ class ModelManager:
         if METRICS_ENABLED:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
-        else:
-            self.pingback = None
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
