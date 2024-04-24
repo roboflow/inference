@@ -60,9 +60,14 @@ class PingbackInfo:
                 "tags": TAGS,
             }
             self.environment_info = context | get_system_info()
+
+            # we will set this from model manager when a new api key is used
+            # to use in case there is no global ENV api key configured
+            self.fallback_api_key = None
+
         except Exception as e:
             logger.debug(
-                "Error sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
+                "Error CCC sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
                 + str(e)
             )
 
@@ -101,6 +106,11 @@ class PingbackInfo:
         """
         all_data = self.environment_info.copy()
         all_data["inference_results"] = []
+
+        # use fallback api key if env didn't have one
+        if self.fallback_api_key and not all_data.get("api_key"):
+            all_data["api_key"] = self.fallback_api_key
+
         try:
             now = time.time()
             start = now - METRICS_INTERVAL

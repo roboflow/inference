@@ -37,6 +37,8 @@ class ModelManager:
         if METRICS_ENABLED:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
+        else:
+            self.pingback = None
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
@@ -91,6 +93,9 @@ class ModelManager:
         logger.debug(
             f"ModelManager - inference from request started for model_id={model_id}."
         )
+        if METRICS_ENABLED and self.pingback:
+            logger.debug("ModelManager - setting pingback fallback api key...")
+            self.pingback.fallback_api_key = request.api_key
         try:
             rtn_val = await self.model_infer(
                 model_id=model_id, request=request, **kwargs
