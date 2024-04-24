@@ -67,7 +67,7 @@ class PingbackInfo:
 
         except Exception as e:
             logger.debug(
-                "Error CCC sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
+                "Error sending pingback to Roboflow, if you want to disable this feature unset the ROBOFLOW_ENABLED environment variable. "
                 + str(e)
             )
 
