@@ -17,6 +17,9 @@ from inference.enterprise.workflows.errors import (
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
+from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
+    retrieve_selectors_from_schema,
+)
 from inference.enterprise.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
@@ -32,7 +35,14 @@ def describe_available_blocks() -> BlocksDescription:
     for block in blocks:
         block_schema = block.manifest_class.schema()
         outputs_manifest = block.block_class.describe_outputs()
-        declared_kinds.extend(get_kinds_declared_for_block(block_manifest=block_schema))
+        schema_selectors = retrieve_selectors_from_schema(schema=block_schema)
+        block_kinds = [
+            k
+            for s in schema_selectors.values()
+            for r in s.allowed_references
+            for k in r.kind
+        ]
+        declared_kinds.extend(block_kinds)
         for output in outputs_manifest:
             declared_kinds.extend(output.kind)
         manifest_type_identifiers = get_manifest_type_identifiers(
@@ -86,22 +96,6 @@ def get_manifest_type_identifiers(
         f"does not fit that requirement.",
         context="workflow_compilation | blocks_loading",
     )
-
-
-def get_kinds_declared_for_block(block_manifest: dict) -> List[Kind]:
-    result = []
-    for property_name, property_definition in block_manifest["properties"].items():
-        union_elements = property_definition.get(
-            "anyOf",
-            property_definition.get(
-                "oneOf", property_definition.get("allOf", [property_definition])
-            ),
-        )
-        for element in union_elements:
-            for raw_kind in element.get("kind", []):
-                parsed_kind = Kind.model_validate(raw_kind)
-                result.append(parsed_kind)
-    return result
 
 
 def load_workflow_blocks() -> List[BlockSpecification]:

@@ -18,19 +18,19 @@ from inference.enterprise.workflows.core_steps.models.foundation.yolo_world impo
     YoloWorldModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.roboflow.instance_segmentation import (
-    RoboflowInstanceSegmentationBlock,
+    RoboflowInstanceSegmentationModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.roboflow.keypoint_detection import (
-    RoboflowKeypointDetectionBlock,
+    RoboflowKeypointDetectionModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.roboflow.multi_class_classification import (
-    RoboflowClassificationBlock,
+    RoboflowClassificationModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.roboflow.multi_label_classification import (
-    RoboflowMultiLabelClassificationBlock,
+    RoboflowMultiLabelClassificationModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.roboflow.object_detection import (
-    RoboflowObjectDetectionBlock,
+    RoboflowObjectDetectionModelBlock,
 )
 from inference.enterprise.workflows.core_steps.models.third_party.barcode_detection import (
     BarcodeDetectorBlock,
@@ -65,11 +65,11 @@ def load_blocks_classes() -> list:
         LMMForClassificationBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
-        RoboflowInstanceSegmentationBlock,
-        RoboflowKeypointDetectionBlock,
-        RoboflowClassificationBlock,
-        RoboflowMultiLabelClassificationBlock,
-        RoboflowObjectDetectionBlock,
+        RoboflowInstanceSegmentationModelBlock,
+        RoboflowKeypointDetectionModelBlock,
+        RoboflowClassificationModelBlock,
+        RoboflowMultiLabelClassificationModelBlock,
+        RoboflowObjectDetectionModelBlock,
         BarcodeDetectorBlock,
         QRCodeDetectorBlock,
         ActiveLearningDataCollectorBlock,

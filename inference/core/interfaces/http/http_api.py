@@ -2,7 +2,7 @@ import base64
 import traceback
 from functools import partial, wraps
 from time import sleep
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
@@ -72,6 +72,8 @@ from inference.core.entities.responses.server_state import (
 )
 from inference.core.entities.responses.workflows import (
     WorkflowInferenceResponse,
+    WorkflowsBlockPropertyDefinition,
+    WorkflowsBlocksDescription,
     WorkflowValidationStatus,
 )
 from inference.core.env import (
@@ -128,28 +130,29 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
-from inference.enterprise.workflows.complier.core import compile_and_execute_async
 from inference.enterprise.workflows.complier.entities import StepExecutionMode
-from inference.enterprise.workflows.complier.graph_parser import prepare_execution_graph
-from inference.enterprise.workflows.complier.introspection import (
-    describe_available_blocks,
-)
 from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
     WorkflowsActiveLearningMiddleware,
 )
-from inference.enterprise.workflows.complier.validator import (
-    validate_workflow_specification,
-)
-from inference.enterprise.workflows.entities.blocks_descriptions import (
-    BlocksDescription,
-)
-from inference.enterprise.workflows.entities.workflows_specification import (
-    WorkflowSpecification,
-)
+from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.errors import (
-    ExecutionEngineError,
-    RuntimePayloadError,
-    WorkflowsCompilerError,
+    ExecutionGraphStructureError,
+    InvalidReferenceTargetError,
+    ReferenceTypeError,
+    RuntimeInputError,
+    WorkflowDefinitionError,
+    WorkflowError,
+)
+from inference.enterprise.workflows.execution_engine.compiler.syntactic_parser import (
+    parse_workflow_definition,
+)
+from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
+from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+    describe_available_blocks,
+    load_workflow_blocks,
+)
+from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
+    discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
 
@@ -223,11 +226,23 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except RuntimePayloadError as e:
+        except (
+            WorkflowDefinitionError,
+            ExecutionGraphStructureError,
+            ReferenceTypeError,
+            InvalidReferenceTargetError,
+            RuntimeInputError,
+        ) as error:
             resp = JSONResponse(
-                status_code=400, content={"message": e.get_public_message()}
+                status_code=400,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "context": error.context,
+                    "inner_error_type": error.inner_error_type,
+                    "inner_error_message": str(error.inner_error),
+                },
             )
-            traceback.print_exc()
         except RoboflowAPINotAuthorizedError:
             resp = JSONResponse(
                 status_code=401,
@@ -272,14 +287,6 @@ def with_route_exceptions(route):
                 status_code=500, content={"message": "Model package is broken."}
             )
             traceback.print_exc()
-        except (
-            WorkflowsCompilerError,
-            ExecutionEngineError,
-        ) as e:
-            resp = JSONResponse(
-                status_code=500, content={"message": e.get_public_message()}
-            )
-            traceback.print_exc()
         except OnnxProviderNotAvailable:
             resp = JSONResponse(
                 status_code=501,
@@ -305,6 +312,18 @@ def with_route_exceptions(route):
                 status_code=503,
                 content={
                     "message": "Internal error. Could not connect to Roboflow API."
+                },
+            )
+            traceback.print_exc()
+        except WorkflowError as error:
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "context": error.context,
+                    "inner_error_type": error.inner_error_type,
+                    "inner_error_message": str(error.inner_error),
                 },
             )
             traceback.print_exc()
@@ -435,15 +454,20 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
-            result = await compile_and_execute_async(
-                workflow_specification=workflow_specification,
-                runtime_parameters=workflow_request.inputs,
-                model_manager=model_manager,
-                api_key=workflow_request.api_key,
+            workflow_init_parameters = {
+                "workflows_core.model_manager": model_manager,
+                "workflows_core.api_key": workflow_request.api_key,
+                "workflows_core.active_learning_middleware": self.workflows_active_learning_middleware,
+                "workflows_core.background_tasks": background_tasks,
+            }
+            execution_engine = ExecutionEngine.init(
+                workflow_definition=workflow_specification,
+                init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 step_execution_mode=step_execution_mode,
-                active_learning_middleware=self.workflows_active_learning_middleware,
-                background_tasks=background_tasks,
+            )
+            result = await execution_engine.run_async(
+                runtime_parameters=workflow_request.inputs
             )
             outputs = serialise_workflow_result(
                 result=result,
@@ -831,15 +855,63 @@ class HttpInterface(BaseInterface):
 
             @app.get(
                 "/workflows/blocks/describe",
-                response_model=BlocksDescription,
+                response_model=WorkflowsBlocksDescription,
                 summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
                 description="Endpoint provides detailed information about workflows building blocks that are "
                 "accessible in the inference server. This information could be used to programmatically "
                 "build / display workflows.",
             )
             @with_route_exceptions
-            async def describe_workflows_blocks() -> BlocksDescription:
-                return describe_available_blocks()
+            async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
+                blocks_description = describe_available_blocks()
+                blocks_connections = discover_blocks_connections(
+                    blocks_description=blocks_description,
+                )
+                kinds_connections = {
+                    kind_name: [
+                        WorkflowsBlockPropertyDefinition(
+                            manifest_type_identifier=c.manifest_type_identifier,
+                            property_name=c.property_name,
+                            compatible_element=c.compatible_element,
+                        )
+                        for c in connections
+                    ]
+                    for kind_name, connections in blocks_connections.kinds_connections.items()
+                }
+                return WorkflowsBlocksDescription(
+                    blocks=blocks_description.blocks,
+                    declared_kinds=blocks_description.declared_kinds,
+                    kinds_connections=kinds_connections,
+                )
+
+            @app.post(
+                "/workflows/blocks/dynamic_outputs",
+                response_model=List[OutputDefinition],
+                summary="[EXPERIMENTAL] Endpoint to get definition of dynamic output for workflow step",
+                description="Endpoint to be used when step outputs can be discovered only after "
+                "filling manifest with data.",
+            )
+            @with_route_exceptions
+            async def get_dynamic_block_outputs(
+                step_manifest: Dict[str, Any]
+            ) -> List[OutputDefinition]:
+                dummy_workflow_definition = {
+                    "version": "1.0",
+                    "inputs": [],
+                    "steps": [step_manifest],
+                    "outputs": [],
+                }
+                parsed_definition = parse_workflow_definition(
+                    raw_workflow_definition=dummy_workflow_definition
+                )
+                parsed_manifest = parsed_definition.steps[0]
+                workflows_blocks = load_workflow_blocks()
+                manifest_type2workflows_block_class = {
+                    block.manifest_class: block.block_class
+                    for block in workflows_blocks
+                }
+                block_class = manifest_type2workflows_block_class[type(parsed_manifest)]
+                return block_class.get_actual_outputs(parsed_manifest)
 
             @app.post(
                 "/workflows/validate",
@@ -849,13 +921,20 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def validate_workflow(
-                request: WorkflowSpecification,
+                specification: dict,
             ) -> WorkflowValidationStatus:
-                validate_workflow_specification(
-                    workflow_specification=request.specification
-                )
-                _ = prepare_execution_graph(
-                    workflow_specification=request.specification
+                step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
+                workflow_init_parameters = {
+                    "workflows_core.model_manager": model_manager,
+                    "workflows_core.api_key": None,
+                    "workflows_core.active_learning_middleware": self.workflows_active_learning_middleware,
+                    "workflows_core.background_tasks": None,
+                }
+                _ = ExecutionEngine.init(
+                    workflow_definition=specification,
+                    init_parameters=workflow_init_parameters,
+                    max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+                    step_execution_mode=step_execution_mode,
                 )
                 return WorkflowValidationStatus(status="ok")
 

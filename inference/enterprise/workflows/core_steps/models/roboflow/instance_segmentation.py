@@ -68,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["RoboflowInstanceSegmentation", "InstanceSegmentationModel"]
+    type: Literal["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -156,7 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
 
-class RoboflowInstanceSegmentationBlock(WorkflowBlock):
+class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
 
     def __init__(
         self,

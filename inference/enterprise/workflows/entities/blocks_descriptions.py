@@ -11,8 +11,8 @@ from inference.enterprise.workflows.prototypes.block import (
 
 
 class BlockDescription(BaseModel):
-    manifest_class: Type[WorkflowBlockManifest]
-    block_class: Type[WorkflowBlock]
+    manifest_class: Type[WorkflowBlockManifest] = Field(exclude=True)
+    block_class: Type[WorkflowBlock] = Field(exclude=True)
     block_schema: dict = Field(
         description="OpenAPI specification of block manifest that "
         "can be used to create workflow step in JSON definition."

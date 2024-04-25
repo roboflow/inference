@@ -285,10 +285,17 @@ def get_kind_of_value_provided_in_step_output(
         manifest=step_manifest
     )
     actual_kind = []
+    matched_property = False
     for output in referred_node_outputs:
         if output.name != step_property:
             continue
+        matched_property = True
         actual_kind.extend(output.kind)
+    if matched_property is False:
+        raise ExecutionGraphStructureError(
+            public_message=f"Found reference to non-existing property `{step_property}` of step `{step_manifest.name}`.",
+            context="workflow_compilation | execution_graph_construction",
+        )
     return actual_kind
 
 

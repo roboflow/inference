@@ -1,7 +1,7 @@
 import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
-from typing import Dict, List, Optional, Type
+from typing import Dict, Optional, Type
 
 from inference.enterprise.workflows.entities.types import (
     KIND_KEY,
