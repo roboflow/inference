@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: roboflow/workflows-enterprise-blocks
+          ref: main
           path: roboflow_enterprise_blocks
       - uses: actions/setup-python@v5
         with:
