@@ -56,6 +56,7 @@ def describe_available_blocks() -> BlocksDescription:
             )
         )
     _validate_loaded_blocks_names_uniqueness(blocks=result)
+    _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
     declared_kinds = list(set(declared_kinds))
     _validate_used_kinds_uniqueness(declared_kinds=declared_kinds)
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
@@ -213,6 +214,29 @@ def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> 
                 context="workflow_compilation | blocks_loading",
             )
         block_names_lookup[block.human_friendly_block_name] = block
+    return None
+
+
+def _validate_loaded_blocks_manifest_type_identifiers(
+    blocks: List[BlockDescription],
+) -> None:
+    types_already_defined = {}
+    for block in blocks:
+        all_types = [
+            block.manifest_type_identifier
+        ] + block.manifest_type_identifier_aliases
+        for type_name in all_types:
+            if type_name in types_already_defined:
+                clashing_block = types_already_defined[type_name]
+                raise PluginLoadingError(
+                    public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
+                    f"name {block.fully_qualified_block_class_name} clashes in terms of "
+                    f"the manifest type identifier (or its alias): {type_name} - defined in "
+                    f"{clashing_block.block_source} with fully qualified class name: "
+                    f"{clashing_block.fully_qualified_block_class_name}.",
+                    context="workflow_compilation | blocks_loading",
+                )
+            types_already_defined[type_name] = block
     return None
 
 

@@ -50,6 +50,7 @@ class BlocksConnections:
 @dataclass(frozen=True)
 class BlockPropertyDefinition:
     block_type: Type[WorkflowBlock]
+    manifest_type_identifier: str
     property_name: str
     compatible_element: str
 

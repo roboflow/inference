@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import List, Set, Tuple, Type
+from typing import Dict, List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
 from inference.enterprise.workflows.entities.blocks_descriptions import BlockDescription
@@ -109,6 +109,10 @@ def main() -> None:
     )
     block_card_lines = []
     blocks_description = describe_available_blocks()
+    block_type2manifest_type_identifier = {
+        block.block_class: block.manifest_type_identifier
+        for block in blocks_description.blocks
+    }
     blocks_connections = discover_blocks_connections(
         blocks_description=blocks_description
     )
@@ -154,16 +158,13 @@ def main() -> None:
         lines_connector="",
     )
     for block in blocks_description.blocks:
-        block_class_name = get_class_name_from_fully_qualified_name(
-            block.fully_qualified_block_class_name
-        )
         block_type = block.block_schema.get("block_type", "").upper()
         block_license = block.block_schema.get("license", "").upper()
 
         short_description = block.block_schema.get("short_description", "")
         long_description = block.block_schema.get("long_description", "")
 
-        documentation_file_name = camel_to_snake(block_class_name) + ".md"
+        documentation_file_name = camel_to_snake(block.manifest_type_identifier) + ".md"
         documentation_file_path = os.path.join(
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name
         )
@@ -177,19 +178,21 @@ def main() -> None:
             input_connections=format_block_connections(
                 connections=blocks_connections.input_connections.block_wise[
                     block.block_class
-                ]
+                ],
+                block_type2manifest_type_identifier=block_type2manifest_type_identifier,
             ),
             output_connections=format_block_connections(
                 connections=blocks_connections.output_connections.block_wise[
                     block.block_class
-                ]
+                ],
+                block_type2manifest_type_identifier=block_type2manifest_type_identifier,
             ),
-            example="\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
+            example="\n\t".join(json.dumps(example_definition, indent=4).split("\n")),
         )
         with open(documentation_file_path, "w") as documentation_file:
             documentation_file.write(documentation_content)
         block_card_line = BLOCK_CARD_TEMPLATE.format(
-            data_url=camel_to_snake(block_class_name),
+            data_url=camel_to_snake(block.manifest_type_identifier),
             data_name=block.manifest_type_identifier,
             data_desc=short_description,
             data_labels=", ".join([block_type, block_license]),
@@ -313,11 +316,17 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
     return "\n".join(rows)
 
 
-def format_block_connections(connections: Set[Type[WorkflowBlock]]) -> str:
+def format_block_connections(
+    connections: Set[Type[WorkflowBlock]],
+    block_type2manifest_type_identifier: Dict[Type[WorkflowBlock], str],
+) -> str:
     if len(connections) == 0:
         return "None"
     connections = [
-        f"[`{connection.__name__}`](/workflows/blocks/{camel_to_snake(connection.__name__)})"
+        (
+            f"[`{block_type2manifest_type_identifier[connection]}`]"
+            f"(/workflows/blocks/{camel_to_snake(block_type2manifest_type_identifier[connection])})"
+        )
         for connection in connections
     ]
     return ", ".join(connections)

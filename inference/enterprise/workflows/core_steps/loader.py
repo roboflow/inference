@@ -33,10 +33,10 @@ from inference.enterprise.workflows.core_steps.models.roboflow.object_detection 
     RoboflowObjectDetectionBlock,
 )
 from inference.enterprise.workflows.core_steps.models.third_party.barcode_detection import (
-    BarcodeDetectionBlock,
+    BarcodeDetectorBlock,
 )
 from inference.enterprise.workflows.core_steps.models.third_party.qr_code_detection import (
-    QRCodeDetectionBlock,
+    QRCodeDetectorBlock,
 )
 from inference.enterprise.workflows.core_steps.sinks.active_learning.data_collector import (
     ActiveLearningDataCollectorBlock,
@@ -70,8 +70,8 @@ def load_blocks_classes() -> list:
         RoboflowClassificationBlock,
         RoboflowMultiLabelClassificationBlock,
         RoboflowObjectDetectionBlock,
-        BarcodeDetectionBlock,
-        QRCodeDetectionBlock,
+        BarcodeDetectorBlock,
+        QRCodeDetectorBlock,
         ActiveLearningDataCollectorBlock,
         AbsoluteStaticCropBlock,
         CropBlock,

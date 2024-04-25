@@ -1,11 +1,9 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import (
-    ClassificationInferenceRequest,
     InstanceSegmentationInferenceRequest,
-    ObjectDetectionInferenceRequest,
 )
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
@@ -26,7 +24,6 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_METADATA_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -71,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["InstanceSegmentationModel"]
+    type: Literal["RoboflowInstanceSegmentation", "InstanceSegmentationModel"]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],

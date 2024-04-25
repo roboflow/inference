@@ -47,7 +47,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
 
-class QRCodeDetectionBlock(WorkflowBlock):
+class QRCodeDetectorBlock(WorkflowBlock):
 
     @classmethod
     def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:

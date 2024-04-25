@@ -112,6 +112,7 @@ def get_all_inputs_kind_major(
                     kind_major_step_inputs[single_kind.name].add(
                         BlockPropertyDefinition(
                             block_type=block_description.block_class,
+                            manifest_type_identifier=block_description.manifest_type_identifier,
                             property_name=selector.property_name,
                             compatible_element=allowed_reference.selected_element,
                         )
@@ -119,6 +120,7 @@ def get_all_inputs_kind_major(
                 kind_major_step_inputs[WILDCARD_KIND.name].add(
                     BlockPropertyDefinition(
                         block_type=block_description.block_class,
+                        manifest_type_identifier=block_description.manifest_type_identifier,
                         property_name=selector.property_name,
                         compatible_element=allowed_reference.selected_element,
                     )

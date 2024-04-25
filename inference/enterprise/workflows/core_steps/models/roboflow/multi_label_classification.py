@@ -59,7 +59,9 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["MultiLabelClassificationModel"]
+    type: Literal[
+        "RoboflowMultiLabelClassification", "MultiLabelClassificationModel"
+    ]
     image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],

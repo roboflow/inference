@@ -19,16 +19,8 @@ from inference.enterprise.workflows.complier.steps_executors.models import (
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_STRING_KIND,
-    BOOLEAN_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
-    IMAGE_METADATA_KIND,
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
-    STRING_KIND,
     FlowControl,
     InferenceImageSelector,
     OutputStepImageSelector,
