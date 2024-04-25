@@ -40,6 +40,7 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     is_step_selector,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
+    ParsedSelector,
     SelectorDefinition,
 )
 from inference.enterprise.workflows.execution_engine.introspection.selectors_parser import (
@@ -49,6 +50,8 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
+NODE_DEFINITION_KEY = "definition"
 
 
 def prepare_execution_graph(
@@ -156,7 +159,7 @@ def add_steps_edges(
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
             step_name=step.name,
-            step_selectors=step_selectors,
+            parsed_selectors=step_selectors,
             manifest_class2block_class=manifest_class2block_class,
         )
     return execution_graph
@@ -165,15 +168,15 @@ def add_steps_edges(
 def add_edges_for_step(
     execution_graph: DiGraph,
     step_name: str,
-    step_selectors: List[SelectorDefinition],
+    parsed_selectors: List[ParsedSelector],
     manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     step_selector = construct_step_selector(step_name=step_name)
-    for step_selector_definition in step_selectors:
+    for parsed_selector in parsed_selectors:
         execution_graph = add_edge_for_step(
             execution_graph=execution_graph,
             step_selector=step_selector,
-            step_selector_definition=step_selector_definition,
+            parsed_selector=parsed_selector,
             manifest_class2block_class=manifest_class2block_class,
         )
     return execution_graph
@@ -182,46 +185,44 @@ def add_edges_for_step(
 def add_edge_for_step(
     execution_graph: DiGraph,
     step_selector: str,
-    step_selector_definition: SelectorDefinition,
+    parsed_selector: ParsedSelector,
     manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     other_step_selector = get_step_selector_from_its_output(
-        step_output_selector=step_selector_definition.selector
+        step_output_selector=parsed_selector.value
     )
     verify_edge_is_created_between_existing_nodes(
         execution_graph=execution_graph,
         start=step_selector,
         end=other_step_selector,
     )
-    if is_step_selector(step_selector_definition.selector):
+    if is_step_selector(parsed_selector.value):
         return establish_flow_control_edge(
             step_selector=step_selector,
-            step_selector_definition=step_selector_definition,
+            parsed_selector=parsed_selector,
             execution_graph=execution_graph,
         )
-    if is_input_selector(step_selector_definition.selector):
-        actual_input_kind = execution_graph.nodes[step_selector_definition.selector][
-            "definition"
+    if is_input_selector(parsed_selector.value):
+        actual_input_kind = execution_graph.nodes[parsed_selector.value][
+            NODE_DEFINITION_KEY
         ].kind
     else:
         other_step_manifest: WorkflowBlockManifest = execution_graph.nodes[
             other_step_selector
-        ]["definition"]
+        ][NODE_DEFINITION_KEY]
         actual_input_kind = get_kind_of_value_provided_in_step_output(
             step_manifest=other_step_manifest,
-            step_property=get_last_chunk_of_selector(
-                selector=step_selector_definition.selector
-            ),
+            step_property=get_last_chunk_of_selector(selector=parsed_selector.value),
             manifest_class2block_class=manifest_class2block_class,
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
-            ref.kind for ref in step_selector_definition.allowed_references
+            ref.kind for ref in parsed_selector.definition.allowed_references
         )
     )
     error_message = (
         f"Failed to validate reference provided for step: {step_selector} regarding property: "
-        f"{step_selector_definition.property_name} with value: {step_selector_definition.selector}. "
+        f"{parsed_selector.property_name} with value: {parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
         f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
     )
@@ -236,11 +237,11 @@ def add_edge_for_step(
 
 def establish_flow_control_edge(
     step_selector: str,
-    step_selector_definition: SelectorDefinition,
+    parsed_selector: ParsedSelector,
     execution_graph: DiGraph,
 ) -> DiGraph:
     if not step_definition_allows_flow_control_references(
-        step_selector_definition=step_selector_definition
+        parsed_selector=parsed_selector
     ):
         raise ExecutionGraphStructureError(
             public_message=f"Detected reference to other step in manifest of step {step_selector}. "
@@ -249,7 +250,7 @@ def establish_flow_control_edge(
             context="workflow_compilation | execution_graph_construction",
         )
     other_node_selector = get_step_selector_from_its_output(
-        step_output_selector=step_selector_definition.selector
+        step_output_selector=parsed_selector.value
     )
     execution_graph.add_edge(step_selector, other_node_selector)
     execution_graph.nodes[step_selector][FLOW_CONTROL_NODE_KEY] = True
@@ -257,13 +258,13 @@ def establish_flow_control_edge(
 
 
 def step_definition_allows_flow_control_references(
-    step_selector_definition: SelectorDefinition,
+    parsed_selector: ParsedSelector,
 ) -> bool:
     return (
         len(
             [
                 definition
-                for definition in step_selector_definition.allowed_references
+                for definition in parsed_selector.definition.allowed_references
                 if definition.selected_element == STEP_AS_SELECTED_ELEMENT
             ]
         )
@@ -386,7 +387,7 @@ def get_nodes_that_do_not_produce_outputs(
     )
     result = set()
     for step_node in step_nodes:
-        step_manifest = execution_graph.nodes[step_node]["definition"]
+        step_manifest = execution_graph.nodes[step_node][NODE_DEFINITION_KEY]
         step_manifest_type = type(step_manifest)
         block_type = manifest_class2block_class[step_manifest_type]
         if len(block_type.get_actual_outputs(step_manifest)) == 0:

@@ -35,6 +35,11 @@ def describe_available_blocks() -> BlocksDescription:
         declared_kinds.extend(get_kinds_declared_for_block(block_manifest=block_schema))
         for output in outputs_manifest:
             declared_kinds.extend(output.kind)
+        manifest_type_identifiers = get_manifest_type_identifiers(
+            block_schema=block_schema,
+            block_source=block.block_source,
+            block_identifier=block.identifier,
+        )
         result.append(
             BlockDescription(
                 manifest_class=block.manifest_class,
@@ -42,16 +47,44 @@ def describe_available_blocks() -> BlocksDescription:
                 block_schema=block_schema,
                 outputs_manifest=outputs_manifest,
                 block_source=block.block_source,
-                fully_qualified_class_name=block.identifier,
+                fully_qualified_block_class_name=block.identifier,
                 human_friendly_block_name=build_human_friendly_block_name(
                     fully_qualified_name=block.identifier,
                 ),
+                manifest_type_identifier=manifest_type_identifiers[0],
+                manifest_type_identifier_aliases=manifest_type_identifiers[1:],
             )
         )
     _validate_loaded_blocks_names_uniqueness(blocks=result)
     declared_kinds = list(set(declared_kinds))
     _validate_used_kinds_uniqueness(declared_kinds=declared_kinds)
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
+
+
+def get_manifest_type_identifiers(
+    block_schema: dict,
+    block_source: str,
+    block_identifier: str,
+) -> List[str]:
+    if "type" not in block_schema["properties"]:
+        raise PluginInterfaceError(
+            public_message="Required `type` property not defined for block "
+            f"`{block_identifier}` loaded from `{block_source}",
+            context="workflow_compilation | blocks_loading",
+        )
+    constant_literal = block_schema["properties"]["type"].get("const")
+    if constant_literal is not None:
+        return [constant_literal]
+    valid_aliases = block_schema["properties"]["type"].get("enum", [])
+    if len(valid_aliases) > 0:
+        return valid_aliases
+    raise PluginInterfaceError(
+        public_message="`type` property for block is required to be `Literal` "
+        "defining at least one unique value to identify block in JSON "
+        f"definitions. Block `{block_identifier}` loaded from `{block_source} "
+        f"does not fit that requirement.",
+        context="workflow_compilation | blocks_loading",
+    )
 
 
 def get_kinds_declared_for_block(block_manifest: dict) -> List[Kind]:
@@ -173,10 +206,10 @@ def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> 
             clashing_block = block_names_lookup[block.human_friendly_block_name]
             raise PluginLoadingError(
                 public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
-                f"name {block.fully_qualified_class_name} clashes in terms of "
+                f"name {block.fully_qualified_block_class_name} clashes in terms of "
                 f"the class name with other block - defined in "
                 f"{clashing_block.block_source} with fully qualified class name: "
-                f"{clashing_block.fully_qualified_class_name}.",
+                f"{clashing_block.fully_qualified_block_class_name}.",
                 context="workflow_compilation | blocks_loading",
             )
         block_names_lookup[block.human_friendly_block_name] = block

@@ -1,8 +1,10 @@
+import json
 import os
 import re
 from typing import List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
+from inference.enterprise.workflows.entities.blocks_descriptions import BlockDescription
 from inference.enterprise.workflows.entities.steps import OutputDefinition
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
 from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
@@ -74,6 +76,13 @@ The available connections depend on its binding kinds. Check what binding kinds
     - output
     
 {block_output_bindings}
+
+
+??? tip "Example JSON definition of {class_name} step"
+
+    ```json
+    {example}
+    ```
 """
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
@@ -146,7 +155,7 @@ def main() -> None:
     )
     for block in blocks_description.blocks:
         block_class_name = get_class_name_from_fully_qualified_name(
-            block.fully_qualified_class_name
+            block.fully_qualified_block_class_name
         )
         block_type = block.block_schema.get("block_type", "").upper()
         block_license = block.block_schema.get("license", "").upper()
@@ -158,8 +167,9 @@ def main() -> None:
         documentation_file_path = os.path.join(
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name
         )
+        example_definition = generate_example_step_definition(block=block)
         documentation_content = BLOCK_DOCUMENTATION_TEMPLATE.format(
-            class_name=block_class_name,
+            class_name=block.manifest_type_identifier,
             description=long_description,
             block_inputs=format_block_inputs(block.block_schema),
             block_input_bindings=format_input_bindings(block.block_schema),
@@ -174,12 +184,13 @@ def main() -> None:
                     block.block_class
                 ]
             ),
+            example="\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
         )
         with open(documentation_file_path, "w") as documentation_file:
             documentation_file.write(documentation_content)
         block_card_line = BLOCK_CARD_TEMPLATE.format(
             data_url=camel_to_snake(block_class_name),
-            data_name=block.human_friendly_block_name,
+            data_name=block.manifest_type_identifier,
             data_desc=short_description,
             data_labels=", ".join([block_type, block_license]),
             data_authors="",
@@ -310,6 +321,23 @@ def format_block_connections(connections: Set[Type[WorkflowBlock]]) -> str:
         for connection in connections
     ]
     return ", ".join(connections)
+
+
+def generate_example_step_definition(block: BlockDescription) -> dict:
+    result = {
+        "name": "<your_step_name_here>",
+        "type": block.manifest_type_identifier,
+    }
+    for property_name, property_definition in block.block_schema["properties"].items():
+        if property_name in result:
+            continue
+        examples = property_definition.get("examples", [])
+        if len(examples) == 0:
+            example = "<block_do_not_provide_example>"
+        else:
+            example = examples[0]
+        result[property_name] = example
+    return result
 
 
 if __name__ == "__main__":
