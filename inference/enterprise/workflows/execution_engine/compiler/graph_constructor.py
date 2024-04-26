@@ -220,7 +220,7 @@ def add_edge_for_step(
     )
     error_message = (
         f"Failed to validate reference provided for step: {step_selector} regarding property: "
-        f"{parsed_selector.property_name} with value: {parsed_selector.value}. "
+        f"{parsed_selector.definition.property_name} with value: {parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
         f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
     )

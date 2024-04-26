@@ -10,6 +10,9 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+PropertyName = str
+KindName = str
+
 
 @dataclass(frozen=True)
 class ReferenceDefinition:
@@ -19,7 +22,7 @@ class ReferenceDefinition:
 
 @dataclass(frozen=True)
 class SelectorDefinition:
-    property_name: str
+    property_name: PropertyName
     property_description: str
     allowed_references: List[ReferenceDefinition]
     is_list_element: bool
@@ -29,27 +32,28 @@ class SelectorDefinition:
 class ParsedSelector:
     definition: SelectorDefinition
     step_name: str
-    property_name: str
     value: str
     index: Optional[int]
 
 
 @dataclass(frozen=True)
 class PrimitiveTypeDefinition:
-    property_name: str
+    property_name: PropertyName
     property_description: str
     type_annotation: str
 
 
 @dataclass(frozen=True)
 class BlockManifestMetadata:
-    primitive_types: Dict[str, PrimitiveTypeDefinition]
-    selectors: Dict[str, SelectorDefinition]
+    primitive_types: Dict[PropertyName, PrimitiveTypeDefinition]
+    selectors: Dict[PropertyName, SelectorDefinition]
 
 
 @dataclass(frozen=True)
 class BlocksConnections:
-    property_wise: Dict[Type[WorkflowBlock], Dict[str, Set[Type[WorkflowBlock]]]]
+    property_wise: Dict[
+        Type[WorkflowBlock], Dict[PropertyName, Set[Type[WorkflowBlock]]]
+    ]
     block_wise: Dict[Type[WorkflowBlock], Set[Type[WorkflowBlock]]]
 
 
@@ -57,7 +61,7 @@ class BlocksConnections:
 class BlockPropertyDefinition:
     block_type: Type[WorkflowBlock]
     manifest_type_identifier: str
-    property_name: str
+    property_name: PropertyName
     compatible_element: str
 
 
@@ -65,7 +69,7 @@ class BlockPropertyDefinition:
 class DiscoveredConnections:
     input_connections: BlocksConnections
     output_connections: BlocksConnections
-    kinds_connections: Dict[str, Set[BlockPropertyDefinition]]
+    kinds_connections: Dict[KindName, Set[BlockPropertyDefinition]]
 
 
 class BlockDescription(BaseModel):
@@ -91,6 +95,7 @@ class BlockDescription(BaseModel):
     )
     manifest_type_identifier_aliases: List[str] = Field(
         description="Aliases of `manifest_type_identifier` that are in use.",
+        default_factory=lambda: [],
     )
 
 

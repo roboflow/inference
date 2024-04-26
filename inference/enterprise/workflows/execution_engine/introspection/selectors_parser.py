@@ -34,7 +34,6 @@ def get_step_selectors(
         else:
             selector = retrieve_selector_from_simple_property(
                 step_name=step_manifest.name,
-                property_name=property_name,
                 property_value=property_value,
                 selector_definition=selector_definition,
             )
@@ -68,7 +67,6 @@ def retrieve_selectors_from_array(
     for index, element in enumerate(property_value):
         selector = retrieve_selector_from_simple_property(
             step_name=step_name,
-            property_name=property_name,
             property_value=element,
             selector_definition=selector_definition,
             index=index,
@@ -80,7 +78,6 @@ def retrieve_selectors_from_array(
 
 def retrieve_selector_from_simple_property(
     step_name: str,
-    property_name: str,
     property_value: Any,
     selector_definition: SelectorDefinition,
     index: Optional[int] = None,
@@ -90,7 +87,6 @@ def retrieve_selector_from_simple_property(
     return ParsedSelector(
         definition=selector_definition,
         step_name=step_name,
-        property_name=property_name,
         value=property_value,
         index=index,
     )

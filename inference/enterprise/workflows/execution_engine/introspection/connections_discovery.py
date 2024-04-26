@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, Set, Type
+from typing import Dict, Generator, Set, Tuple, Type
 
 from inference.enterprise.workflows.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
@@ -7,11 +7,14 @@ from inference.enterprise.workflows.entities.types import (
     WILDCARD_KIND,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
+    BlockDescription,
     BlockManifestMetadata,
     BlockPropertyDefinition,
     BlocksConnections,
     BlocksDescription,
     DiscoveredConnections,
+    ReferenceDefinition,
+    SelectorDefinition,
 )
 from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest_schema,
@@ -101,29 +104,46 @@ def get_all_inputs_kind_major(
     all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
 ) -> Dict[str, Set[BlockPropertyDefinition]]:
     kind_major_step_inputs = defaultdict(set)
+    for (
+        block_description,
+        selector,
+        allowed_reference,
+    ) in enlist_blocks_selectors_and_references(
+        blocks_description=blocks_description,
+        all_schemas=all_schemas,
+    ):
+        if allowed_reference.selected_element == STEP_AS_SELECTED_ELEMENT:
+            continue
+        for single_kind in allowed_reference.kind:
+            kind_major_step_inputs[single_kind.name].add(
+                BlockPropertyDefinition(
+                    block_type=block_description.block_class,
+                    manifest_type_identifier=block_description.manifest_type_identifier,
+                    property_name=selector.property_name,
+                    compatible_element=allowed_reference.selected_element,
+                )
+            )
+        kind_major_step_inputs[WILDCARD_KIND.name].add(
+            BlockPropertyDefinition(
+                block_type=block_description.block_class,
+                manifest_type_identifier=block_description.manifest_type_identifier,
+                property_name=selector.property_name,
+                compatible_element=allowed_reference.selected_element,
+            )
+        )
+    return kind_major_step_inputs
+
+
+def enlist_blocks_selectors_and_references(
+    blocks_description: BlocksDescription,
+    all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
+) -> Generator[
+    Tuple[BlockDescription, SelectorDefinition, ReferenceDefinition], None, None
+]:
     for block_description in blocks_description.blocks:
         for selector in all_schemas[block_description.block_class].selectors.values():
             for allowed_reference in selector.allowed_references:
-                if allowed_reference.selected_element == STEP_AS_SELECTED_ELEMENT:
-                    continue
-                for single_kind in allowed_reference.kind:
-                    kind_major_step_inputs[single_kind.name].add(
-                        BlockPropertyDefinition(
-                            block_type=block_description.block_class,
-                            manifest_type_identifier=block_description.manifest_type_identifier,
-                            property_name=selector.property_name,
-                            compatible_element=allowed_reference.selected_element,
-                        )
-                    )
-                kind_major_step_inputs[WILDCARD_KIND.name].add(
-                    BlockPropertyDefinition(
-                        block_type=block_description.block_class,
-                        manifest_type_identifier=block_description.manifest_type_identifier,
-                        property_name=selector.property_name,
-                        compatible_element=allowed_reference.selected_element,
-                    )
-                )
-    return kind_major_step_inputs
+                yield block_description, selector, allowed_reference
 
 
 def discover_block_input_connections(
