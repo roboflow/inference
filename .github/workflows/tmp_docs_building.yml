@@ -19,7 +19,7 @@ jobs:
           repository: roboflow/workflows-enterprise-blocks
           ref: main
           path: roboflow_enterprise_blocks
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN_FOR_WORKFLOWS_ENTERPRISE }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
