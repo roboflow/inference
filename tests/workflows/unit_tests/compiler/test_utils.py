@@ -1,5 +1,18 @@
 import networkx as nx
 
+from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
+from inference.enterprise.workflows.entities.base import (
+    InferenceImage,
+    InferenceParameter,
+    JsonField,
+)
+from inference.enterprise.workflows.entities.steps import (
+    Condition,
+    Crop,
+    DetectionsConsensus,
+    ObjectDetectionModel,
+    Operator,
+)
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     construct_selector_pointing_step_output,
     get_input_parameters_selectors,
@@ -13,15 +26,6 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     is_condition_step,
     is_input_selector,
     is_step_output_selector,
-)
-from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.workflows.entities.base import JsonField, InferenceImage, InferenceParameter
-from inference.enterprise.workflows.entities.steps import (
-    Condition,
-    Crop,
-    DetectionsConsensus,
-    ObjectDetectionModel,
-    Operator,
 )
 
 

@@ -6,7 +6,11 @@ from inference.enterprise.workflows.complier.validator import (
     validate_steps_names_are_unique,
     validate_workflow_specification,
 )
-from inference.enterprise.workflows.entities.base import JsonField, InferenceImage, InferenceParameter
+from inference.enterprise.workflows.entities.base import (
+    InferenceImage,
+    InferenceParameter,
+    JsonField,
+)
 from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
 from inference.enterprise.workflows.entities.workflows_specification import (
     WorkflowSpecificationV1,

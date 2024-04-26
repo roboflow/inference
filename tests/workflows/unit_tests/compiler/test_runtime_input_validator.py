@@ -11,7 +11,10 @@ from inference.enterprise.workflows.complier.runtime_input_validator import (
     validate_inputs_binding,
 )
 from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.workflows.entities.base import InferenceImage, InferenceParameter
+from inference.enterprise.workflows.entities.base import (
+    InferenceImage,
+    InferenceParameter,
+)
 from inference.enterprise.workflows.entities.steps import Crop, ObjectDetectionModel
 from inference.enterprise.workflows.errors import (
     RuntimeParameterMissingError,

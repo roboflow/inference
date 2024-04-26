@@ -31,7 +31,7 @@ TYPE_MAPPING = {
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
-    schema = manifest_type.schema()
+    schema = manifest_type.model_json_schema()
     return parse_block_manifest_schema(schema=schema)
 
 
@@ -52,24 +52,17 @@ def retrieve_primitives_from_schema(schema: dict) -> Dict[str, PrimitiveTypeDefi
         if property_name in EXCLUDED_PROPERTIES:
             continue
         property_description = property_definition.get("description", "not available")
-        if "items" in property_definition:
-            primitive_metadata = retrieve_primitive_type_from_simple_property(
-                property_name=property_name,
-                property_description=property_description,
-                property_definition=property_definition["items"],
-            )
-        else:
-            primitive_metadata = retrieve_primitive_type_from_simple_property(
-                property_name=property_name,
-                property_description=property_description,
-                property_definition=property_definition,
-            )
+        primitive_metadata = retrieve_primitive_type_from_property(
+            property_name=property_name,
+            property_description=property_description,
+            property_definition=property_definition,
+        )
         if primitive_metadata is not None:
             result.append(primitive_metadata)
     return OrderedDict((r.property_name, r) for r in result)
 
 
-def retrieve_primitive_type_from_simple_property(
+def retrieve_primitive_type_from_property(
     property_name: str,
     property_description: str,
     property_definition: dict,
@@ -77,7 +70,7 @@ def retrieve_primitive_type_from_simple_property(
     if REFERENCE_KEY in property_definition:
         return None
     if "items" in property_definition:
-        result = retrieve_primitive_type_from_simple_property(
+        result = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
             property_definition=property_definition["items"],
@@ -135,7 +128,7 @@ def retrieve_primitive_type_from_union_property(
     primitive_union_types = [e for e in union_types if REFERENCE_KEY not in e]
     union_types_metadata = []
     for union_type in primitive_union_types:
-        union_type_metadata = retrieve_primitive_type_from_simple_property(
+        union_type_metadata = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
             property_definition=union_type,
@@ -151,7 +144,7 @@ def retrieve_primitive_type_from_union_property(
         type_names.remove("None")
     else:
         high_level_type = "Union"
-    final_type_name = ", ".join(list(type_names))
+    final_type_name = ", ".join(list(sorted(type_names)))
     if len(type_names) > 1:
         final_type_name = f"{high_level_type}[{final_type_name}]"
     return PrimitiveTypeDefinition(
@@ -167,7 +160,7 @@ def retrieve_primitive_type_from_dict_property(
     property_definition: dict,
 ) -> Optional[PrimitiveTypeDefinition]:
     if "additionalProperties" in property_definition:
-        dict_value_type = retrieve_primitive_type_from_simple_property(
+        dict_value_type = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
             property_definition=property_definition["additionalProperties"],
@@ -177,12 +170,12 @@ def retrieve_primitive_type_from_dict_property(
         return PrimitiveTypeDefinition(
             property_name=property_name,
             property_description=property_description,
-            type_annotation=f"Dict[{dict_value_type.type_annotation}]",
+            type_annotation=f"Dict[str, {dict_value_type.type_annotation}]",
         )
     return PrimitiveTypeDefinition(
         property_name=property_name,
         property_description=property_description,
-        type_annotation=f"dict",
+        type_annotation=f"Dict[Any, Any]",
     )
 
 
