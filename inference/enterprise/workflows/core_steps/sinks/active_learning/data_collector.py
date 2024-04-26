@@ -1,10 +1,14 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from fastapi import BackgroundTasks
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, confloat
+from pydantic import ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.utils.image_utils import load_image
+from inference.enterprise.workflows.core_steps.sinks.active_learning.entities import (
+    DisabledActiveLearningConfiguration,
+    EnabledActiveLearningConfiguration,
+)
 from inference.enterprise.workflows.core_steps.sinks.active_learning.middleware import (
     WorkflowsActiveLearningMiddleware,
 )
@@ -29,85 +33,6 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-
-class DisabledActiveLearningConfiguration(BaseModel):
-    enabled: Literal[False]
-
-
-class LimitDefinition(BaseModel):
-    type: Literal["minutely", "hourly", "daily"]
-    value: PositiveInt
-
-
-class RandomSamplingConfig(BaseModel):
-    type: Literal["random"]
-    name: str
-    traffic_percentage: confloat(ge=0.0, le=1.0)
-    tags: List[str] = Field(default_factory=lambda: [])
-    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
-
-
-class CloseToThresholdSampling(BaseModel):
-    type: Literal["close_to_threshold"]
-    name: str
-    probability: confloat(ge=0.0, le=1.0)
-    threshold: confloat(ge=0.0, le=1.0)
-    epsilon: confloat(ge=0.0, le=1.0)
-    max_batch_images: Optional[int] = Field(default=None)
-    only_top_classes: bool = Field(default=True)
-    minimum_objects_close_to_threshold: int = Field(default=1)
-    selected_class_names: Optional[List[str]] = Field(default=None)
-    tags: List[str] = Field(default_factory=lambda: [])
-    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
-
-
-class ClassesBasedSampling(BaseModel):
-    type: Literal["classes_based"]
-    name: str
-    probability: confloat(ge=0.0, le=1.0)
-    selected_class_names: List[str]
-    tags: List[str] = Field(default_factory=lambda: [])
-    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
-
-
-class DetectionsBasedSampling(BaseModel):
-    type: Literal["detections_number_based"]
-    name: str
-    probability: confloat(ge=0.0, le=1.0)
-    more_than: Optional[NonNegativeInt]
-    less_than: Optional[NonNegativeInt]
-    selected_class_names: Optional[List[str]] = Field(default=None)
-    tags: List[str] = Field(default_factory=lambda: [])
-    limits: List[LimitDefinition] = Field(default_factory=lambda: [])
-
-
-class ActiveLearningBatchingStrategy(BaseModel):
-    batches_name_prefix: str
-    recreation_interval: Literal["never", "daily", "weekly", "monthly"]
-    max_batch_images: Optional[int] = Field(default=None)
-
-
-ActiveLearningStrategyType = Annotated[
-    Union[
-        RandomSamplingConfig,
-        CloseToThresholdSampling,
-        ClassesBasedSampling,
-        DetectionsBasedSampling,
-    ],
-    Field(discriminator="type"),
-]
-
-
-class EnabledActiveLearningConfiguration(BaseModel):
-    enabled: bool
-    persist_predictions: bool
-    sampling_strategies: List[ActiveLearningStrategyType]
-    batching_strategy: ActiveLearningBatchingStrategy
-    tags: List[str] = Field(default_factory=lambda: [])
-    max_image_size: Optional[Tuple[PositiveInt, PositiveInt]] = Field(default=None)
-    jpeg_compression_level: int = Field(default=95, gt=0, le=100)
-
 
 SHORT_DESCRIPTION = (
     "Collect data and predictions that flow through workflows for use "

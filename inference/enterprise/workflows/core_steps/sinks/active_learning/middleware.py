@@ -6,7 +6,7 @@ from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.cache.base import BaseCache
 from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
-from inference.enterprise.workflows.core_steps.sinks.active_learning.data_collector import (
+from inference.enterprise.workflows.core_steps.sinks.active_learning.entities import (
     DisabledActiveLearningConfiguration,
     EnabledActiveLearningConfiguration,
 )
