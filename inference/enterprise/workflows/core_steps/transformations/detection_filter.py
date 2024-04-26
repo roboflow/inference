@@ -22,7 +22,6 @@ from inference.enterprise.workflows.entities.types import (
     FlowControl,
     StepOutputSelector,
 )
-from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -211,6 +210,6 @@ def build_filter_callable(
     if definition.type == "DetectionFilterDefinition":
         operator = OPERATORS_FUNCTIONS[definition.operator]
         return lambda e: operator(e[definition.field_name], definition.reference_value)
-    raise ExecutionGraphError(
+    raise ValueError(
         f"Detected filter definition of type {definition.type} which is unknown"
     )

@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.core_steps.common.utils import (

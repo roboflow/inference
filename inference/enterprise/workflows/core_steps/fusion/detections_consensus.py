@@ -42,7 +42,6 @@ from inference.enterprise.workflows.entities.types import (
     InferenceParameterSelector,
     StepOutputSelector,
 )
-from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -198,7 +197,7 @@ class DetectionsConsensusBlock(WorkflowBlock):
         detections_merge_coordinates_aggregation: AggregationMode,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         if len(predictions) < 1:
-            raise ExecutionGraphError(
+            raise ValueError(
                 f"Consensus step requires at least one source of predictions."
             )
         batch_sizes = get_and_validate_batch_sizes(
@@ -243,7 +242,7 @@ def get_and_validate_batch_sizes(
 ) -> List[int]:
     batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
     if not all_batch_sizes_equal(batch_sizes=batch_sizes):
-        raise ExecutionGraphError(f"Detected missmatch of input dimensions.")
+        raise ValueError(f"Detected missmatch of input dimensions.")
     return batch_sizes
 
 
@@ -262,7 +261,7 @@ def get_parent_id_of_predictions_from_different_sources(
         p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
     }
     if len(encountered_parent_ids) > 1:
-        raise ExecutionGraphError(
+        raise ValueError(
             f"Missmatch in predictions - while executing consensus step, "
             f"in equivalent batches, detections are assigned different parent "
             f"identifiers, whereas consensus can only be applied for predictions "

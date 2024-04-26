@@ -28,7 +28,6 @@ from inference.enterprise.workflows.entities.types import (
     OutputStepImageSelector,
     StepOutputSelector,
 )
-from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -156,7 +155,7 @@ class ActiveLearningDataCollectorBlock(WorkflowBlock):
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         prediction_type = set(prediction_type)
         if len(prediction_type) > 1:
-            raise ExecutionGraphError(
+            raise ValueError(
                 f"Active Learning data collection step requires only single prediction "
                 f"type to be part of ingest. Detected: {prediction_type}."
             )

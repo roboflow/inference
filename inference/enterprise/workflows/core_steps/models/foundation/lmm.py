@@ -33,7 +33,6 @@ from inference.enterprise.workflows.entities.types import (
     InferenceParameterSelector,
     OutputStepImageSelector,
 )
-from inference.enterprise.workflows.errors import ExecutionGraphError
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -277,7 +276,7 @@ async def run_gpt_4v_llm_prompting(
     expected_output: Optional[Dict[str, str]],
 ) -> Tuple[List[Dict[str, str]], List[dict]]:
     if remote_api_key is None:
-        raise ExecutionGraphError(
+        raise ValueError(
             f"Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
         )
     results = await execute_gpt_4v_requests(
@@ -398,7 +397,7 @@ async def get_cogvlm_generations_from_remote_api(
     api_key: Optional[str],
 ) -> List[Dict[str, Any]]:
     if WORKFLOWS_REMOTE_API_TARGET == "hosted":
-        raise ExecutionGraphError(
+        raise ValueError(
             f"Chosen remote execution of CogVLM model in Roboflow Hosted API mode, but remote execution "
             f"is only possible for self-hosted option."
         )
