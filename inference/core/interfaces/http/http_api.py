@@ -130,9 +130,7 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
-from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
-    WorkflowsActiveLearningMiddleware,
-)
+from inference.enterprise.workflows.core_steps.sinks.active_learning.middleware import WorkflowsActiveLearningMiddleware
 from inference.enterprise.workflows.entities.base import (
     OutputDefinition,
     StepExecutionMode,
