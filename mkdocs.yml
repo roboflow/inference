@@ -60,32 +60,14 @@ nav:
       - YOLO-World (Object Detection): foundation/yolo_world.md
   - Workflows:
     - What is a Workflow?: workflows/about.md
+    - Understanding Workflows: workflows/understanding.md
+    - Workflows definitions: workflows/definitions.md
+    - How to Create and Run a Workflow: workflows/create_and_run.md
     - Blocks: workflows/blocks.md
     - Kinds: workflows/kinds.md
-    - Understanding Workflows: workflows/understanding.md
-    - How to Create and Run a Workflow: workflows/create_and_run.md
-    - Supported Blocks:
-      - Classify Objects (Single-Class): workflows/classify_objects.md
-      - Classify Objects (Multi-Class): workflows/classify_objects_multi.md
-      - Detect Objects: workflows/detect_objects.md
-      - Detect Keypoints: workflows/detect_keypoints.md
-      - Segment Object Instances: workflows/segment_objects.md
-      - Optical Character Recognition: workflows/ocr.md
-      - Detect QR Codes: workflows/detect_qr_codes.md
-      - Crop: workflows/crop.md
-      - Filter Detections: workflows/filter_detections.md
-      - Offset Detections: workflows/offset_detections.md
-      - Absolute Static and Relative Crop: workflows/absolute_static_crop.md
-      - Reach Consensus Between Models: workflows/reach_consensus.md
-      - Active Learning: workflows/active_learning.md
-      - Foundation Models:
-        - Use an LMM: workflows/use_lmm.md
-        - Use an LMM (Classification): workflows/use_lmm_classification.md
-        - Compare CLIP Vectors: workflows/compare_clip_vectors.md
-        - YOLO-World: workflows/yolo_world.md
-      - Advanced:
-        - Create a New Workflow Block: workflows/workflows_contribution.md
-        - Modes of Running Workflows: workflows/modes_of_running.md
+    - Advanced Topics:
+      - Create a New Workflow Block: workflows/workflows_contribution.md
+      - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
     - Inference Pipeline: using_inference/inference_pipeline.md
     - Active Learning:

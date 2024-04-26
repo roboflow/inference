@@ -40,9 +40,6 @@ class InferenceImage(BaseModel):
     name: str
     kind: List[Kind] = Field(default=[IMAGE_KIND])
 
-    def get_type(self) -> str:
-        return self.type
-
 
 class InferenceParameter(BaseModel):
     type: Literal["InferenceParameter"]
@@ -51,9 +48,6 @@ class InferenceParameter(BaseModel):
     default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
         default=None
     )
-
-    def get_type(self) -> str:
-        return self.type
 
 
 InputType = Annotated[
