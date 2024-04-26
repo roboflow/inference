@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -59,3 +59,35 @@ class VideoFrame:
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
     source_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class SourceProperties:
+    width: int
+    height: int
+    total_frames: int
+    is_file: bool
+    fps: float
+
+
+class VideoFrameProducer:
+    def grab(self) -> bool:
+        raise NotImplementedError
+
+    def retrieve(self) -> Tuple[bool, np.ndarray]:
+        raise NotImplementedError
+
+    def release(self):
+        raise NotImplementedError
+
+    def isOpened(self) -> bool:
+        raise NotImplementedError
+
+    def discover_source_properties(self) -> SourceProperties:
+        raise NotImplementedError
+
+    def initialize_source_properties(self, properties: Dict[str, float]):
+        pass
+
+
+VideoSourceIdentifier = Union[str, int, Callable[[], VideoFrameProducer]]

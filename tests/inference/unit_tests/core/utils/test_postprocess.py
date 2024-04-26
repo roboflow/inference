@@ -1,3 +1,6 @@
+from contextlib import ExitStack as DoesNotRaise
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
 import pytest
 
@@ -23,6 +26,12 @@ from inference.core.utils.postprocess import (
     undo_image_padding_for_predicted_keypoints,
     undo_image_padding_for_predicted_polygons,
 )
+
+
+Height = int
+Width = int
+XCoord = int
+YCoord = int
 
 
 def test_cosine_similarity_against_vectors() -> None:
@@ -498,6 +507,187 @@ def test_post_process_polygons_when_stretching_resize_used() -> None:
 
     # then
     assert np.allclose(np.array(result), expected_result)
+
+
+@pytest.mark.parametrize(
+    "polygons, infer_shape, origin_shape, preproc, expected_result, expected_exception",
+    [
+        ([], (), (), {}, np.array([]), pytest.raises(IndexError)),  # malformed input
+        ([], (100, 100), (100, 100), {}, np.array([]), DoesNotRaise()),  # no polygons
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (100, 100),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # no transformation required - square image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (1000, 1000),
+            {},
+            np.array([[(100, 100), (200, 200), (100, 200)]]),
+            DoesNotRaise(),
+        ),  # inflate keeping aspect ratio - square image
+        (
+            [[(100, 100), (200, 200), (100, 200)]],
+            (1000, 1000),
+            (100, 100),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # shrink  keeping aspect ratio - square image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 200),
+            (100, 200),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # no transformation required - rectangular image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (200, 100),
+            (200, 100),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # no transformation required - rectangular image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 200),
+            (1000, 2000),
+            {},
+            np.array([[(100, 100), (200, 200), (100, 200)]]),
+            DoesNotRaise(),
+        ),  # inflate keeping aspect ratio - rectangular image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (200, 100),
+            (2000, 1000),
+            {},
+            np.array([[(100, 100), (200, 200), (100, 200)]]),
+            DoesNotRaise(),
+        ),  # inflate keeping aspect ratio - rectangular image
+        (
+            [[(100, 100), (200, 200), (100, 200)]],
+            (1000, 2000),
+            (100, 200),
+            {},
+            np.array([(10, 10), (20, 20), (10, 20)]),
+            DoesNotRaise(),
+        ),  # shrink keeping aspect ratio - rectangular image
+        (
+            [[(100, 100), (200, 200), (100, 200)]],
+            (2000, 1000),
+            (200, 100),
+            {},
+            np.array([(10, 10), (20, 20), (10, 20)]),
+            DoesNotRaise(),
+        ),  # shrink keeping aspect ratio - rectangular image
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (1000, 100),
+            {},
+            np.array([[(10, 100), (20, 200), (10, 200)]]),
+            DoesNotRaise(),
+        ),  # square -> rectangular (inflate vertically)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (100, 1000),
+            {},
+            np.array([[(100, 10), (200, 20), (100, 20)]]),
+            DoesNotRaise(),
+        ),  # square -> rectangular (inflate horizontally)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (10, 100),
+            {},
+            np.array([[(10, 1), (20, 2), (10, 2)]]),
+            DoesNotRaise(),
+        ),  # square -> rectangular (shrink vertically)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 100),
+            (100, 10),
+            {},
+            np.array([[(1, 10), (2, 20), (1, 20)]]),
+            DoesNotRaise(),
+        ),  # square -> rectangular (shrink horizontally)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (20, 200),
+            (200, 200),
+            {},
+            np.array([[(10, 100), (20, 200), (10, 200)]]),
+            DoesNotRaise(),
+        ),  # rectangular -> square (inflate vertically)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (200, 20),
+            (200, 200),
+            {},
+            np.array([[(100, 10), (200, 20), (100, 20)]]),
+            DoesNotRaise(),
+        ),  # rectangular -> square (inflate horizontally)
+        (
+            [[(10, 100), (20, 200), (10, 200)]],
+            (1000, 100),
+            (100, 100),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # rectangular -> square (shrink vertically)
+        (
+            [[(100, 10), (200, 20), (100, 20)]],
+            (100, 1000),
+            (100, 100),
+            {},
+            np.array([[(10, 10), (20, 20), (10, 20)]]),
+            DoesNotRaise(),
+        ),  # rectangular -> square (shrink horizontally)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (100, 200),
+            (100 * 10.8, 200 * 9.6),
+            {},
+            np.array(
+                [[(10 * 9.6, 10 * 10.8), (20 * 9.6, 20 * 10.8), (10 * 9.6, 20 * 10.8)]]
+            ),
+            DoesNotRaise(),
+        ),  # rectangular -> rectangular (inflate to different aspect ratio)
+        (
+            [[(10, 10), (20, 20), (10, 20)]],
+            (1080, 1920),
+            (1080 / 10.8, 1920 / 9.6),
+            {},
+            np.array(
+                [[(10 / 9.6, 10 / 10.8), (20 / 9.6, 20 / 10.8), (10 / 9.6, 20 / 10.8)]]
+            ),
+            DoesNotRaise(),
+        ),  # rectangular -> rectangular (shrink to different aspect ratio)
+    ],
+)
+def test_post_process_polygons(
+    polygons: List[List[Tuple[XCoord, YCoord]]],
+    infer_shape: Tuple[Height, Width],
+    origin_shape: Tuple[Height, Width],
+    preproc: Dict[str, Any],
+    expected_result: np.array,
+    expected_exception: Exception,
+) -> None:
+    with expected_exception:
+        result = post_process_polygons(
+            infer_shape=infer_shape,
+            polys=polygons,
+            origin_shape=origin_shape,
+            preproc=preproc,
+        )
+        assert np.allclose(np.array(result), expected_result)
 
 
 def test_post_process_polygons_when_fit_resize_used() -> None:

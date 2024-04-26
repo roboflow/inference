@@ -295,6 +295,7 @@ class Gaze(OnnxRoboflowCoreModel):
                     faces_per_img, gazes_per_img, imgW, imgH, time_total
                 )
             )
+            idx_gaze += len(faces_per_img)
 
         return response
 

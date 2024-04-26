@@ -29,6 +29,7 @@ class ModelManager:
     def __init__(self, model_registry: ModelRegistry, models: Optional[dict] = None):
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
+        self.pingback = None
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -91,6 +92,9 @@ class ModelManager:
         logger.debug(
             f"ModelManager - inference from request started for model_id={model_id}."
         )
+        if METRICS_ENABLED and self.pingback:
+            logger.debug("ModelManager - setting pingback fallback api key...")
+            self.pingback.fallback_api_key = request.api_key
         try:
             rtn_val = await self.model_infer(
                 model_id=model_id, request=request, **kwargs
