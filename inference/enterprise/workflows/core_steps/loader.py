@@ -56,7 +56,7 @@ from inference.enterprise.workflows.core_steps.transformations.relative_static_c
 )
 
 
-def load_blocks_classes() -> list:
+def load_blocks() -> list:
     return [
         ConditionBlock,
         DetectionsConsensusBlock,

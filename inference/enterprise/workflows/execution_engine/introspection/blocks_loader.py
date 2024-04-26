@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from typing import Any, Callable, Dict, List, Union
 
-from inference.enterprise.workflows.core_steps.loader import load_blocks_classes
+from inference.enterprise.workflows.core_steps.loader import load_blocks
 from inference.enterprise.workflows.entities.types import Kind
 from inference.enterprise.workflows.errors import (
     PluginInterfaceError,
@@ -105,7 +105,7 @@ def load_workflow_blocks() -> List[BlockSpecification]:
 
 
 def load_core_workflow_blocks() -> List[BlockSpecification]:
-    core_blocks = load_blocks_classes()
+    core_blocks = load_blocks()
     return [
         BlockSpecification(
             block_source="workflows_core",
@@ -170,7 +170,9 @@ def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
     return result
 
 
-def load_initializers_from_plugin(plugin_name: str) -> Dict[str, Callable[[None], Any]]:
+def load_initializers_from_plugin(
+    plugin_name: str,
+) -> Dict[str, Union[Any, Callable[[None], Any]]]:
     try:
         logging.info(f"Loading workflows initializers from plugin {plugin_name}")
         return _load_initializers_from_plugin(plugin_name=plugin_name)
@@ -202,8 +204,8 @@ def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> 
             raise PluginLoadingError(
                 public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
                 f"name {block.fully_qualified_block_class_name} clashes in terms of "
-                f"the class name with other block - defined in "
-                f"{clashing_block.block_source} with fully qualified class name: "
+                f"the human friendly name (value={block.human_friendly_block_name}) with other "
+                f"block - defined in {clashing_block.block_source} with fully qualified class name: "
                 f"{clashing_block.fully_qualified_block_class_name}.",
                 context="workflow_compilation | blocks_loading",
             )

@@ -21,7 +21,7 @@ def get_class_name_from_fully_qualified_name(fully_qualified_name: str) -> str:
 
 
 def make_block_class_name_human_friendly(name: str) -> str:
-    words = re.findall(r"[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))", name)
+    words = re.findall(r"[A-Z](?:[a-z1-9]+|[A-Z]*(?=[A-Z]|$))", name)
     if words[-1] == "Block":
         words.pop()
     return " ".join(words)
