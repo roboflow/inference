@@ -174,7 +174,9 @@ def execute_api_request(
         if isinstance(exc, requests.exceptions.HTTPError):
             status_code = str(exc.response.status_code)
 
-        results_collector.register_error(batch_size=request_batch_size, status_code=status_code)
+        results_collector.register_error(
+            batch_size=request_batch_size, status_code=status_code
+        )
 
 
 def display_benchmark_statistics(
