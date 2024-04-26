@@ -1,9 +1,7 @@
 from typing import Any, Dict, List
 
-from inference.enterprise.workflows.complier.steps_executors.constants import (
-    PARENT_COORDINATES_SUFFIX,
-)
-from inference.enterprise.workflows.entities.outputs import CoordinatesSystem
+from inference.enterprise.workflows.constants import PARENT_COORDINATES_SUFFIX
+from inference.enterprise.workflows.entities.base import CoordinatesSystem
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
 )

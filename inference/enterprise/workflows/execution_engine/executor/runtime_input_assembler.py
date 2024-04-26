@@ -3,17 +3,13 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 
 from inference.core.utils.image_utils import ImageType
-from inference.enterprise.workflows.complier.steps_executors.constants import (
+from inference.enterprise.workflows.constants import (
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
     PARENT_ID_KEY,
 )
-from inference.enterprise.workflows.entities.inputs import InferenceImage
-from inference.enterprise.workflows.entities.workflows_specification import InputType
-from inference.enterprise.workflows.errors import (
-    InvalidStepInputDetected,
-    RuntimeInputError,
-)
+from inference.enterprise.workflows.entities.base import InferenceImage, InputType
+from inference.enterprise.workflows.errors import RuntimeInputError
 
 
 def assembly_runtime_parameters(

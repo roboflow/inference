@@ -11,11 +11,11 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.complier.steps_executors.models import (
+from inference.enterprise.workflows.core_steps.common.utils import (
     attach_parent_info,
     attach_prediction_type_info,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,

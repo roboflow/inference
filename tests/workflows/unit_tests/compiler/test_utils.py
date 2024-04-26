@@ -15,8 +15,7 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     is_step_output_selector,
 )
 from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.workflows.entities.inputs import InferenceImage, InferenceParameter
-from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.base import JsonField, InferenceImage, InferenceParameter
 from inference.enterprise.workflows.entities.steps import (
     Condition,
     Crop,

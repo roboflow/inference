@@ -8,16 +8,14 @@ from inference.enterprise.workflows.core_steps.common.utils import (
     attach_prediction_type_info,
 )
 from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
+    GPT_4V_MODEL_TYPE,
     LMMConfig,
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,
     run_gpt_4v_llm_prompting,
     try_parse_lmm_output_to_json,
 )
-from inference.enterprise.workflows.entities.steps import (
-    GPT_4V_MODEL_TYPE,
-    OutputDefinition,
-)
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_STRING_KIND,
     IMAGE_METADATA_KIND,

@@ -4,8 +4,7 @@ import pydantic
 from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
-from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.workflows_specification import InputType
+from inference.enterprise.workflows.entities.base import InputType, JsonField
 from inference.enterprise.workflows.errors import WorkflowSyntaxError
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,

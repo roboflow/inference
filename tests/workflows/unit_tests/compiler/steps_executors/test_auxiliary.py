@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.entities.base import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors import auxiliary
 from inference.enterprise.workflows.complier.steps_executors.auxiliary import (
     aggregate_field_values,

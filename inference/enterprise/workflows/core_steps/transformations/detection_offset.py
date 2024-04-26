@@ -1,17 +1,17 @@
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Tuple, Type, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 from typing_extensions import Annotated
 
-from inference.enterprise.workflows.complier.steps_executors.constants import (
+from inference.enterprise.workflows.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     PARENT_ID_KEY,
     WIDTH_KEY,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     IMAGE_METADATA_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,

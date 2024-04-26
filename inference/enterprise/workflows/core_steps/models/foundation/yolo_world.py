@@ -10,16 +10,13 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.complier.steps_executors.models import (
+from inference.enterprise.workflows.core_steps.common.utils import (
+    anchor_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
     load_core_model,
 )
-from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
-from inference.enterprise.workflows.core_steps.common.utils import (
-    anchor_detections_in_parent_coordinates,
-)
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_METADATA_KIND,
@@ -39,6 +36,7 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+from inference_sdk.http.utils.iterables import make_batches
 
 LONG_DESCRIPTION = """
 Run YOLO-World, a zero-shot object detection model, on an image.

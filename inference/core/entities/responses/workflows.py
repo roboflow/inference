@@ -2,8 +2,10 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.workflows.entities.blocks_descriptions import BlockDescription
 from inference.enterprise.workflows.entities.types import Kind
+from inference.enterprise.workflows.execution_engine.introspection.entities import (
+    BlockDescription,
+)
 
 
 class WorkflowInferenceResponse(BaseModel):

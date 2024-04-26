@@ -10,9 +10,8 @@ from inference.enterprise.workflows.constants import (
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.workflows.entities.outputs import JsonField
+from inference.enterprise.workflows.entities.base import InputType, JsonField
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
-from inference.enterprise.workflows.entities.workflows_specification import InputType
 from inference.enterprise.workflows.errors import (
     ConditionalBranchesClashError,
     DanglingExecutionBranchError,
@@ -41,7 +40,6 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
-    SelectorDefinition,
 )
 from inference.enterprise.workflows.execution_engine.introspection.selectors_parser import (
     get_step_selectors,

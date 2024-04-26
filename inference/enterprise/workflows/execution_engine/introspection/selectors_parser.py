@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 
-from inference.enterprise.workflows.entities.validators import is_selector
 from inference.enterprise.workflows.errors import BlockInterfaceError
+from inference.enterprise.workflows.execution_engine.compiler.utils import is_selector
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
     SelectorDefinition,

@@ -4,16 +4,14 @@ from typing import Any, Callable, Dict, List, Literal, Tuple, Type, Union
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
-from inference.enterprise.workflows.complier.steps_executors.constants import (
-    PARENT_ID_KEY,
-)
+from inference.enterprise.workflows.constants import PARENT_ID_KEY
 from inference.enterprise.workflows.core_steps.common.operators import (
     BINARY_OPERATORS_FUNCTIONS,
     OPERATORS_FUNCTIONS,
     BinaryOperator,
     Operator,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     IMAGE_METADATA_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,

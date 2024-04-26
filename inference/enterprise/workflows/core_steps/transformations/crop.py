@@ -5,7 +5,7 @@ import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.utils.image_utils import ImageType, load_image
-from inference.enterprise.workflows.complier.steps_executors.constants import (
+from inference.enterprise.workflows.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
     DETECTION_ID_KEY,
@@ -21,7 +21,7 @@ from inference.enterprise.workflows.core_steps.common.utils import (
     detection_to_xyxy,
     extract_origin_size_from_images,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,

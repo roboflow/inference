@@ -11,15 +11,13 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.complier.steps_executors.models import (
-    attach_parent_info,
-    attach_prediction_type_info,
-)
 from inference.enterprise.workflows.core_steps.common.utils import (
     anchor_detections_in_parent_coordinates,
+    attach_parent_info,
+    attach_prediction_type_info,
     filter_out_unwanted_classes,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,

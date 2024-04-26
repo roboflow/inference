@@ -41,7 +41,6 @@ from inference.core.interfaces.stream.entities import (
 from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
-from inference.core.interfaces.stream.model_handlers.workflows import WorkflowRunner
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
 from inference.core.interfaces.stream.utils import prepare_video_sources
 from inference.core.interfaces.stream.watchdog import (
@@ -51,7 +50,6 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
@@ -513,11 +511,14 @@ class InferencePipeline:
             )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
-                run_video_frame_through_workflow,
+                WorkflowRunner,
             )
             from inference.core.roboflow_api import get_workflow_specification
             from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
                 WorkflowsActiveLearningMiddleware,
+            )
+            from inference.enterprise.workflows.execution_engine.core import (
+                ExecutionEngine,
             )
 
             if workflow_specification is None:

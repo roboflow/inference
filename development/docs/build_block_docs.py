@@ -4,8 +4,7 @@ import re
 from typing import Dict, List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
-from inference.enterprise.workflows.entities.blocks_descriptions import BlockDescription
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
 from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
@@ -14,7 +13,7 @@ from inference.enterprise.workflows.execution_engine.introspection.connections_d
     discover_blocks_connections,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
-    SelectorDefinition,
+    SelectorDefinition, BlockDescription,
 )
 from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest_schema,

@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Union
 import networkx as nx
 
 from inference.enterprise.workflows.constants import STEP_NODE_KIND
-from inference.enterprise.workflows.entities.inputs import InferenceParameter
+from inference.enterprise.workflows.entities.base import InferenceParameter
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
     InputSubstitution,

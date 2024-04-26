@@ -5,10 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, 
 from typing_extensions import Annotated
 
 from inference.core.utils.image_utils import load_image
-from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
-    WorkflowsActiveLearningMiddleware,
-)
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,

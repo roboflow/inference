@@ -3,10 +3,10 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.utils.image_utils import load_image
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BAR_CODE_DETECTION_KIND,
     IMAGE_METADATA_KIND,

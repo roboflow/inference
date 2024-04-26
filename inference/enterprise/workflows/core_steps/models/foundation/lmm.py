@@ -15,12 +15,11 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.enterprise.workflows.complier.steps_executors.models import (
+from inference.enterprise.workflows.core_steps.common.utils import (
+    attach_parent_info,
     load_core_model,
 )
-from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
-from inference.enterprise.workflows.core_steps.common.utils import attach_parent_info
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_STRING_KIND,
@@ -40,6 +39,7 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
+from inference_sdk.http.utils.iterables import make_batches
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
 COG_VLM_MODEL_TYPE = "cog_vlm"

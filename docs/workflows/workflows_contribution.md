@@ -315,23 +315,25 @@ class MyStep(BaseModel, StepInterface):
 
 
 #### Defining static output `kind`
-As a consequence of `kind` introduction, we need to implement class method `describe_outputs(...)`. 
+As a consequence of `kind` introduction, we need to implement class method `describe_outputs(...)`.
 
 ```python
 from typing import Literal, Union, Optional, List
 from pydantic import BaseModel, Field
 
-from inference.enterprise.workflows.entities.steps import StepInterface, OutputDefinition
+from inference.enterprise.workflows.entities.steps import StepInterface
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    InferenceImageSelector, 
+    InferenceImageSelector,
     InferenceParameterSelector,
-    OutputStepImageSelector, 
+    OutputStepImageSelector,
     FloatZeroToOne,
     FLOAT_ZERO_TO_ONE_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     STRING_KIND,
     PARENT_ID_KIND,
 )
+
 
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
@@ -359,11 +361,12 @@ class MyStep(BaseModel, StepInterface):
 ```
 
 ### Full implementation of manifest
+
 ```python
 from typing import Literal, Union, Any, Optional, Set, List
 from pydantic import BaseModel, Field
-from inference.enterprise.workflows.entities.steps import StepInterface, OutputDefinition
-from inference.enterprise.workflows.entities.base import GraphNone
+from inference.enterprise.workflows.entities.steps import StepInterface
+from inference.enterprise.workflows.entities.base import GraphNone, OutputDefinition
 from inference.enterprise.workflows.entities.validators import (
     is_selector,
     validate_selector_holds_image,
@@ -373,14 +376,15 @@ from inference.enterprise.workflows.entities.validators import (
 )
 from inference.enterprise.workflows.errors import ExecutionGraphError, VariableTypeError
 from inference.enterprise.workflows.entities.types import (
-    InferenceImageSelector, 
+    InferenceImageSelector,
     InferenceParameterSelector,
-    OutputStepImageSelector, 
+    OutputStepImageSelector,
     FloatZeroToOne,
     FLOAT_ZERO_TO_ONE_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     PARENT_ID_KIND,
 )
+
 
 class MyStep(BaseModel, StepInterface):
     type: Literal["MyStep"]
@@ -405,7 +409,7 @@ class MyStep(BaseModel, StepInterface):
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
-    
+
     def get_input_names(self) -> Set[str]:
         return {"image", "confidence"}
 
@@ -414,7 +418,7 @@ class MyStep(BaseModel, StepInterface):
         return {"predictions", "parent_id"}  # adjust this to the use-case
 
     def validate_field_selector(
-        self, field_name: str, input_step: GraphNone, index: Optional[int] = None
+            self, field_name: str, input_step: GraphNone, index: Optional[int] = None
     ) -> None:
         if not is_selector(selector_or_value=getattr(self, field_name)):
             raise ExecutionGraphError(
@@ -458,16 +462,16 @@ from inference.enterprise.workflows.complier.steps_executors.types import (
     NextStepReference,
     OutputsLookup,
 )
-from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.entities.base import StepExecutionMode
 
 
 async def run_my_step(
-    step: MyStep,
-    runtime_parameters: Dict[str, Any],
-    outputs_lookup: OutputsLookup,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-    step_execution_mode: StepExecutionMode,
+        step: MyStep,
+        runtime_parameters: Dict[str, Any],
+        outputs_lookup: OutputsLookup,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
 ) -> Tuple[NextStepReference, OutputsLookup]:
     ...
 ```

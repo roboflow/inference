@@ -1,9 +1,6 @@
 from collections import defaultdict
 from typing import Dict, Set, Type
 
-from inference.enterprise.workflows.entities.blocks_descriptions import (
-    BlocksDescription,
-)
 from inference.enterprise.workflows.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
     STEP_OUTPUT_AS_SELECTED_ELEMENT,
@@ -13,6 +10,7 @@ from inference.enterprise.workflows.execution_engine.introspection.entities impo
     BlockManifestMetadata,
     BlockPropertyDefinition,
     BlocksConnections,
+    BlocksDescription,
     DiscoveredConnections,
 )
 from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (

@@ -5,10 +5,6 @@ from collections import Counter
 from typing import Any, Callable, Dict, List, Union
 
 from inference.enterprise.workflows.core_steps.loader import load_blocks_classes
-from inference.enterprise.workflows.entities.blocks_descriptions import (
-    BlockDescription,
-    BlocksDescription,
-)
 from inference.enterprise.workflows.entities.types import Kind
 from inference.enterprise.workflows.errors import (
     PluginInterfaceError,
@@ -16,6 +12,10 @@ from inference.enterprise.workflows.errors import (
 )
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
+)
+from inference.enterprise.workflows.execution_engine.introspection.entities import (
+    BlockDescription,
+    BlocksDescription,
 )
 from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
     retrieve_selectors_from_schema,

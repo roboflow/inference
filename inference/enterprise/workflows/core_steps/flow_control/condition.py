@@ -1,12 +1,12 @@
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.enterprise.workflows.core_steps.common.operators import (
     OPERATORS_FUNCTIONS,
     Operator,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,

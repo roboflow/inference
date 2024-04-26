@@ -15,17 +15,16 @@ from typing import (
 )
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
-from typing_extensions import Annotated
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.enterprise.workflows.complier.steps_executors.constants import (
+from inference.enterprise.workflows.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     PARENT_ID_KEY,
     WIDTH_KEY,
 )
 from inference.enterprise.workflows.core_steps.common.utils import detection_to_xyxy
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,

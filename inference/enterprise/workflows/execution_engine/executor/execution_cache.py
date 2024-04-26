@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.errors import (
     ExecutionEngineRuntimeError,
     InvalidBlockBehaviourError,

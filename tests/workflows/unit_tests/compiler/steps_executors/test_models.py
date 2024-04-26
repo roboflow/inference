@@ -10,7 +10,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.entities.base import StepExecutionMode
 from inference.enterprise.workflows.complier.steps_executors import models
 from inference.enterprise.workflows.complier.steps_executors.models import (
     construct_http_client_configuration_for_classification_step,

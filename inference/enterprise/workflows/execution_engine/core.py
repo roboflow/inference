@@ -2,7 +2,7 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
-from inference.enterprise.workflows.complier.entities import StepExecutionMode
+from inference.enterprise.workflows.entities.base import StepExecutionMode
 from inference.enterprise.workflows.execution_engine.compiler.core import (
     compile_workflow,
 )

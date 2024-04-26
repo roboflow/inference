@@ -3,8 +3,7 @@ from typing import Dict, List, Type
 
 import networkx as nx
 
-from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.workflows_specification import InputType
+from inference.enterprise.workflows.entities.base import InputType, JsonField
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,

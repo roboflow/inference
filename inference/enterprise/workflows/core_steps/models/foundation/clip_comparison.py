@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.env import (
@@ -11,15 +11,12 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.complier.steps_executors.models import (
-    load_core_model,
-)
-from inference.enterprise.workflows.complier.steps_executors.utils import make_batches
 from inference.enterprise.workflows.core_steps.common.utils import (
     attach_parent_info,
     attach_prediction_type_info,
+    load_core_model,
 )
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
@@ -34,6 +31,7 @@ from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
+from inference_sdk.http.utils.iterables import make_batches
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.

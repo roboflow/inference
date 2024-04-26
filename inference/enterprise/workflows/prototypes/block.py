@@ -5,7 +5,7 @@ from openai import BaseModel
 from pydantic import ConfigDict, Field
 
 from inference.core import logger
-from inference.enterprise.workflows.entities.steps import OutputDefinition
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import FlowControl
 
 

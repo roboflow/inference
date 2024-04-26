@@ -98,9 +98,9 @@ As an output we are going to provide cropped images, so we need to declare tha:
 from typing import List
 
 from inference.enterprise.workflows.prototypes.block import (
-    WorkflowBlock,
-    OutputDefinition
+    WorkflowBlock
 )
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     IMAGE_KIND,
     PARENT_ID_KIND,

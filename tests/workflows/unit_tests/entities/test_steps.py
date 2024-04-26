@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.entities.inputs import InferenceImage, InferenceParameter
+from inference.enterprise.workflows.entities.base import InferenceImage, InferenceParameter
 from inference.enterprise.workflows.entities.steps import (
     LMM,
     ActiveLearningBatchingStrategy,

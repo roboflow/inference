@@ -6,7 +6,7 @@ from inference.enterprise.workflows.complier.execution_engine import (
     get_all_nodes_in_execution_path,
 )
 from inference.enterprise.workflows.constants import OUTPUT_NODE_KIND
-from inference.enterprise.workflows.entities.outputs import CoordinatesSystem, JsonField
+from inference.enterprise.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.enterprise.workflows.errors import WorkflowsCompilerRuntimeError
 
 

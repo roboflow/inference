@@ -1,10 +1,6 @@
 from typing import List
 
-from inference.enterprise.workflows.entities.outputs import JsonField
-from inference.enterprise.workflows.entities.workflows_specification import (
-    BlockType,
-    InputType,
-)
+from inference.enterprise.workflows.entities.base import InputType, JsonField
 from inference.enterprise.workflows.errors import DuplicatedNameError
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
@@ -14,6 +10,7 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_output_names,
     get_steps_selectors,
 )
+from inference.enterprise.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def validate_workflow_specification(
@@ -33,7 +30,7 @@ def validate_inputs_names_are_unique(inputs: List[InputType]) -> None:
         )
 
 
-def validate_steps_names_are_unique(steps: List[BlockType]) -> None:
+def validate_steps_names_are_unique(steps: List[WorkflowBlockManifest]) -> None:
     steps_selectors = get_steps_selectors(steps=steps)
     if len(steps_selectors) != len(steps):
         raise DuplicatedNameError(

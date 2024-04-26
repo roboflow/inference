@@ -3,7 +3,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.enterprise.workflows.complier.steps_executors.constants import (
+from inference.core.entities.requests.clip import ClipCompareRequest
+from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
+from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.managers.base import ModelManager
+from inference.enterprise.workflows.constants import (
     CENTER_X_KEY,
     CENTER_Y_KEY,
     HEIGHT_KEY,
@@ -12,6 +17,27 @@ from inference.enterprise.workflows.complier.steps_executors.constants import (
     PARENT_COORDINATES_SUFFIX,
     WIDTH_KEY,
 )
+
+
+def load_core_model(
+    model_manager: ModelManager,
+    inference_request: Union[
+        DoctrOCRInferenceRequest,
+        ClipCompareRequest,
+        CogVLMInferenceRequest,
+        YOLOWorldInferenceRequest,
+    ],
+    core_model: str,
+    api_key: Optional[str] = None,
+) -> str:
+    if api_key:
+        inference_request.api_key = api_key
+    version_id_field = f"{core_model}_version_id"
+    core_model_id = (
+        f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
+    )
+    model_manager.add_model(core_model_id, inference_request.api_key)
+    return core_model_id
 
 
 def attach_prediction_type_info(
