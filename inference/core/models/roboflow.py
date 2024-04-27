@@ -110,6 +110,7 @@ class RoboflowInferenceModel(Model):
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
         load_weights=True,
+        **kwargs,
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -609,7 +610,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 expanded_execution_providers.append(ep)
             self.onnxruntime_execution_providers = expanded_execution_providers
 
-        self.initialize_model()
+        self.initialize_model(**kwargs)
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
         try:
             self.validate_model()
@@ -691,7 +692,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """
         return ["environment.json", "class_names.txt"]
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
         self.get_model_artifacts()
@@ -700,6 +701,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
+
+            if kwargs.get("providers"):
+                providers = kwargs["providers"]
 
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
