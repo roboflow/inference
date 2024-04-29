@@ -1,6 +1,9 @@
 from typing import Any, Dict
 
-from inference.enterprise.workflows.errors import ExecutionEngineNotImplementedError
+from inference.enterprise.workflows.errors import (
+    ExecutionEngineNotImplementedError,
+    ExecutionEngineRuntimeError,
+)
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     is_input_selector,
@@ -62,7 +65,10 @@ def retrieve_value(
         )
     elif is_input_selector(selector_or_value=value):
         value = retrieve_value_from_runtime_input(
-            selector=value, runtime_parameters=runtime_parameters
+            selector=value,
+            runtime_parameters=runtime_parameters,
+            accepts_batch_input=accepts_batch_input,
+            step_name=step_name,
         )
     return value
 
@@ -104,9 +110,44 @@ def retrieve_step_output(
 def retrieve_value_from_runtime_input(
     selector: str,
     runtime_parameters: Dict[str, Any],
+    accepts_batch_input: bool,
+    step_name: str,
 ) -> Any:
     try:
         parameter_name = get_last_chunk_of_selector(selector=selector)
-        return runtime_parameters[parameter_name]
+        value = runtime_parameters[parameter_name]
+        if not _retrieved_inference_image(value=value) or accepts_batch_input:
+            return value
+        if len(value) > 1:
+            raise ExecutionEngineNotImplementedError(
+                public_message=f"Step `{step_name}` defines input pointing to {selector} which "
+                f"ships batch input of size larger than one, but at the same time workflow block "
+                f"used to implement the step does not accept batch input. That may be "
+                f"for instance the case for steps with flow-control, as workflows execution engine "
+                f"does not support yet branching when control-flow decision is made element-wise.",
+                context="workflow_execution | steps_parameters_assembling",
+            )
+        return value[0]
     except KeyError as e:
-        raise e
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Attempted to retrieve runtime parameter using selector {selector} "
+            f"discovering miss in runtime parameters. This should have been detected "
+            f"by execution engine at the earlier stage. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | steps_parameters_assembling",
+            inner_error=e,
+        ) from e
+
+
+def _retrieved_inference_image(value: Any) -> bool:
+    if not issubclass(type(value), list):
+        return False
+    if len(value) < 1:
+        return False
+    if not issubclass(type(value[0]), dict):
+        return False
+    if "type" in value[0] and "value" in value[0]:
+        return True
+    return False
