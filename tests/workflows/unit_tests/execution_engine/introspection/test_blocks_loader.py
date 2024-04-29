@@ -243,7 +243,9 @@ def test_describe_available_blocks_when_plugins_duplicate_class_names(
     import_module_mock.return_value = plugin_with_valid_blocks
     load_workflow_blocks_mock.return_value = load_blocks_from_plugin(
         "dummy_plugin"
-    ) + load_blocks_from_plugin("dummy_plugin")
+    ) + load_blocks_from_plugin(
+        "dummy_plugin"
+    )  # loading plugin twice
 
     # when
     with pytest.raises(PluginLoadingError):
