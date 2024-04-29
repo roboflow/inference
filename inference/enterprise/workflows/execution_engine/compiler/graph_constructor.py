@@ -10,7 +10,11 @@ from inference.enterprise.workflows.constants import (
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.workflows.entities.base import InputType, JsonField, OutputDefinition
+from inference.enterprise.workflows.entities.base import (
+    InputType,
+    JsonField,
+    OutputDefinition,
+)
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.enterprise.workflows.errors import (
     ConditionalBranchesCollapseError,
@@ -372,7 +376,7 @@ def verify_output_selector_points_to_valid_output(
     if selected_output_name not in defined_output_names:
         raise InvalidReferenceTargetError(
             public_message=f"Graph definition contains selector {output_selector} that points to output of step "
-                           f"that is not defined in workflow block used to create step.",
+            f"that is not defined in workflow block used to create step.",
             context="workflow_compilation | execution_graph_construction",
         )
 
