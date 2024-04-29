@@ -181,3 +181,85 @@ class ExampleFusionBlock(WorkflowBlock):
         **kwargs,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
+
+
+class ExampleBlockWithInitManifest(WorkflowBlockManifest):
+    type: Literal["ExampleBlockWithInit"]
+    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            description="Reference to predictions of detection-like model, that can be based of cropping "
+            "(detection must define RoI - eg: bounding box)",
+            examples=[["$steps.my_object_detection_model.predictions"]],
+        )
+    )
+
+
+class ExampleBlockWithInit(WorkflowBlock):
+
+    def __init__(self, a: int, b: str):
+        self.a = a
+        self.b = b
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["a", "b"]
+
+    @classmethod
+    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleBlockWithInitManifest
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+        ]
+
+    async def run_locally(
+        self,
+        *args,
+        **kwargs,
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        pass
+
+
+class ExampleBlockWithFaultyInitManifest(WorkflowBlockManifest):
+    type: Literal["ExampleBlockWithFaultyInit"]
+    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            description="Reference to predictions of detection-like model, that can be based of cropping "
+            "(detection must define RoI - eg: bounding box)",
+            examples=[["$steps.my_object_detection_model.predictions"]],
+        )
+    )
+
+
+class ExampleBlockWithFaultyInit(WorkflowBlock):
+
+    def __init__(self, a: int, b: str):
+        self.a = a
+        self.b = b
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["a"]
+
+    @classmethod
+    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleBlockWithFaultyInitManifest
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+        ]
+
+    async def run_locally(
+        self,
+        *args,
+        **kwargs,
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        pass

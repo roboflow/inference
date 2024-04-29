@@ -100,6 +100,8 @@ def retrieve_init_parameter_values(
         return call_if_callable(initializers[full_parameter_name])
     if block_init_parameter in explicit_init_parameters:
         return call_if_callable(explicit_init_parameters[block_init_parameter])
+    if block_init_parameter in initializers:
+        return call_if_callable(initializers[block_init_parameter])
     raise BlockInitParameterNotProvidedError(
         public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
         f"step from plugin: {block_source}.",
