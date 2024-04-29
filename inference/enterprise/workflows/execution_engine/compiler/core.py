@@ -31,6 +31,7 @@ from inference.enterprise.workflows.execution_engine.introspection.blocks_loader
     load_initializers,
     load_workflow_blocks,
 )
+from inference.enterprise.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def compile_workflow(
@@ -54,7 +55,7 @@ def compile_workflow(
         initializers=initializers,
     )
     input_substitutions = collect_input_substitutions(
-        workflow_definition=parsed_workflow_definition, execution_graph=execution_graph
+        workflow_definition=parsed_workflow_definition,
     )
     steps_by_name = {step.manifest.name: step for step in steps}
     dump_execution_graph(execution_graph=execution_graph)
@@ -68,32 +69,26 @@ def compile_workflow(
 
 def collect_input_substitutions(
     workflow_definition: ParsedWorkflowDefinition,
-    execution_graph: nx.DiGraph,
 ) -> List[InputSubstitution]:
     result = []
     for declared_input in workflow_definition.inputs:
         if not issubclass(type(declared_input), InferenceParameter):
             continue
         input_substitutions = collect_substitutions_for_selected_input(
-            execution_graph=execution_graph,
             input_name=declared_input.name,
+            steps=workflow_definition.steps,
         )
         result.extend(input_substitutions)
     return result
 
 
 def collect_substitutions_for_selected_input(
-    execution_graph: nx.DiGraph,
     input_name: str,
+    steps: List[WorkflowBlockManifest],
 ) -> List[InputSubstitution]:
     input_selector = construct_input_selector(input_name=input_name)
-    related_steps = [
-        execution_graph.nodes[node]["definition"]
-        for node in execution_graph.neighbors(input_selector)
-        if execution_graph.nodes[node]["kind"] == STEP_NODE_KIND
-    ]
     substitutions = []
-    for step in related_steps:
+    for step in steps:
         for field in step.__fields__:
             if getattr(step, field) != input_selector:
                 continue

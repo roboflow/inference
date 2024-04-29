@@ -1,0 +1,73 @@
+from collections import defaultdict
+
+from inference.enterprise.workflows.entities.base import (
+    InferenceImage,
+    InferenceParameter,
+    JsonField,
+)
+from inference.enterprise.workflows.execution_engine.compiler.core import (
+    collect_input_substitutions,
+)
+from inference.enterprise.workflows.execution_engine.compiler.entities import (
+    ParsedWorkflowDefinition,
+)
+from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (
+    ExampleModelBlockManifest,
+)
+
+
+def test_collect_input_substitutions() -> None:
+    # given
+    workflow_definition = ParsedWorkflowDefinition(
+        version="1.0",
+        inputs=[
+            InferenceImage(type="InferenceImage", name="image_1"),
+            InferenceImage(type="InferenceImage", name="image_2"),
+            InferenceParameter(type="InferenceParameter", name="model_1"),
+            InferenceParameter(type="InferenceParameter", name="model_2"),
+        ],
+        steps=[
+            ExampleModelBlockManifest(
+                type="ExampleModel",
+                name="model_1",
+                image="$inputs.image_1",
+                model_id="$inputs.model_1",
+            ),
+            ExampleModelBlockManifest(
+                type="ExampleModel",
+                name="model_2",
+                image="$inputs.image_2",
+                model_id="$inputs.model_2",
+            ),
+        ],
+        outputs=[
+            JsonField(
+                type="JsonField",
+                name="predictions_1",
+                selector="$steps.model_1.predictions",
+            ),
+            JsonField(
+                type="JsonField",
+                name="predictions_2",
+                selector="$steps.model_2.predictions",
+            ),
+        ],
+    )
+
+    # when
+    result = collect_input_substitutions(workflow_definition=workflow_definition)
+    aggregated_results = defaultdict(dict)
+    for element in result:
+        aggregated_results[id(element.step_manifest)][
+            element.manifest_property
+        ] = element.input_parameter_name
+
+    # then
+    assert aggregated_results == {
+        id(workflow_definition.steps[0]): {
+            "model_id": "model_1",
+        },
+        id(workflow_definition.steps[1]): {
+            "model_id": "model_2",
+        },
+    }
