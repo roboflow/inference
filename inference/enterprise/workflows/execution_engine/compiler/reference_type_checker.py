@@ -4,7 +4,7 @@ from inference.enterprise.workflows.entities.types import Kind
 from inference.enterprise.workflows.errors import ReferenceTypeError
 
 
-def validate_reference_types(
+def validate_reference_kinds(
     expected: List[Kind],
     actual: List[Kind],
     error_message: str,

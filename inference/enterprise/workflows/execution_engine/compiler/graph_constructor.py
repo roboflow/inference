@@ -23,7 +23,7 @@ from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
 )
 from inference.enterprise.workflows.execution_engine.compiler.reference_type_checker import (
-    validate_reference_types,
+    validate_reference_kinds,
 )
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     FLOW_CONTROL_NODE_KEY,
@@ -225,7 +225,7 @@ def add_edge_for_step(
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
         f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
     )
-    validate_reference_types(
+    validate_reference_kinds(
         expected=expected_input_kind,
         actual=actual_input_kind,
         error_message=error_message,
