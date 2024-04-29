@@ -77,7 +77,7 @@ class DanglingExecutionBranchError(ExecutionGraphStructureError):
     pass
 
 
-class ConditionalBranchesClashError(ExecutionGraphStructureError):
+class ConditionalBranchesCollapseError(ExecutionGraphStructureError):
     pass
 
 

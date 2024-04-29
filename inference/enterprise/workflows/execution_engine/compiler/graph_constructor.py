@@ -10,10 +10,10 @@ from inference.enterprise.workflows.constants import (
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
-from inference.enterprise.workflows.entities.base import InputType, JsonField
+from inference.enterprise.workflows.entities.base import InputType, JsonField, OutputDefinition
 from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.enterprise.workflows.errors import (
-    ConditionalBranchesClashError,
+    ConditionalBranchesCollapseError,
     DanglingExecutionBranchError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -103,6 +103,7 @@ def construct_graph(
     return add_edges_for_outputs(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
+        manifest_class2block_class=manifest_class2block_class,
     )
 
 
@@ -319,20 +320,29 @@ def add_edges_for_step_inputs(
 def add_edges_for_outputs(
     workflow_definition: ParsedWorkflowDefinition,
     execution_graph: DiGraph,
+    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     for output in workflow_definition.outputs:
-        output_selector = output.selector
-        if is_step_output_selector(selector_or_value=output_selector):
-            output_selector = get_step_selector_from_its_output(
-                step_output_selector=output_selector
+        node_selector = output.selector
+        if is_step_output_selector(selector_or_value=node_selector):
+            node_selector = get_step_selector_from_its_output(
+                step_output_selector=node_selector
             )
         output_name = construct_output_name(name=output.name)
         verify_edge_is_created_between_existing_nodes(
             execution_graph=execution_graph,
-            start=output_selector,
+            start=node_selector,
             end=output_name,
         )
-        execution_graph.add_edge(output_selector, output_name)
+        if is_step_output_selector(selector_or_value=output.selector):
+            step_manifest = execution_graph.nodes[node_selector][NODE_DEFINITION_KEY]
+            block_class = manifest_class2block_class[type(step_manifest)]
+            step_outputs = block_class.get_actual_outputs(step_manifest)
+            verify_output_selector_points_to_valid_output(
+                output_selector=output.selector,
+                step_outputs=step_outputs,
+            )
+        execution_graph.add_edge(node_selector, output_name)
     return execution_graph
 
 
@@ -349,6 +359,20 @@ def verify_edge_is_created_between_existing_nodes(
     if not execution_graph.has_node(end):
         raise InvalidReferenceTargetError(
             public_message=f"Graph definition contains selector {end} that points to not defined element.",
+            context="workflow_compilation | execution_graph_construction",
+        )
+
+
+def verify_output_selector_points_to_valid_output(
+    output_selector: str,
+    step_outputs: List[OutputDefinition],
+) -> None:
+    selected_output_name = get_last_chunk_of_selector(selector=output_selector)
+    defined_output_names = {output.name for output in step_outputs}
+    if selected_output_name not in defined_output_names:
+        raise InvalidReferenceTargetError(
+            public_message=f"Graph definition contains selector {output_selector} that points to output of step "
+                           f"that is not defined in workflow block used to create step.",
             context="workflow_compilation | execution_graph_construction",
         )
 
@@ -528,7 +552,7 @@ def verify_multi_parent_step_execution_paths(
             condition_steps, max_conditions_steps_in_execution_branch
         )
     if len(control_flow_steps_successors) > max_conditions_steps_in_execution_branch:
-        raise ConditionalBranchesClashError(
+        raise ConditionalBranchesCollapseError(
             public_message=f"In execution graph, detected collision of branches that originate "
             f"in different flow-control steps. When using flow control step you create "
             f"a sub-workflow, which cannot reach any step from the outside.",
@@ -536,7 +560,7 @@ def verify_multi_parent_step_execution_paths(
         )
     for condition_step, potential_next_steps in control_flow_steps_successors.items():
         if len(potential_next_steps) > 1:
-            raise ConditionalBranchesClashError(
+            raise ConditionalBranchesCollapseError(
                 public_message=f"In execution graph, in flow-control step: {condition_step} there are originated "
                 f"workflow branches that clashes together.",
                 context="workflow_compilation | execution_graph_construction",
