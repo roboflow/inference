@@ -1,4 +1,4 @@
-transformers>=4.36.0,<=4.38.2
+transformers>=4.36.0,<4.38.0
 sentencepiece<=0.1.99
 einops<=0.7.0
 xformers<=0.0.22
