@@ -55,7 +55,7 @@ async def run_workflow(
             steps_to_discard=steps_to_discard
         )
     return construct_workflow_output(
-        workflow_definition=workflow.workflow_definition,
+        workflow_outputs=workflow.workflow_definition.outputs,
         execution_cache=execution_cache,
     )
 

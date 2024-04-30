@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 from inference.enterprise.workflows.constants import PARENT_COORDINATES_SUFFIX
-from inference.enterprise.workflows.entities.base import CoordinatesSystem
+from inference.enterprise.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
 )
@@ -15,11 +15,11 @@ from inference.enterprise.workflows.execution_engine.executor.execution_cache im
 
 
 def construct_workflow_output(
-    workflow_definition: ParsedWorkflowDefinition,
+    workflow_outputs: List[JsonField],
     execution_cache: ExecutionCache,
 ) -> Dict[str, List[Any]]:
     result = {}
-    for node in workflow_definition.outputs:
+    for node in workflow_outputs:
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node.selector
         )
@@ -56,7 +56,7 @@ def construct_wildcard_output(
         for key, value in element.items():
             if key.endswith(PARENT_COORDINATES_SUFFIX):
                 if use_parents_coordinates:
-                    element_result[key[: len(PARENT_COORDINATES_SUFFIX)]] = value
+                    element_result[key[: -len(PARENT_COORDINATES_SUFFIX)]] = value
                 else:
                     continue
             else:

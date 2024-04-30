@@ -36,7 +36,11 @@ class StepCache:
         outputs: List[Dict[str, Any]],
     ) -> None:
         for output in outputs:
-            for key in self._cache_content:
+            for key in output:
+                if key not in self._cache_content:
+                    # TODO: remove once parent_coordinates outputs
+                    # are handled differently
+                    self._cache_content[key] = []
                 self._cache_content[key].append(output[key])
 
     def get_outputs(
