@@ -372,6 +372,8 @@ def verify_output_selector_points_to_valid_output(
     step_outputs: List[OutputDefinition],
 ) -> None:
     selected_output_name = get_last_chunk_of_selector(selector=output_selector)
+    if selected_output_name == "*":
+        return None
     defined_output_names = {output.name for output in step_outputs}
     if selected_output_name not in defined_output_names:
         raise InvalidReferenceTargetError(
