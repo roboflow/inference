@@ -105,23 +105,17 @@ class ExecutionCache:
         try:
             self._cache_content[step_name].register_outputs(outputs=outputs)
         except TypeError as e:
+            # checking this case defensively as there is no guarantee on plugin
+            # meeting contract and we want graceful error handling
             raise InvalidBlockBehaviourError(
                 public_message=f"Block implementing step {step_name} should return outputs which are lists of "
                 f"dicts, but the type of output does not much expectation.",
                 context="workflow_execution | step_output_registration",
                 inner_error=e,
             ) from e
-        except KeyError as e:
-            raise InvalidBlockBehaviourError(
-                public_message=f"Block implementing step {step_name} should return outputs which are lists of "
-                f"dicts and the keys in each element must match block output definition. "
-                f"Missing key: {e}",
-                context="workflow_execution | step_output_registration",
-                inner_error=e,
-            ) from e
 
     def get_output(self, selector: str) -> List[Any]:
-        if not self.contains_value(selector=selector):
+        if not self.is_value_registered(selector=selector):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. Attempted to get output which is not registered using "
                 f"step {selector}. That behavior should be prevented by workflows compiler, so "
@@ -134,20 +128,7 @@ class ExecutionCache:
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
         property_name = get_last_chunk_of_selector(selector=selector)
-        try:
-            return self._cache_content[step_name].get_outputs(
-                property_name=property_name
-            )
-        except KeyError as e:
-            raise ExecutionEngineRuntimeError(
-                public_message=f"Error in execution engine. Attempted to retrieve outputs for "
-                f"step {step_name} using selector {selector}. Selector usage in workflow definition "
-                f"should be validated by compiler - if that's not the case - you've just detected bug."
-                f"Contact Roboflow team through github issues "
-                f"(https://github.com/roboflow/inference/issues) providing full context of"
-                f"the problem - including workflow definition you use.",
-                context="workflow_execution | step_output_registration",
-            ) from e
+        return self._cache_content[step_name].get_outputs(property_name=property_name)
 
     def get_all_step_outputs(self, step_name: str) -> List[Dict[str, Any]]:
         if not self.contains_step(step_name=step_name):
@@ -163,7 +144,7 @@ class ExecutionCache:
         return self._cache_content[step_name].get_all_outputs()
 
     def output_represent_batch(self, selector: str) -> bool:
-        if not self.contains_value(selector=selector):
+        if not self.is_value_registered(selector=selector):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. Attempted to get batches compatibility status "
                 f"from step {selector} which is not register in cache. That behavior should be prevented by "
@@ -177,7 +158,7 @@ class ExecutionCache:
         step_name = get_last_chunk_of_selector(selector=step_selector)
         return self._batches_compatibility[step_name]
 
-    def contains_value(self, selector: Any) -> bool:
+    def is_value_registered(self, selector: Any) -> bool:
         if not is_step_output_selector(selector_or_value=selector):
             return False
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)

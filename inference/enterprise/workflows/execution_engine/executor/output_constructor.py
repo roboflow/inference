@@ -76,14 +76,14 @@ def construct_specific_property_output(
     execution_cache: ExecutionCache,
     coordinates_system: CoordinatesSystem,
 ) -> List[Any]:
-    cache_contains_selector = execution_cache.contains_value(selector=selector)
+    cache_contains_selector = execution_cache.is_value_registered(selector=selector)
     if coordinates_system is CoordinatesSystem.OWN:
         if cache_contains_selector:
             return execution_cache.get_output(selector=selector)
         else:
             return []
     parent_selector = f"{selector}{PARENT_COORDINATES_SUFFIX}"
-    if execution_cache.contains_value(selector=parent_selector):
+    if execution_cache.is_value_registered(selector=parent_selector):
         return execution_cache.get_output(selector=parent_selector)
     if cache_contains_selector:
         return execution_cache.get_output(selector=selector)
