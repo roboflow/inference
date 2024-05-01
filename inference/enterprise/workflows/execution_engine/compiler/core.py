@@ -89,7 +89,7 @@ def collect_substitutions_for_selected_input(
     input_selector = construct_input_selector(input_name=input_name)
     substitutions = []
     for step in steps:
-        for field in step.__fields__:
+        for field in step.model_fields:
             if getattr(step, field) != input_selector:
                 continue
             substitution = InputSubstitution(

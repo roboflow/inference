@@ -19,8 +19,6 @@ from inference.enterprise.workflows.execution_engine.introspection.blocks_loader
     load_initializers_from_plugin,
 )
 from tests.workflows.unit_tests.execution_engine.introspection import (
-    plugin_with_duplicated_types_identifiers,
-    plugin_with_initializers,
     plugin_with_valid_blocks,
 )
 
@@ -104,27 +102,19 @@ def test_load_blocks_from_plugin_when_plugin_does_not_exists() -> None:
         _ = load_blocks_from_plugin("non_existing_dummy_plugin")
 
 
-@mock.patch.object(blocks_loader.importlib, "import_module")
-def test_load_blocks_from_plugin_when_plugin_does_not_implement_interface(
-    import_module_mock: MagicMock,
-) -> None:
-    # given
-    import_module_mock.return_value = plugin_with_initializers
-
+def test_load_blocks_from_plugin_when_plugin_does_not_implement_interface() -> None:
     # when
     with pytest.raises(PluginInterfaceError):
-        _ = load_blocks_from_plugin("my_plugin")
+        _ = load_blocks_from_plugin(
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers"
+        )
 
 
-@mock.patch.object(blocks_loader.importlib, "import_module")
-def test_load_blocks_from_plugin_when_plugin_implement_interface(
-    import_module_mock: MagicMock,
-) -> None:
-    # given
-    import_module_mock.return_value = plugin_with_valid_blocks
-
+def test_load_blocks_from_plugin_when_plugin_implement_interface() -> None:
     # when
-    result = load_blocks_from_plugin("my_plugin")
+    result = load_blocks_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_valid_blocks"
+    )
 
     # then
     assert len(result) == 2, "Expected 2 blocks to be loaded"
@@ -134,69 +124,54 @@ def test_load_blocks_from_plugin_when_plugin_implement_interface(
     assert result[1].manifest_class == plugin_with_valid_blocks.Block2Manifest
 
 
-@mock.patch.object(blocks_loader.importlib, "import_module")
-def test_load_blocks_from_plugin_when_plugin_does_implement_interface(
-    import_module_mock: MagicMock,
-) -> None:
-    # given
-    import_module_mock.return_value = loader
-
-    # when
-    result = load_blocks_from_plugin("my_plugin")
-
-    # then
-    assert len(result) > 0
-
-
 def test_load_initializers_from_plugin_when_plugin_does_not_exists() -> None:
     # when
     with pytest.raises(PluginLoadingError):
         _ = load_initializers_from_plugin("non_existing_dummy_plugin")
 
 
-@mock.patch.object(blocks_loader.importlib, "import_module")
-def test_load_initializers_from_plugin_when_plugin_exists_but_no_initializers_provided(
-    import_module_mock: MagicMock,
-) -> None:
-    # given
-    import_module_mock.return_value = loader
-
+def test_load_initializers_from_plugin_when_plugin_exists_but_no_initializers_provided() -> (
+    None
+):
     # when
-    result = load_initializers_from_plugin("dummy_plugin")
+    result = load_initializers_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_valid_blocks"
+    )
 
     # then
     assert len(result) == 0
 
 
-@mock.patch.object(blocks_loader.importlib, "import_module")
-def test_load_initializers_from_plugin_when_plugin_exists_and_initializers_provided(
-    import_module_mock: MagicMock,
-) -> None:
-    # given
-    import_module_mock.return_value = plugin_with_initializers
-
+def test_load_initializers_from_plugin_when_plugin_exists_and_initializers_provided() -> (
+    None
+):
     # when
-    result = load_initializers_from_plugin("dummy_plugin")
+    result = load_initializers_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers"
+    )
 
     # then
     assert len(result) == 2
     assert (
-        result["dummy_plugin.a"] == 38
+        result[
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"
+        ]
+        == 38
     ), "This parameter is expected to be static value"
     assert (
-        result["dummy_plugin.b"]() == 7
+        result[
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.b"
+        ]()
+        == 7
     ), "This parameter is expected to be function returning static value"
 
 
 @mock.patch.object(blocks_loader.os, "getenv")
-@mock.patch.object(blocks_loader.importlib, "import_module")
 def test_load_initializers_when_plugin_exists_and_initializers_provided(
-    import_module_mock: MagicMock,
     getenv_mock: MagicMock,
 ) -> None:
     # given
-    import_module_mock.return_value = plugin_with_initializers
-    getenv_mock.return_value = "dummy_plugin"
+    getenv_mock.return_value = "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers"
 
     # when
     result = load_initializers()
@@ -204,22 +179,27 @@ def test_load_initializers_when_plugin_exists_and_initializers_provided(
     # then
     assert len(result) == 2
     assert (
-        result["dummy_plugin.a"] == 38
+        result[
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"
+        ]
+        == 38
     ), "This parameter is expected to be static value"
     assert (
-        result["dummy_plugin.b"]() == 7
+        result[
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.b"
+        ]()
+        == 7
     ), "This parameter is expected to be function returning static value"
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
-@mock.patch.object(blocks_loader.importlib, "import_module")
 def test_describe_available_blocks_when_valid_plugins_are_loaded(
-    import_module_mock: MagicMock,
     load_workflow_blocks_mock: MagicMock,
 ) -> None:
     # given
-    import_module_mock.return_value = plugin_with_valid_blocks
-    load_workflow_blocks_mock.return_value = load_blocks_from_plugin("dummy_plugin")
+    load_workflow_blocks_mock.return_value = load_blocks_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_valid_blocks"
+    )
 
     # when
     result = describe_available_blocks()
@@ -234,18 +214,16 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
-@mock.patch.object(blocks_loader.importlib, "import_module")
 def test_describe_available_blocks_when_plugins_duplicate_class_names(
-    import_module_mock: MagicMock,
     load_workflow_blocks_mock: MagicMock,
 ) -> None:
     # given
-    import_module_mock.return_value = plugin_with_valid_blocks
-    load_workflow_blocks_mock.return_value = load_blocks_from_plugin(
-        "dummy_plugin"
-    ) + load_blocks_from_plugin(
-        "dummy_plugin"
-    )  # loading plugin twice
+    load_workflow_blocks_mock.return_value = (
+        load_blocks_from_plugin(
+            "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_valid_blocks"
+        )
+        * 2
+    )
 
     # when
     with pytest.raises(PluginLoadingError):
@@ -253,14 +231,13 @@ def test_describe_available_blocks_when_plugins_duplicate_class_names(
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
-@mock.patch.object(blocks_loader.importlib, "import_module")
 def test_describe_available_blocks_when_plugins_duplicate_type_identifiers(
-    import_module_mock: MagicMock,
     load_workflow_blocks_mock: MagicMock,
 ) -> None:
     # given
-    import_module_mock.return_value = plugin_with_duplicated_types_identifiers
-    load_workflow_blocks_mock.return_value = load_blocks_from_plugin("dummy_plugin")
+    load_workflow_blocks_mock.return_value = load_blocks_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_duplicated_identifiers"
+    )
 
     # when
     with pytest.raises(PluginLoadingError):

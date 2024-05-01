@@ -75,7 +75,7 @@ def retrieve_value(
 
 def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str, Any]:
     result = {}
-    for field in step_manifest.__fields__:
+    for field in step_manifest.model_fields:
         if field in EXCLUDED_FIELDS:
             continue
         result[field] = getattr(step_manifest, field)
