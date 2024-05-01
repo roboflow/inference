@@ -179,10 +179,6 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
             OutputDefinition(
                 name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
             ),
-            OutputDefinition(
-                name="predictions_parent_coordinates",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
-            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
         ]

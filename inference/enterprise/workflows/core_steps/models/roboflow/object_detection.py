@@ -160,10 +160,6 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
             OutputDefinition(
                 name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
-            OutputDefinition(
-                name="predictions_parent_coordinates",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
-            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
         ]
