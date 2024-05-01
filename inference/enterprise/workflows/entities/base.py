@@ -1,8 +1,8 @@
 from enum import Enum
-from typing_extensions import Annotated, Literal
 from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
+from typing_extensions import Annotated, Literal
 
 from inference.enterprise.workflows.entities.types import (
     IMAGE_KIND,
