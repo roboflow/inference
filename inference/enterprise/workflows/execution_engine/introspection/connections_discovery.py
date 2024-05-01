@@ -121,6 +121,7 @@ def get_all_inputs_kind_major(
                     manifest_type_identifier=block_description.manifest_type_identifier,
                     property_name=selector.property_name,
                     compatible_element=allowed_reference.selected_element,
+                    is_list_element=selector.is_list_element,
                 )
             )
         kind_major_step_inputs[WILDCARD_KIND.name].add(
@@ -129,6 +130,7 @@ def get_all_inputs_kind_major(
                 manifest_type_identifier=block_description.manifest_type_identifier,
                 property_name=selector.property_name,
                 compatible_element=allowed_reference.selected_element,
+                is_list_element=selector.is_list_element,
             )
         )
     return kind_major_step_inputs

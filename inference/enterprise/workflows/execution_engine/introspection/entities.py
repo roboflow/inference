@@ -63,6 +63,7 @@ class BlockPropertyDefinition:
     manifest_type_identifier: str
     property_name: PropertyName
     compatible_element: str
+    is_list_element: bool
 
 
 @dataclass(frozen=True)

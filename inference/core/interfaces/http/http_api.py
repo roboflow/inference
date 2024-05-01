@@ -877,6 +877,7 @@ class HttpInterface(BaseInterface):
                             manifest_type_identifier=c.manifest_type_identifier,
                             property_name=c.property_name,
                             compatible_element=c.compatible_element,
+                            is_list_element=c.is_list_element,
                         )
                         for c in connections
                     ]

@@ -150,12 +150,14 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
                 compatible_element="inference_parameter",
+                is_list_element=False,
             ),
             BlockPropertyDefinition(
                 block_type=Block2,
                 manifest_type_identifier="Block2Manifest",
                 property_name="field_1",
                 compatible_element="step_output",
+                is_list_element=True,
             ),
         },
         "2": {
@@ -164,6 +166,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_2",
                 compatible_element="step_output",
+                is_list_element=False,
             ),
         },
         "*": {
@@ -172,18 +175,21 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
                 compatible_element="inference_parameter",
+                is_list_element=False,
             ),
             BlockPropertyDefinition(
                 block_type=Block2,
                 manifest_type_identifier="Block2Manifest",
                 property_name="field_1",
                 compatible_element="step_output",
+                is_list_element=True,
             ),
             BlockPropertyDefinition(
                 block_type=Block1,
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_2",
                 compatible_element="step_output",
+                is_list_element=False,
             ),
         },
     }, "Kinds connections do not match expectations"

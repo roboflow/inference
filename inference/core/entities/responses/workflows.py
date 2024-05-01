@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,7 @@ class WorkflowsBlockPropertyDefinition(BaseModel):
     manifest_type_identifier: str
     property_name: str
     compatible_element: str
+    is_list_element: bool
 
 
 class WorkflowsBlocksDescription(BaseModel):
