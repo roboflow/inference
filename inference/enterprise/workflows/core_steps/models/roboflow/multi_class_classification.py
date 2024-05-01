@@ -71,7 +71,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     confidence: Union[
-        Optional[FloatZeroToOne],
+        FloatZeroToOne,
         InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
@@ -79,7 +79,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[
-        Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
+        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
         default=False,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",

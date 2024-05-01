@@ -89,7 +89,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["a", "b", "c"], "$inputs.class_filter"],
     )
     confidence: Union[
-        Optional[FloatZeroToOne],
+        FloatZeroToOne,
         InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
@@ -97,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     iou_threshold: Union[
-        Optional[FloatZeroToOne],
+        FloatZeroToOne,
         InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
@@ -105,21 +105,21 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.4, "$inputs.iou_threshold"],
     )
     max_detections: Union[
-        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         default=300,
         description="Maximum number of detections to return",
         examples=[300, "$inputs.max_detections"],
     )
     max_candidates: Union[
-        Optional[PositiveInt], InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         default=3000,
         description="Maximum number of candidates as NMS input to be taken into account.",
         examples=[3000, "$inputs.max_candidates"],
     )
     disable_active_learning: Union[
-        Optional[bool], InferenceParameterSelector(kind=[BOOLEAN_KIND])
+        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
         default=False,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",

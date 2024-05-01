@@ -165,3 +165,4 @@ scratch
 !tests/inference/unit_tests/core/utils/assets/*.jpg
 docs/workflows/blocks/*
 docs/workflows/kinds/*
+!tests/workflows/integration_tests/assets/*.jpg
