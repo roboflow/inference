@@ -105,7 +105,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     class_aware: Union[bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Flag to decide if margin detections is class-aware or only bounding boxes aware",
+        description="Flag to decide if merging detections is class-aware or only bounding boxes aware",
         examples=[True, "$inputs.class_aware"],
     )
     iou_threshold: Union[

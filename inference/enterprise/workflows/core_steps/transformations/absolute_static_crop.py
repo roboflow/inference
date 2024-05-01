@@ -6,10 +6,10 @@ from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.constants import (
-    CENTER_X_KEY,
-    CENTER_Y_KEY,
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
+    LEFT_TOP_X_KEY,
+    LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_ID_KEY,
@@ -118,7 +118,7 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
             )
             for i, size in zip(decoded_images, origin_image_shape)
         ]
-        return [{"crops": c, PARENT_ID_KEY: c["PARENT_ID_KEY"]} for c in crops]
+        return [{"crops": c, PARENT_ID_KEY: c[PARENT_ID_KEY]} for c in crops]
 
 
 def take_static_crop(
@@ -139,8 +139,8 @@ def take_static_crop(
         IMAGE_VALUE_KEY: cropped_image,
         PARENT_ID_KEY: f"absolute_static_crop.{uuid4()}",
         ORIGIN_COORDINATES_KEY: {
-            CENTER_X_KEY: x_center,
-            CENTER_Y_KEY: y_center,
+            LEFT_TOP_X_KEY: x_min,
+            LEFT_TOP_Y_KEY: y_min,
             ORIGIN_SIZE_KEY: origin_size,
         },
     }

@@ -6,12 +6,12 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.constants import (
-    CENTER_X_KEY,
-    CENTER_Y_KEY,
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_TYPE_KEY,
     IMAGE_VALUE_KEY,
+    LEFT_TOP_X_KEY,
+    LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_ID_KEY,
@@ -129,8 +129,8 @@ def crop_image(
                     IMAGE_VALUE_KEY: cropped_image,
                     PARENT_ID_KEY: detection[DETECTION_ID_KEY],
                     ORIGIN_COORDINATES_KEY: {
-                        CENTER_X_KEY: detection["x"],
-                        CENTER_Y_KEY: detection["y"],
+                        LEFT_TOP_X_KEY: x_min,
+                        LEFT_TOP_Y_KEY: y_min,
                         WIDTH_KEY: detection[WIDTH_KEY],
                         HEIGHT_KEY: detection[HEIGHT_KEY],
                         ORIGIN_SIZE_KEY: origin_size,

@@ -9,9 +9,9 @@ from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.constants import (
-    CENTER_X_KEY,
-    CENTER_Y_KEY,
     HEIGHT_KEY,
+    LEFT_TOP_X_KEY,
+    LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
@@ -108,20 +108,18 @@ def anchor_image_detections_in_parent_coordinates(
     if ORIGIN_COORDINATES_KEY not in image:
         return serialised_result
     shift_x, shift_y = (
-        image[ORIGIN_COORDINATES_KEY][CENTER_X_KEY],
-        image[ORIGIN_COORDINATES_KEY][CENTER_Y_KEY],
+        image[ORIGIN_COORDINATES_KEY][LEFT_TOP_X_KEY],
+        image[ORIGIN_COORDINATES_KEY][LEFT_TOP_Y_KEY],
     )
-    parent_left_top_x = round(shift_x - image[ORIGIN_COORDINATES_KEY][WIDTH_KEY] / 2)
-    parent_left_top_y = round(shift_y - image[ORIGIN_COORDINATES_KEY][HEIGHT_KEY] / 2)
     for detection in serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
-        detection["x"] += parent_left_top_x
-        detection["y"] += parent_left_top_y
+        detection["x"] += shift_x
+        detection["y"] += shift_y
         for point in detection.get("points", []):
-            point["x"] += parent_left_top_x
-            point["y"] += parent_left_top_y
+            point["x"] += shift_x
+            point["y"] += shift_y
         for point in detection.get("keypoints", []):
-            point["x"] += parent_left_top_x
-            point["y"] += parent_left_top_y
+            point["x"] += shift_x
+            point["y"] += shift_y
     serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]
