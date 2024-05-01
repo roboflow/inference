@@ -200,8 +200,7 @@ class ModelManagerDecorator(ModelManager):
     @property
     def num_errors(self):
         return self.model_manager.num_errors
-    
+
     @num_errors.setter
     def num_errors(self, value):
         self.model_manager.num_errors = value
-
