@@ -27,4 +27,4 @@ jobs:
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.yolo_world.txt
       - name: 🧪 Integration Tests of Workflows
         timeout-minutes: 30
-        run: python -m pytest tests/workflows/integration_tests
+        run: ROBOFLOW_API_KEY=${{ secrets.API_KEY }} python -m pytest tests/workflows/integration_tests
