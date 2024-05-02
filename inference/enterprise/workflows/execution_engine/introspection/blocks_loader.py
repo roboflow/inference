@@ -118,13 +118,18 @@ def load_core_workflow_blocks() -> List[BlockSpecification]:
 
 
 def load_plugins_blocks() -> List[BlockSpecification]:
-    plugins_to_load = os.getenv(WORKFLOWS_PLUGINS_ENV)
-    if plugins_to_load is None:
-        return []
+    plugins_to_load = get_plugin_modules()
     custom_blocks = []
-    for plugin_name in plugins_to_load.split(","):
+    for plugin_name in plugins_to_load:
         custom_blocks.extend(load_blocks_from_plugin(plugin_name=plugin_name))
     return custom_blocks
+
+
+def get_plugin_modules() -> List[str]:
+    plugins_to_load = os.environ.get(WORKFLOWS_PLUGINS_ENV)
+    if plugins_to_load is None:
+        return []
+    return plugins_to_load.split(",")
 
 
 def load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:

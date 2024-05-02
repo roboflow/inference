@@ -1,4 +1,5 @@
 from unittest import mock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -48,16 +49,16 @@ FLOW_CONTROL_WORKFLOW = {
 
 
 @pytest.mark.asyncio
-@mock.patch.dict(
-    blocks_loader.os.environ,
-    {"WORKFLOWS_PLUGINS": "tests.workflows.integration_tests.flow_control_plugin"},
-    clear=True,
-)
+@mock.patch.object(blocks_loader, "get_plugin_modules")
 async def test_flow_control_model(
+    get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
     # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.flow_control_plugin"
+    ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
