@@ -1,0 +1,180 @@
+# Keypoint Detection
+
+Running a keypoint detection model on Roboflow is very similar to segmentation or detection.
+
+You may run it locally, hosted on our inference servers, or using a docker container.
+
+<details>
+<summary>💡 model weights</summary>
+
+In all cases, model weights need to be downloaded from Roboflow's servers first.
+
+If you have the weights locally, you may upload the weights to our servers using the [From Local Weights](https://inference.roboflow.com/models/from_local_weights/) guide.
+
+For offline usage, run inference with the Python API once. The weights will be downloaded and cached in the format our inference runtime can parse.
+
+</details>
+
+## Quickstart
+
+Install dependencies:
+
+```bash
+pip install inference
+```
+
+Set up the [API key](https://inference.roboflow.com/quickstart/configure_api_key/):
+
+```bash
+export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
+```
+
+Run with Python API:
+
+```python
+from inference import get_model
+
+
+image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+model = get_model(model_id="coco-pose-detection/5")
+results = model.infer(image)[0]
+```
+
+## Details
+
+### Inference Setup
+
+In all cases, you'll need the `inference` package.
+
+```bash
+pip install inference
+```
+
+By default, it runs on the CPU. Instead, you may install the GPU module with the following command:
+
+```bash
+pip install inference-gpu
+```
+
+### API Keys
+
+You'll need the API key to access the [fine-tuned models](https://app.roboflow.com/) or models on the [Roboflow Universe](https://universe.roboflow.com/). A guide can be found in [Retrieve Your API Key](https://inference.roboflow.com/quickstart/configure_api_key/).
+
+```bash
+export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
+```
+
+### Available Pretrained Models
+
+You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=keypoint+detection+model&t=metadata). Alternatively, here's a few `model_ids` that we found useful for pose estimation:
+
+* `coco-pose-detection/6` - yolov8x-pose-1280 (largest model)
+* `coco-pose-detection/5` - yolov8x-pose-640
+* `coco-pose-detection/4` - yolov8l-pose-640
+* `coco-pose-detection/3` - yolov8m-pose-640
+* `coco-pose-detection/2` - yolov8s-pose-640
+* `coco-pose-detection/1` - yolov8n-pose-640  (smallest model)
+
+!!! Run Keypoint Detection
+
+    === "Python API"
+
+        Run the model locally, without needing to set up a docker container. This pulls the model from roboflow servers and runs it on your machine. It can take both images and videos as input.
+
+        Run:
+
+        ```python
+        from inference import get_model
+
+
+        # This can be a URL, a np.ndarray or a PIL image.
+        image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+        model = get_model(model_id="coco-pose-detection/5")
+        results = model.infer(image)[0]
+        ```
+
+    === "Hosted"
+
+        Send an image to our servers and get the detected keypoint response. Only images are supported (URL, `np.ndarray`, `PIL`).
+
+        ```python
+        import os
+        from inference_sdk import InferenceHTTPClient
+
+
+        # This can be a URL, a np.ndarray or a PIL image.
+        image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+        client = InferenceHTTPClient(
+            api_url="https://detect.roboflow.com",
+            api_key=os.environ["ROBOFLOW_API_KEY"]
+        )
+        results = client.infer(image, model_id="coco-pose-detection/5")
+        ```
+
+    === "Docker server"
+
+        With this method, you may self-host a server container, similar to Hosted model API. Only images are supported (URL, `np.ndarray`, `PIL`).
+
+        Note that the model weights still need to be retrieved from our servers at least once. Check out [From Local Weights](https://inference.roboflow.com/models/from_local_weights/) for instructions on how to upload yours.
+
+        Start the inference server:
+
+        ```bash
+        inference server start
+        ```
+
+        Run:
+        ```python
+        import os
+        from inference_sdk import InferenceHTTPClient
+
+
+        # This can be a URL, a np.ndarray or a PIL image.
+        image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+        client = InferenceHTTPClient(
+            api_url="http://localhost:9001",
+            api_key=os.environ["ROBOFLOW_API_KEY"]
+        )
+        results = client.infer(image, model_id="coco-pose-detection/5")
+        ```
+
+### Visualize
+
+With [supervision](https://supervision.roboflow.com/latest/) you may visualize the results, carry out post-processing. Supervision library standardizes results from various keypoint detection and pose estimation models into a consistent format, using adaptors such as `from_inference`.
+
+<details>
+<summary>⚠️ release candidate feature</summary>
+
+`from_inference` will be supported in `supervision>=0.21.0`. If you'd like to try it now, install the following:
+
+```bash
+pip install supervision==0.21.0rc3
+```
+
+</details>
+
+Example usage:
+
+```python
+from inference import get_model
+import supervision as sv
+
+
+# This can be a URL, a np.ndarray or PIL image.
+image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+model = get_model(model_id="coco-pose-detection/5")
+results = model.infer(image)[0]
+
+# Any results object would work, regardless of which inference API is used
+keypoints = sv.KeyPoints.from_inference(results)
+
+annotated_image = sv.EdgeAnnotator(
+    color=sv.Color.GREEN,
+    thickness=5
+).annotate(keypoints)
+```
