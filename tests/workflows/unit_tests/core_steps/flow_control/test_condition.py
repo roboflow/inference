@@ -13,7 +13,7 @@ def test_manifest_parsing_when_valid_input_provided() -> None:
         "name": "some",
         "left": "$inputs.left",
         "right": "$inputs.right",
-        "operator": "equal",
+        "operator": "==",
         "step_if_true": "$steps.a",
         "step_if_false": "$steps.b",
     }
@@ -27,7 +27,7 @@ def test_manifest_parsing_when_valid_input_provided() -> None:
         name="some",
         left="$inputs.left",
         right="$inputs.right",
-        operator="equal",
+        operator="==",
         step_if_true="$steps.a",
         step_if_false="$steps.b",
     )
@@ -40,7 +40,7 @@ def test_manifest_parsing_when_invalid_type_provided() -> None:
         "name": "some",
         "left": "$inputs.left",
         "right": "$inputs.right",
-        "operator": "equal",
+        "operator": "==",
         "step_if_true": "$steps.a",
         "step_if_false": "$steps.b",
     }
@@ -74,7 +74,7 @@ def test_manifest_parsing_when_invalid_step_selector_provided() -> None:
         "name": "some",
         "left": "$inputs.left",
         "right": "$inputs.right",
-        "operator": "equal",
+        "operator": "==",
         "step_if_true": "invalid",
         "step_if_false": "$steps.b",
     }

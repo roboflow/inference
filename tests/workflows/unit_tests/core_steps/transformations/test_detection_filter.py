@@ -17,7 +17,7 @@ def test_manifest_parsing_when_valid_data_provided() -> None:
         "filter_definition": {
             "type": "DetectionFilterDefinition",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "$steps.some.image",
@@ -52,7 +52,7 @@ def test_manifest_parsing_when_invalid_type_provided() -> None:
         "filter_definition": {
             "type": "DetectionFilterDefinition",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "$steps.some.image",
@@ -73,7 +73,7 @@ def test_manifest_parsing_when_invalid_predictions_provided() -> None:
         "filter_definition": {
             "type": "DetectionFilterDefinition",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "$steps.some.image",
@@ -94,7 +94,7 @@ def test_manifest_parsing_when_invalid_filter_definition_provided() -> None:
         "filter_definition": {
             "type": "invalid",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "$steps.some.image",
@@ -115,7 +115,7 @@ def test_manifest_parsing_when_invalid_image_metadata_provided() -> None:
         "filter_definition": {
             "type": "DetectionFilterDefinition",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "invalid",
@@ -136,7 +136,7 @@ def test_manifest_parsing_when_predictions_type_provided() -> None:
         "filter_definition": {
             "type": "DetectionFilterDefinition",
             "field_name": "confidence",
-            "operator": "greater_than",
+            "operator": ">",
             "reference_value": 0.3,
         },
         "image_metadata": "$steps.some.image",

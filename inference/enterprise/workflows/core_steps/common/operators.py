@@ -2,12 +2,12 @@ from enum import Enum
 
 
 class Operator(Enum):
-    EQUAL = "equal"
-    NOT_EQUAL = "not_equal"
-    LOWER_THAN = "lower_than"
-    GREATER_THAN = "greater_than"
-    LOWER_THAN_OR_EQUAL = "lower_than_or_equal"
-    GREATER_THAN_OR_EQUAL = "greater_than_or_equal"
+    EQUAL = "=="
+    NOT_EQUAL = "!="
+    LOWER_THAN = "<"
+    GREATER_THAN = ">"
+    LOWER_THAN_OR_EQUAL = "<="
+    GREATER_THAN_OR_EQUAL = ">="
     IN = "in"
     STR_STARTS_WITH = "str_starts_with"
     STR_ENDS_WITH = "str_ends_with"

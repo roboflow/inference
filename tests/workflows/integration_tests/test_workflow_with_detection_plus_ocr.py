@@ -27,7 +27,7 @@ MULTI_STAGES_WORKFLOW = {
             "filter_definition": {
                 "type": "DetectionFilterDefinition",
                 "field_name": "class",
-                "operator": "equal",
+                "operator": "==",
                 "reference_value": "car",
             },
         },
