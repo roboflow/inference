@@ -32,14 +32,15 @@ input:
 - predictions - predictions with bounding boxes (made against the image) - that we can use to crop
 
 Implementation:
+
 ```python
 from typing import Literal, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
 from inference.enterprise.workflows.entities.types import (
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     InferenceImageSelector,
     OutputStepImageSelector,
     StepOutputSelector,
@@ -64,13 +65,13 @@ class BlockManifest(WorkflowBlockManifest):
     )
     predictions: StepOutputSelector(
         kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
-        "(detection must define RoI - eg: bounding box)",
+                    "(detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
@@ -104,7 +105,7 @@ from inference.enterprise.workflows.prototypes.block import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    IMAGE_KIND,
+    BATCH_OF_IMAGES_KIND,
     PARENT_ID_KIND,
 )
 
@@ -114,7 +115,7 @@ class CropBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
 ```

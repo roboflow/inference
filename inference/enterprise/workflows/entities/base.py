@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal
 
 from inference.enterprise.workflows.entities.types import (
-    IMAGE_KIND,
+    BATCH_OF_IMAGES_KIND,
     WILDCARD_KIND,
     Kind,
 )
@@ -39,7 +39,7 @@ class JsonField(BaseModel):
 class InferenceImage(BaseModel):
     type: Literal["InferenceImage"]
     name: str
-    kind: List[Kind] = Field(default=[IMAGE_KIND])
+    kind: List[Kind] = Field(default=[BATCH_OF_IMAGES_KIND])
 
 
 class InferenceParameter(BaseModel):

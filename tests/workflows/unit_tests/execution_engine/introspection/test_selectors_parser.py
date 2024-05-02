@@ -3,8 +3,8 @@ from typing import List, Literal, Union
 from pydantic import Field
 
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
-    IMAGE_KIND,
     STRING_KIND,
     InferenceImageSelector,
     InferenceParameterSelector,
@@ -70,7 +70,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[IMAGE_KIND]
+                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
                     )
                 ],
                 is_list_element=False,

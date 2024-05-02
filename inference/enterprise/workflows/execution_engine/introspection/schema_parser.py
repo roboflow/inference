@@ -136,7 +136,7 @@ def retrieve_primitive_type_from_union_property(
         if union_type_metadata is None:
             continue
         union_types_metadata.append(union_type_metadata)
-    if len(union_types_metadata) == 0:
+    if not union_types_metadata:
         return None
     type_names = {m.type_annotation for m in union_types_metadata}
     if "None" in type_names:

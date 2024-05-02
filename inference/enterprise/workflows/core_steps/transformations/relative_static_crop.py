@@ -1,5 +1,4 @@
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
-from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,8 +18,8 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGES_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
-    IMAGE_KIND,
     PARENT_ID_KIND,
     FloatZeroToOne,
     FlowControl,
@@ -93,7 +92,7 @@ class RelativeStaticCropBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
 
@@ -109,6 +108,7 @@ class RelativeStaticCropBlock(WorkflowBlock):
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
+        images_parents = [i[PARENT_ID_KEY] for i in image]
         origin_image_shape = extract_origin_size_from_images(
             input_images=image,
             decoded_images=decoded_images,
@@ -121,8 +121,11 @@ class RelativeStaticCropBlock(WorkflowBlock):
                 width=width,
                 height=height,
                 origin_size=size,
+                image_parent=image_parent,
             )
-            for i, size in zip(decoded_images, origin_image_shape)
+            for i, image_parent, size in zip(
+                decoded_images, images_parents, origin_image_shape
+            )
         ]
         return [{"crops": c, PARENT_ID_KEY: c[PARENT_ID_KEY]} for c in crops]
 
@@ -134,6 +137,7 @@ def take_static_crop(
     width: float,
     height: float,
     origin_size: dict,
+    image_parent: str,
 ) -> Dict[str, Union[str, np.ndarray]]:
     x_center = round(image.shape[1] * x_center)
     y_center = round(image.shape[0] * y_center)
@@ -147,7 +151,7 @@ def take_static_crop(
     return {
         IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
         IMAGE_VALUE_KEY: cropped_image,
-        PARENT_ID_KEY: f"relative_static_crop.{uuid4()}",
+        PARENT_ID_KEY: image_parent,
         ORIGIN_COORDINATES_KEY: {
             LEFT_TOP_X_KEY: x_min,
             LEFT_TOP_Y_KEY: y_min,

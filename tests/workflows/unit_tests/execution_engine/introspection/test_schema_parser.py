@@ -4,9 +4,9 @@ from pydantic import BaseModel, Field
 
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
+    BATCH_OF_IMAGES_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
-    IMAGE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     InferenceImageSelector,
     InferenceParameterSelector,
@@ -236,7 +236,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
         )
         step_output_image: OutputStepImageSelector
         step_output_property: StepOutputSelector(
-            kind=[BATCH_OF_BOOLEAN_KIND, OBJECT_DETECTION_PREDICTION_KIND]
+            kind=[BATCH_OF_BOOLEAN_KIND, BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
         )
         step: StepSelector
 
@@ -258,7 +258,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[IMAGE_KIND]
+                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -279,7 +279,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -290,7 +290,10 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 allowed_references=[
                     ReferenceDefinition(
                         selected_element="step_output",
-                        kind=[BATCH_OF_BOOLEAN_KIND, OBJECT_DETECTION_PREDICTION_KIND],
+                        kind=[
+                            BATCH_OF_BOOLEAN_KIND,
+                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                        ],
                     )
                 ],
                 is_list_element=False,
@@ -339,10 +342,10 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[IMAGE_KIND]
+                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     # nested list is ignored
                 ],
@@ -387,10 +390,10 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[IMAGE_KIND]
+                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     # nested list is ignored
                 ],

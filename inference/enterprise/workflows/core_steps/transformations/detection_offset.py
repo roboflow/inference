@@ -13,11 +13,11 @@ from inference.enterprise.workflows.constants import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     IMAGE_METADATA_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     FlowControl,
@@ -53,9 +53,9 @@ class BlockManifest(WorkflowBlockManifest):
     name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
         kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference to detection-like predictions",
@@ -100,9 +100,9 @@ class DetectionOffsetBlock(WorkflowBlock):
             OutputDefinition(
                 name="predictions",
                 kind=[
-                    OBJECT_DETECTION_PREDICTION_KIND,
-                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
             ),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),

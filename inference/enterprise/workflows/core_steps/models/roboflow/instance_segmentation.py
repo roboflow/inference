@@ -21,10 +21,10 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_METADATA_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
@@ -177,7 +177,8 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         return [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
             OutputDefinition(
-                name="predictions", kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+                name="predictions",
+                kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),

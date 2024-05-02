@@ -5,8 +5,8 @@ from pydantic import ConfigDict, Field
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
-    IMAGE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_IMAGES_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     FlowControl,
@@ -50,7 +50,7 @@ class ExampleModelBlock(WorkflowBlock):
         return [
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
             OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -90,7 +90,9 @@ class ExampleTransformationBlockManifest(WorkflowBlockManifest):
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    predictions: StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND]) = Field(
+    predictions: StepOutputSelector(
+        kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+    ) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
         "(detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
@@ -105,9 +107,9 @@ class ExampleTransformationBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="image", kind=[IMAGE_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -125,7 +127,9 @@ class ExampleSinkBlockManifest(WorkflowBlockManifest):
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    predictions: StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND]) = Field(
+    predictions: StepOutputSelector(
+        kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+    ) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
         "(detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
@@ -153,12 +157,12 @@ class ExampleSinkBlock(WorkflowBlock):
 
 class ExampleFusionBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleFusion"]
-    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
-        Field(
-            description="Reference to predictions of detection-like model, that can be based of cropping "
-            "(detection must define RoI - eg: bounding box)",
-            examples=[["$steps.my_object_detection_model.predictions"]],
-        )
+    predictions: List[
+        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
+    ] = Field(
+        description="Reference to predictions of detection-like model, that can be based of cropping "
+        "(detection must define RoI - eg: bounding box)",
+        examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
 
@@ -171,7 +175,7 @@ class ExampleFusionBlock(WorkflowBlock):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -185,12 +189,12 @@ class ExampleFusionBlock(WorkflowBlock):
 
 class ExampleBlockWithInitManifest(WorkflowBlockManifest):
     type: Literal["ExampleBlockWithInit"]
-    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
-        Field(
-            description="Reference to predictions of detection-like model, that can be based of cropping "
-            "(detection must define RoI - eg: bounding box)",
-            examples=[["$steps.my_object_detection_model.predictions"]],
-        )
+    predictions: List[
+        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
+    ] = Field(
+        description="Reference to predictions of detection-like model, that can be based of cropping "
+        "(detection must define RoI - eg: bounding box)",
+        examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
 
@@ -212,7 +216,7 @@ class ExampleBlockWithInit(WorkflowBlock):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -226,12 +230,12 @@ class ExampleBlockWithInit(WorkflowBlock):
 
 class ExampleBlockWithFaultyInitManifest(WorkflowBlockManifest):
     type: Literal["ExampleBlockWithFaultyInit"]
-    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
-        Field(
-            description="Reference to predictions of detection-like model, that can be based of cropping "
-            "(detection must define RoI - eg: bounding box)",
-            examples=[["$steps.my_object_detection_model.predictions"]],
-        )
+    predictions: List[
+        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
+    ] = Field(
+        description="Reference to predictions of detection-like model, that can be based of cropping "
+        "(detection must define RoI - eg: bounding box)",
+        examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
 
@@ -253,7 +257,7 @@ class ExampleBlockWithFaultyInit(WorkflowBlock):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 

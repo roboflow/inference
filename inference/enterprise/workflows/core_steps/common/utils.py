@@ -15,6 +15,7 @@ from inference.enterprise.workflows.constants import (
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
+    PARENT_ID_KEY,
     WIDTH_KEY,
 )
 
@@ -65,11 +66,11 @@ def attach_parent_info_to_image_detections(
     predictions: Dict[str, Any],
     nested_key: Optional[str],
 ) -> Dict[str, Any]:
-    predictions["parent_id"] = image["parent_id"]
+    predictions[PARENT_ID_KEY] = image[PARENT_ID_KEY]
     if nested_key is None:
         return predictions
     for prediction in predictions[nested_key]:
-        prediction["parent_id"] = image["parent_id"]
+        prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
     return predictions
 
 

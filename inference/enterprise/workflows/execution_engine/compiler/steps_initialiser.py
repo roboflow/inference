@@ -18,18 +18,18 @@ def initialise_steps(
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     initializers: Dict[str, Union[Any, Callable[[None], Any]]],
 ) -> List[InitialisedStep]:
-    available_bocks_by_manifest_class = {
+    available_blocks_by_manifest_class = {
         block.manifest_class: block for block in available_bocks
     }
     initialised_steps = []
     for step_manifest in steps_manifest:
-        if type(step_manifest) not in available_bocks_by_manifest_class:
+        if type(step_manifest) not in available_blocks_by_manifest_class:
             raise UnknownManifestType(
                 public_message=f"Provided step manifest of type ({type(step_manifest)}) "
                 f"which is not compatible with registered workflow blocks.",
                 context="workflow_compilation | steps_initialisation",
             )
-        block_specification = available_bocks_by_manifest_class[type(step_manifest)]
+        block_specification = available_blocks_by_manifest_class[type(step_manifest)]
         initialised_step = initialise_step(
             step_manifest=step_manifest,
             block_specification=block_specification,

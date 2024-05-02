@@ -80,6 +80,4 @@ def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
 
 
 def is_selector(selector_or_value: Any) -> bool:
-    if not isinstance(selector_or_value, str):
-        return False
-    return selector_or_value.startswith("$")
+    return str(selector_or_value).startswith("$")

@@ -26,15 +26,15 @@ from inference.enterprise.workflows.constants import (
 from inference.enterprise.workflows.core_steps.common.utils import detection_to_xyxy
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_METADATA_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     FloatZeroToOne,
@@ -83,9 +83,9 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: List[
         StepOutputSelector(
             kind=[
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         ),
     ] = Field(
@@ -169,7 +169,7 @@ class DetectionsConsensusBlock(WorkflowBlock):
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
             ),
             OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
             OutputDefinition(

@@ -8,7 +8,7 @@ actions and connect them together to create a `workflow`.
 ## What makes a `workflow`?
 
 As mentioned above, `workflows` are made of `steps`. `Steps` perform specific actions (like 
-making prediction from a model or registering results somewhere). They are created from `blocks`, 
+making prediction from a model or registering results somewhere). They are instances of `blocks`, 
 which ship the `code` (implementing what's happening behind the scene) and `manifest` (describing 
 the way on how `block` can be used). Great news is you do not even need to care about the `code`.
 (If you do, that's great - `workflows` only may benefit from your skills). But the clue is - 
@@ -25,7 +25,7 @@ rather something that is needed to ship `workflow` to `execution engine` rather 
 people uses on the daily basis. 
 
 The first step is picking set of blocks needed to achieve your goal. Then you define `inputs` describing 
-either `images` or `parameters` that will be basis of  processing when `workflow` is run by `execution engine`. 
+either `images` or `parameters` that will become base for processing when `workflow` is run by `execution engine`. 
 Those `inputs` are placeholders in `workflow` definition and will be substituted in runtime with actual values. 
 
 Once you defined your `inputs` you need to connect them into appropriate `steps`. You can do it by drawing 
@@ -67,7 +67,7 @@ Block inputs are described by `block manifest` - pydantic entity that defines tw
 `type`) and as many additional properties as needed describing parametrisation of the `block`. pydantic 
 manifest serves multiple roles in `workflows`. First of all - it is the source of syntax definition. Whatever
 is valid as part of JSON `workflow definition` comes from the structure of `manifests` declared for `blocks`.
-Pydantic also validate the syntax of `workflow definition` automatically and provide OpenAPI 3.x compatible
+Pydantic also validates the syntax of `workflow definition` automatically and provides OpenAPI 3.x compatible
 schemas for `blocks` (making it possible to integrate with UI). Additionally, manifest tells `execution engine`
 what are the parameters that must be injected to invocation of function to run the `block` logic.
 
@@ -117,7 +117,7 @@ Having that manifest, at the level of `workflow definition` you can instantiate 
 }
 ```
 and that definition will be automatically validated. Looking at the JSON document provided above, 
-you can probably see two unusually entries - `"$inputs.image"` and `"$steps.detection.predictions"` - 
+you can probably see two unusual entries - `"$inputs.image"` and `"$steps.detection.predictions"` - 
 those are selectors which we use to reference something that is not possible to be defined statically
 while creating `workflow definition`, but will be accessible in runtime - like image and output 
 of some previous step.

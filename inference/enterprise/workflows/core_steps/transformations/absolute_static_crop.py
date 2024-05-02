@@ -1,5 +1,4 @@
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
-from uuid import uuid4
 
 import numpy as np
 from pydantic import ConfigDict, Field, PositiveInt
@@ -19,7 +18,7 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    IMAGE_KIND,
+    BATCH_OF_IMAGES_KIND,
     INTEGER_KIND,
     PARENT_ID_KIND,
     FlowControl,
@@ -87,7 +86,7 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
 
@@ -100,6 +99,7 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
         height: int,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         decoded_images = [load_image(e) for e in image]
+        images_parents = [i[PARENT_ID_KEY] for i in image]
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
@@ -115,8 +115,11 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
                 width=width,
                 height=height,
                 origin_size=size,
+                image_parent=image_parent,
             )
-            for i, size in zip(decoded_images, origin_image_shape)
+            for i, image_parent, size in zip(
+                decoded_images, images_parents, origin_image_shape
+            )
         ]
         return [{"crops": c, PARENT_ID_KEY: c[PARENT_ID_KEY]} for c in crops]
 
@@ -128,6 +131,7 @@ def take_static_crop(
     width: int,
     height: int,
     origin_size: dict,
+    image_parent: str,
 ) -> Dict[str, Union[str, np.ndarray]]:
     x_min = round(x_center - width / 2)
     y_min = round(y_center - height / 2)
@@ -137,7 +141,7 @@ def take_static_crop(
     return {
         IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
         IMAGE_VALUE_KEY: cropped_image,
-        PARENT_ID_KEY: f"absolute_static_crop.{uuid4()}",
+        PARENT_ID_KEY: image_parent,
         ORIGIN_COORDINATES_KEY: {
             LEFT_TOP_X_KEY: x_min,
             LEFT_TOP_Y_KEY: y_min,

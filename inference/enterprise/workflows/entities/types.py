@@ -43,11 +43,11 @@ the following keys defined:
 This format makes it possible to use [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/)
 to operate on the images. 
 
-Some blocks that outputs images may add additional fields - like "parent_id", which should
+Some blocks that output images may add additional fields - like "parent_id", which should
 not be modified but may be used is specific contexts - for instance when
 one needs to tag predictions with identifier of parent image.
 """
-IMAGE_KIND = Kind(
+BATCH_OF_IMAGES_KIND = Kind(
     name="Batch[image]", description="Image in workflows", docs=IMAGE_KIND_DOCS
 )
 
@@ -151,19 +151,19 @@ TOP_CLASS_KIND = Kind(
 FLOAT_KIND = Kind(name="float", description="Float value")
 DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
 BATCH_OF_DICTIONARY_KIND = Kind(name="Batch[dictionary]", description="Dictionary")
-CLASSIFICATION_PREDICTION_KIND = Kind(
+BATCH_OF_CLASSIFICATION_PREDICTION_KIND = Kind(
     name="Batch[classification_prediction]",
     description="`'predictions'` key from Roboflow classifier output",
 )
-OBJECT_DETECTION_PREDICTION_KIND = Kind(
+BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[object_detection_prediction]",
     description="`'predictions'` key from Roboflow object detection model output",
 )
-INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
+BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="Batch[instance_segmentation_prediction]",
     description="`'predictions'` key from Roboflow instance segmentation model output",
 )
-KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
+BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[keypoint_detection_prediction]",
     description="`'predictions'` key from Roboflow keypoint detection model output",
 )
@@ -239,7 +239,7 @@ InferenceImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "inference_image",
-            KIND_KEY: [IMAGE_KIND.dict()],
+            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
         }
     ),
 ]
@@ -251,7 +251,7 @@ OutputStepImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
-            KIND_KEY: [IMAGE_KIND.dict()],
+            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
         }
     ),
 ]

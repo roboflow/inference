@@ -105,7 +105,7 @@ class ExecutionCache:
         try:
             self._cache_content[step_name].register_outputs(outputs=outputs)
         except TypeError as e:
-            # checking this case defensively as there is no guarantee on plugin
+            # checking this case defensively as there is no guarantee on block
             # meeting contract and we want graceful error handling
             raise InvalidBlockBehaviourError(
                 public_message=f"Block implementing step {step_name} should return outputs which are lists of "

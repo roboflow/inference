@@ -72,7 +72,7 @@ Compiler supports multiple type of steps (that will be described later), but let
 ```
 You can see that the step must have its type associated (that's how we link JSON document elements into code definitions) and name (unique within all steps). Another required parameters are `image` and `model_id`.
 
-In case of `image` - we use reference to the input - that's how we create a link between parameter that will be provided in runtime and computational step. Steps parameters can be also provided as predefined values (like `model_id` in thiscase). Majority of parameters can be defined both as references to inputs (or outputs of other steps) and predefined values.
+In case of `image` - we use reference to the input - that's how we create a link between parameter that will be provided in runtime and computational step. Steps parameters can be also provided as predefined values (like `model_id` in this case). Majority of parameters can be defined both as references to inputs (or outputs of other steps) and predefined values.
 
 ## How can we define `outputs`?
 
@@ -142,7 +142,7 @@ Result is build from the outputs of all models. Always one of field `step_3_pred
 
 ## The notion of parents in `workflows`
 
-Let's imagine a scenario when we have a graph definition that requires inference from object detection model on input  image. For each image that we have as an input - there will be most likely several detections. There is nothing that prevents us to do something with those detections. For instance, we can crop original image to extract RoIs with objects that the model detected. For each crop, we may then apply yet another, specialised object detection model to  detect lower resolution details. As you probably know, when `inference` makes prediction, it outputs the coordinates of detections scaled to the size of input image. 
+Let's imagine a scenario when we have a graph definition that requires inference from object detection model on input  image. For each image that we have as an input - there will be most likely several detections. There is nothing that prevents us from doing something with those detections. For instance, we can crop original image to extract RoIs with objects that the model detected. For each crop, we may then apply yet another, specialised object detection model to  detect lower resolution details. As you probably know, when `inference` makes prediction, it outputs the coordinates of detections scaled to the size of input image. 
 
 But in this example, the input image is unknown when we start the process - those will be inferred by first model. To make it possible to combine predictions, we introduced `parent_id` identifier of prediction. It will be randomly generated string or name of input element that is responsible for certain prediction. 
 

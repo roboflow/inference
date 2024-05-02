@@ -100,7 +100,7 @@ def retrieve_step_output(
                 f"ships batch input of size larger than one, but at the same time workflow block "
                 f"used to implement the step does not accept batch input. That may be "
                 f"for instance the case for steps with flow-control, as workflows execution engine "
-                f"does not support yet branching when control-flow decision is made element-wise.",
+                f"does not yet support branching when control-flow decision is made element-wise.",
                 context="workflow_execution | steps_parameters_assembling",
             )
         return value[0]
@@ -124,7 +124,7 @@ def retrieve_value_from_runtime_input(
                 f"ships batch input of size larger than one, but at the same time workflow block "
                 f"used to implement the step does not accept batch input. That may be "
                 f"for instance the case for steps with flow-control, as workflows execution engine "
-                f"does not support yet branching when control-flow decision is made element-wise.",
+                f"does not yet support branching when control-flow decision is made element-wise.",
                 context="workflow_execution | steps_parameters_assembling",
             )
         return value[0]
