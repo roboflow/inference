@@ -14,7 +14,7 @@ def test_crop_validation_when_valid_manifest_is_given() -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(data)
+    result = BlockManifest.model_validate(data)
 
     # then
     assert result == BlockManifest(
@@ -36,4 +36,4 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(data)
+        _ = BlockManifest.model_validate(data)

@@ -169,18 +169,17 @@ class LMMBlock(WorkflowBlock):
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        if json_output is not None:
+        if json_output is not None and len(json_output) > 0:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            raw_output = await run_gpt_4v_llm_prompting(
                 image=image,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
-                expected_output=json_output,
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
@@ -189,16 +188,10 @@ class LMMBlock(WorkflowBlock):
                 model_manager=self._model_manager,
                 api_key=self._api_key,
             )
-            if json_output is None:
-                structured_output = [{} for _ in range(len(raw_output))]
-            else:
-                structured_output = [
-                    try_parse_lmm_output_to_json(
-                        output=r["content"],
-                        expected_output=json_output,
-                    )
-                    for r in raw_output
-                ]
+        structured_output = turn_raw_lmm_output_into_structured(
+            raw_output=raw_output,
+            expected_output=json_output,
+        )
         serialised_result = [
             {
                 "raw_output": raw["content"],
@@ -223,18 +216,17 @@ class LMMBlock(WorkflowBlock):
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        if json_output is not None:
+        if json_output is not None and len(json_output) > 0:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            raw_output = await run_gpt_4v_llm_prompting(
                 image=image,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
-                expected_output=json_output,
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
@@ -242,16 +234,10 @@ class LMMBlock(WorkflowBlock):
                 prompt=prompt,
                 api_key=self._api_key,
             )
-            if json_output is None:
-                structured_output = [{} for _ in range(len(raw_output))]
-            else:
-                structured_output = [
-                    try_parse_lmm_output_to_json(
-                        output=r["content"],
-                        expected_output=json_output,
-                    )
-                    for r in raw_output
-                ]
+        structured_output = turn_raw_lmm_output_into_structured(
+            raw_output=raw_output,
+            expected_output=json_output,
+        )
         serialised_result = [
             {
                 "raw_output": raw["content"],
@@ -273,27 +259,17 @@ async def run_gpt_4v_llm_prompting(
     prompt: str,
     remote_api_key: Optional[str],
     lmm_config: LMMConfig,
-    expected_output: Optional[Dict[str, str]],
-) -> Tuple[List[Dict[str, str]], List[dict]]:
+) -> List[Dict[str, str]]:
     if remote_api_key is None:
         raise ValueError(
-            f"Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
+            "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
         )
-    results = await execute_gpt_4v_requests(
+    return await execute_gpt_4v_requests(
         image=image,
         remote_api_key=remote_api_key,
         prompt=prompt,
         lmm_config=lmm_config,
     )
-    if expected_output is None:
-        return results, [{} for _ in range(len(results))]
-    parsed_output = [
-        try_parse_lmm_output_to_json(
-            output=r["content"], expected_output=expected_output
-        )
-        for r in results
-    ]
-    return results, parsed_output
 
 
 async def execute_gpt_4v_requests(
@@ -405,7 +381,7 @@ async def get_cogvlm_generations_from_remote_api(
         api_url=LOCAL_INFERENCE_API_URL,
         api_key=api_key,
     )
-    results = []
+    raw_output = []
     images_batches = list(
         make_batches(
             iterable=image,
@@ -427,13 +403,28 @@ async def get_cogvlm_generations_from_remote_api(
             )
             batch_coroutines.append(coroutine)
         batch_results = await asyncio.gather(*batch_coroutines)
-        results.extend(
+        raw_output.extend(
             [
                 {"content": br["response"], "image": bm}
                 for br, bm in zip(batch_results, batch_image_metadata)
             ]
         )
-    return results
+    return raw_output
+
+
+def turn_raw_lmm_output_into_structured(
+    raw_output: List[Dict[str, Any]],
+    expected_output: Optional[Dict[str, str]],
+) -> List[dict]:
+    if expected_output is None:
+        return [{} for _ in range(len(raw_output))]
+    return [
+        try_parse_lmm_output_to_json(
+            output=r["content"],
+            expected_output=expected_output,
+        )
+        for r in raw_output
+    ]
 
 
 def try_parse_lmm_output_to_json(

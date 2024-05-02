@@ -21,7 +21,7 @@ def test_llm_for_classification_step_validation_when_valid_input_given() -> None
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(

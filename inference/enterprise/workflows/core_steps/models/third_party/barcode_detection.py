@@ -26,9 +26,8 @@ LONG_DESCRIPTION = """
 Detect the location of barcodes in an image.
 
 This block is useful for manufacturing and consumer packaged goods projects where you 
-need to detect a barcode region in an image. You can then apply an AbsoluteStaticCrop 
-or Crop block to isolate each barcode then apply further processing (i.e. OCR of the 
-characters on a barcode).
+need to detect a barcode region in an image. You can then apply Crop block to isolate 
+each barcode then apply further processing (i.e. OCR of the characters on a barcode).
 """
 
 

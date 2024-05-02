@@ -543,9 +543,9 @@
 #     # given
 #     model_manager = AsyncMock()
 #     model_manager.infer_from_request.side_effect = [
-#         CogVLMResponse.parse_obj({"response": "Response 1: 42"}),
-#         CogVLMResponse.parse_obj({"response": "Response 2: 42"}),
-#         CogVLMResponse.parse_obj({"response": "Response 3: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 1: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 2: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 3: 42"}),
 #     ]
 #
 #     # when
@@ -576,9 +576,9 @@
 #     # given
 #     model_manager = AsyncMock()
 #     model_manager.infer_from_request.side_effect = [
-#         CogVLMResponse.parse_obj({"response": "Response 1: 42"}),
-#         CogVLMResponse.parse_obj({"response": "Response 2: 42"}),
-#         CogVLMResponse.parse_obj({"response": "Response 3: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 1: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 2: 42"}),
+#         CogVLMResponse.model_validate({"response": "Response 3: 42"}),
 #     ]
 #
 #     # when
@@ -613,9 +613,9 @@
 #     # given
 #     model_manager = AsyncMock()
 #     model_manager.infer_from_request.side_effect = [
-#         CogVLMResponse.parse_obj({"response": json.dumps({"value": 42})}),
-#         CogVLMResponse.parse_obj({"response": json.dumps({"value": 43})}),
-#         CogVLMResponse.parse_obj({"response": json.dumps({"value": 44})}),
+#         CogVLMResponse.model_validate({"response": json.dumps({"value": 42})}),
+#         CogVLMResponse.model_validate({"response": json.dumps({"value": 43})}),
+#         CogVLMResponse.model_validate({"response": json.dumps({"value": 44})}),
 #     ]
 #
 #     # when

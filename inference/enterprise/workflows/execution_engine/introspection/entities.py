@@ -96,7 +96,7 @@ class BlockDescription(BaseModel):
     )
     manifest_type_identifier_aliases: List[str] = Field(
         description="Aliases of `manifest_type_identifier` that are in use.",
-        default_factory=lambda: [],
+        default_factory=list,
     )
 
 

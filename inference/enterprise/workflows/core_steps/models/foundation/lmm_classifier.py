@@ -13,7 +13,7 @@ from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,
     run_gpt_4v_llm_prompting,
-    try_parse_lmm_output_to_json,
+    turn_raw_lmm_output_into_structured,
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
@@ -46,9 +46,6 @@ The LLMBlock supports two LMMs:
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
 need to provide an API key to use CogVLM.
-
-_If you want to ask an LMM an arbitrary question about an image, we recommend using the 
-dedicated LMMForClassificationBlock._
 """
 
 
@@ -131,12 +128,11 @@ class LMMForClassificationBlock(WorkflowBlock):
             f'Your response must be JSON in format: {{"top": "some_class"}}'
         )
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            raw_output = await run_gpt_4v_llm_prompting(
                 image=image,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
-                expected_output={"top": "name of the class"},
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
@@ -145,13 +141,10 @@ class LMMForClassificationBlock(WorkflowBlock):
                 model_manager=self._model_manager,
                 api_key=self._api_key,
             )
-            structured_output = [
-                try_parse_lmm_output_to_json(
-                    output=r["content"],
-                    expected_output={"top": "name of the class"},
-                )
-                for r in raw_output
-            ]
+        structured_output = turn_raw_lmm_output_into_structured(
+            raw_output=raw_output,
+            expected_output={"top": "name of the class"},
+        )
         serialised_result = [
             {
                 "raw_output": raw["content"],
@@ -184,17 +177,16 @@ class LMMForClassificationBlock(WorkflowBlock):
         remote_api_key: Optional[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         prompt = (
-            f"You are supposed to perform image classification task. You are given image that should be "
+            f"You are supposed to   image classification task. You are given image that should be "
             f"assigned one of the following classes: {classes}. "
             f'Your response must be JSON in format: {{"top": "some_class"}}'
         )
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output, structured_output = await run_gpt_4v_llm_prompting(
+            raw_output = await run_gpt_4v_llm_prompting(
                 image=image,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
-                expected_output={"top": "name of the class"},
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
@@ -202,13 +194,10 @@ class LMMForClassificationBlock(WorkflowBlock):
                 prompt=prompt,
                 api_key=self._api_key,
             )
-            structured_output = [
-                try_parse_lmm_output_to_json(
-                    output=r["content"],
-                    expected_output={"top": "name of the class"},
-                )
-                for r in raw_output
-            ]
+        structured_output = turn_raw_lmm_output_into_structured(
+            raw_output=raw_output,
+            expected_output={"top": "name of the class"},
+        )
         serialised_result = [
             {
                 "raw_output": raw["content"],

@@ -30,7 +30,7 @@ def test_validate_al_data_collector_when_valid_input_given() -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -61,7 +61,7 @@ def test_validate_al_data_collector_when_valid_input_with_disabled_al_config_giv
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -133,7 +133,7 @@ def test_validate_al_data_collector_when_valid_input_with_enabled_al_config_give
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -215,7 +215,7 @@ def test_validate_al_data_collector_image_field_when_field_does_not_hold_selecto
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("predictions_selector", [1, None, "some", 1.3, True])
@@ -234,7 +234,7 @@ def test_validate_al_data_collector_predictions_field_when_field_does_not_hold_s
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("target_dataset", [1, None, 1.3, True])
@@ -253,7 +253,7 @@ def test_validate_al_data_collector_target_dataset_field_when_field_contains_inv
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("target_dataset_api_key", [1, 1.3, True])
@@ -273,7 +273,7 @@ def test_validate_al_data_collector_target_dataset_api_key_field_when_field_cont
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("disable_active_learning", ["some"])
@@ -293,4 +293,4 @@ def test_validate_al_data_collector_disable_active_learning_field_when_field_con
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)

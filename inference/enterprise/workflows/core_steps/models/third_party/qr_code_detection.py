@@ -25,9 +25,8 @@ LONG_DESCRIPTION = """
 Detect the location of a QR code.
 
 This block is useful for manufacturing and consumer packaged goods projects where you 
-need to detect a barcode region in an image. You can then apply an AbsoluteStaticCrop 
-or Crop block to isolate each barcode then apply fugher processing (i.e. read a QR code 
-with a custom block).
+need to detect a QR code region in an image. You can then apply Crop block to isolate 
+each QR code then apply further processing (i.e. read a QR code with a custom block).
 """
 
 

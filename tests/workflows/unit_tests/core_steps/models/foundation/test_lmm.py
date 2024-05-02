@@ -22,7 +22,7 @@ def test_lmm_step_validation_when_input_is_valid() -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -52,7 +52,7 @@ def test_lmm_step_validation_when_image_is_invalid(value: Any) -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
@@ -68,7 +68,7 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -98,7 +98,7 @@ def test_lmm_step_validation_when_prompt_is_invalid(value: Any) -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
@@ -115,7 +115,7 @@ def test_lmm_step_validation_when_lmm_type_valid(value: Any) -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     assert result == BlockManifest(
         type="LMM",
@@ -144,7 +144,7 @@ def test_lmm_step_validation_when_lmm_type_invalid(value: Any) -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("value", ["$inputs.api_key", "my-api-key", None])
@@ -161,7 +161,7 @@ def test_lmm_step_validation_when_remote_api_key_valid(value: Any) -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     assert result == BlockManifest(
         type="LMM",
@@ -191,7 +191,7 @@ def test_lmm_step_validation_when_json_output_valid(value: Any) -> None:
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     assert result == BlockManifest(
         type="LMM",
@@ -223,4 +223,4 @@ def test_lmm_step_validation_when_json_output_invalid(value: Any) -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)

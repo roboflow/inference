@@ -24,7 +24,7 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given(
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -52,7 +52,7 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given_for_o
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -82,7 +82,7 @@ def test_yolo_world_step_image_validation_when_invalid_image_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
@@ -103,7 +103,7 @@ def test_yolo_world_step_image_validation_when_invalid_class_names_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
@@ -121,7 +121,7 @@ def test_yolo_world_step_image_validation_when_valid_class_names_given(
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -152,7 +152,7 @@ def test_yolo_world_step_image_validation_when_invalid_version_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("value", ["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"])
@@ -171,7 +171,7 @@ def test_yolo_world_step_image_validation_when_valid_version_given(
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(
@@ -202,7 +202,7 @@ def test_yolo_world_step_image_validation_when_invalid_confidence_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.parse_obj(specification)
+        _ = BlockManifest.model_validate(specification)
 
 
 @pytest.mark.parametrize("value", [None, 0.3, 1.0, 0.0])
@@ -222,7 +222,7 @@ def test_yolo_world_step_image_validation_when_valid_confidence_given(
     }
 
     # when
-    result = BlockManifest.parse_obj(specification)
+    result = BlockManifest.model_validate(specification)
 
     # then
     assert result == BlockManifest(

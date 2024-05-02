@@ -446,7 +446,7 @@
 # @pytest.mark.asyncio
 # async def test_run_detection_filter_step_when_batch_detections_given() -> None:
 #     # given
-#     step = DetectionFilter.parse_obj(
+#     step = DetectionFilter.model_validate(
 #         {
 #             "type": "DetectionFilter",
 #             "name": "step_2",

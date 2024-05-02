@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.env import (
@@ -38,7 +38,7 @@ from inference.enterprise.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a single-class classification model hosted on or uploaded to Roboflow.
+Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
 
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
