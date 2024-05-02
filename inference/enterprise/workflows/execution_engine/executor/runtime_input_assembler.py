@@ -17,7 +17,7 @@ def assembly_runtime_parameters(
     defined_inputs: List[InputType],
 ) -> Dict[str, Any]:
     for defined_input in defined_inputs:
-        if issubclass(type(defined_input), InferenceImage):
+        if isinstance(defined_input, InferenceImage):
             runtime_parameters[defined_input.name] = assembly_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),
@@ -40,7 +40,7 @@ def assembly_input_image(
             f"`InferenceImage`, but value is not provided.",
             context="workflow_execution | runtime_input_validation",
         )
-    if not issubclass(type(image), list):
+    if not isinstance(image, list):
         return [_assembly_input_image(parameter=parameter, image=image)]
     return [
         _assembly_input_image(parameter=parameter, image=element, identifier=idx)
@@ -54,10 +54,10 @@ def _assembly_input_image(
     parent = parameter
     if identifier is not None:
         parent = f"{parent}.[{identifier}]"
-    if issubclass(type(image), dict):
+    if isinstance(image, dict):
         image[PARENT_ID_KEY] = parent
         return image
-    if issubclass(type(image), np.ndarray):
+    if isinstance(image, np.ndarray):
         return {
             IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
             IMAGE_VALUE_KEY: image,

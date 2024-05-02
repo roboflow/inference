@@ -463,10 +463,10 @@ def check_objects_presence_in_consensus_predictions(
         return False, {}
     if required_objects is None:
         required_objects = 0
-    if issubclass(type(required_objects), dict) and not class_aware:
+    if isinstance(required_objects, dict) and not class_aware:
         required_objects = sum(required_objects.values())
     if (
-        issubclass(type(required_objects), int)
+        isinstance(required_objects, int)
         and len(consensus_detections) < required_objects
     ):
         return False, {}
@@ -480,7 +480,7 @@ def check_objects_presence_in_consensus_predictions(
     class2detections = defaultdict(list)
     for detection in consensus_detections:
         class2detections[detection["class"]].append(detection)
-    if issubclass(type(required_objects), dict):
+    if isinstance(required_objects, dict):
         for requested_class, required_objects_count in required_objects.items():
             if len(class2detections[requested_class]) < required_objects_count:
                 return False, {}

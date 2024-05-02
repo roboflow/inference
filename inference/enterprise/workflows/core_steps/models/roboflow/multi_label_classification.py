@@ -148,7 +148,7 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
         result = await self._model_manager.infer_from_request(
             model_id=model_id, request=request
         )
-        if issubclass(type(result), list):
+        if isinstance(result, list):
             serialised_result = [
                 e.dict(by_alias=True, exclude_none=True) for e in result
             ]
@@ -192,7 +192,7 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
             inference_input=inference_input,
             model_id=model_id,
         )
-        if not issubclass(type(results), list):
+        if not isinstance(results, list):
             results = [results]
         return self._post_process_result(image=image, serialised_result=results)
 

@@ -26,7 +26,7 @@ def assembly_step_parameters(
     manifest_dict = get_manifest_fields_values(step_manifest=step_manifest)
     result = {}
     for key, value in manifest_dict.items():
-        if issubclass(type(value), list):
+        if isinstance(value, list):
             value = [
                 retrieve_value(
                     value=v,
@@ -93,7 +93,7 @@ def retrieve_step_output(
         value = value[0]
     if accepts_batch_input:
         return value
-    if issubclass(type(value), list):
+    if isinstance(value, list):
         if len(value) > 1:
             raise ExecutionEngineNotImplementedError(
                 public_message=f"Step `{step_name}` defines input pointing to {selector} which "
@@ -142,11 +142,11 @@ def retrieve_value_from_runtime_input(
 
 
 def _retrieved_inference_image(value: Any) -> bool:
-    if not issubclass(type(value), list):
+    if not isinstance(value, list):
         return False
     if len(value) < 1:
         return False
-    if not issubclass(type(value[0]), dict):
+    if not isinstance(value[0], dict):
         return False
     if "type" in value[0] and "value" in value[0]:
         return True

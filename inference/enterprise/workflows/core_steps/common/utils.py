@@ -133,11 +133,11 @@ def filter_out_unwanted_classes(
     results = []
     for image_result in serialised_result:
         filtered_image_result = deepcopy(image_result)
-        filtered_image_result["predictions"] = []
-        for prediction in image_result["predictions"]:
-            if prediction["class"] not in classes_to_accept:
-                continue
-            filtered_image_result["predictions"].append(prediction)
+        filtered_image_result["predictions"] = [
+            prediction
+            for prediction in image_result["predictions"]
+            if prediction["class"] in classes_to_accept
+        ]
         results.append(filtered_image_result)
     return results
 
@@ -148,10 +148,7 @@ def extract_origin_size_from_images(
 ) -> List[Dict[str, int]]:
     result = []
     for input_image, decoded_image in zip(input_images, decoded_images):
-        if (
-            issubclass(type(input_image), dict)
-            and ORIGIN_COORDINATES_KEY in input_image
-        ):
+        if isinstance(input_image, dict) and ORIGIN_COORDINATES_KEY in input_image:
             result.append(input_image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY])
         else:
             result.append(

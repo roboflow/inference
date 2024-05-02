@@ -146,7 +146,7 @@ async def execute_step(
         else step_instance.run_remotely
     )
     step_result = await step_run_method(**step_parameters)
-    if issubclass(type(step_result), tuple):
+    if isinstance(step_result, tuple):
         step_outputs, flow_control = step_result
     else:
         step_outputs, flow_control = step_result, FlowControl(mode="pass")

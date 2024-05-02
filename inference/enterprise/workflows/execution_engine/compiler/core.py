@@ -72,7 +72,7 @@ def collect_input_substitutions(
 ) -> List[InputSubstitution]:
     result = []
     for declared_input in workflow_definition.inputs:
-        if not issubclass(type(declared_input), InferenceParameter):
+        if not isinstance(declared_input, InferenceParameter):
             continue
         input_substitutions = collect_substitutions_for_selected_input(
             input_name=declared_input.name,

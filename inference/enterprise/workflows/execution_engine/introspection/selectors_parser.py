@@ -26,7 +26,6 @@ def get_step_selectors(
         if selector_definition.is_list_element:
             selectors = retrieve_selectors_from_array(
                 step_name=step_manifest.name,
-                property_name=property_name,
                 property_value=property_value,
                 selector_definition=selector_definition,
             )
@@ -57,11 +56,10 @@ def retrieve_property_from_manifest(
 
 def retrieve_selectors_from_array(
     step_name: str,
-    property_name: str,
     property_value: Any,
     selector_definition: SelectorDefinition,
 ) -> List[ParsedSelector]:
-    if not issubclass(type(property_value), list):
+    if not isinstance(property_value, list):
         return []
     result = []
     for index, element in enumerate(property_value):
