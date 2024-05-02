@@ -7,7 +7,9 @@ from inference.enterprise.workflows.core_steps.fusion.detections_consensus impor
 from inference.enterprise.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
 )
-from inference.enterprise.workflows.core_steps.models.foundation.lmm import LMMBlock
+from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
+    LMMBlock,
+)
 from inference.enterprise.workflows.core_steps.models.foundation.lmm_classifier import (
     LMMForClassificationBlock,
 )

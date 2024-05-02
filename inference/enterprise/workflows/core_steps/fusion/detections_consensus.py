@@ -332,9 +332,8 @@ def calculate_iou(detection_a: dict, detection_b: dict) -> float:
     x_b = min(box_a[2], box_b[2])  # most left-hand side of right corners at OX
     y_b = min(box_a[3], box_b[3])  # most "up" of bottom corners at OY
     intersection = max(0, x_b - x_a) * max(0, y_b - y_a)
-    bbox_a_area, bbox_b_area = get_detection_sizes(
-        detections=[detection_a, detection_b]
-    )
+    bbox_a_area = detection_a[HEIGHT_KEY] * detection_a[WIDTH_KEY]
+    bbox_b_area = detection_b[HEIGHT_KEY] * detection_b[WIDTH_KEY]
     union = float(bbox_a_area + bbox_b_area - intersection)
     if union == 0.0:
         return 0.0
@@ -522,27 +521,13 @@ def get_majority_class(detections: List[dict]) -> Tuple[str, int]:
 
 
 def get_class_of_most_confident_detection(detections: List[dict]) -> Tuple[str, int]:
-    max_confidence = aggregate_field_values(
-        detections=detections,
-        field="confidence",
-        aggregation_mode=AggregationMode.MAX,
-    )
-    most_confident_prediction = [
-        d for d in detections if d["confidence"] == max_confidence
-    ][0]
+    most_confident_prediction = max(detections, key=lambda x: x["confidence"])
     return most_confident_prediction["class"], most_confident_prediction["class_id"]
 
 
 def get_class_of_least_confident_detection(detections: List[dict]) -> Tuple[str, int]:
-    max_confidence = aggregate_field_values(
-        detections=detections,
-        field="confidence",
-        aggregation_mode=AggregationMode.MIN,
-    )
-    most_confident_prediction = [
-        d for d in detections if d["confidence"] == max_confidence
-    ][0]
-    return most_confident_prediction["class"], most_confident_prediction["class_id"]
+    least_confident_prediction = min(detections, key=lambda x: x["confidence"])
+    return least_confident_prediction["class"], least_confident_prediction["class_id"]
 
 
 AGGREGATION_MODE2CLASS_SELECTOR = {
@@ -561,32 +546,24 @@ def get_average_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int
 
 
 def get_smallest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    detection_sizes = get_detection_sizes(detections=detections)
-    smallest_size = min(detection_sizes)
-    matching_detection_id = [
-        idx for idx, v in enumerate(detection_sizes) if v == smallest_size
-    ][0]
-    matching_detection = detections[matching_detection_id]
+    sizes_and_detections = [(d[HEIGHT_KEY] * d[WIDTH_KEY], d) for d in detections]
+    smallest_detection = min(sizes_and_detections, key=lambda x: x[0])[1]
     return (
-        matching_detection["x"],
-        matching_detection["y"],
-        matching_detection["width"],
-        matching_detection["height"],
+        smallest_detection["x"],
+        smallest_detection["y"],
+        smallest_detection["width"],
+        smallest_detection["height"],
     )
 
 
 def get_largest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    detection_sizes = get_detection_sizes(detections=detections)
-    largest_size = max(detection_sizes)
-    matching_detection_id = [
-        idx for idx, v in enumerate(detection_sizes) if v == largest_size
-    ][0]
-    matching_detection = detections[matching_detection_id]
+    sizes_and_detections = [(d[HEIGHT_KEY] * d[WIDTH_KEY], d) for d in detections]
+    largest_detection = max(sizes_and_detections, key=lambda x: x[0])[1]
     return (
-        matching_detection["x"],
-        matching_detection["y"],
-        matching_detection[WIDTH_KEY],
-        matching_detection[HEIGHT_KEY],
+        largest_detection["x"],
+        largest_detection["y"],
+        largest_detection[WIDTH_KEY],
+        largest_detection[HEIGHT_KEY],
     )
 
 
@@ -595,11 +572,6 @@ AGGREGATION_MODE2BOXES_AGGREGATOR = {
     AggregationMode.MIN: get_smallest_bounding_box,
     AggregationMode.AVERAGE: get_average_bounding_box,
 }
-
-
-def get_detection_sizes(detections: List[dict]) -> List[float]:
-    return [d[HEIGHT_KEY] * d[WIDTH_KEY] for d in detections]
-
 
 AGGREGATION_MODE2FIELD_AGGREGATOR = {
     AggregationMode.MAX: max,
