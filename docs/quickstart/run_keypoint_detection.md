@@ -69,16 +69,16 @@ export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 
 You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=keypoint+detection+model&t=metadata). Alternatively, here's a few `model_ids` that we found useful for pose estimation:
 
-* `coco-pose-detection/6` - yolov8x-pose-1280 (largest model)
-* `coco-pose-detection/5` - yolov8x-pose-640
-* `coco-pose-detection/4` - yolov8l-pose-640
-* `coco-pose-detection/3` - yolov8m-pose-640
-* `coco-pose-detection/2` - yolov8s-pose-640
-* `coco-pose-detection/1` - yolov8n-pose-640  (smallest model)
+- `coco-pose-detection/6` - yolov8x-pose-1280 (largest model)
+- `coco-pose-detection/5` - yolov8x-pose-640
+- `coco-pose-detection/4` - yolov8l-pose-640
+- `coco-pose-detection/3` - yolov8m-pose-640
+- `coco-pose-detection/2` - yolov8s-pose-640
+- `coco-pose-detection/1` - yolov8n-pose-640 (smallest model)
 
 !!! Run Keypoint Detection
 
-    === "Python API"
+    === "Python API - Image"
 
         Run the model locally, without needing to set up a docker container. This pulls the model from roboflow servers and runs it on your machine. It can take both images and videos as input.
 
@@ -93,6 +93,28 @@ You may use keypoint detection models available on the [Universe](https://univer
 
         model = get_model(model_id="coco-pose-detection/5")
         results = model.infer(image)[0]
+        ```
+
+    === "Inference Pipeline - Stream"
+
+        Inference Pipeline allows running inference on videos, webcams and RTSP streams. You may define a custom sink to extract pose results.
+
+        More details can be found on [Predict on a Video, Webcam or RTSP Stream](https://inference.roboflow.com/quickstart/run_model_on_rtsp_webcam/)
+
+        ```python
+        from inference import InferencePipeline
+        from inference.core.interfaces.camera.entities import VideoFrame
+
+        def my_custom_sink(predictions: dict, video_frame: VideoFrame):
+            print(predictions)
+
+        pipeline = InferencePipeline.init(
+            model_id="coco-pose-detection/5", # Roboflow model to use
+            video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
+            on_prediction=my_custom_sink, # Function to run after each prediction
+        )
+        pipeline.start()
+        pipeline.join()
         ```
 
     === "Hosted"
