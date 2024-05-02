@@ -134,12 +134,12 @@ class YoloWorldModelBlock(WorkflowBlock):
                 yolo_world_version_id=version,
                 confidence=confidence,
                 text=class_names,
+                api_key=self._api_key,
             )
             yolo_world_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
                 core_model="yolo_world",
-                api_key=self._api_key,
             )
             result = await self._model_manager.infer_from_request(
                 yolo_world_model_id, inference_request

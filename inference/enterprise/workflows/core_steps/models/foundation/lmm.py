@@ -374,12 +374,12 @@ async def get_cogvlm_generations_locally(
         inference_request = CogVLMInferenceRequest(
             image=single_image,
             prompt=prompt,
+            api_key=api_key,
         )
         model_id = load_core_model(
             model_manager=model_manager,
             inference_request=inference_request,
             core_model="cogvlm",
-            api_key=api_key,
         )
         result = await model_manager.infer_from_request(model_id, inference_request)
         serialised_result.append(

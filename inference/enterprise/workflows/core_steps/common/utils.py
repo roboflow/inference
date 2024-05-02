@@ -28,10 +28,7 @@ def load_core_model(
         YOLOWorldInferenceRequest,
     ],
     core_model: str,
-    api_key: Optional[str] = None,
 ) -> str:
-    if api_key:
-        inference_request.api_key = api_key
     version_id_field = f"{core_model}_version_id"
     core_model_id = (
         f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
