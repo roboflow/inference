@@ -196,3 +196,11 @@ class ModelManagerDecorator(ModelManager):
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
     ) -> InferenceResponse:
         return self.model_manager.make_response(model_id, predictions, *args, **kwargs)
+
+    @property
+    def num_errors(self):
+        return self.model_manager.num_errors
+
+    @num_errors.setter
+    def num_errors(self, value):
+        self.model_manager.num_errors = value
