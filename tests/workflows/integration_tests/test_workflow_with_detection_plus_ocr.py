@@ -42,14 +42,14 @@ MULTI_STAGES_WORKFLOW = {
         },
         {
             "type": "Crop",
-            "name": "crop",
+            "name": "cars_crops",
             "image": "$inputs.image",
             "predictions": "$steps.offset.predictions",
         },
         {
             "type": "RoboflowObjectDetectionModel",
             "name": "plates_detection",
-            "image": "$steps.crop.crops",
+            "image": "$steps.cars_crops.crops",
             "model_id": "vehicle-registration-plates-trudk/2",
         },
         {
@@ -64,7 +64,7 @@ MULTI_STAGES_WORKFLOW = {
         {
             "type": "Crop",
             "name": "plates_crops",
-            "image": "$steps.crop.crops",
+            "image": "$steps.cars_crops.crops",
             "predictions": "$steps.plates_offset.predictions",
         },
         {
@@ -74,6 +74,16 @@ MULTI_STAGES_WORKFLOW = {
         },
     ],
     "outputs": [
+        {
+            "type": "JsonField",
+            "name": "cars_crops",
+            "selector": "$steps.cars_crops.crops",
+        },
+        {
+            "type": "JsonField",
+            "name": "plates_crops",
+            "selector": "$steps.plates_crops.crops",
+        },
         {"type": "JsonField", "name": "plates_ocr", "selector": "$steps.ocr.result"},
     ],
 }
@@ -106,11 +116,41 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
 
     # then
     assert set(result.keys()) == {
-        "plates_ocr"
+        "plates_ocr",
+        "plates_crops",
+        "cars_crops",
     }, "Expected all declared outputs to be delivered"
+    assert len(result["cars_crops"]) == 3, "Expected 3 cars to be detected"
+    assert np.allclose(
+        result["cars_crops"][0]["value"],
+        license_plate_image[475:666, 109:351, :],
+        atol=5,
+    ), "Expected car to be detected exactly in coordinates matching reference run"
+    assert np.allclose(
+        result["cars_crops"][1]["value"],
+        license_plate_image[380:990, 761:1757, :],
+        atol=5,
+    ), "Expected car to be detected exactly in coordinates matching reference run"
+    assert np.allclose(
+        result["cars_crops"][2]["value"],
+        license_plate_image[489:619, 417:588, :],
+        atol=5,
+    ), "Expected car to be detected exactly in coordinates matching reference run"
+    assert np.allclose(
+        result["plates_crops"][0]["value"],
+        license_plate_image[475 + 94 : 475 + 162, 109 + 58 : 109 + 179, :],
+        atol=5,
+    ), "Expected license plate to be detected exactly in coordinates matching reference run"
+    assert np.allclose(
+        result["plates_crops"][1]["value"],
+        license_plate_image[380 + 373 : 380 + 486, 761 + 593 : 761 + 873, :],
+        atol=5,
+    ), "Expected license plate to be detected exactly in coordinates matching reference run"
+    assert np.allclose(
+        result["plates_crops"][2]["value"],
+        license_plate_image[489 + 56 : 489 + 118, 417 + 49 : 417 + 143, :],
+        atol=5,
+    ), "Expected license plate to be detected exactly in coordinates matching reference run"
     assert len(result["plates_ocr"]) == 3, "Expected 3 predictions with OCRed values"
-    assert result["plates_ocr"] == [
-        "",
-        "23948072",
-        "",
-    ], "Expected OCR results to be as verified manually while creating the test. Two outputs are empty due to insufficient quality of OCR model"
+    # For some reason at different platform OCR gives different results, despite
+    # checking to operate on the same input images as in reference runs

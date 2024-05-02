@@ -41,12 +41,12 @@ class ModelManagerDecorator(ModelManager):
         """Initializes the decorator with an instance of a ModelManager."""
         self.model_manager = model_manager
 
-    def init_pingback(self):
-        self.model_manager.init_pingback()
+    # def init_pingback(self):
+    #     self.model_manager.init_pingback()
 
-    @property
-    def pingback(self):
-        return self.model_manager.pingback
+    # @property
+    # def pingback(self):
+    #     return self.model_manager.pingback
 
     def add_model(
         self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
