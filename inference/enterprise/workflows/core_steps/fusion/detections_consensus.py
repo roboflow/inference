@@ -240,14 +240,10 @@ class DetectionsConsensusBlock(WorkflowBlock):
 def get_and_validate_batch_sizes(
     all_predictions: List[List[List[dict]]],
 ) -> List[int]:
-    batch_sizes = get_predictions_batch_sizes(all_predictions=all_predictions)
-    if not all_batch_sizes_equal(batch_sizes=batch_sizes):
+    batch_sizes = [len(predictions) for predictions in all_predictions]
+    if len(set(batch_sizes)) > 1:
         raise ValueError(f"Detected missmatch of input dimensions.")
     return batch_sizes
-
-
-def get_predictions_batch_sizes(all_predictions: List[List[List[dict]]]) -> List[int]:
-    return [len(predictions) for predictions in all_predictions]
 
 
 def does_not_detected_objects_in_any_source(predictions: List[List[dict]]) -> bool:
@@ -260,14 +256,14 @@ def get_parent_id_of_predictions_from_different_sources(
     encountered_parent_ids = {
         p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
     }
-    if len(encountered_parent_ids) > 1:
+    if len(encountered_parent_ids) != 1:
         raise ValueError(
-            f"Missmatch in predictions - while executing consensus step, "
-            f"in equivalent batches, detections are assigned different parent "
-            f"identifiers, whereas consensus can only be applied for predictions "
-            f"made against the same input."
+            "Missmatch in predictions - while executing consensus step, "
+            "in equivalent batches, detections are assigned different parent "
+            "identifiers, whereas consensus can only be applied for predictions "
+            "made against the same input."
         )
-    return list(encountered_parent_ids)[0]
+    return next(iter(encountered_parent_ids))
 
 
 def filter_predictions(
@@ -298,7 +294,7 @@ def get_detections_from_different_sources_with_max_overlap(
     current_max_overlap = {}
     for other_source, other_detection in enumerate_detections(
         predictions=predictions,
-        excluded_source=source,
+        excluded_source_id=source,
     ):
         if other_detection[DETECTION_ID_KEY] in detections_already_considered:
             continue
@@ -319,10 +315,10 @@ def get_detections_from_different_sources_with_max_overlap(
 
 def enumerate_detections(
     predictions: List[List[dict]],
-    excluded_source: Optional[int] = None,
+    excluded_source_id: Optional[int] = None,
 ) -> Generator[Tuple[int, dict], None, None]:
     for source_id, detections in enumerate(predictions):
-        if excluded_source is not None and excluded_source == source_id:
+        if excluded_source_id == source_id:
             continue
         for detection in detections:
             yield source_id, detection
@@ -331,10 +327,10 @@ def enumerate_detections(
 def calculate_iou(detection_a: dict, detection_b: dict) -> float:
     box_a = detection_to_xyxy(detection=detection_a)
     box_b = detection_to_xyxy(detection=detection_b)
-    x_a = max(box_a[0], box_b[0])
-    y_a = max(box_a[1], box_b[1])
-    x_b = min(box_a[2], box_b[2])
-    y_b = min(box_a[3], box_b[3])
+    x_a = max(box_a[0], box_b[0])  # most right-hand side of left corners at OX
+    y_a = max(box_a[1], box_b[1])  # most "bottom" of top corners at OY
+    x_b = min(box_a[2], box_b[2])  # most left-hand side of right corners at OX
+    y_b = min(box_a[3], box_b[3])  # most "up" of bottom corners at OY
     intersection = max(0, x_b - x_a) * max(0, y_b - y_a)
     bbox_a_area, bbox_b_area = get_detection_sizes(
         detections=[detection_a, detection_b]
@@ -342,14 +338,7 @@ def calculate_iou(detection_a: dict, detection_b: dict) -> float:
     union = float(bbox_a_area + bbox_b_area - intersection)
     if union == 0.0:
         return 0.0
-    return intersection / float(bbox_a_area + bbox_b_area - intersection)
-
-
-def all_batch_sizes_equal(batch_sizes: List[int]) -> bool:
-    if len(batch_sizes) == 0:
-        return True
-    reference = batch_sizes[0]
-    return all(e == reference for e in batch_sizes)
+    return intersection / union
 
 
 def resolve_batch_consensus(
