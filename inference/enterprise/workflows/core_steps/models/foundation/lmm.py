@@ -169,7 +169,7 @@ class LMMBlock(WorkflowBlock):
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        if json_output is not None and len(json_output) > 0:
+        if json_output:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
@@ -216,7 +216,7 @@ class LMMBlock(WorkflowBlock):
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        if json_output is not None and len(json_output) > 0:
+        if json_output:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"

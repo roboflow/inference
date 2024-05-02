@@ -244,7 +244,7 @@ def _validate_loaded_blocks_manifest_type_identifiers(
 def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
     kinds_names_counter = Counter(k.name for k in declared_kinds)
     non_unique_kinds = [k for k, v in kinds_names_counter.items() if v > 1]
-    if len(non_unique_kinds) > 0:
+    if non_unique_kinds:
         raise PluginLoadingError(
             public_message=f"Loaded plugins blocks define kinds causing names clash "
             f"(problematic kinds: {non_unique_kinds}). This is most likely caused "

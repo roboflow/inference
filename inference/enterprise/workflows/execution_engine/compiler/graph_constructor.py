@@ -263,15 +263,9 @@ def establish_flow_control_edge(
 def step_definition_allows_flow_control_references(
     parsed_selector: ParsedSelector,
 ) -> bool:
-    return (
-        len(
-            [
-                definition
-                for definition in parsed_selector.definition.allowed_references
-                if definition.selected_element == STEP_AS_SELECTED_ELEMENT
-            ]
-        )
-        > 0
+    return any(
+        definition.selected_element == STEP_AS_SELECTED_ELEMENT
+        for definition in parsed_selector.definition.allowed_references
     )
 
 
@@ -294,7 +288,7 @@ def get_kind_of_value_provided_in_step_output(
             continue
         matched_property = True
         actual_kind.extend(output.kind)
-    if matched_property is False:
+    if not matched_property:
         raise ExecutionGraphStructureError(
             public_message=f"Found reference to non-existing property `{step_property}` of step `{step_manifest.name}`.",
             context="workflow_compilation | execution_graph_construction",
@@ -403,7 +397,7 @@ def verify_each_node_reach_at_least_one_output(
         )
     )
     nodes_not_reaching_output = all_nodes.difference(nodes_reaching_output)
-    if len(nodes_not_reaching_output) > 0:
+    if nodes_not_reaching_output:
         raise DanglingExecutionBranchError(
             public_message=f"Detected {len(nodes_not_reaching_output)} nodes not reaching any of output node:"
             f"{nodes_not_reaching_output}.",
@@ -425,7 +419,7 @@ def get_nodes_that_do_not_produce_outputs(
         step_manifest = execution_graph.nodes[step_node][NODE_DEFINITION_KEY]
         step_manifest_type = type(step_manifest)
         block_type = manifest_class2block_class[step_manifest_type]
-        if len(block_type.get_actual_outputs(step_manifest)) == 0:
+        if not block_type.get_actual_outputs(step_manifest):
             result.add(step_node)
     return result
 
@@ -491,7 +485,7 @@ def verify_each_node_step_has_parent_in_the_same_branch(
     steps_with_more_than_one_parent = detect_steps_with_more_than_one_parent_step(
         execution_graph=execution_graph
     )  # O(V+E)
-    if len(steps_with_more_than_one_parent) == 0:
+    if not steps_with_more_than_one_parent:
         return None
     reversed_steps_graph = construct_reversed_graph_with_steps_only(
         execution_graph=execution_graph
@@ -591,7 +585,7 @@ def denote_flow_control_steps_successors_in_normal_flow(
     control_flow_steps_successors: Dict[str, Set[str]],
 ) -> Tuple[Dict[str, Set[str]], int]:
     conditions_steps = 0
-    if len(reversed_flow_path) == 0:
+    if not reversed_flow_path:
         return control_flow_steps_successors, conditions_steps
     previous_node = reversed_flow_path[0]
     for node in reversed_flow_path[1:]:
