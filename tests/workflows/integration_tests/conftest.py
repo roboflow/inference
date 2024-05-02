@@ -30,6 +30,11 @@ def license_plate_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "license_plate.jpg"))
 
 
+@pytest.fixture(scope="function")
+def dogs_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "dogs.jpg"))
+
+
 @pytest.fixture
 def roboflow_api_key() -> str:
     return os.environ["ROBOFLOW_API_KEY"]

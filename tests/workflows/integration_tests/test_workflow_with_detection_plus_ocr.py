@@ -90,7 +90,7 @@ MULTI_STAGES_WORKFLOW = {
 
 
 @pytest.mark.asyncio
-async def test_static_crop_workflow_when_minimal_valid_input_provided(
+async def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     roboflow_api_key: str,

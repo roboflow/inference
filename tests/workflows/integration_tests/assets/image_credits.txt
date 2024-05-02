@@ -1,2 +1,3 @@
 crowd.jpg: https://pixabay.com/users/wal_172619-12138562
 license_plate.jpg: https://www.pexels.com/photo/kia-niros-driving-on-the-road-11320632/
+dogs.jpg: https://www.pexels.com/photo/brown-and-white-dogs-sitting-on-field-3568134/

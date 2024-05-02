@@ -1,0 +1,82 @@
+from unittest import mock
+
+import numpy as np
+import pytest
+
+from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.managers.base import ModelManager
+from inference.enterprise.workflows.entities.base import StepExecutionMode
+from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
+from inference.enterprise.workflows.execution_engine.introspection import blocks_loader
+
+FLOW_CONTROL_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "ABTest",
+            "name": "ab_test",
+            "a_step": "$steps.a",
+            "b_step": "$steps.b",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "a",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "b",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions_a",
+            "selector": "$steps.a.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "predictions_b",
+            "selector": "$steps.b.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+@mock.patch.dict(
+    blocks_loader.os.environ,
+    {"WORKFLOWS_PLUGINS": "tests.workflows.integration_tests.flow_control_plugin"},
+    clear=True,
+)
+async def test_flow_control_model(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=FLOW_CONTROL_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        step_execution_mode=StepExecutionMode.LOCAL,
+    )
+
+    # when
+    result = await execution_engine.run_async(runtime_parameters={"image": crowd_image})
+
+    # then
+    assert set(result.keys()) == {
+        "predictions_a",
+        "predictions_b",
+    }, "Expected all declared outputs to be delivered"
+    assert (len(result["predictions_a"]) > 0) != (
+        len(result["predictions_b"]) > 0
+    ), "Expected only one of two outputs to be filled with data"

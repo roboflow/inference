@@ -166,13 +166,14 @@ def test_load_initializers_from_plugin_when_plugin_exists_and_initializers_provi
     ), "This parameter is expected to be function returning static value"
 
 
-@mock.patch.object(blocks_loader.os, "getenv")
-def test_load_initializers_when_plugin_exists_and_initializers_provided(
-    getenv_mock: MagicMock,
-) -> None:
-    # given
-    getenv_mock.return_value = "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers"
-
+@mock.patch.dict(
+    blocks_loader.os.environ,
+    {
+        "WORKFLOWS_PLUGINS": "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers"
+    },
+    clear=True,
+)
+def test_load_initializers_when_plugin_exists_and_initializers_provided() -> None:
     # when
     result = load_initializers()
 

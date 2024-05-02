@@ -161,7 +161,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 
 
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
-    plugins_to_load = os.getenv(WORKFLOWS_PLUGINS_ENV)
+    plugins_to_load = os.environ.get(WORKFLOWS_PLUGINS_ENV)
     if plugins_to_load is None:
         return {}
     result = {}
