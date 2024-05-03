@@ -97,7 +97,7 @@ def detect_barcodes(image: np.ndarray, parent_id: str) -> List[dict]:
                 "width": width,
                 "height": height,
                 "detection_id": str(uuid4()),
-                "data": barcode.texts,
+                "data": barcode.text,
             }
         )
     return predictions
