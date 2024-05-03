@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import numpy as np
 import zxingcpp
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.utils.image_utils import load_image
 from inference.enterprise.workflows.entities.base import OutputDefinition
@@ -41,9 +41,10 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BarcodeDetector", "BarcodeDetection"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
 
 
@@ -64,10 +65,10 @@ class BarcodeDetectorBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        decoded_images = [load_image(e)[0] for e in image]
-        image_parent_ids = [img["parent_id"] for img in image]
+        decoded_images = [load_image(e)[0] for e in images]
+        image_parent_ids = [img["parent_id"] for img in images]
         return [
             {
                 "predictions": detect_barcodes(image=image, parent_id=parent_id),
@@ -96,7 +97,7 @@ def detect_barcodes(image: np.ndarray, parent_id: str) -> List[dict]:
                 "width": width,
                 "height": height,
                 "detection_id": str(uuid4()),
-                "data": barcode.text,
+                "data": barcode.texts,
             }
         )
     return predictions

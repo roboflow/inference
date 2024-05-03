@@ -1851,7 +1851,7 @@ def test_get_workflow_specification_when_valid_response_given(
                 "owner": "50hbxrck9m8nKykOhCEq",
                 "name": "Thermal",
                 "url": "thermal",
-                "config": '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
+                "config": '{"specification":{"version":"1.0","inputs":[{"type":"WorkflowImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
                 "id": "Har3FW34j1Rjc4p8IX4B",
             },
             "status": "ok",
@@ -1872,7 +1872,7 @@ def test_get_workflow_specification_when_valid_response_given(
     assert result == {
         "specification": {
             "version": "1.0",
-            "inputs": [{"type": "InferenceImage", "name": "image"}],
+            "inputs": [{"type": "WorkflowImage", "name": "image"}],
             "steps": [
                 {
                     "type": "CVModel",

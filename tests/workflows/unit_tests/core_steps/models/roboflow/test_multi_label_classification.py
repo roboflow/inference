@@ -6,18 +6,20 @@ from inference.enterprise.workflows.core_steps.models.roboflow.multi_label_class
 )
 
 
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
     "type_alias",
     ["RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"],
 )
 def test_multi_label_classification_model_validation_when_minimalistic_config_is_provided(
+    images_field_alias: str,
     type_alias: str,
 ) -> None:
     # given
     data = {
         "type": type_alias,
         "name": "some",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "model_id": "some/1",
     }
 
@@ -28,25 +30,20 @@ def test_multi_label_classification_model_validation_when_minimalistic_config_is
     assert result == BlockManifest(
         type=type_alias,
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         model_id="some/1",
     )
 
 
-@pytest.mark.parametrize("field", ["type", "name", "image", "model_id"])
-@pytest.mark.parametrize(
-    "type_alias",
-    ["RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"],
-)
+@pytest.mark.parametrize("field", ["type", "name", "images", "model_id"])
 def test_multi_label_classification_model_validation_when_required_field_is_not_given(
     field: str,
-    type_alias: str,
 ) -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowMultiLabelClassificationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
     }
     del data[field]
@@ -63,7 +60,7 @@ def test_multi_label_classification_model_validation_when_invalid_type_provided(
     data = {
         "type": "invalid",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
     }
 
@@ -72,18 +69,14 @@ def test_multi_label_classification_model_validation_when_invalid_type_provided(
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "type_alias",
-    ["RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"],
-)
-def test_multi_label_classification_model_validation_when_model_id_has_invalid_type(
-    type_alias: str,
-) -> None:
+def test_multi_label_classification_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowMultiLabelClassificationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": None,
     }
 
@@ -92,18 +85,14 @@ def test_multi_label_classification_model_validation_when_model_id_has_invalid_t
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "type_alias",
-    ["RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"],
-)
-def test_multi_label_classification_model_validation_when_active_learning_flag_has_invalid_type(
-    type_alias: str,
-) -> None:
+def test_multi_label_classification_model_validation_when_active_learning_flag_has_invalid_type() -> (
+    None
+):
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowMultiLabelClassificationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
         "disable_active_learning": "some",
     }

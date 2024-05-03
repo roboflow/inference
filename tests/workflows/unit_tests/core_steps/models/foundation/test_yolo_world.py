@@ -9,15 +9,17 @@ from inference.enterprise.workflows.core_steps.models.foundation.yolo_world impo
 )
 
 
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+@pytest.mark.parametrize("type_field_alias", ["YoloWorldModel", "YoloWorld"])
 def test_yolo_world_step_configuration_decoding_when_valid_config_is_given(
-    field_alias: str,
+    images_field_alias: str,
+    type_field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": type_field_alias,
         "name": "step_1",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "class_names": "$inputs.classes",
         "confidence": "$inputs.confidence",
         "version": "s",
@@ -28,37 +30,9 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given(
 
     # then
     assert result == BlockManifest(
-        type=field_alias,
+        type=type_field_alias,
         name="step_1",
-        image="$inputs.image",
-        class_names="$inputs.classes",
-        version="s",
-        confidence="$inputs.confidence",
-    )
-
-
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
-def test_yolo_world_step_configuration_decoding_when_valid_config_is_given_for_old_alias(
-    field_alias: str,
-) -> None:
-    # given
-    specification = {
-        "type": field_alias,
-        "name": "step_1",
-        "image": "$inputs.image",
-        "class_names": "$inputs.classes",
-        "confidence": "$inputs.confidence",
-        "version": "s",
-    }
-
-    # when
-    result = BlockManifest.model_validate(specification)
-
-    # then
-    assert result == BlockManifest(
-        type=field_alias,
-        name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         class_names="$inputs.classes",
         version="s",
         confidence="$inputs.confidence",
@@ -66,15 +40,12 @@ def test_yolo_world_step_configuration_decoding_when_valid_config_is_given_for_o
 
 
 @pytest.mark.parametrize("value", ["some", [], np.zeros((192, 168, 3))])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
-def test_yolo_world_step_image_validation_when_invalid_image_given(
-    value: Any, field_alias: str
-) -> None:
+def test_yolo_world_step_image_validation_when_invalid_image_given(value: Any) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
-        "image": value,
+        "images": value,
         "class_names": "$inputs.classes",
         "confidence": "$inputs.confidence",
         "version": "s",
@@ -86,16 +57,14 @@ def test_yolo_world_step_image_validation_when_invalid_image_given(
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
 def test_yolo_world_step_image_validation_when_invalid_class_names_given(
     value: Any,
-    field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "class_names": value,
         "confidence": "$inputs.confidence",
         "version": "s",
@@ -106,13 +75,10 @@ def test_yolo_world_step_image_validation_when_invalid_class_names_given(
         _ = BlockManifest.model_validate(specification)
 
 
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
-def test_yolo_world_step_image_validation_when_valid_class_names_given(
-    field_alias: str,
-) -> None:
+def test_yolo_world_step_image_validation_when_valid_class_names_given() -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -125,7 +91,7 @@ def test_yolo_world_step_image_validation_when_valid_class_names_given(
 
     # then
     assert result == BlockManifest(
-        type=field_alias,
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],
@@ -135,14 +101,12 @@ def test_yolo_world_step_image_validation_when_valid_class_names_given(
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], True, 3])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
 def test_yolo_world_step_image_validation_when_invalid_version_given(
     value: Any,
-    field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -156,13 +120,10 @@ def test_yolo_world_step_image_validation_when_invalid_version_given(
 
 
 @pytest.mark.parametrize("value", ["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
-def test_yolo_world_step_image_validation_when_valid_version_given(
-    value: Any, field_alias: str
-) -> None:
+def test_yolo_world_step_image_validation_when_valid_version_given(value: Any) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -175,7 +136,7 @@ def test_yolo_world_step_image_validation_when_valid_version_given(
 
     # then
     assert result == BlockManifest(
-        type=field_alias,
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],
@@ -185,14 +146,12 @@ def test_yolo_world_step_image_validation_when_valid_version_given(
 
 
 @pytest.mark.parametrize("value", ["some", [1, 2], 3, 1.1, -0.1])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
 def test_yolo_world_step_image_validation_when_invalid_confidence_given(
     value: Any,
-    field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -206,14 +165,12 @@ def test_yolo_world_step_image_validation_when_invalid_confidence_given(
 
 
 @pytest.mark.parametrize("value", [None, 0.3, 1.0, 0.0])
-@pytest.mark.parametrize("field_alias", ["YoloWorldModel", "YoloWorld"])
 def test_yolo_world_step_image_validation_when_valid_confidence_given(
     value: Any,
-    field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": field_alias,
+        "type": "YoloWorldModel",
         "name": "step_1",
         "image": "$inputs.image",
         "class_names": ["a", "b"],
@@ -226,7 +183,7 @@ def test_yolo_world_step_image_validation_when_valid_confidence_given(
 
     # then
     assert result == BlockManifest(
-        type=field_alias,
+        type="YoloWorldModel",
         name="step_1",
         image="$inputs.image",
         class_names=["a", "b"],

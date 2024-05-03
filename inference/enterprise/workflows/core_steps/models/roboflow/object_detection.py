@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import (
@@ -64,9 +64,10 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowObjectDetectionModel", "ObjectDetectionModel"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
@@ -166,7 +167,7 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -180,7 +181,7 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         request = ObjectDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
-            image=image,
+            image=images,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,
@@ -205,14 +206,14 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         else:
             serialised_result = [result.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
-            image=image,
+            images=images,
             class_filter=class_filter,
             serialised_result=serialised_result,
         )
 
     async def run_remotely(
         self,
-        image: List[Dict[str, Any]],
+        images: List[Dict[str, Any]],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -248,7 +249,7 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_input = [i["value"] for i in image]
+        inference_input = [i["value"] for i in images]
         results = await client.infer_async(
             inference_input=inference_input,
             model_id=model_id,
@@ -256,12 +257,12 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         if not isinstance(results, list):
             results = [results]
         return self._post_process_result(
-            image=image, class_filter=class_filter, serialised_result=results
+            images=images, class_filter=class_filter, serialised_result=results
         )
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[dict],
         class_filter: Optional[List[str]],
         serialised_result: List[dict],
     ) -> List[dict]:
@@ -273,8 +274,8 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
             serialised_result=serialised_result,
             classes_to_accept=class_filter,
         )
-        serialised_result = attach_parent_info(image=image, results=serialised_result)
+        serialised_result = attach_parent_info(image=images, results=serialised_result)
         return anchor_detections_in_parent_coordinates(
-            image=image,
+            image=images,
             serialised_result=serialised_result,
         )

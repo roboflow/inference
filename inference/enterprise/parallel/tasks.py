@@ -50,7 +50,7 @@ def preprocess(request: Dict):
         )
         # multi image requests are split into single image requests upstream and rebatched later
         image = image[0]
-        request.image.value = None  # avoid writing image again since it's in memory
+        request.images.value = None  # avoid writing image again since it's in memory
         shm = shared_memory.SharedMemory(create=True, size=image.nbytes)
         with shm_manager(shm):
             shared = np.ndarray(image.shape, dtype=image.dtype, buffer=shm.buf)

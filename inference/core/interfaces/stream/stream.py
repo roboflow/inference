@@ -282,7 +282,9 @@ class Stream(BaseInterface):
                     if detections.tracker_id is None:
                         detections.tracker_id = np.array([], dtype=int)
 
-                    for pred, detect in zip(predictions.predictions, detections):
+                    for pred, detect in zip(
+                        predictions.predictions_batches, detections
+                    ):
                         pred.tracker_id = int(detect[4])
                 predictions.frame_id = frame_id
                 predictions = predictions.dict(by_alias=True, exclude_none=True)

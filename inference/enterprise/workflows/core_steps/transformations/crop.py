@@ -58,9 +58,10 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["Crop"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     predictions: StepOutputSelector(
         kind=[
@@ -91,15 +92,15 @@ class CropBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         predictions: List[List[dict]],
     ) -> Tuple[List[Any], FlowControl]:
-        decoded_images = [load_image(e) for e in image]
+        decoded_images = [load_image(e) for e in images]
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
         origin_image_shape = extract_origin_size_from_images(
-            input_images=image,
+            input_images=images,
             decoded_images=decoded_images,
         )
         result = list(

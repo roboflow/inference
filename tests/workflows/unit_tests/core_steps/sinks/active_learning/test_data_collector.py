@@ -18,12 +18,15 @@ from inference.enterprise.workflows.core_steps.sinks.active_learning.entities im
 )
 
 
-def test_validate_al_data_collector_when_valid_input_given() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+def test_validate_al_data_collector_when_valid_input_given(
+    images_field_alias: str,
+) -> None:
     # given
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -36,7 +39,7 @@ def test_validate_al_data_collector_when_valid_input_given() -> None:
     assert result == BlockManifest(
         type="ActiveLearningDataCollector",
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         predictions="$steps.detection.predictions",
         prediction_type="$steps.detection.prediction_type",
         target_dataset="some",
@@ -53,7 +56,7 @@ def test_validate_al_data_collector_when_valid_input_with_disabled_al_config_giv
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -67,7 +70,7 @@ def test_validate_al_data_collector_when_valid_input_with_disabled_al_config_giv
     assert result == BlockManifest(
         type="ActiveLearningDataCollector",
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         predictions="$steps.detection.predictions",
         prediction_type="$steps.detection.prediction_type",
         target_dataset="some",
@@ -86,7 +89,7 @@ def test_validate_al_data_collector_when_valid_input_with_enabled_al_config_give
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -139,7 +142,7 @@ def test_validate_al_data_collector_when_valid_input_with_enabled_al_config_give
     assert result == BlockManifest(
         type="ActiveLearningDataCollector",
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         predictions="$steps.detection.predictions",
         prediction_type="$steps.detection.prediction_type",
         target_dataset="some",
@@ -207,7 +210,7 @@ def test_validate_al_data_collector_image_field_when_field_does_not_hold_selecto
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": image_selector,
+        "images": image_selector,
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -226,7 +229,7 @@ def test_validate_al_data_collector_predictions_field_when_field_does_not_hold_s
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": predictions_selector,
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -245,7 +248,7 @@ def test_validate_al_data_collector_target_dataset_field_when_field_contains_inv
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": target_dataset,
@@ -264,7 +267,7 @@ def test_validate_al_data_collector_target_dataset_api_key_field_when_field_cont
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",
@@ -284,7 +287,7 @@ def test_validate_al_data_collector_disable_active_learning_field_when_field_con
     specification = {
         "type": "ActiveLearningDataCollector",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "predictions": "$steps.detection.predictions",
         "prediction_type": "$steps.detection.prediction_type",
         "target_dataset": "some",

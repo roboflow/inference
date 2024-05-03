@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.env import (
@@ -57,9 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
 
 
@@ -91,10 +92,10 @@ class OCRModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         serialised_result = []
-        for single_image in image:
+        for single_image in images:
             inference_request = DoctrOCRInferenceRequest(
                 image=single_image,
                 api_key=self._api_key,
@@ -110,12 +111,12 @@ class OCRModelBlock(WorkflowBlock):
             serialised_result.append(result.dict())
         return self._post_process_result(
             serialised_result=serialised_result,
-            image=image,
+            image=images,
         )
 
     async def run_remotely(
         self,
-        image: List[dict],
+        images: List[dict],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -134,11 +135,11 @@ class OCRModelBlock(WorkflowBlock):
         )
         client.configure(configuration)
         results = await client.ocr_image_async(
-            inference_input=[i["value"] for i in image],
+            inference_input=[i["value"] for i in images],
         )
-        if len(image) == 1:
+        if len(images) == 1:
             results = [results]
-        return self._post_process_result(image=image, serialised_result=results)
+        return self._post_process_result(image=images, serialised_result=results)
 
     def _post_process_result(
         self,

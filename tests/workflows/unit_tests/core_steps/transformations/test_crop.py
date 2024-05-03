@@ -4,12 +4,13 @@ from pydantic import ValidationError
 from inference.enterprise.workflows.core_steps.transformations.crop import BlockManifest
 
 
-def test_crop_validation_when_valid_manifest_is_given() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+def test_crop_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
     # given
     data = {
         "type": "Crop",
         "name": "some",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "predictions": "$steps.detection.predictions",
     }
 
@@ -20,7 +21,7 @@ def test_crop_validation_when_valid_manifest_is_given() -> None:
     assert result == BlockManifest(
         type="Crop",
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         predictions="$steps.detection.predictions",
     )
 
@@ -30,7 +31,7 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
     data = {
         "type": "Crop",
         "name": "some",
-        "image": "invalid",
+        "images": "invalid",
         "predictions": "$steps.detection.predictions",
     }
 

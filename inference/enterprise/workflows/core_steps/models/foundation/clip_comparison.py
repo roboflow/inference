@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.env import (
@@ -56,14 +56,16 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
-    text: Union[InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
+    texts: Union[InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
         Field(
             description="List of texts to calculate similarity against each input image",
             examples=[["a", "b", "c"], "$inputs.texts"],
+            validation_alias=AliasChoices("texts", "text"),
         )
     )
 
@@ -96,15 +98,15 @@ class ClipComparisonBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
-        text: List[str],
+        images: List[dict],
+        texts: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         serialised_result = []
-        for single_image in image:
+        for single_image in images:
             inference_request = ClipCompareRequest(
                 subject=single_image,
                 subject_type="image",
-                prompt=text,
+                prompt=texts,
                 prompt_type="text",
                 api_key=self._api_key,
             )
@@ -118,13 +120,13 @@ class ClipComparisonBlock(WorkflowBlock):
             )
             serialised_result.append(result.dict())
         return self._post_process_result(
-            image=image, serialised_result=serialised_result
+            image=images, serialised_result=serialised_result
         )
 
     async def run_remotely(
         self,
-        image: List[dict],
-        text: List[str],
+        images: List[dict],
+        texts: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -139,7 +141,7 @@ class ClipComparisonBlock(WorkflowBlock):
             client.select_api_v0()
         image_batches = list(
             make_batches(
-                iterable=image,
+                iterable=images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
@@ -149,13 +151,13 @@ class ClipComparisonBlock(WorkflowBlock):
             for single_image in single_batch:
                 coroutine = client.clip_compare_async(
                     subject=single_image["value"],
-                    prompt=text,
+                    prompt=texts,
                 )
                 coroutines.append(coroutine)
             batch_results = list(await asyncio.gather(*coroutines))
             serialised_result.extend(batch_results)
         return self._post_process_result(
-            image=image, serialised_result=serialised_result
+            image=images, serialised_result=serialised_result
         )
 
     def _post_process_result(

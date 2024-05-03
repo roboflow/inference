@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Union
 import networkx as nx
 
 from inference.enterprise.workflows.constants import STEP_NODE_KIND
-from inference.enterprise.workflows.entities.base import InferenceParameter
+from inference.enterprise.workflows.entities.base import WorkflowParameter
 from inference.enterprise.workflows.execution_engine.compiler.entities import (
     CompiledWorkflow,
     InputSubstitution,
@@ -72,7 +72,7 @@ def collect_input_substitutions(
 ) -> List[InputSubstitution]:
     result = []
     for declared_input in workflow_definition.inputs:
-        if not isinstance(declared_input, InferenceParameter):
+        if not isinstance(declared_input, WorkflowParameter):
             continue
         input_substitutions = collect_substitutions_for_selected_input(
             input_name=declared_input.name,

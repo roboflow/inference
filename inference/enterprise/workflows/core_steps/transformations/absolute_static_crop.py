@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 import numpy as np
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.enterprise.workflows.constants import (
@@ -51,9 +51,10 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["AbsoluteStaticCrop"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     x_center: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
@@ -92,19 +93,19 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         x_center: int,
         y_center: int,
         width: int,
         height: int,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        decoded_images = [load_image(e) for e in image]
-        images_parents = [i[PARENT_ID_KEY] for i in image]
+        decoded_images = [load_image(e) for e in images]
+        images_parents = [i[PARENT_ID_KEY] for i in images]
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
         origin_image_shape = extract_origin_size_from_images(
-            input_images=image,
+            input_images=images,
             decoded_images=decoded_images,
         )
         crops = [

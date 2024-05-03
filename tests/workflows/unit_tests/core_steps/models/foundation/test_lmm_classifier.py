@@ -9,12 +9,15 @@ from inference.enterprise.workflows.core_steps.models.foundation.lmm_classifier 
 )
 
 
-def test_llm_for_classification_step_validation_when_valid_input_given() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+def test_llm_for_classification_step_validation_when_valid_input_given(
+    images_field_alias: str,
+) -> None:
     # given
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        images_field_alias: "$steps.step_2.crops",
         "lmm_type": "$inputs.lmm_type",
         "classes": "$inputs.classification_classes",
         "remote_api_key": "$inputs.open_ai_key",
@@ -27,7 +30,7 @@ def test_llm_for_classification_step_validation_when_valid_input_given() -> None
     assert result == BlockManifest(
         type="LMMForClassification",
         name="step_3",
-        image="$steps.step_2.crops",
+        images="$steps.step_2.crops",
         lmm_type="$inputs.lmm_type",
         classes="$inputs.classification_classes",
         lmm_config=LMMConfig(),
@@ -43,7 +46,7 @@ def test_llm_for_classification_step_validation_when_invalid_image_given(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": value,
+        "images": value,
         "lmm_type": "$inputs.lmm_type",
         "classes": "$inputs.classification_classes",
         "remote_api_key": "$inputs.open_ai_key",
@@ -62,7 +65,7 @@ def test_llm_for_classification_step_validation_when_invalid_image_given(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": value,
+        "images": value,
         "lmm_type": "$inputs.lmm_type",
         "classes": "$inputs.classification_classes",
         "remote_api_key": "$inputs.open_ai_key",
@@ -74,12 +77,14 @@ def test_llm_for_classification_step_validation_when_invalid_image_given(
 
 
 @pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
-def test_llm_for_classification_step_validation_when_lmm_type_valid(value: Any) -> None:
+def test_llm_for_classification_step_validation_when_lmm_type_valid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": value,
         "classes": "$inputs.classification_classes",
         "remote_api_key": "$inputs.open_ai_key",
@@ -91,7 +96,7 @@ def test_llm_for_classification_step_validation_when_lmm_type_valid(value: Any) 
     assert result == BlockManifest(
         type="LMMForClassification",
         name="step_3",
-        image="$steps.step_2.crops",
+        images="$steps.step_2.crops",
         lmm_type=value,
         classes="$inputs.classification_classes",
         lmm_config=LMMConfig(),
@@ -107,7 +112,7 @@ def test_llm_for_classification_step_validation_when_lmm_type_invalid(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": value,
         "classes": "$inputs.classification_classes",
         "remote_api_key": "$inputs.open_ai_key",
@@ -126,7 +131,7 @@ def test_llm_for_classification_step_validation_when_classes_field_valid(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": "gpt_4v",
         "classes": value,
         "remote_api_key": "$inputs.open_ai_key",
@@ -138,7 +143,7 @@ def test_llm_for_classification_step_validation_when_classes_field_valid(
     assert result == BlockManifest(
         type="LMMForClassification",
         name="step_3",
-        image="$steps.step_2.crops",
+        images="$steps.step_2.crops",
         lmm_type="gpt_4v",
         classes=value,
         lmm_config=LMMConfig(),
@@ -154,7 +159,7 @@ def test_llm_for_classification_step_validation_when_lmm_type_invalid(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": "gpt_4v",
         "classes": value,
         "remote_api_key": "$inputs.open_ai_key",
@@ -173,7 +178,7 @@ def test_llm_for_classification_step_validation_when_remote_api_key_field_valid(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": "gpt_4v",
         "classes": ["a", "b"],
         "remote_api_key": value,
@@ -185,7 +190,7 @@ def test_llm_for_classification_step_validation_when_remote_api_key_field_valid(
     assert result == BlockManifest(
         type="LMMForClassification",
         name="step_3",
-        image="$steps.step_2.crops",
+        images="$steps.step_2.crops",
         lmm_type="gpt_4v",
         classes=["a", "b"],
         lmm_config=LMMConfig(),
@@ -201,7 +206,7 @@ def test_llm_for_classification_step_validation_when_lmm_type_invalid(
     specification = {
         "type": "LMMForClassification",
         "name": "step_3",
-        "image": "$steps.step_2.crops",
+        "images": "$steps.step_2.crops",
         "lmm_type": "gpt_4v",
         "classes": ["a", "b"],
         "remote_api_key": value,

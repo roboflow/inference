@@ -188,7 +188,7 @@ def is_inference_server_container(container):
     Returns:
         boolean: True if the container is an inference server container, False otherwise
     """
-    image_tags = container.image.tags
+    image_tags = container.images.tags
     for t in image_tags:
         if t.startswith("roboflow/roboflow-inference-server"):
             return True

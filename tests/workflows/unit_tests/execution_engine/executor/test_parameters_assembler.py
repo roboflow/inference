@@ -333,7 +333,7 @@ def test_assembly_step_parameters() -> None:
     manifest = BlockManifest(
         type="DetectionsConsensus",
         name="my_step",
-        predictions=[
+        predictions_batches=[
             "$steps.some.predictions",
             "$steps.some.predictions",
         ],
@@ -351,7 +351,7 @@ def test_assembly_step_parameters() -> None:
     )
 
     # then
-    assert result["predictions"] == [
+    assert result["predictions_batches"] == [
         ["a", "b"],
         ["a", "b"],
     ], "Expected to see 2x dummy predictions"

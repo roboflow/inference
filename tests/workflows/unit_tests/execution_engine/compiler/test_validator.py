@@ -3,9 +3,9 @@ import pytest
 from inference.enterprise.workflows.core_steps.models.roboflow import object_detection
 from inference.enterprise.workflows.core_steps.transformations import crop
 from inference.enterprise.workflows.entities.base import (
-    InferenceImage,
-    InferenceParameter,
     JsonField,
+    WorkflowImage,
+    WorkflowParameter,
 )
 from inference.enterprise.workflows.errors import DuplicatedNameError
 from inference.enterprise.workflows.execution_engine.compiler.validator import (
@@ -19,9 +19,9 @@ from inference.enterprise.workflows.execution_engine.compiler.validator import (
 def test_validate_inputs_names_are_unique_when_input_is_valid() -> None:
     # given
     inputs = [
-        InferenceImage(type="InferenceImage", name="image"),
-        InferenceParameter(type="InferenceParameter", name="x"),
-        InferenceParameter(type="InferenceParameter", name="y"),
+        WorkflowImage(type="WorkflowImage", name="image"),
+        WorkflowParameter(type="WorkflowParameter", name="x"),
+        WorkflowParameter(type="WorkflowParameter", name="y"),
     ]
 
     # when
@@ -33,9 +33,9 @@ def test_validate_inputs_names_are_unique_when_input_is_valid() -> None:
 def test_validate_inputs_names_are_unique_when_input_is_invalid() -> None:
     # given
     inputs = [
-        InferenceImage(type="InferenceImage", name="image"),
-        InferenceParameter(type="InferenceParameter", name="x"),
-        InferenceParameter(type="InferenceParameter", name="x"),
+        WorkflowImage(type="WorkflowImage", name="image"),
+        WorkflowParameter(type="WorkflowParameter", name="x"),
+        WorkflowParameter(type="WorkflowParameter", name="x"),
     ]
 
     # when

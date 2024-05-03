@@ -9,7 +9,7 @@ from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 MULTI_STAGES_WORKFLOW = {
     "version": "1.0",
     "inputs": [
-        {"type": "InferenceImage", "name": "image"},
+        {"type": "WorkflowImage", "name": "image"},
     ],
     "steps": [
         {

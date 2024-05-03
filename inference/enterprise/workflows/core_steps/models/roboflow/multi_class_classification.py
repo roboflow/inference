@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.env import (
@@ -60,9 +60,10 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowClassificationModel", "ClassificationModel"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
@@ -127,7 +128,7 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         model_id: str,
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
@@ -136,7 +137,7 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         request = ClassificationInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
-            image=image,
+            image=images,
             confidence=confidence,
             disable_active_learning=disable_active_learning,
             source="workflow-execution",
@@ -157,12 +158,12 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             serialised_result = [result.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             serialised_result=serialised_result,
-            image=image,
+            images=images,
         )
 
     async def run_remotely(
         self,
-        image: List[dict],
+        images: List[dict],
         model_id: str,
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
@@ -188,18 +189,18 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_input = [i["value"] for i in image]
+        inference_input = [i["value"] for i in images]
         results = await client.infer_async(
             inference_input=inference_input,
             model_id=model_id,
         )
         if not isinstance(results, list):
             results = [results]
-        return self._post_process_result(image=image, serialised_result=results)
+        return self._post_process_result(images=images, serialised_result=results)
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[dict],
         serialised_result: List[dict],
     ) -> List[dict]:
         serialised_result = attach_prediction_type_info(
@@ -207,6 +208,6 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             prediction_type="classification",
         )
         serialised_result = attach_parent_info(
-            image=image, results=serialised_result, nested_key=None
+            image=images, results=serialised_result, nested_key=None
         )
         return serialised_result

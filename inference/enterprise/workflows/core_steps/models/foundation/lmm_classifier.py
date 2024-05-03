@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.core_steps.common.utils import (
@@ -59,9 +59,10 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMMForClassification"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     lmm_type: Union[
         InferenceParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
@@ -116,7 +117,7 @@ class LMMForClassificationBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         lmm_type: str,
         classes: List[str],
         lmm_config: LMMConfig,
@@ -129,14 +130,14 @@ class LMMForClassificationBlock(WorkflowBlock):
         )
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=image,
+                image=images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
-                image=image,
+                image=images,
                 prompt=prompt,
                 model_manager=self._model_manager,
                 api_key=self._api_key,
@@ -154,7 +155,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             for raw, structured in zip(raw_output, structured_output)
         ]
         serialised_result = attach_parent_info(
-            image=image,
+            image=images,
             results=serialised_result,
             nested_key=None,
         )
@@ -163,14 +164,14 @@ class LMMForClassificationBlock(WorkflowBlock):
             prediction_type="classification",
         )
         return attach_parent_info(
-            image=image,
+            image=images,
             results=serialised_result,
             nested_key=None,
         )
 
     async def run_remotely(
         self,
-        image: List[dict],
+        images: List[dict],
         lmm_type: str,
         classes: List[str],
         lmm_config: LMMConfig,
@@ -183,14 +184,14 @@ class LMMForClassificationBlock(WorkflowBlock):
         )
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=image,
+                image=images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
-                image=image,
+                image=images,
                 prompt=prompt,
                 api_key=self._api_key,
             )
@@ -207,7 +208,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             for raw, structured in zip(raw_output, structured_output)
         ]
         serialised_result = attach_parent_info(
-            image=image,
+            image=images,
             results=serialised_result,
             nested_key=None,
         )
@@ -216,7 +217,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             prediction_type="classification",
         )
         return attach_parent_info(
-            image=image,
+            image=images,
             results=serialised_result,
             nested_key=None,
         )

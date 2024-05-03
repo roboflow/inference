@@ -8,7 +8,7 @@ from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 
 DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
     "version": "1.0",
-    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
             "type": "ObjectDetectionModel",

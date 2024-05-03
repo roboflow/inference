@@ -6,13 +6,18 @@ from inference.enterprise.workflows.core_steps.models.foundation.clip_comparison
 )
 
 
-def test_manifest_parsing_when_data_is_valid() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+@pytest.mark.parametrize("texts_field_alias", ["texts", "text"])
+def test_manifest_parsing_when_data_is_valid(
+    images_field_alias: str,
+    texts_field_alias: str,
+) -> None:
     # given
     data = {
         "type": "ClipComparison",
         "name": "some",
-        "image": "$inputs.some",
-        "text": "$inputs.classes",
+        images_field_alias: "$inputs.some",
+        texts_field_alias: "$inputs.classes",
     }
 
     # when
@@ -22,8 +27,8 @@ def test_manifest_parsing_when_data_is_valid() -> None:
     assert result == BlockManifest(
         type="ClipComparison",
         name="some",
-        image="$inputs.some",
-        text="$inputs.classes",
+        images="$inputs.some",
+        texts="$inputs.classes",
     )
 
 
@@ -32,8 +37,8 @@ def test_manifest_parsing_when_image_is_invalid() -> None:
     data = {
         "type": "ClipComparison",
         "name": "some",
-        "image": "invalid",
-        "text": "$inputs.classes",
+        "images": "invalid",
+        "texts": "$inputs.classes",
     }
 
     # when
@@ -46,8 +51,8 @@ def test_manifest_parsing_when_text_is_invalid() -> None:
     data = {
         "type": "ClipComparison",
         "name": "some",
-        "image": "$inputs.some",
-        "text": "invalid",
+        "images": "$inputs.some",
+        "texts": "invalid",
     }
 
     # when

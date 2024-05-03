@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.utils.image_utils import load_image
@@ -66,9 +66,10 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["ActiveLearningDataCollector"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     predictions: StepOutputSelector(
         kind=[
@@ -141,7 +142,7 @@ class ActiveLearningDataCollectorBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         predictions: List[List[dict]],
         prediction_type: List[str],
         target_dataset: str,
@@ -163,7 +164,7 @@ class ActiveLearningDataCollectorBlock(WorkflowBlock):
         predictions_output_name = (
             "predictions" if "classification" not in prediction_type else "top"
         )
-        decoded_images = [load_image(e)[0] for e in image]
+        decoded_images = [load_image(e)[0] for e in images]
         images_meta = [
             {"width": i.shape[1], "height": i.shape[0]} for i in decoded_images
         ]
@@ -174,7 +175,7 @@ class ActiveLearningDataCollectorBlock(WorkflowBlock):
         self._active_learning_middleware.register(
             # this should actually be asyncio, but that requires a lot of backend components redesign
             dataset_name=target_dataset,
-            images=image,
+            images=images,
             predictions=active_learning_compatible_predictions,
             api_key=target_dataset_api_key or self._api_key,
             active_learning_disabled_for_request=disable_active_learning,

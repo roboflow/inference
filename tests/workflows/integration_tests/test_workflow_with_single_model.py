@@ -11,9 +11,9 @@ from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 OBJECT_DETECTION_WORKFLOW = {
     "version": "1.0",
     "inputs": [
-        {"type": "InferenceImage", "name": "image"},
-        {"type": "InferenceParameter", "name": "model_id"},
-        {"type": "InferenceParameter", "name": "confidence", "default_value": 0.3},
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
     ],
     "steps": [
         {

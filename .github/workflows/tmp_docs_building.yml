@@ -40,7 +40,7 @@ jobs:
         working-directory: ./inference_repo
       - run: pip install .
         working-directory: ./roboflow_enterprise_blocks
-      - run: WORKFLOWS_PLUGINS="workflows_enterprise_blocks" python -m development.docs.build_block_docs
+      - run: python -m development.docs.build_block_docs
         working-directory: ./inference_repo
       - run: mkdocs gh-deploy --force
         working-directory: ./inference_repo

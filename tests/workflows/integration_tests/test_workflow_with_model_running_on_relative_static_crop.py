@@ -11,13 +11,13 @@ from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
 RELATIVE_STATIC_CROP_WORKFLOW = {
     "version": "1.0",
     "inputs": [
-        {"type": "InferenceImage", "name": "image"},
-        {"type": "InferenceParameter", "name": "model_id"},
-        {"type": "InferenceParameter", "name": "confidence", "default_value": 0.7},
-        {"type": "InferenceParameter", "name": "x_center"},
-        {"type": "InferenceParameter", "name": "y_center"},
-        {"type": "InferenceParameter", "name": "width"},
-        {"type": "InferenceParameter", "name": "height"},
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.7},
+        {"type": "WorkflowParameter", "name": "x_center"},
+        {"type": "WorkflowParameter", "name": "y_center"},
+        {"type": "WorkflowParameter", "name": "width"},
+        {"type": "WorkflowParameter", "name": "height"},
     ],
     "steps": [
         {

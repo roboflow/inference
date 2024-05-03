@@ -9,12 +9,17 @@ from inference.enterprise.workflows.core_steps.fusion.detections_consensus impor
 )
 
 
-def test_detections_consensus_validation_when_valid_specification_given() -> None:
+@pytest.mark.parametrize(
+    "predictions_batch_alias", ["predictions", "predictions_batches"]
+)
+def test_detections_consensus_validation_when_valid_specification_given(
+    predictions_batch_alias: str,
+) -> None:
     # given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        predictions_batch_alias: [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -29,7 +34,10 @@ def test_detections_consensus_validation_when_valid_specification_given() -> Non
     assert result == BlockManifest(
         type="DetectionsConsensus",
         name="some",
-        predictions=["$steps.detection.predictions", "$steps.detection_2.predictions"],
+        predictions_batches=[
+            "$steps.detection.predictions",
+            "$steps.detection_2.predictions",
+        ],
         image_metadata="$steps.detection.image",
         required_votes=3,
         class_aware=True,
@@ -51,7 +59,7 @@ def test_detections_consensus_validation_when_predictions_of_invalid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": value,
+        "predictions_batches": value,
         "image_metadata": "$steps.detection.image",
         "required_votes": 3,
     }
@@ -69,7 +77,7 @@ def test_detections_consensus_validation_when_required_votes_of_invalid_type_giv
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -90,7 +98,7 @@ def test_detections_consensus_validation_when_required_votes_of_valid_type_given
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -113,7 +121,7 @@ def test_detections_consensus_validation_when_class_aware_of_invalid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -135,7 +143,7 @@ def test_detections_consensus_validation_when_class_aware_of_valid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -172,7 +180,7 @@ def test_detections_consensus_validation_when_range_field_of_invalid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -207,7 +215,7 @@ def test_detections_consensus_validation_when_range_field_of_valid_type_given(
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -231,7 +239,7 @@ def test_detections_consensus_validation_when_classes_to_consider_of_invalid_typ
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -253,7 +261,7 @@ def test_detections_consensus_validation_when_classes_to_consider_of_valid_type_
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -279,7 +287,7 @@ def test_detections_consensus_validation_when_required_objects_of_invalid_type_g
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],
@@ -303,7 +311,7 @@ def test_detections_consensus_validation_when_required_objects_of_valid_type_giv
     specification = {
         "type": "DetectionsConsensus",
         "name": "some",
-        "predictions": [
+        "predictions_batches": [
             "$steps.detection.predictions",
             "$steps.detection_2.predictions",
         ],

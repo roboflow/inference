@@ -6,12 +6,15 @@ from inference.enterprise.workflows.core_steps.models.foundation.ocr import (
 )
 
 
-def test_ocr_model_validation_when_valid_manifest_is_given() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+def test_ocr_model_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
         "type": "OCRModel",
         "name": "some",
-        "image": "$steps.crop.crops",
+        images_field_alias: "$steps.crop.crops",
     }
 
     # when
@@ -21,7 +24,7 @@ def test_ocr_model_validation_when_valid_manifest_is_given() -> None:
     assert result == BlockManifest(
         type="OCRModel",
         name="some",
-        image="$steps.crop.crops",
+        images="$steps.crop.crops",
     )
 
 
@@ -30,7 +33,7 @@ def test_ocr_model_validation_when_invalid_image_is_given() -> None:
     data = {
         "type": "OCRModel",
         "name": "some",
-        "image": "invalid",
+        "images": "invalid",
     }
 
     # when

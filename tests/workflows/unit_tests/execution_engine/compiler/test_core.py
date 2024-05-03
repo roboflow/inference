@@ -1,9 +1,9 @@
 from collections import defaultdict
 
 from inference.enterprise.workflows.entities.base import (
-    InferenceImage,
-    InferenceParameter,
     JsonField,
+    WorkflowImage,
+    WorkflowParameter,
 )
 from inference.enterprise.workflows.execution_engine.compiler.core import (
     collect_input_substitutions,
@@ -21,10 +21,10 @@ def test_collect_input_substitutions() -> None:
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image_1"),
-            InferenceImage(type="InferenceImage", name="image_2"),
-            InferenceParameter(type="InferenceParameter", name="model_1"),
-            InferenceParameter(type="InferenceParameter", name="model_2"),
+            WorkflowImage(type="WorkflowImage", name="image_1"),
+            WorkflowImage(type="WorkflowImage", name="image_2"),
+            WorkflowParameter(type="WorkflowParameter", name="model_1"),
+            WorkflowParameter(type="WorkflowParameter", name="model_2"),
         ],
         steps=[
             ExampleModelBlockManifest(

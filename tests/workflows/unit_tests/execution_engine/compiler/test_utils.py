@@ -9,9 +9,9 @@ from inference.enterprise.workflows.core_steps.flow_control import condition
 from inference.enterprise.workflows.core_steps.models.roboflow import object_detection
 from inference.enterprise.workflows.core_steps.transformations import crop
 from inference.enterprise.workflows.entities.base import (
-    InferenceImage,
-    InferenceParameter,
     JsonField,
+    WorkflowImage,
+    WorkflowParameter,
 )
 from inference.enterprise.workflows.execution_engine.compiler.utils import (
     construct_input_selector,
@@ -66,7 +66,7 @@ def test_get_nodes_of_specific_kind() -> None:
     graph.add_node(
         "three",
         kind=INPUT_NODE_KIND,
-        definition=InferenceParameter(type="InferenceParameter", name="three"),
+        definition=WorkflowParameter(type="WorkflowParameter", name="three"),
     )
 
     # when
@@ -193,9 +193,9 @@ def test_get_steps_selectors() -> None:
 def test_get_input_parameters_selectors() -> None:
     # given
     inputs = [
-        InferenceImage(type="InferenceImage", name="image"),
-        InferenceParameter(type="InferenceParameter", name="x"),
-        InferenceParameter(type="InferenceParameter", name="y"),
+        WorkflowImage(type="WorkflowImage", name="image"),
+        WorkflowParameter(type="WorkflowParameter", name="x"),
+        WorkflowParameter(type="WorkflowParameter", name="y"),
     ]
 
     # when

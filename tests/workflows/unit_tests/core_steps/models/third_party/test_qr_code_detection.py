@@ -6,13 +6,16 @@ from inference.enterprise.workflows.core_steps.models.third_party.qr_code_detect
 )
 
 
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize("type_alias", ["QRCodeDetector", "QRCodeDetection"])
-def test_manifest_parsing_when_data_is_valid(type_alias: str) -> None:
+def test_manifest_parsing_when_data_is_valid(
+    images_field_alias: str, type_alias: str
+) -> None:
     # given
     data = {
         "type": type_alias,
         "name": "some",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
     }
 
     # when
@@ -22,15 +25,14 @@ def test_manifest_parsing_when_data_is_valid(type_alias: str) -> None:
     assert result == BlockManifest(
         type=type_alias,
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
     )
 
 
-@pytest.mark.parametrize("type_alias", ["QRCodeDetector", "QRCodeDetection"])
-def test_manifest_parsing_when_image_is_invalid_valid(type_alias: str) -> None:
+def test_manifest_parsing_when_image_is_invalid_valid() -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "QRCodeDetector",
         "name": "some",
         "image": "invalid",
     }

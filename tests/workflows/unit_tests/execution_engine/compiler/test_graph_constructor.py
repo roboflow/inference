@@ -3,9 +3,9 @@ from typing import List
 import pytest
 
 from inference.enterprise.workflows.entities.base import (
-    InferenceImage,
-    InferenceParameter,
     JsonField,
+    WorkflowImage,
+    WorkflowParameter,
 )
 from inference.enterprise.workflows.entities.types import (
     INTEGER_KIND,
@@ -67,7 +67,7 @@ def test_execution_graph_construction_for_trivial_workflow(
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
-        inputs=[InferenceImage(type="InferenceImage", name="image")],
+        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
         steps=[
             ExampleModelBlockManifest(
                 type="ExampleModel",
@@ -150,7 +150,7 @@ def test_execution_graph_construction_when_output_selector_points_non_existing_s
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
-        inputs=[InferenceImage(type="InferenceImage", name="image")],
+        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
         steps=[
             ExampleModelBlockManifest(
                 type="ExampleModel",
@@ -183,7 +183,7 @@ def test_execution_graph_construction_when_output_defines_non_existing_output(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -216,7 +216,7 @@ def test_execution_graph_construction_when_there_is_a_dangling_output(
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
-        inputs=[InferenceImage(type="InferenceImage", name="image")],
+        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
         steps=[
             ExampleModelBlockManifest(
                 type="ExampleModel",
@@ -244,9 +244,9 @@ def test_execution_graph_construction_when_input_kind_does_not_match_block_manif
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
-            InferenceParameter(
-                type="InferenceParameter", name="model", kind=[INTEGER_KIND]
+            WorkflowImage(type="WorkflowImage", name="image"),
+            WorkflowParameter(
+                type="WorkflowParameter", name="model", kind=[INTEGER_KIND]
             ),
         ],
         steps=[
@@ -281,7 +281,7 @@ def test_execution_graph_construction_when_selector_is_injected_to_string_field(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -320,10 +320,10 @@ def test_execution_graph_construction_when_two_parallel_execution_branches_exist
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image_1"),
-            InferenceImage(type="InferenceImage", name="image_2"),
-            InferenceParameter(
-                type="InferenceParameter", name="model", kind=[ROBOFLOW_MODEL_ID_KIND]
+            WorkflowImage(type="WorkflowImage", name="image_1"),
+            WorkflowImage(type="WorkflowImage", name="image_2"),
+            WorkflowParameter(
+                type="WorkflowParameter", name="model", kind=[ROBOFLOW_MODEL_ID_KIND]
             ),
         ],
         steps=[
@@ -410,8 +410,8 @@ def test_execution_graph_construction_when_fusion_of_two_branches_is_present(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image_1"),
-            InferenceImage(type="InferenceImage", name="image_2"),
+            WorkflowImage(type="WorkflowImage", name="image_1"),
+            WorkflowImage(type="WorkflowImage", name="image_2"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -497,7 +497,7 @@ def test_execution_graph_construction_when_there_is_flow_control_step(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleFlowControlBlockManifest(
@@ -591,7 +591,7 @@ def test_execution_graph_construction_when_there_is_condition_branches_collapse(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleFlowControlBlockManifest(
@@ -644,8 +644,8 @@ def test_execution_graph_construction_when_there_is_collapse_of_two_conditional_
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image_1"),
-            InferenceImage(type="InferenceImage", name="image_2"),
+            WorkflowImage(type="WorkflowImage", name="image_1"),
+            WorkflowImage(type="WorkflowImage", name="image_2"),
         ],
         steps=[
             ExampleFlowControlBlockManifest(
@@ -728,7 +728,7 @@ def test_execution_graph_construction_when_cycle_is_detected(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -768,7 +768,7 @@ def test_execution_graph_construction_when_reference_to_non_existing_step_output
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -808,7 +808,7 @@ def test_execution_graph_construction_when_reference_to_non_existing_step_provid
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(
@@ -848,7 +848,7 @@ def test_execution_graph_construction_when_connection_kind_missmatch_detected(
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
         inputs=[
-            InferenceImage(type="InferenceImage", name="image"),
+            WorkflowImage(type="WorkflowImage", name="image"),
         ],
         steps=[
             ExampleModelBlockManifest(

@@ -42,7 +42,7 @@ def main():
                     response.raise_for_status()
                     test["expected_response"][image_type] = response.json()
                 except Exception as e:
-                    print(response.text)
+                    print(response.texts)
                     # raise e
                     if "expected_response" in test:
                         del test["expected_response"]

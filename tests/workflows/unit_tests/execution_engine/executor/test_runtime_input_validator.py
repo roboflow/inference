@@ -57,10 +57,10 @@ def test_validate_runtime_input_when_input_is_invalid() -> None:
             step_manifest=BlockManifest(
                 type="ClipComparison",
                 name="a",
-                image="$inputs.image",
-                text="$inputs.text_1",
+                images="$inputs.image",
+                texts="$inputs.text_1",
             ),
-            manifest_property="text",
+            manifest_property="texts",
         )
     ]
 

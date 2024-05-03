@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
@@ -63,9 +63,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["YoloWorldModel", "YoloWorld"]
     name: str = Field(description="Unique name of step in workflows")
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
     class_names: Union[
         InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
@@ -122,13 +123,13 @@ class YoloWorldModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        image: List[dict],
+        images: List[dict],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         serialised_result = []
-        for single_image in image:
+        for single_image in images:
             inference_request = YOLOWorldInferenceRequest(
                 image=single_image,
                 yolo_world_version_id=version,
@@ -146,12 +147,12 @@ class YoloWorldModelBlock(WorkflowBlock):
             )
             serialised_result.append(result.dict(by_alias=True, exclude_none=True))
         return self._post_process_result(
-            image=image, serialised_result=serialised_result
+            image=images, serialised_result=serialised_result
         )
 
     async def run_remotely(
         self,
-        image: List[dict],
+        images: List[dict],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
@@ -175,7 +176,7 @@ class YoloWorldModelBlock(WorkflowBlock):
             client.select_api_v0()
         image_batches = list(
             make_batches(
-                iterable=image,
+                iterable=images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
@@ -189,7 +190,7 @@ class YoloWorldModelBlock(WorkflowBlock):
             )
             serialised_result.extend(batch_results)
         return self._post_process_result(
-            image=image, serialised_result=serialised_result
+            image=images, serialised_result=serialised_result
         )
 
     def _post_process_result(

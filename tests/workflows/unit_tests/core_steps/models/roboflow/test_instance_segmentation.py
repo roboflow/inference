@@ -8,17 +8,19 @@ from inference.enterprise.workflows.core_steps.models.roboflow.instance_segmenta
 )
 
 
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
     "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
 )
 def test_instance_segmentation_model_validation_when_minimalistic_config_is_provided(
+    images_field_alias: str,
     type_alias: str,
 ) -> None:
     # given
     data = {
         "type": type_alias,
         "name": "some",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "model_id": "some/1",
     }
 
@@ -29,24 +31,20 @@ def test_instance_segmentation_model_validation_when_minimalistic_config_is_prov
     assert result == BlockManifest(
         type=type_alias,
         name="some",
-        image="$inputs.image",
+        images="$inputs.image",
         model_id="some/1",
     )
 
 
-@pytest.mark.parametrize("field", ["type", "name", "image", "model_id"])
-@pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
-)
+@pytest.mark.parametrize("field", ["type", "name", "images", "model_id"])
 def test_instance_segmentation_model_validation_when_required_field_is_not_given(
     field: str,
-    type_alias: str,
 ) -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowInstanceSegmentationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
     }
     del data[field]
@@ -61,7 +59,7 @@ def test_instance_segmentation_model_validation_when_invalid_type_provided() -> 
     data = {
         "type": "invalid",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
     }
 
@@ -70,17 +68,14 @@ def test_instance_segmentation_model_validation_when_invalid_type_provided() -> 
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
-)
-def test_instance_segmentation_model_validation_when_model_id_has_invalid_type(
-    type_alias: str,
-) -> None:
+def test_instance_segmentation_model_validation_when_model_id_has_invalid_type() -> (
+    None
+):
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowInstanceSegmentationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": None,
     }
 
@@ -89,17 +84,14 @@ def test_instance_segmentation_model_validation_when_model_id_has_invalid_type(
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
-)
-def test_instance_segmentation_model_validation_when_active_learning_flag_has_invalid_type(
-    type_alias: str,
-) -> None:
+def test_instance_segmentation_model_validation_when_active_learning_flag_has_invalid_type() -> (
+    None
+):
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowInstanceSegmentationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
         "disable_active_learning": "some",
     }
@@ -113,7 +105,7 @@ def test_instance_segmentation_model_validation_when_active_learning_flag_has_in
     "parameter, value",
     [
         ("confidence", 1.1),
-        ("image", "some"),
+        ("images", "some"),
         ("disable_active_learning", "some"),
         ("class_agnostic_nms", "some"),
         ("class_filter", "some"),
@@ -127,19 +119,15 @@ def test_instance_segmentation_model_validation_when_active_learning_flag_has_in
         ("tradeoff_factor", 1.1),
     ],
 )
-@pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
-)
 def test_instance_segmentation_model_when_parameters_have_invalid_type(
     parameter: str,
     value: Any,
-    type_alias: str,
 ) -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "RoboflowInstanceSegmentationModel",
         "name": "some",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "model_id": "some/1",
         parameter: value,
     }

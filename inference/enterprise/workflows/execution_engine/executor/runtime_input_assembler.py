@@ -8,7 +8,7 @@ from inference.enterprise.workflows.constants import (
     IMAGE_VALUE_KEY,
     PARENT_ID_KEY,
 )
-from inference.enterprise.workflows.entities.base import InferenceImage, InputType
+from inference.enterprise.workflows.entities.base import InputType, WorkflowImage
 from inference.enterprise.workflows.errors import RuntimeInputError
 
 
@@ -17,7 +17,7 @@ def assembly_runtime_parameters(
     defined_inputs: List[InputType],
 ) -> Dict[str, Any]:
     for defined_input in defined_inputs:
-        if isinstance(defined_input, InferenceImage):
+        if isinstance(defined_input, WorkflowImage):
             runtime_parameters[defined_input.name] = assembly_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),

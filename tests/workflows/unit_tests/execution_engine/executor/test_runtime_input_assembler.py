@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 
 from inference.enterprise.workflows.entities.base import (
-    InferenceImage,
-    InferenceParameter,
+    WorkflowImage,
+    WorkflowParameter,
 )
 from inference.enterprise.workflows.errors import RuntimeInputError
 from inference.enterprise.workflows.execution_engine.executor.runtime_input_assembler import (
@@ -14,7 +14,7 @@ from inference.enterprise.workflows.execution_engine.executor.runtime_input_asse
 def test_assembly_runtime_parameters_when_image_is_not_provided() -> None:
     # given
     runtime_parameters = {}
-    defined_inputs = [InferenceImage(type="InferenceImage", name="image")]
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image")]
 
     # when
     with pytest.raises(RuntimeInputError):
@@ -34,7 +34,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
             "value": "https://some.com/image.jpg",
         }
     }
-    defined_inputs = [InferenceImage(type="InferenceImage", name="image1")]
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
     result = assembly_runtime_parameters(
@@ -53,7 +53,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_np
 ):
     # given
     runtime_parameters = {"image1": np.zeros((192, 168, 3), dtype=np.uint8)}
-    defined_inputs = [InferenceImage(type="InferenceImage", name="image1")]
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
     result = assembly_runtime_parameters(
@@ -77,7 +77,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_unknown_element()
 ):
     # given
     runtime_parameters = {"image1": "some"}
-    defined_inputs = [InferenceImage(type="InferenceImage", name="image1")]
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
     with pytest.raises(RuntimeInputError):
@@ -98,7 +98,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_in_batch() -> None:
             },
         ]
     }
-    defined_inputs = [InferenceImage(type="InferenceImage", name="image1")]
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
     result = assembly_runtime_parameters(
@@ -125,7 +125,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_in_batch() -> None:
 def test_assembly_runtime_parameters_when_parameter_not_provided() -> None:
     # given
     runtime_parameters = {}
-    defined_inputs = [InferenceParameter(type="InferenceParameter", name="parameter")]
+    defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
 
     # when
     result = assembly_runtime_parameters(
@@ -140,7 +140,7 @@ def test_assembly_runtime_parameters_when_parameter_not_provided() -> None:
 def test_assembly_runtime_parameters_when_parameter_provided() -> None:
     # given
     runtime_parameters = {"parameter": 37}
-    defined_inputs = [InferenceParameter(type="InferenceParameter", name="parameter")]
+    defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
 
     # when
     result = assembly_runtime_parameters(

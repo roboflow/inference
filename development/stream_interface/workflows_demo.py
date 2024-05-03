@@ -16,7 +16,7 @@ def main() -> None:
         "specification": {
             "version": "1.0",
             "inputs": [
-                {"type": "InferenceImage", "name": "image"},
+                {"type": "WorkflowImage", "name": "image"},
             ],
             "steps": [
                 {

@@ -89,7 +89,7 @@ def wrap_errors(function: callable) -> callable:
                     more_details = error_data["inner_error_message"]
                     api_message = f"{api_message}. More details: {more_details}"
             else:
-                api_message = error.response.text
+                api_message = error.response.texts
             raise HTTPCallErrorError(
                 description=str(error),
                 status_code=error.response.status_code,

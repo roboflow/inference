@@ -12,7 +12,7 @@ from inference.enterprise.workflows.execution_engine.introspection import blocks
 
 FLOW_CONTROL_WORKFLOW = {
     "version": "1.0",
-    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
         {
             "type": "ABTest",

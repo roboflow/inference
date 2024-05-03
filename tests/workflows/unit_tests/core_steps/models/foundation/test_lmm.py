@@ -9,12 +9,13 @@ from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
 )
 
 
-def test_lmm_step_validation_when_input_is_valid() -> None:
+@pytest.mark.parametrize("images_field_alias", ["images", "image"])
+def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        images_field_alias: "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": "$inputs.prompt",
         "json_output": "$inputs.expected_output",
@@ -28,7 +29,7 @@ def test_lmm_step_validation_when_input_is_valid() -> None:
     assert result == BlockManifest(
         type="LMM",
         name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         prompt="$inputs.prompt",
         lmm_type="$inputs.lmm_type",
         lmm_config=LMMConfig(),
@@ -38,12 +39,14 @@ def test_lmm_step_validation_when_input_is_valid() -> None:
 
 
 @pytest.mark.parametrize("value", [None, 1, "a", True])
-def test_lmm_step_validation_when_image_is_invalid(value: Any) -> None:
+def test_lmm_step_validation_when_image_is_invalid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": value,
+        "images": value,
         "lmm_type": "$inputs.lmm_type",
         "prompt": "$inputs.prompt",
         "json_output": "$inputs.expected_output",
@@ -60,7 +63,7 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": "This is my prompt",
         "json_output": "$inputs.expected_output",
@@ -74,7 +77,7 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
     assert result == BlockManifest(
         type="LMM",
         name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         prompt="This is my prompt",
         lmm_type="$inputs.lmm_type",
         lmm_config=LMMConfig(),
@@ -84,12 +87,14 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
 
 
 @pytest.mark.parametrize("value", [None, []])
-def test_lmm_step_validation_when_prompt_is_invalid(value: Any) -> None:
+def test_lmm_step_validation_when_prompt_is_invalid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": value,
         "json_output": "$inputs.expected_output",
@@ -102,12 +107,14 @@ def test_lmm_step_validation_when_prompt_is_invalid(value: Any) -> None:
 
 
 @pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
-def test_lmm_step_validation_when_lmm_type_valid(value: Any) -> None:
+def test_lmm_step_validation_when_lmm_type_valid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": value,
         "prompt": "$inputs.prompt",
         "json_output": "$inputs.expected_output",
@@ -120,7 +127,7 @@ def test_lmm_step_validation_when_lmm_type_valid(value: Any) -> None:
     assert result == BlockManifest(
         type="LMM",
         name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         prompt="$inputs.prompt",
         lmm_type=value,
         lmm_config=LMMConfig(),
@@ -130,12 +137,14 @@ def test_lmm_step_validation_when_lmm_type_valid(value: Any) -> None:
 
 
 @pytest.mark.parametrize("value", ["some", None])
-def test_lmm_step_validation_when_lmm_type_invalid(value: Any) -> None:
+def test_lmm_step_validation_when_lmm_type_invalid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": value,
         "prompt": "$inputs.prompt",
         "json_output": "$inputs.expected_output",
@@ -148,12 +157,14 @@ def test_lmm_step_validation_when_lmm_type_invalid(value: Any) -> None:
 
 
 @pytest.mark.parametrize("value", ["$inputs.api_key", "my-api-key", None])
-def test_lmm_step_validation_when_remote_api_key_valid(value: Any) -> None:
+def test_lmm_step_validation_when_remote_api_key_valid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": "gpt_4v",
         "prompt": "$inputs.prompt",
         "json_output": "$inputs.expected_output",
@@ -166,7 +177,7 @@ def test_lmm_step_validation_when_remote_api_key_valid(value: Any) -> None:
     assert result == BlockManifest(
         type="LMM",
         name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         prompt="$inputs.prompt",
         lmm_type="gpt_4v",
         lmm_config=LMMConfig(),
@@ -178,12 +189,14 @@ def test_lmm_step_validation_when_remote_api_key_valid(value: Any) -> None:
 @pytest.mark.parametrize(
     "value", [None, "$inputs.some", {"my_field": "my_description"}]
 )
-def test_lmm_step_validation_when_json_output_valid(value: Any) -> None:
+def test_lmm_step_validation_when_json_output_valid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": "gpt_4v",
         "prompt": "$inputs.prompt",
         "json_output": value,
@@ -196,7 +209,7 @@ def test_lmm_step_validation_when_json_output_valid(value: Any) -> None:
     assert result == BlockManifest(
         type="LMM",
         name="step_1",
-        image="$inputs.image",
+        images="$inputs.image",
         prompt="$inputs.prompt",
         lmm_type="gpt_4v",
         lmm_config=LMMConfig(),
@@ -209,12 +222,14 @@ def test_lmm_step_validation_when_json_output_valid(value: Any) -> None:
     "value",
     [{"my_field": 3}, "some"],
 )
-def test_lmm_step_validation_when_json_output_invalid(value: Any) -> None:
+def test_lmm_step_validation_when_json_output_invalid(
+    value: Any,
+) -> None:
     # given
     specification = {
         "type": "LMM",
         "name": "step_1",
-        "image": "$inputs.image",
+        "images": "$inputs.image",
         "lmm_type": "gpt_4v",
         "prompt": "$inputs.prompt",
         "json_output": value,
