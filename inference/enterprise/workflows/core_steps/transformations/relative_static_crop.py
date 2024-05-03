@@ -23,9 +23,9 @@ from inference.enterprise.workflows.entities.types import (
     PARENT_ID_KIND,
     FloatZeroToOne,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -53,31 +53,31 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["RelativeStaticCrop"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
     x_center: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         description="Center X of static crop (relative coordinate 0.0-1.0)",
         examples=[0.3, "$inputs.center_x"],
     )
     y_center: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         description="Center Y of static crop (relative coordinate 0.0-1.0)",
         examples=[0.3, "$inputs.center_y"],
     )
     width: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         description="Width of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.width"],
     )
     height: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         description="Height of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.height"],

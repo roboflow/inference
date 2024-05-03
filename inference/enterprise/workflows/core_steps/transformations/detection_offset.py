@@ -21,8 +21,8 @@ from inference.enterprise.workflows.entities.types import (
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     FlowControl,
-    InferenceParameterSelector,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -61,15 +61,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    offset_width: Union[
-        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        description="Offset for boxes width",
-        examples=[10, "$inputs.offset_x"],
-        validation_alias=AliasChoices("offset_width", "offset_x"),
+    offset_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            description="Offset for boxes width",
+            examples=[10, "$inputs.offset_x"],
+            validation_alias=AliasChoices("offset_width", "offset_x"),
+        )
     )
     offset_height: Union[
-        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         description="Offset for boxes height",
         examples=[10, "$inputs.offset_y"],

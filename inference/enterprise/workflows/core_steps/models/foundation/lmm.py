@@ -29,9 +29,9 @@ from inference.enterprise.workflows.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -84,17 +84,17 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMM"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    prompt: Union[InferenceParameterSelector(kind=[STRING_KIND]), str] = Field(
+    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],
     )
     lmm_type: Union[
-        InferenceParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
@@ -102,14 +102,14 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=lambda: LMMConfig(), description="Configuration of LMM"
     )
     remote_api_key: Union[
-        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],
     )
     json_output: Optional[
-        Union[InferenceParameterSelector(kind=[DICTIONARY_KIND]), Dict[str, str]]
+        Union[WorkflowParameterSelector(kind=[DICTIONARY_KIND]), Dict[str, str]]
     ] = Field(
         default=None,
         description="Holds dictionary that maps name of requested output field into its description",

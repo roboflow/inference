@@ -6,9 +6,9 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
     STRING_KIND,
-    InferenceImageSelector,
-    InferenceParameterSelector,
     StepOutputSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
@@ -44,8 +44,8 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
     class Manifest(WorkflowBlockManifest):
         type: Literal["MyManifest"]
         name: str = Field(description="name field")
-        image: InferenceImageSelector
-        input_parameter: InferenceParameterSelector(
+        image: WorkflowImageSelector
+        input_parameter: WorkflowParameterSelector(
             kind=[BOOLEAN_KIND, STRING_KIND],
         )
 
@@ -70,7 +70,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -85,7 +85,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_parameter",
+                        selected_element="workflow_parameter",
                         kind=[BOOLEAN_KIND, STRING_KIND],
                     )
                 ],
@@ -106,7 +106,7 @@ def test_get_step_selectors_when_compound_selectors_defined() -> None:
         name: str = Field(description="name field")
         param: List[
             Union[
-                InferenceParameterSelector(kind=[BOOLEAN_KIND, STRING_KIND]),
+                WorkflowParameterSelector(kind=[BOOLEAN_KIND, STRING_KIND]),
                 StepOutputSelector(kind=[STRING_KIND]),
             ]
         ]

@@ -39,8 +39,8 @@ from inference.enterprise.workflows.entities.types import (
     PREDICTION_TYPE_KIND,
     FloatZeroToOne,
     FlowControl,
-    InferenceParameterSelector,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -99,32 +99,32 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.detection.image"],
     )
     required_votes: Union[
-        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         description="Required number of votes for single detection from different models to accept detection as output detection",
         examples=[2, "$inputs.required_votes"],
     )
-    class_aware: Union[bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    class_aware: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Flag to decide if merging detections is class-aware or only bounding boxes aware",
         examples=[True, "$inputs.class_aware"],
     )
     iou_threshold: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         default=0.3,
         description="IoU threshold to consider detections from different models as matching (increasing votes for region)",
         examples=[0.3, "$inputs.iou_threshold"],
     )
     confidence: Union[
-        FloatZeroToOne, InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         default=0.0,
         description="Confidence threshold for merged detections",
         examples=[0.1, "$inputs.confidence"],
     )
     classes_to_consider: Optional[
-        Union[List[str], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])]
+        Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])]
     ] = Field(
         default=None,
         description="Optional list of classes to consider in consensus procedure.",
@@ -134,7 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             PositiveInt,
             Dict[str, PositiveInt],
-            InferenceParameterSelector(kind=[INTEGER_KIND, DICTIONARY_KIND]),
+            WorkflowParameterSelector(kind=[INTEGER_KIND, DICTIONARY_KIND]),
         ]
     ] = Field(
         default=None,

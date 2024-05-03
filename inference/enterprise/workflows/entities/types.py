@@ -217,12 +217,12 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     ]
 
 
-def InferenceParameterSelector(kind: Optional[List[Kind]] = None):
+def WorkflowParameterSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
         kind = [WILDCARD_KIND]
     json_schema_extra = {
         REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: "inference_parameter",
+        SELECTED_ELEMENT_KEY: "workflow_parameter",
         KIND_KEY: [k.dict() for k in kind],
     }
     return Annotated[
@@ -232,19 +232,19 @@ def InferenceParameterSelector(kind: Optional[List[Kind]] = None):
     ]
 
 
-InferenceImageSelector = Annotated[
+WorkflowImageSelector = Annotated[
     str,
     StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9\-]+$"),
     Field(
         json_schema_extra={
             REFERENCE_KEY: True,
-            SELECTED_ELEMENT_KEY: "inference_image",
+            SELECTED_ELEMENT_KEY: "workflow_image",
             KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
         }
     ),
 ]
 
-OutputStepImageSelector = Annotated[
+StepOutputImageSelector = Annotated[
     str,
     StringConstraints(pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"),
     Field(

@@ -25,9 +25,9 @@ from inference.enterprise.workflows.entities.types import (
     STRING_KIND,
     TOP_CLASS_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -59,27 +59,27 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMMForClassification"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
     lmm_type: Union[
-        InferenceParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
-    classes: Union[
-        List[str], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(
-        description="List of classes that LMM shall classify against",
-        examples=[["a", "b"], "$inputs.classes"],
+    classes: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = (
+        Field(
+            description="List of classes that LMM shall classify against",
+            examples=[["a", "b"], "$inputs.classes"],
+        )
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(), description="Configuration of LMM"
     )
     remote_api_key: Union[
-        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",

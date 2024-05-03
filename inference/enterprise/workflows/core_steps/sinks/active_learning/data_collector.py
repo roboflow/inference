@@ -23,10 +23,10 @@ from inference.enterprise.workflows.entities.types import (
     STRING_KIND,
     TOP_CLASS_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
     StepOutputSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -66,7 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["ActiveLearningDataCollector"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
@@ -90,19 +90,19 @@ class BlockManifest(WorkflowBlockManifest):
         ),
     ]
     target_dataset: Union[
-        InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
+        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
     ] = Field(
         description="name of Roboflow dataset / project to be used as target for collected data",
         examples=["my_dataset", "$inputs.target_al_dataset"],
     )
     target_dataset_api_key: Union[
-        InferenceParameterSelector(kind=[STRING_KIND]), Optional[str]
+        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="API key to be used for data registration. This may help in a scenario when data applicable for Universe models predictions to be saved in private workspaces and for models that were trained in the same workspace (not necessarily within the same project))",
     )
     disable_active_learning: Union[
-        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
+        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable data collection for specific request - overrides all AL config",

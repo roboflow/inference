@@ -10,11 +10,11 @@ from inference.enterprise.workflows.entities.types import (
     PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
     StepOutputSelector,
     StepSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -27,11 +27,11 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["ExampleModel"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
             description="Roboflow model identifier",
             examples=["my_project/3", "$inputs.model"],
@@ -86,7 +86,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
 
 class ExampleTransformationBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleTransformation"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
@@ -123,7 +123,7 @@ class ExampleTransformationBlock(WorkflowBlock):
 
 class ExampleSinkBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleSink"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )

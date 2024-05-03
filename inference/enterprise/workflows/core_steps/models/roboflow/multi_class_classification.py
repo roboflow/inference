@@ -27,9 +27,9 @@ from inference.enterprise.workflows.entities.types import (
     TOP_CLASS_KIND,
     FloatZeroToOne,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -60,12 +60,12 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowClassificationModel", "ClassificationModel"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
             description="Roboflow model identifier",
             examples=["my_project/3", "$inputs.model"],
@@ -73,21 +73,21 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[
         FloatZeroToOne,
-        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[
-        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
+        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
         default=False,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "

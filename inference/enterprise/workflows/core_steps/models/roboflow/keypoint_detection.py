@@ -33,9 +33,9 @@ from inference.enterprise.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     FloatZeroToOne,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -66,18 +66,18 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowKeypointDetectionModel", "KeypointsDetectionModel"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    model_id: Union[InferenceParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         Field(
             description="Roboflow model identifier",
             examples=["my_project/3", "$inputs.model"],
         )
     )
-    class_agnostic_nms: Union[bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])] = (
+    class_agnostic_nms: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
         Field(
             default=False,
             description="Value to decide if NMS is to be used in class-agnostic mode.",
@@ -85,7 +85,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     class_filter: Union[
-        Optional[List[str]], InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND])
+        Optional[List[str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
     ] = Field(
         default=None,
         description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
@@ -93,7 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[
         FloatZeroToOne,
-        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for predictions",
@@ -101,21 +101,21 @@ class BlockManifest(WorkflowBlockManifest):
     )
     iou_threshold: Union[
         FloatZeroToOne,
-        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
         description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
         examples=[0.4, "$inputs.iou_threshold"],
     )
     max_detections: Union[
-        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         default=300,
         description="Maximum number of detections to return",
         examples=[300, "$inputs.max_detections"],
     )
     max_candidates: Union[
-        PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])
+        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
         default=3000,
         description="Maximum number of candidates as NMS input to be taken into account.",
@@ -123,21 +123,21 @@ class BlockManifest(WorkflowBlockManifest):
     )
     keypoint_confidence: Union[
         FloatZeroToOne,
-        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
         description="Confidence threshold to predict keypoint as visible.",
         examples=[0.3, "$inputs.keypoint_confidence"],
     )
     disable_active_learning: Union[
-        bool, InferenceParameterSelector(kind=[BOOLEAN_KIND])
+        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
         default=False,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        InferenceParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "

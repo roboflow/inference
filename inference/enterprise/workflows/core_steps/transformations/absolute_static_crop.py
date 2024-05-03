@@ -22,9 +22,9 @@ from inference.enterprise.workflows.entities.types import (
     INTEGER_KIND,
     PARENT_ID_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -51,28 +51,28 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["AbsoluteStaticCrop"]
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    x_center: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+    x_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
             description="Center X of static crop (absolute coordinate)",
             examples=[40, "$inputs.center_x"],
         )
     )
-    y_center: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+    y_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
             description="Center Y of static crop (absolute coordinate)",
             examples=[40, "$inputs.center_y"],
         )
     )
-    width: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = Field(
+    width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
         description="Width of static crop (absolute value)",
         examples=[40, "$inputs.width"],
     )
-    height: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = Field(
+    height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
         description="Height of static crop (absolute value)",
         examples=[40, "$inputs.height"],
     )

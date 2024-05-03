@@ -5,9 +5,9 @@ from pydantic import Field
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     FlowControl,
-    InferenceParameterSelector,
     Kind,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -22,7 +22,7 @@ MY_KIND_3 = Kind(name="3")
 class Block1Manifest(WorkflowBlockManifest):
     type: Literal["BlockManifest"]
     name: str = Field(description="name field")
-    field_1: Union[bool, InferenceParameterSelector(kind=[MY_KIND_1])]
+    field_1: Union[bool, WorkflowParameterSelector(kind=[MY_KIND_1])]
     field_2: Union[str, StepOutputSelector(kind=[MY_KIND_2])]
 
 

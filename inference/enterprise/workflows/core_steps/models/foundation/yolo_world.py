@@ -27,9 +27,9 @@ from inference.enterprise.workflows.entities.types import (
     STRING_KIND,
     FloatZeroToOne,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -63,20 +63,20 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["YoloWorldModel", "YoloWorld"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
     class_names: Union[
-        InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
+        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
     ] = Field(
         description="List of classes to use YoloWorld model against",
         examples=[["a", "b", "c"], "$inputs.class_names"],
     )
     version: Union[
         Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
-        InferenceParameterSelector(kind=[STRING_KIND]),
+        WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
         default="l",
         description="Variant of YoloWorld model",
@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[
         Optional[FloatZeroToOne],
-        InferenceParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for detections",

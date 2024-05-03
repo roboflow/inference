@@ -22,9 +22,9 @@ from inference.enterprise.workflows.entities.types import (
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     FlowControl,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
     WorkflowBlock,
@@ -56,12 +56,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    texts: Union[InferenceParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
+    texts: Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
         Field(
             description="List of texts to calculate similarity against each input image",
             examples=[["a", "b", "c"], "$inputs.texts"],

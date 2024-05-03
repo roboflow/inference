@@ -41,8 +41,8 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    InferenceImageSelector,
-    OutputStepImageSelector,
+    WorkflowImageSelector,
+    StepOutputImageSelector,
     StepOutputSelector,
 )
 from inference.enterprise.workflows.prototypes.block import (
@@ -59,7 +59,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["Crop"]
-    image: Union[InferenceImageSelector, OutputStepImageSelector] = Field(
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )

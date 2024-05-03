@@ -5,9 +5,9 @@ from pydantic import Field
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     FlowControl,
-    InferenceParameterSelector,
     Kind,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
@@ -31,7 +31,7 @@ MY_KIND_3 = Kind(name="3")
 class Block1Manifest(WorkflowBlockManifest):
     type: Literal["Block1Manifest"]
     name: str = Field(description="name field")
-    field_1: Union[bool, InferenceParameterSelector(kind=[MY_KIND_1])]
+    field_1: Union[bool, WorkflowParameterSelector(kind=[MY_KIND_1])]
     field_2: Union[str, StepOutputSelector(kind=[MY_KIND_2])]
 
 
@@ -151,7 +151,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
                 property_description="not available",
-                compatible_element="inference_parameter",
+                compatible_element="workflow_parameter",
                 is_list_element=False,
             ),
             BlockPropertySelectorDefinition(
@@ -179,7 +179,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
                 property_description="not available",
-                compatible_element="inference_parameter",
+                compatible_element="workflow_parameter",
                 is_list_element=False,
             ),
             BlockPropertySelectorDefinition(

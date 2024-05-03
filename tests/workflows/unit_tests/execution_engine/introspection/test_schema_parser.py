@@ -8,11 +8,11 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     STRING_KIND,
-    InferenceImageSelector,
-    InferenceParameterSelector,
-    OutputStepImageSelector,
+    StepOutputImageSelector,
     StepOutputSelector,
     StepSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     BlockManifestMetadata,
@@ -230,11 +230,11 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
     class Manifest(WorkflowBlockManifest):
         type: Literal["MyManifest"]
         name: str = Field(description="name field")
-        image: InferenceImageSelector
-        input_parameter: InferenceParameterSelector(
+        image: WorkflowImageSelector
+        input_parameter: WorkflowParameterSelector(
             kind=[BOOLEAN_KIND, STRING_KIND],
         )
-        step_output_image: OutputStepImageSelector
+        step_output_image: StepOutputImageSelector
         step_output_property: StepOutputSelector(
             kind=[BATCH_OF_BOOLEAN_KIND, BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
         )
@@ -258,7 +258,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -268,7 +268,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_parameter",
+                        selected_element="workflow_parameter",
                         kind=[BOOLEAN_KIND, STRING_KIND],
                     )
                 ],
@@ -318,8 +318,8 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
         name: str = Field(description="name field")
         compound: List[
             Union[
-                InferenceImageSelector,
-                OutputStepImageSelector,
+                WorkflowImageSelector,
+                StepOutputImageSelector,
                 List[StepOutputSelector()],
             ]
         ]
@@ -342,7 +342,7 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     ReferenceDefinition(
                         selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
@@ -364,7 +364,7 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
         type: Literal["MyManifest"]
         name: str = Field(description="name field")
         compound: List[
-            Union[InferenceImageSelector, OutputStepImageSelector, str, float]
+            Union[WorkflowImageSelector, StepOutputImageSelector, str, float]
         ]
 
     # when
@@ -390,7 +390,7 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="inference_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
                     ),
                     ReferenceDefinition(
                         selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
