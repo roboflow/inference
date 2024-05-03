@@ -7,6 +7,7 @@ You can deploy the following YOLOv8 model types with Inference:
 - Object Detection
 - Classification
 - Image Segmentation
+- Keypoint Detection
 
 ## Supported Inputs
 
@@ -22,6 +23,7 @@ Starting from scratch? Use our Deployment Wizard to get a code snippet tailored 
 - [Configure a YOLOv8 Object Detection Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Object%20Detection)
 - [Configure a YOLOv8 Classification Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Classification)
 - [Configure a YOLOv8 Segmentation Model](https://roboflow.github.io/deploy-setup-widget/results.html#Fine-Tuned/Image%20Segmentation)
+- [Configure a YOLOv8 Keypoint Detection Model](https://deploy-quickstart.roboflow.com/results.html#Fine-Tuned/Keypoint%20Detection)
 
 ## License
 

@@ -43,6 +43,7 @@ nav:
       - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - Predict Over UDP: quickstart/run_model_over_udp.md
+      - Run Keypoint Detection: quickstart/run_keypoint_detection.md
     - Deploy a Model:
       - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
       - How Do I Run Inference?: quickstart/inference_101.md
