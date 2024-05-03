@@ -110,7 +110,7 @@ class OCRModelBlock(WorkflowBlock):
             )
             serialised_result.append(result.dict())
         return self._post_process_result(
-            serialised_result=serialised_result,
+            predictions=serialised_result,
             image=images,
         )
 
@@ -134,24 +134,24 @@ class OCRModelBlock(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
-        results = await client.ocr_image_async(
+        predictions = await client.ocr_image_async(
             inference_input=[i["value"] for i in images],
         )
         if len(images) == 1:
-            results = [results]
-        return self._post_process_result(image=images, serialised_result=results)
+            predictions = [predictions]
+        return self._post_process_result(image=images, predictions=predictions)
 
     def _post_process_result(
         self,
         image: List[dict],
-        serialised_result: List[dict],
+        predictions: List[dict],
     ) -> List[dict]:
-        serialised_result = attach_parent_info(
-            image=image,
-            results=serialised_result,
+        predictions = attach_parent_info(
+            images=image,
+            predictions=predictions,
             nested_key=None,
         )
         return attach_prediction_type_info(
-            results=serialised_result,
+            predictions=predictions,
             prediction_type="ocr",
         )

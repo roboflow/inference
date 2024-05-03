@@ -12,10 +12,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.core_steps.common.utils import (
-    anchor_detections_in_parent_coordinates,
+    anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
-    filter_out_unwanted_classes,
+    filter_out_unwanted_classes_from_predictions_detections,
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
@@ -196,19 +196,19 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
-        result = await self._model_manager.infer_from_request(
+        predictions = await self._model_manager.infer_from_request(
             model_id=model_id, request=request
         )
-        if isinstance(result, list):
-            serialised_result = [
-                e.dict(by_alias=True, exclude_none=True) for e in result
+        if isinstance(predictions, list):
+            predictions = [
+                e.dict(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            serialised_result = [result.dict(by_alias=True, exclude_none=True)]
+            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             images=images,
+            predictions=predictions,
             class_filter=class_filter,
-            serialised_result=serialised_result,
         )
 
     async def run_remotely(
@@ -250,32 +250,37 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         )
         client.configure(inference_configuration=client_config)
         inference_input = [i["value"] for i in images]
-        results = await client.infer_async(
+        predictions = await client.infer_async(
             inference_input=inference_input,
             model_id=model_id,
         )
-        if not isinstance(results, list):
-            results = [results]
+        if not isinstance(predictions, list):
+            predictions = [predictions]
         return self._post_process_result(
-            images=images, class_filter=class_filter, serialised_result=results
+            images=images,
+            predictions=predictions,
+            class_filter=class_filter,
         )
 
     def _post_process_result(
         self,
         images: List[dict],
+        predictions: List[dict],
         class_filter: Optional[List[str]],
-        serialised_result: List[dict],
     ) -> List[dict]:
-        serialised_result = attach_prediction_type_info(
-            results=serialised_result,
+        predictions = attach_prediction_type_info(
+            predictions=predictions,
             prediction_type="object-detection",
         )
-        serialised_result = filter_out_unwanted_classes(
-            serialised_result=serialised_result,
+        predictions = filter_out_unwanted_classes_from_predictions_detections(
+            predictions=predictions,
             classes_to_accept=class_filter,
         )
-        serialised_result = attach_parent_info(image=images, results=serialised_result)
-        return anchor_detections_in_parent_coordinates(
+        predictions = attach_parent_info(
+            images=images,
+            predictions=predictions,
+        )
+        return anchor_prediction_detections_in_parent_coordinates(
             image=images,
-            serialised_result=serialised_result,
+            predictions=predictions,
         )

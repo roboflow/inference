@@ -148,17 +148,17 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
-        result = await self._model_manager.infer_from_request(
+        predictions = await self._model_manager.infer_from_request(
             model_id=model_id, request=request
         )
-        if isinstance(result, list):
-            serialised_result = [
-                e.dict(by_alias=True, exclude_none=True) for e in result
+        if isinstance(predictions, list):
+            predictions = [
+                e.dict(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            serialised_result = [result.dict(by_alias=True, exclude_none=True)]
+            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
-            serialised_result=serialised_result,
+            predictions=predictions,
             images=images,
         )
 
@@ -191,23 +191,23 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
         )
         client.configure(inference_configuration=client_config)
         inference_input = [i["value"] for i in images]
-        results = await client.infer_async(
+        predictions = await client.infer_async(
             inference_input=inference_input,
             model_id=model_id,
         )
-        if not isinstance(results, list):
-            results = [results]
-        return self._post_process_result(images=images, serialised_result=results)
+        if not isinstance(predictions, list):
+            predictions = [predictions]
+        return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(
         self,
         images: List[dict],
-        serialised_result: List[dict],
+        predictions: List[dict],
     ) -> List[dict]:
-        serialised_result = attach_prediction_type_info(
-            results=serialised_result,
+        predictions = attach_prediction_type_info(
+            predictions=predictions,
             prediction_type="classification",
         )
         return attach_parent_info(
-            image=images, results=serialised_result, nested_key=None
+            images=images, predictions=predictions, nested_key=None
         )

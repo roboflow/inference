@@ -101,7 +101,7 @@ class ClipComparisonBlock(WorkflowBlock):
         images: List[dict],
         texts: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        serialised_result = []
+        predictions = []
         for single_image in images:
             inference_request = ClipCompareRequest(
                 subject=single_image,
@@ -115,13 +115,11 @@ class ClipComparisonBlock(WorkflowBlock):
                 inference_request=inference_request,
                 core_model="clip",
             )
-            result = await self._model_manager.infer_from_request(
+            prediction = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            serialised_result.append(result.dict())
-        return self._post_process_result(
-            image=images, serialised_result=serialised_result
-        )
+            predictions.append(prediction.dict())
+        return self._post_process_result(image=images, predictions=predictions)
 
     async def run_remotely(
         self,
@@ -139,38 +137,36 @@ class ClipComparisonBlock(WorkflowBlock):
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        image_batches = list(
+        image_sub_batches = list(
             make_batches(
                 iterable=images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
-        serialised_result = []
-        for single_batch in image_batches:
+        predictions = []
+        for single_sub_batch in image_sub_batches:
             coroutines = []
-            for single_image in single_batch:
+            for single_image in single_sub_batch:
                 coroutine = client.clip_compare_async(
                     subject=single_image["value"],
                     prompt=texts,
                 )
                 coroutines.append(coroutine)
-            batch_results = list(await asyncio.gather(*coroutines))
-            serialised_result.extend(batch_results)
-        return self._post_process_result(
-            image=images, serialised_result=serialised_result
-        )
+            sub_batch_predictions = list(await asyncio.gather(*coroutines))
+            predictions.extend(sub_batch_predictions)
+        return self._post_process_result(image=images, predictions=predictions)
 
     def _post_process_result(
         self,
         image: List[dict],
-        serialised_result: List[dict],
+        predictions: List[dict],
     ) -> List[dict]:
-        serialised_result = attach_parent_info(
-            image=image,
-            results=serialised_result,
+        predictions = attach_parent_info(
+            images=image,
+            predictions=predictions,
             nested_key=None,
         )
         return attach_prediction_type_info(
-            results=serialised_result,
+            predictions=predictions,
             prediction_type="embeddings-comparison",
         )

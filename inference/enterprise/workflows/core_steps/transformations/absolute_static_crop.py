@@ -14,7 +14,7 @@ from inference.enterprise.workflows.constants import (
     PARENT_ID_KEY,
 )
 from inference.enterprise.workflows.core_steps.common.utils import (
-    extract_origin_size_from_images,
+    extract_origin_size_from_images_batch,
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
@@ -104,7 +104,7 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
-        origin_image_shape = extract_origin_size_from_images(
+        origin_image_shape = extract_origin_size_from_images_batch(
             input_images=images,
             decoded_images=decoded_images,
         )

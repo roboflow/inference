@@ -11,7 +11,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.enterprise.workflows.core_steps.common.utils import (
-    anchor_detections_in_parent_coordinates,
+    anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
     load_core_model,
@@ -128,7 +128,7 @@ class YoloWorldModelBlock(WorkflowBlock):
         version: str,
         confidence: Optional[float],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        serialised_result = []
+        predictions = []
         for single_image in images:
             inference_request = YOLOWorldInferenceRequest(
                 image=single_image,
@@ -142,13 +142,11 @@ class YoloWorldModelBlock(WorkflowBlock):
                 inference_request=inference_request,
                 core_model="yolo_world",
             )
-            result = await self._model_manager.infer_from_request(
+            prediction = await self._model_manager.infer_from_request(
                 yolo_world_model_id, inference_request
             )
-            serialised_result.append(result.dict(by_alias=True, exclude_none=True))
-        return self._post_process_result(
-            image=images, serialised_result=serialised_result
-        )
+            predictions.append(prediction.dict(by_alias=True, exclude_none=True))
+        return self._post_process_result(image=images, predictions=predictions)
 
     async def run_remotely(
         self,
@@ -174,36 +172,34 @@ class YoloWorldModelBlock(WorkflowBlock):
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        image_batches = list(
+        image_sub_batches = list(
             make_batches(
                 iterable=images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
-        serialised_result = []
-        for single_batch in image_batches:
-            batch_results = await client.infer_from_yolo_world_async(
-                inference_input=[i["value"] for i in single_batch],
+        predictions = []
+        for sub_batch in image_sub_batches:
+            sub_batch_predictions = await client.infer_from_yolo_world_async(
+                inference_input=[i["value"] for i in sub_batch],
                 class_names=class_names,
                 model_version=version,
                 confidence=confidence,
             )
-            serialised_result.extend(batch_results)
-        return self._post_process_result(
-            image=images, serialised_result=serialised_result
-        )
+            predictions.extend(sub_batch_predictions)
+        return self._post_process_result(image=images, predictions=predictions)
 
     def _post_process_result(
         self,
         image: List[dict],
-        serialised_result: List[dict],
+        predictions: List[dict],
     ) -> List[dict]:
-        serialised_result = attach_prediction_type_info(
-            results=serialised_result,
+        predictions = attach_prediction_type_info(
+            predictions=predictions,
             prediction_type="object-detection",
         )
-        serialised_result = attach_parent_info(image=image, results=serialised_result)
-        return anchor_detections_in_parent_coordinates(
+        predictions = attach_parent_info(images=image, predictions=predictions)
+        return anchor_prediction_detections_in_parent_coordinates(
             image=image,
-            serialised_result=serialised_result,
+            predictions=predictions,
         )

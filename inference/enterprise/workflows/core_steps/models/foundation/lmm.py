@@ -193,7 +193,7 @@ class LMMBlock(WorkflowBlock):
             raw_output=raw_output,
             expected_output=json_output,
         )
-        serialised_result = [
+        predictions = [
             {
                 "raw_output": raw["content"],
                 "image": raw["image"],
@@ -203,8 +203,8 @@ class LMMBlock(WorkflowBlock):
             for raw, structured in zip(raw_output, structured_output)
         ]
         return attach_parent_info(
-            image=images,
-            results=serialised_result,
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
 
@@ -239,7 +239,7 @@ class LMMBlock(WorkflowBlock):
             raw_output=raw_output,
             expected_output=json_output,
         )
-        serialised_result = [
+        predictions = [
             {
                 "raw_output": raw["content"],
                 "image": raw["image"],
@@ -249,8 +249,8 @@ class LMMBlock(WorkflowBlock):
             for raw, structured in zip(raw_output, structured_output)
         ]
         return attach_parent_info(
-            image=images,
-            results=serialised_result,
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
 

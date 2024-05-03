@@ -39,77 +39,77 @@ def load_core_model(
 
 
 def attach_prediction_type_info(
-    results: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
     prediction_type: str,
     key: str = "prediction_type",
 ) -> List[Dict[str, Any]]:
-    for result in results:
+    for result in predictions:
         result[key] = prediction_type
-    return results
-
-
-def attach_parent_info(
-    image: List[Dict[str, Any]],
-    results: List[Dict[str, Any]],
-    nested_key: Optional[str] = "predictions",
-) -> List[Dict[str, Any]]:
-    return [
-        attach_parent_info_to_image_detections(
-            image=i, predictions=p, nested_key=nested_key
-        )
-        for i, p in zip(image, results)
-    ]
-
-
-def attach_parent_info_to_image_detections(
-    image: Dict[str, Any],
-    predictions: Dict[str, Any],
-    nested_key: Optional[str],
-) -> Dict[str, Any]:
-    predictions[PARENT_ID_KEY] = image[PARENT_ID_KEY]
-    if nested_key is None:
-        return predictions
-    for prediction in predictions[nested_key]:
-        prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
     return predictions
 
 
-def anchor_detections_in_parent_coordinates(
+def attach_parent_info(
+    images: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
+    nested_key: Optional[str] = "predictions",
+) -> List[Dict[str, Any]]:
+    return [
+        attach_parent_info_to_prediction(
+            image=image, prediction=prediction, nested_key=nested_key
+        )
+        for image, prediction in zip(images, predictions)
+    ]
+
+
+def attach_parent_info_to_prediction(
+    image: Dict[str, Any],
+    prediction: Dict[str, Any],
+    nested_key: Optional[str],
+) -> Dict[str, Any]:
+    prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
+    if nested_key is None:
+        return prediction
+    for detection in prediction[nested_key]:
+        detection[PARENT_ID_KEY] = image[PARENT_ID_KEY]
+    return prediction
+
+
+def anchor_prediction_detections_in_parent_coordinates(
     image: List[Dict[str, Any]],
-    serialised_result: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
 ) -> List[Dict[str, Any]]:
     return [
-        anchor_image_detections_in_parent_coordinates(
-            image=i,
-            serialised_result=d,
+        anchor_detections_in_parent_coordinates(
+            image=image,
+            prediction=prediction,
             image_metadata_key=image_metadata_key,
             detections_key=detections_key,
         )
-        for i, d in zip(image, serialised_result)
+        for image, prediction in zip(image, predictions)
     ]
 
 
-def anchor_image_detections_in_parent_coordinates(
+def anchor_detections_in_parent_coordinates(
     image: Dict[str, Any],
-    serialised_result: Dict[str, Any],
+    prediction: Dict[str, Any],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
 ) -> Dict[str, Any]:
-    serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
-        serialised_result[detections_key]
+    prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
+        prediction[detections_key]
     )
-    serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
-        serialised_result[image_metadata_key]
+    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
+        prediction[image_metadata_key]
     )
     if ORIGIN_COORDINATES_KEY not in image:
-        return serialised_result
+        return prediction
     shift_x, shift_y = (
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_X_KEY],
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_Y_KEY],
     )
-    for detection in serialised_result[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
+    for detection in prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
         detection["x"] += shift_x
         detection["y"] += shift_y
         for point in detection.get("points", []):
@@ -118,32 +118,34 @@ def anchor_image_detections_in_parent_coordinates(
         for point in detection.get("keypoints", []):
             point["x"] += shift_x
             point["y"] += shift_y
-    serialised_result[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
+    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]
-    return serialised_result
+    return prediction
 
 
-def filter_out_unwanted_classes(
-    serialised_result: List[Dict[str, Any]],
+def filter_out_unwanted_classes_from_predictions_detections(
+    predictions: List[Dict[str, Any]],
     classes_to_accept: Optional[List[str]],
+    detections_key: str = "predictions",
+    class_name_key: str = "class",
 ) -> List[Dict[str, Any]]:
     if classes_to_accept is None:
-        return serialised_result
+        return predictions
     classes_to_accept = set(classes_to_accept)
     results = []
-    for image_result in serialised_result:
-        filtered_image_result = deepcopy(image_result)
-        filtered_image_result["predictions"] = [
+    for prediction in predictions:
+        filtered_image_result = deepcopy(prediction)
+        filtered_image_result[detections_key] = [
             prediction
-            for prediction in image_result["predictions"]
-            if prediction["class"] in classes_to_accept
+            for prediction in prediction[detections_key]
+            if prediction[class_name_key] in classes_to_accept
         ]
         results.append(filtered_image_result)
     return results
 
 
-def extract_origin_size_from_images(
+def extract_origin_size_from_images_batch(
     input_images: List[Union[dict, np.ndarray]],
     decoded_images: List[np.ndarray],
 ) -> List[Dict[str, int]]:

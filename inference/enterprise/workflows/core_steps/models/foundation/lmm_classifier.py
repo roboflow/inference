@@ -146,7 +146,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             raw_output=raw_output,
             expected_output={"top": "name of the class"},
         )
-        serialised_result = [
+        predictions = [
             {
                 "raw_output": raw["content"],
                 "image": raw["image"],
@@ -154,18 +154,18 @@ class LMMForClassificationBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        serialised_result = attach_parent_info(
-            image=images,
-            results=serialised_result,
+        predictions = attach_parent_info(
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
-        serialised_result = attach_prediction_type_info(
-            results=serialised_result,
+        predictions = attach_prediction_type_info(
+            predictions=predictions,
             prediction_type="classification",
         )
         return attach_parent_info(
-            image=images,
-            results=serialised_result,
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
 
@@ -199,7 +199,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             raw_output=raw_output,
             expected_output={"top": "name of the class"},
         )
-        serialised_result = [
+        predictions = [
             {
                 "raw_output": raw["content"],
                 "image": raw["image"],
@@ -207,17 +207,17 @@ class LMMForClassificationBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        serialised_result = attach_parent_info(
-            image=images,
-            results=serialised_result,
+        predictions = attach_parent_info(
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
-        serialised_result = attach_prediction_type_info(
-            results=serialised_result,
+        predictions = attach_prediction_type_info(
+            predictions=predictions,
             prediction_type="classification",
         )
         return attach_parent_info(
-            image=images,
-            results=serialised_result,
+            images=images,
+            predictions=predictions,
             nested_key=None,
         )
