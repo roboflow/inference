@@ -14,7 +14,8 @@ from inference.enterprise.workflows.execution_engine.introspection.connections_d
 )
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     BlockDescription,
-    BlockPropertyDefinition,
+    BlockPropertyPrimitiveDefinition,
+    BlockPropertySelectorDefinition,
     BlocksDescription,
 )
 from inference.enterprise.workflows.prototypes.block import (
@@ -145,49 +146,55 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
     # then
     assert result.kinds_connections == {
         "1": {
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block1,
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
+                property_description="not available",
                 compatible_element="inference_parameter",
                 is_list_element=False,
             ),
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block2,
                 manifest_type_identifier="Block2Manifest",
                 property_name="field_1",
+                property_description="not available",
                 compatible_element="step_output",
                 is_list_element=True,
             ),
         },
         "2": {
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block1,
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_2",
+                property_description="not available",
                 compatible_element="step_output",
                 is_list_element=False,
             ),
         },
         "*": {
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block1,
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_1",
+                property_description="not available",
                 compatible_element="inference_parameter",
                 is_list_element=False,
             ),
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block2,
                 manifest_type_identifier="Block2Manifest",
                 property_name="field_1",
+                property_description="not available",
                 compatible_element="step_output",
                 is_list_element=True,
             ),
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=Block1,
                 manifest_type_identifier="Block1Manifest",
                 property_name="field_2",
+                property_description="not available",
                 compatible_element="step_output",
                 is_list_element=False,
             ),
@@ -235,3 +242,55 @@ def test_discover_blocks_connections_properly_output_input_connections() -> None
         Block2: {Block1},
         Block3: {Block2},
     }, "Step-wise output connections are not as expected"
+
+
+def test_discover_blocks_connections_properly_recognises_primitives_connections() -> (
+    None
+):
+    # when
+    result = discover_blocks_connections(blocks_description=BLOCKS_DESCRIPTION)
+
+    assert result.primitives_connections == [
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block1,
+            manifest_type_identifier="Block1Manifest",
+            property_name="name",
+            property_description="name field",
+            type_annotation="str",
+        ),
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block1,
+            manifest_type_identifier="Block1Manifest",
+            property_name="field_1",
+            property_description="not available",
+            type_annotation="bool",
+        ),
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block1,
+            manifest_type_identifier="Block1Manifest",
+            property_name="field_2",
+            property_description="not available",
+            type_annotation="str",
+        ),
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block2,
+            manifest_type_identifier="Block2Manifest",
+            property_name="name",
+            property_description="name field",
+            type_annotation="str",
+        ),
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block3,
+            manifest_type_identifier="Block3Manifest",
+            property_name="name",
+            property_description="name field",
+            type_annotation="str",
+        ),
+        BlockPropertyPrimitiveDefinition(
+            block_type=Block3,
+            manifest_type_identifier="Block3Manifest",
+            property_name="field_1",
+            property_description="not available",
+            type_annotation="str",
+        ),
+    ], "Primitives connections do not match expectations"

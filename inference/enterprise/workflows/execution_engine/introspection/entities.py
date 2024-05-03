@@ -58,19 +58,30 @@ class BlocksConnections:
 
 
 @dataclass(frozen=True)
-class BlockPropertyDefinition:
+class BlockPropertySelectorDefinition:
     block_type: Type[WorkflowBlock]
     manifest_type_identifier: str
     property_name: PropertyName
+    property_description: str
     compatible_element: str
     is_list_element: bool
+
+
+@dataclass(frozen=True)
+class BlockPropertyPrimitiveDefinition:
+    block_type: Type[WorkflowBlock]
+    manifest_type_identifier: str
+    property_name: PropertyName
+    property_description: str
+    type_annotation: str
 
 
 @dataclass(frozen=True)
 class DiscoveredConnections:
     input_connections: BlocksConnections
     output_connections: BlocksConnections
-    kinds_connections: Dict[KindName, Set[BlockPropertyDefinition]]
+    kinds_connections: Dict[KindName, Set[BlockPropertySelectorDefinition]]
+    primitives_connections: List[BlockPropertyPrimitiveDefinition]
 
 
 class BlockDescription(BaseModel):

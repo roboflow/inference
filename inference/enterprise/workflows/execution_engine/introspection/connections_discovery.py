@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, Generator, Set, Tuple, Type
+from typing import Dict, Generator, List, Set, Tuple, Type
 
 from inference.enterprise.workflows.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
@@ -9,7 +9,8 @@ from inference.enterprise.workflows.entities.types import (
 from inference.enterprise.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlockManifestMetadata,
-    BlockPropertyDefinition,
+    BlockPropertyPrimitiveDefinition,
+    BlockPropertySelectorDefinition,
     BlocksConnections,
     BlocksDescription,
     DiscoveredConnections,
@@ -71,10 +72,15 @@ def discover_blocks_connections(
         property_wise=output_property_wise_connections,
         block_wise=output_block_wise_connections,
     )
+    primitives_connections = build_primitives_connections(
+        all_schemas=all_schemas,
+        blocks_description=blocks_description,
+    )
     return DiscoveredConnections(
         input_connections=input_connections,
         output_connections=output_connections,
         kinds_connections=detailed_input_kind2schemas,
+        primitives_connections=primitives_connections,
     )
 
 
@@ -102,7 +108,7 @@ def get_all_outputs_kind_major(
 def get_all_inputs_kind_major(
     blocks_description: BlocksDescription,
     all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
-) -> Dict[str, Set[BlockPropertyDefinition]]:
+) -> Dict[str, Set[BlockPropertySelectorDefinition]]:
     kind_major_step_inputs = defaultdict(set)
     for (
         block_description,
@@ -116,19 +122,21 @@ def get_all_inputs_kind_major(
             continue
         for single_kind in allowed_reference.kind:
             kind_major_step_inputs[single_kind.name].add(
-                BlockPropertyDefinition(
+                BlockPropertySelectorDefinition(
                     block_type=block_description.block_class,
                     manifest_type_identifier=block_description.manifest_type_identifier,
                     property_name=selector.property_name,
+                    property_description=selector.property_description,
                     compatible_element=allowed_reference.selected_element,
                     is_list_element=selector.is_list_element,
                 )
             )
         kind_major_step_inputs[WILDCARD_KIND.name].add(
-            BlockPropertyDefinition(
+            BlockPropertySelectorDefinition(
                 block_type=block_description.block_class,
                 manifest_type_identifier=block_description.manifest_type_identifier,
                 property_name=selector.property_name,
+                property_description=selector.property_description,
                 compatible_element=allowed_reference.selected_element,
                 is_list_element=selector.is_list_element,
             )
@@ -195,7 +203,7 @@ def convert_property_connections_to_block_wise_connections(
 
 
 def convert_kinds_mapping_to_block_wise_format(
-    detailed_input_kind2schemas: Dict[str, Set[BlockPropertyDefinition]],
+    detailed_input_kind2schemas: Dict[str, Set[BlockPropertySelectorDefinition]],
     compatible_elements: Set[str],
 ) -> Dict[str, Set[Type[WorkflowBlock]]]:
     result = defaultdict(set)
@@ -204,4 +212,24 @@ def convert_kinds_mapping_to_block_wise_format(
             if definition.compatible_element not in compatible_elements:
                 continue
             result[kind_name].add(definition.block_type)
+    return result
+
+
+def build_primitives_connections(
+    all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
+    blocks_description: BlocksDescription,
+) -> List[BlockPropertyPrimitiveDefinition]:
+    result = []
+    for block in blocks_description.blocks:
+        for property_definition in all_schemas[
+            block.block_class
+        ].primitive_types.values():
+            definition = BlockPropertyPrimitiveDefinition(
+                block_type=block.block_class,
+                manifest_type_identifier=block.manifest_type_identifier,
+                property_name=property_definition.property_name,
+                property_description=property_definition.property_description,
+                type_annotation=property_definition.type_annotation,
+            )
+            result.append(definition)
     return result

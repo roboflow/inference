@@ -71,8 +71,9 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    ExternalBlockPropertyPrimitiveDefinition,
+    ExternalWorkflowsBlockSelectorDefinition,
     WorkflowInferenceResponse,
-    WorkflowsBlockPropertyDefinition,
     WorkflowsBlocksDescription,
     WorkflowValidationStatus,
 )
@@ -873,9 +874,10 @@ class HttpInterface(BaseInterface):
                 )
                 kinds_connections = {
                     kind_name: [
-                        WorkflowsBlockPropertyDefinition(
+                        ExternalWorkflowsBlockSelectorDefinition(
                             manifest_type_identifier=c.manifest_type_identifier,
                             property_name=c.property_name,
+                            property_description=c.property_description,
                             compatible_element=c.compatible_element,
                             is_list_element=c.is_list_element,
                         )
@@ -883,10 +885,20 @@ class HttpInterface(BaseInterface):
                     ]
                     for kind_name, connections in blocks_connections.kinds_connections.items()
                 }
+                primitives_connections = [
+                    ExternalBlockPropertyPrimitiveDefinition(
+                        manifest_type_identifier=primitives_connection.manifest_type_identifier,
+                        property_name=primitives_connection.property_name,
+                        property_description=primitives_connection.property_description,
+                        type_annotation=primitives_connection.type_annotation,
+                    )
+                    for primitives_connection in blocks_connections.primitives_connections
+                ]
                 return WorkflowsBlocksDescription(
                     blocks=blocks_description.blocks,
                     declared_kinds=blocks_description.declared_kinds,
                     kinds_connections=kinds_connections,
+                    primitives_connections=primitives_connections,
                 )
 
             @app.post(
