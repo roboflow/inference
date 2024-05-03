@@ -563,7 +563,7 @@ def test_inference_pipeline_works_correctly_against_video_file_with_active_learn
         range(1, 431 * 2 + 1)
     ), "Order of prediction frames violated"
     assert all(
-        [(p[0].images == al_dp[0]).all() for p, al_dp in zip(predictions, al_datapoints)]
+        [(p[0].image == al_dp[0]).all() for p, al_dp in zip(predictions, al_datapoints)]
     ), "The same images must be registered for explicit sink and Active Learning sink"
 
 

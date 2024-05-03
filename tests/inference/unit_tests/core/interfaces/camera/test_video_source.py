@@ -878,7 +878,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
         buffered_result.frame_id == 1
     ), "Newly decoded frame must be possible to be received from the buffer"
     assert (
-            buffered_result.images is image
+        buffered_result.image is image
     ), "Newly decoded frame must be possible to be received from the buffer"
 
 
@@ -954,7 +954,7 @@ def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -
         buffered_result.frame_id == 1
     ), "Newly decoded frame must be possible to be received from the buffer"
     assert (
-            buffered_result.images is image
+        buffered_result.image is image
     ), "Newly decoded frame must be possible to be received from the buffer"
     assert (
         buffer.empty() is True
@@ -1001,7 +1001,7 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
         buffered_result.frame_id == 1
     ), "Newly decoded frame must be possible to be received from the buffer"
     assert (
-            buffered_result.images is image
+        buffered_result.image is image
     ), "Newly decoded frame must be possible to be received from the buffer"
     assert (
         buffer.empty() is True

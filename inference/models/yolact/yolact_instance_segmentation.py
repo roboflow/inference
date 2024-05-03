@@ -245,7 +245,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
             >>> predictions = [[{"class_name": "cat", ...}, {"class_name": "dog", ...}], ...]
             >>> img_dims = [(300, 400), ...]
             >>> responses = make_response(predictions, img_dims, class_filter=["cat"])
-            >>> len(responses[0].predictions_batches)  # Only predictions with "cat" class are included
+            >>> len(responses[0].predictions)  # Only predictions with "cat" class are included
             1
         """
         responses = [

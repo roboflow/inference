@@ -54,7 +54,7 @@ def build_condensed_response(responses):
         try:
             predictions = [
                 {"confidence": pred.confidence, "class": pred.class_name}
-                for pred in response.predictions_batches
+                for pred in response.predictions
             ]
             formatted_responses.append(
                 {

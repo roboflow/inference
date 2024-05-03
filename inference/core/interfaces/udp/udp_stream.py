@@ -231,9 +231,7 @@ class UdpStream(BaseInterface):
                         predictions.dict(by_alias=True), self.model.class_names
                     )
                     detections = self.byte_tracker.update_with_detections(detections)
-                    for pred, detect in zip(
-                        predictions.predictions_batches, detections
-                    ):
+                    for pred, detect in zip(predictions.predictions, detections):
                         pred.tracker_id = int(detect[4])
                 predictions.frame_id = frame_id
                 predictions = predictions.json(exclude_none=True, by_alias=True)
