@@ -207,14 +207,14 @@ class DetectionsConsensusBlock(WorkflowBlock):
         batch_size = batch_sizes[0]
         results = []
         for batch_index in range(batch_size):
-            batch_element_predictions = [e[batch_index] for e in predictions_batches]
+            detections_from_sources = [e[batch_index] for e in predictions_batches]
             (
                 parent_id,
                 object_present,
                 presence_confidence,
                 consensus_detections,
-            ) = resolve_batch_consensus(
-                predictions=batch_element_predictions,
+            ) = agree_on_consensus_for_all_detections_sources(
+                detections_from_sources=detections_from_sources,
                 required_votes=required_votes,
                 class_aware=class_aware,
                 iou_threshold=iou_threshold,
@@ -247,15 +247,15 @@ def get_and_validate_batch_sizes(
     return batch_sizes
 
 
-def does_not_detected_objects_in_any_source(predictions: List[List[dict]]) -> bool:
-    return all(len(p) == 0 for p in predictions)
+def does_not_detected_objects_in_any_source(detections_from_sources: List[List[dict]]) -> bool:
+    return all(len(p) == 0 for p in detections_from_sources)
 
 
 def get_parent_id_of_predictions_from_different_sources(
-    predictions: List[List[dict]],
+    detections_from_sources: List[List[dict]],
 ) -> str:
     encountered_parent_ids = {
-        p[PARENT_ID_KEY] for prediction_source in predictions for p in prediction_source
+        p[PARENT_ID_KEY] for prediction_source in detections_from_sources for p in prediction_source
     }
     if len(encountered_parent_ids) != 1:
         raise ValueError(
@@ -287,14 +287,14 @@ def filter_predictions(
 def get_detections_from_different_sources_with_max_overlap(
     detection: dict,
     source: int,
-    predictions: List[List[dict]],
+    detections_from_sources: List[List[dict]],
     iou_threshold: float,
     class_aware: bool,
     detections_already_considered: Set[str],
 ) -> Dict[int, Tuple[dict, float]]:
     current_max_overlap = {}
     for other_source, other_detection in enumerate_detections(
-        predictions=predictions,
+        detections_from_sources=detections_from_sources,
         excluded_source_id=source,
     ):
         if other_detection[DETECTION_ID_KEY] in detections_already_considered:
@@ -315,10 +315,10 @@ def get_detections_from_different_sources_with_max_overlap(
 
 
 def enumerate_detections(
-    predictions: List[List[dict]],
+    detections_from_sources: List[List[dict]],
     excluded_source_id: Optional[int] = None,
 ) -> Generator[Tuple[int, dict], None, None]:
-    for source_id, detections in enumerate(predictions):
+    for source_id, detections in enumerate(detections_from_sources):
         if excluded_source_id == source_id:
             continue
         for detection in detections:
@@ -341,8 +341,8 @@ def calculate_iou(detection_a: dict, detection_b: dict) -> float:
     return intersection / union
 
 
-def resolve_batch_consensus(
-    predictions: List[List[dict]],
+def agree_on_consensus_for_all_detections_sources(
+    detections_from_sources: List[List[dict]],
     required_votes: int,
     class_aware: bool,
     iou_threshold: float,
@@ -353,25 +353,27 @@ def resolve_batch_consensus(
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
 ) -> Tuple[str, bool, Dict[str, float], List[dict]]:
-    if does_not_detected_objects_in_any_source(predictions=predictions):
+    if does_not_detected_objects_in_any_source(
+        detections_from_sources=detections_from_sources
+    ):
         return "undefined", False, {}, []
     parent_id = get_parent_id_of_predictions_from_different_sources(
-        predictions=predictions,
+        detections_from_sources=detections_from_sources,
     )
-    predictions = filter_predictions(
-        predictions=predictions,
+    detections_from_sources = filter_predictions(
+        predictions=detections_from_sources,
         classes_to_consider=classes_to_consider,
     )
     detections_already_considered = set()
     consensus_detections = []
-    for source_id, detection in enumerate_detections(predictions=predictions):
+    for source_id, detection in enumerate_detections(detections_from_sources=detections_from_sources):
         (
             consensus_detections_update,
             detections_already_considered,
         ) = get_consensus_for_single_detection(
             detection=detection,
             source_id=source_id,
-            predictions=predictions,
+            detections_from_sources=detections_from_sources,
             iou_threshold=iou_threshold,
             class_aware=class_aware,
             required_votes=required_votes,
@@ -384,7 +386,7 @@ def resolve_batch_consensus(
     (
         object_present,
         presence_confidence,
-    ) = check_objects_presence_in_consensus_predictions(
+    ) = check_objects_presence_in_consensus_detections(
         consensus_detections=consensus_detections,
         aggregation_mode=presence_confidence_aggregation,
         class_aware=class_aware,
@@ -401,7 +403,7 @@ def resolve_batch_consensus(
 def get_consensus_for_single_detection(
     detection: dict,
     source_id: int,
-    predictions: List[List[dict]],
+    detections_from_sources: List[List[dict]],
     iou_threshold: float,
     class_aware: bool,
     required_votes: int,
@@ -411,13 +413,13 @@ def get_consensus_for_single_detection(
     detections_already_considered: Set[str],
 ) -> Tuple[List[dict], Set[str]]:
     if detection["detection_id"] in detections_already_considered:
-        return ([], detections_already_considered)
+        return [], detections_already_considered
     consensus_detections = []
     detections_with_max_overlap = (
         get_detections_from_different_sources_with_max_overlap(
             detection=detection,
             source=source_id,
-            predictions=predictions,
+            detections_from_sources=detections_from_sources,
             iou_threshold=iou_threshold,
             class_aware=class_aware,
             detections_already_considered=detections_already_considered,
@@ -442,7 +444,7 @@ def get_consensus_for_single_detection(
     return consensus_detections, detections_already_considered
 
 
-def check_objects_presence_in_consensus_predictions(
+def check_objects_presence_in_consensus_detections(
     consensus_detections: List[dict],
     class_aware: bool,
     aggregation_mode: AggregationMode,

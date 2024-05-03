@@ -37,8 +37,8 @@ MULTI_STAGES_WORKFLOW = {
             "predictions": "$steps.filter.predictions",
             "image_metadata": "$steps.filter.image",
             "prediction_type": "$steps.filter.prediction_type",
-            "offset_x": 10,
-            "offset_y": 10,
+            "offset_width": 10,
+            "offset_height": 10,
         },
         {
             "type": "Crop",
@@ -58,8 +58,8 @@ MULTI_STAGES_WORKFLOW = {
             "predictions": "$steps.plates_detection.predictions",
             "image_metadata": "$steps.plates_detection.image",
             "prediction_type": "$steps.plates_detection.prediction_type",
-            "offset_x": 50,
-            "offset_y": 50,
+            "offset_width": 50,
+            "offset_height": 50,
         },
         {
             "type": "Crop",

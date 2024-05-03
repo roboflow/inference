@@ -8,14 +8,19 @@ from inference.enterprise.workflows.core_steps.transformations.detection_offset 
 )
 
 
-def test_manifest_parsing_when_valid_data_provided() -> None:
+@pytest.mark.parametrize("offset_width_alias", ["offset_width", "offset_x"])
+@pytest.mark.parametrize("offset_height_alias", ["offset_height", "offset_y"])
+def test_manifest_parsing_when_valid_data_provided(
+    offset_width_alias: str,
+    offset_height_alias: str,
+) -> None:
     # given
     data = {
         "type": "DetectionOffset",
         "name": "some",
         "predictions": "$steps.some.predictions",
-        "offset_x": "$inputs.offset_x",
-        "offset_y": 40,
+        offset_width_alias: "$inputs.offset_x",
+        offset_height_alias: 40,
         "image_metadata": "$steps.some.image",
         "prediction_type": "$steps.some.prediction_type",
     }
@@ -28,8 +33,8 @@ def test_manifest_parsing_when_valid_data_provided() -> None:
         type="DetectionOffset",
         name="some",
         predictions="$steps.some.predictions",
-        offset_x="$inputs.offset_x",
-        offset_y=40,
+        offset_width="$inputs.offset_x",
+        offset_height=40,
         image_metadata="$steps.some.image",
         prediction_type="$steps.some.prediction_type",
     )
@@ -39,8 +44,8 @@ def test_manifest_parsing_when_valid_data_provided() -> None:
     "field_name, value",
     [
         ("predictions", "invalid"),
-        ("offset_x", -1),
-        ("offset_y", -1),
+        ("offset_width", -1),
+        ("offset_height", -1),
         ("image_metadata", "invalid"),
         ("prediction_type", "invalid"),
     ],
@@ -54,8 +59,8 @@ def test_manifest_parsing_when_invalid_data_provided(
         "type": "DetectionOffset",
         "name": "some",
         "predictions": "$steps.some.predictions",
-        "offset_x": "$inputs.offset_x",
-        "offset_y": 40,
+        "offset_width": "$inputs.offset_x",
+        "offset_height": 40,
         "image_metadata": "$steps.some.image",
         "prediction_type": "$steps.some.prediction_type",
     }

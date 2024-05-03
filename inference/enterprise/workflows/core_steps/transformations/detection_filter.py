@@ -179,22 +179,24 @@ class DetectionFilterBlock(WorkflowBlock):
         prediction_type: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         filter_callable = build_filter_callable(definition=filter_definition)
-        result_detections, result_parent_id = [], []
-        for prediction in predictions:
-            filtered_predictions = [
-                deepcopy(p) for p in prediction if filter_callable(p)
+        result_predictions, result_parent_id = [], []
+        for detections in predictions:
+            filtered_prediction = [
+                deepcopy(detection) for detection in detections if filter_callable(detection)
             ]
-            result_detections.append(filtered_predictions)
-            result_parent_id.append([p[PARENT_ID_KEY] for p in filtered_predictions])
+            result_predictions.append(filtered_prediction)
+            result_parent_id.append(
+                [prediction[PARENT_ID_KEY] for prediction in filtered_prediction]
+            )
         return [
             {
-                "predictions": d,
-                PARENT_ID_KEY: p,
-                "image": i,
-                "prediction_type": pt,
+                "predictions": prediction,
+                PARENT_ID_KEY: parent_id,
+                "image": image,
+                "prediction_type": single_prediction_type,
             }
-            for d, p, i, pt in zip(
-                result_detections, result_parent_id, image_metadata, prediction_type
+            for prediction, parent_id, image, single_prediction_type in zip(
+                result_predictions, result_parent_id, image_metadata, prediction_type
             )
         ]
 

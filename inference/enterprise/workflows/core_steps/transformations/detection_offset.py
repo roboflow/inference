@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 from uuid import uuid4
 
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt, AliasChoices
 from typing_extensions import Annotated
 
 from inference.enterprise.workflows.constants import (
@@ -61,11 +61,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    offset_x: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(description="Offset for boxes width", examples=[10, "$inputs.offset_x"])
+    offset_width: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            description="Offset for boxes width",
+            examples=[10, "$inputs.offset_x"],
+            validation_alias=AliasChoices("offset_width", "offset_x"),
+        )
     )
-    offset_y: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(description="Offset for boxes height", examples=[10, "$inputs.offset_y"])
+    offset_height: Union[PositiveInt, InferenceParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            description="Offset for boxes height",
+            examples=[10, "$inputs.offset_y"],
+            validation_alias=AliasChoices("offset_height", "offset_y"),
+        )
     )
     image_metadata: Annotated[
         StepOutputSelector(kind=[IMAGE_METADATA_KIND]),
@@ -113,33 +121,33 @@ class DetectionOffsetBlock(WorkflowBlock):
     async def run_locally(
         self,
         predictions: List[List[dict]],
-        offset_x: int,
-        offset_y: int,
+        offset_width: int,
+        offset_height: int,
         image_metadata: List[dict],
         prediction_type: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        result_detections, result_parent_id = [], []
-        for detection in predictions:
+        result_predictions, result_parent_id = [], []
+        for detections in predictions:
             offset_detections = [
-                offset_detection(detection=d, offset_x=offset_x, offset_y=offset_y)
-                for d in detection
+                offset_detection(detection=detection, offset_width=offset_width, offset_height=offset_height)
+                for detection in detections
             ]
-            result_detections.append(offset_detections)
-            result_parent_id.append([d[PARENT_ID_KEY] for d in offset_detections])
+            result_predictions.append(offset_detections)
+            result_parent_id.append([detection[PARENT_ID_KEY] for detection in offset_detections])
         return [
-            {"predictions": d, PARENT_ID_KEY: p, "image": i, "prediction_type": pt}
-            for d, p, i, pt in zip(
-                result_detections, result_parent_id, image_metadata, prediction_type
+            {"predictions": prediction, PARENT_ID_KEY: parent_id, "image": image, "prediction_type": single_prediction_type}
+            for prediction, parent_id, image, single_prediction_type in zip(
+                result_predictions, result_parent_id, image_metadata, prediction_type
             )
         ]
 
 
 def offset_detection(
-    detection: Dict[str, Any], offset_x: int, offset_y: int
+    detection: Dict[str, Any], offset_width: int, offset_height: int
 ) -> Dict[str, Any]:
     detection_copy = deepcopy(detection)
-    detection_copy[WIDTH_KEY] += round(offset_x)
-    detection_copy[HEIGHT_KEY] += round(offset_y)
+    detection_copy[WIDTH_KEY] += round(offset_width)
+    detection_copy[HEIGHT_KEY] += round(offset_height)
     detection_copy[PARENT_ID_KEY] = detection_copy[DETECTION_ID_KEY]
     detection_copy[DETECTION_ID_KEY] = str(uuid4())
     return detection_copy
