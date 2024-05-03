@@ -17,16 +17,16 @@ class ABTestManifest(WorkflowBlockManifest):
     a_step: StepSelector
     b_step: StepSelector
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
 
 class ABTestBlock(WorkflowBlock):
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ABTestManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return []
 
     async def run_locally(
         self,

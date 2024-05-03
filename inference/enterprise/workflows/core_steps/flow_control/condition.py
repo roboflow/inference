@@ -106,16 +106,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.on_false"],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
 
 class ConditionBlock(WorkflowBlock):
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return []
 
     async def run_locally(
         self,

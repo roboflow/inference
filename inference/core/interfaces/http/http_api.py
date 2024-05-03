@@ -922,13 +922,7 @@ class HttpInterface(BaseInterface):
                     raw_workflow_definition=dummy_workflow_definition
                 )
                 parsed_manifest = parsed_definition.steps[0]
-                workflows_blocks = load_workflow_blocks()
-                manifest_type2workflows_block_class = {
-                    block.manifest_class: block.block_class
-                    for block in workflows_blocks
-                }
-                block_class = manifest_type2workflows_block_class[type(parsed_manifest)]
-                return block_class.get_actual_outputs(parsed_manifest)
+                return parsed_manifest.get_actual_outputs()
 
             @app.post(
                 "/workflows/validate",

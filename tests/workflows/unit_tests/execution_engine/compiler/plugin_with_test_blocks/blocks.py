@@ -39,12 +39,6 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
     )
     string_value: Optional[str] = Field(default=None)
 
-
-class ExampleModelBlock(WorkflowBlock):
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ExampleModelBlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -53,6 +47,12 @@ class ExampleModelBlock(WorkflowBlock):
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
+
+
+class ExampleModelBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleModelBlockManifest
 
     async def run_locally(
         self,
@@ -66,15 +66,15 @@ class ExampleFlowControlBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleFlowControl"]
     steps_to_choose: List[StepSelector]
 
-
-class ExampleFlowControlBlock(WorkflowBlock):
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ExampleFlowControlBlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return []
+
+
+class ExampleFlowControlBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleFlowControlBlockManifest
 
     async def run_locally(
         self,
@@ -98,12 +98,6 @@ class ExampleTransformationBlockManifest(WorkflowBlockManifest):
         examples=["$steps.my_object_detection_model.predictions"],
     )
 
-
-class ExampleTransformationBlock(WorkflowBlock):
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ExampleTransformationBlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -112,6 +106,12 @@ class ExampleTransformationBlock(WorkflowBlock):
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
+
+
+class ExampleTransformationBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleTransformationBlockManifest
 
     async def run_locally(
         self,
@@ -135,17 +135,17 @@ class ExampleSinkBlockManifest(WorkflowBlockManifest):
         examples=["$steps.my_object_detection_model.predictions"],
     )
 
-
-class ExampleSinkBlock(WorkflowBlock):
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ExampleSinkBlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="status", kind=[BATCH_OF_BOOLEAN_KIND]),
         ]
+
+
+class ExampleSinkBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleSinkBlockManifest
 
     async def run_locally(
         self,
@@ -165,12 +165,6 @@ class ExampleFusionBlockManifest(WorkflowBlockManifest):
         examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
-
-class ExampleFusionBlock(WorkflowBlock):
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ExampleFusionBlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -178,6 +172,12 @@ class ExampleFusionBlock(WorkflowBlock):
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
+
+
+class ExampleFusionBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExampleFusionBlockManifest
 
     async def run_locally(
         self,
@@ -197,6 +197,14 @@ class ExampleBlockWithInitManifest(WorkflowBlockManifest):
         examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+        ]
+
 
 class ExampleBlockWithInit(WorkflowBlock):
 
@@ -209,16 +217,8 @@ class ExampleBlockWithInit(WorkflowBlock):
         return ["a", "b"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithInitManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-            ),
-        ]
 
     async def run_locally(
         self,
@@ -238,6 +238,14 @@ class ExampleBlockWithFaultyInitManifest(WorkflowBlockManifest):
         examples=[["$steps.my_object_detection_model.predictions"]],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+        ]
+
 
 class ExampleBlockWithFaultyInit(WorkflowBlock):
 
@@ -250,16 +258,8 @@ class ExampleBlockWithFaultyInit(WorkflowBlock):
         return ["a"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithFaultyInitManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-            ),
-        ]
 
     async def run_locally(
         self,

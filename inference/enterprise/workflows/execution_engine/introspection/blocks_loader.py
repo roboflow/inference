@@ -34,7 +34,7 @@ def describe_available_blocks() -> BlocksDescription:
     result = []
     for block in blocks:
         block_schema = block.manifest_class.model_json_schema()
-        outputs_manifest = block.block_class.describe_outputs()
+        outputs_manifest = block.manifest_class.describe_outputs()
         schema_selectors = retrieve_selectors_from_schema(schema=block_schema)
         block_kinds = [
             k
@@ -111,7 +111,7 @@ def load_core_workflow_blocks() -> List[BlockSpecification]:
             block_source="workflows_core",
             identifier=get_full_type_name(selected_type=block),
             block_class=block,
-            manifest_class=block.get_input_manifest(),
+            manifest_class=block.get_manifest(),
         )
         for block in core_blocks
     ]
@@ -159,7 +159,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
             block_source=plugin_name,
             identifier=get_full_type_name(selected_type=block),
             block_class=block,
-            manifest_class=block.get_input_manifest(),
+            manifest_class=block.get_manifest(),
         )
         for block in blocks
     ]

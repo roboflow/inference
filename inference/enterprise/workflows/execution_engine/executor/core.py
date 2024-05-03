@@ -128,7 +128,7 @@ async def execute_step(
     step_name = get_last_chunk_of_selector(selector=step)
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
-    step_outputs = step_instance.get_actual_outputs(step_manifest)
+    step_outputs = step_manifest.get_actual_outputs()
     execution_cache.register_step(
         step_name=step_name,
         output_definitions=step_outputs,

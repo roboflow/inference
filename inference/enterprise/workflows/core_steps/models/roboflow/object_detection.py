@@ -135,6 +135,17 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["my_project", "$inputs.al_target_project"],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            ),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+        ]
+
 
 class RoboflowObjectDetectionModelBlock(WorkflowBlock):
 
@@ -151,19 +162,8 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         return ["model_manager", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-            ),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-        ]
 
     async def run_locally(
         self,

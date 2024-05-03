@@ -34,16 +34,16 @@ class Block1Manifest(WorkflowBlockManifest):
     field_1: Union[bool, WorkflowParameterSelector(kind=[MY_KIND_1])]
     field_2: Union[str, StepOutputSelector(kind=[MY_KIND_2])]
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output_1", kind=[MY_KIND_1])]
+
 
 class Block1(WorkflowBlock):
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block1Manifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="output_1", kind=[MY_KIND_1])]
 
     async def run_locally(
         self, *args, **kwargs
@@ -56,19 +56,19 @@ class Block2Manifest(WorkflowBlockManifest):
     name: str = Field(description="name field")
     field_1: List[StepOutputSelector(kind=[MY_KIND_1])]
 
-
-class Block2(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return Block2Manifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="output_1", kind=[MY_KIND_3]),
             OutputDefinition(name="output_2", kind=[MY_KIND_2]),
         ]
+
+
+class Block2(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return Block2Manifest
 
     async def run_locally(
         self, *args, **kwargs
@@ -81,18 +81,18 @@ class Block3Manifest(WorkflowBlockManifest):
     name: str = Field(description="name field")
     field_1: str
 
-
-class Block3(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return Block3Manifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="output_1", kind=[MY_KIND_1]),
         ]
+
+
+class Block3(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return Block3Manifest
 
     async def run_locally(
         self, *args, **kwargs
@@ -104,7 +104,7 @@ BLOCK_1_DESCRIPTION = BlockDescription(
     manifest_class=Block1Manifest,
     block_class=Block1,
     block_schema=Block1Manifest.model_json_schema(),
-    outputs_manifest=Block1.describe_outputs(),
+    outputs_manifest=Block1Manifest.describe_outputs(),
     block_source="test",
     fully_qualified_block_class_name="some.Block1",
     human_friendly_block_name="Block 1",
@@ -114,7 +114,7 @@ BLOCK_2_DESCRIPTION = BlockDescription(
     manifest_class=Block2Manifest,
     block_class=Block2,
     block_schema=Block2Manifest.model_json_schema(),
-    outputs_manifest=Block2.describe_outputs(),
+    outputs_manifest=Block2Manifest.describe_outputs(),
     block_source="test",
     fully_qualified_block_class_name="some.Block2",
     human_friendly_block_name="Block 2",
@@ -124,7 +124,7 @@ BLOCK_3_DESCRIPTION = BlockDescription(
     manifest_class=Block3Manifest,
     block_class=Block3,
     block_schema=Block3Manifest.model_json_schema(),
-    outputs_manifest=Block3.describe_outputs(),
+    outputs_manifest=Block3Manifest.describe_outputs(),
     block_source="test",
     fully_qualified_block_class_name="some.Block3",
     human_friendly_block_name="Block 3",

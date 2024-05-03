@@ -2,6 +2,7 @@ from typing import List, Literal, Union
 
 from pydantic import Field
 
+from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
@@ -29,6 +30,10 @@ def test_get_step_selectors_when_no_selectors_defined() -> None:
         name: str = Field(description="name field")
         some_integer: int
 
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
     step_manifest = Manifest(type="MyManifest", name="my_step", some_integer=3)
 
     # when
@@ -48,6 +53,10 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
         input_parameter: WorkflowParameterSelector(
             kind=[BOOLEAN_KIND, STRING_KIND],
         )
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     step_manifest = Manifest(
         type="MyManifest",
@@ -110,6 +119,10 @@ def test_get_step_selectors_when_compound_selectors_defined() -> None:
                 StepOutputSelector(kind=[STRING_KIND]),
             ]
         ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     step_manifest = Manifest(
         type="MyManifest", name="my_step", param=["$inputs.param", "$steps.a.param"]

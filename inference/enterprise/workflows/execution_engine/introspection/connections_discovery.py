@@ -20,12 +20,18 @@ from inference.enterprise.workflows.execution_engine.introspection.entities impo
 from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest_schema,
 )
-from inference.enterprise.workflows.prototypes.block import WorkflowBlock
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 def discover_blocks_connections(
     blocks_description: BlocksDescription,
 ) -> DiscoveredConnections:
+    block_type2manifest_type = {
+        block.block_class: block.manifest_class for block in blocks_description.blocks
+    }
     all_schemas = parse_all_schemas(blocks_description=blocks_description)
     output_kind2schemas = get_all_outputs_kind_major(
         blocks_description=blocks_description
@@ -40,17 +46,16 @@ def discover_blocks_connections(
     )
     input_property_wise_connections = {}
     output_property_wise_connections = {}
-    for manifest_type in all_schemas.keys():
-        input_property_wise_connections[manifest_type] = (
-            discover_block_input_connections(
-                starting_block=manifest_type,
-                all_schemas=all_schemas,
-                output_kind2schemas=output_kind2schemas,
-            )
+    for block_type in all_schemas.keys():
+        input_property_wise_connections[block_type] = discover_block_input_connections(
+            starting_block=block_type,
+            all_schemas=all_schemas,
+            output_kind2schemas=output_kind2schemas,
         )
-        output_property_wise_connections[manifest_type] = (
+        manifest_type = block_type2manifest_type[block_type]
+        output_property_wise_connections[block_type] = (
             discover_block_output_connections(
-                starting_block=manifest_type,
+                manifest_type=manifest_type,
                 input_kind2schemas=coarse_input_kind2schemas,
             )
         )
@@ -176,11 +181,11 @@ def discover_block_input_connections(
 
 
 def discover_block_output_connections(
-    starting_block: Type[WorkflowBlock],
+    manifest_type: Type[WorkflowBlockManifest],
     input_kind2schemas: Dict[str, Set[Type[WorkflowBlock]]],
 ) -> Dict[str, Set[Type[WorkflowBlock]]]:
     result = {}
-    for output in starting_block.describe_outputs():
+    for output in manifest_type.describe_outputs():
         compatible_blocks = set()
         for single_kind in output.kind:
             compatible_blocks.update(input_kind2schemas[single_kind.name])

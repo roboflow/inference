@@ -116,6 +116,29 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="structured_output", kind=[BATCH_OF_DICTIONARY_KIND]),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
+        ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        result = [
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+        ]
+        if self.json_output is None:
+            return result
+        for key in self.json_output.keys():
+            result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
+        return result
+
 
 class LMMBlock(WorkflowBlock):
 
@@ -132,34 +155,8 @@ class LMMBlock(WorkflowBlock):
         return ["model_manager", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="structured_output", kind=[BATCH_OF_DICTIONARY_KIND]),
-            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
-            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
-        ]
-
-    @classmethod
-    def get_actual_outputs(
-        cls, manifest: WorkflowBlockManifest
-    ) -> List[OutputDefinition]:
-        result = [
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
-            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
-        ]
-        if manifest.json_output is None:
-            return result
-        for key in manifest.json_output.keys():
-            result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
-        return result
 
     async def run_locally(
         self,

@@ -46,13 +46,6 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("images", "image"),
     )
 
-
-class QRCodeDetectorBlock(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -61,6 +54,13 @@ class QRCodeDetectorBlock(WorkflowBlock):
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]
+
+
+class QRCodeDetectorBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
 
     async def run_locally(
         self,

@@ -157,13 +157,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["min", "max"],
     )
 
-
-class DetectionsConsensusBlock(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -182,6 +175,13 @@ class DetectionsConsensusBlock(WorkflowBlock):
             ),
             OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
         ]
+
+
+class DetectionsConsensusBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
 
     async def run_locally(
         self,

@@ -86,6 +86,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["xxx-xxx", "$inputs.api_key"],
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
+
 
 class LMMForClassificationBlock(WorkflowBlock):
 
@@ -102,18 +112,8 @@ class LMMForClassificationBlock(WorkflowBlock):
         return ["model_manager", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
-            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
-        ]
 
     async def run_locally(
         self,

@@ -165,7 +165,7 @@ def test_initialise_step_when_initialisation_is_successful() -> None:
         block_source="test_plugin",
         identifier="test_plugin.ExampleBlockWithInit",
         block_class=ExampleBlockWithInit,
-        manifest_class=ExampleBlockWithInit.get_input_manifest(),
+        manifest_class=ExampleBlockWithInit.get_manifest(),
     )
     manifest = ExampleBlockWithInitManifest(
         type="ExampleBlockWithInit",
@@ -195,7 +195,7 @@ def test_initialise_step_when_initialisation_failed() -> None:
         block_source="test_plugin",
         identifier="test_plugin.ExampleBlockWithFaultyInit",
         block_class=ExampleBlockWithFaultyInit,
-        manifest_class=ExampleBlockWithFaultyInit.get_input_manifest(),
+        manifest_class=ExampleBlockWithFaultyInit.get_manifest(),
     )
     manifest = ExampleBlockWithFaultyInitManifest(
         type="ExampleBlockWithFaultyInit",

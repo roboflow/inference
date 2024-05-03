@@ -25,16 +25,16 @@ class Block1Manifest(WorkflowBlockManifest):
     field_1: Union[bool, WorkflowParameterSelector(kind=[MY_KIND_1])]
     field_2: Union[str, StepOutputSelector(kind=[MY_KIND_2])]
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output_1", kind=[MY_KIND_1])]
+
 
 class Block1(WorkflowBlock):
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block1Manifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="output_1", kind=[MY_KIND_1])]
 
     async def run_locally(
         self, *args, **kwargs
@@ -47,19 +47,19 @@ class Block2Manifest(WorkflowBlockManifest):
     name: str = Field(description="name field")
     field_1: List[StepOutputSelector(kind=[MY_KIND_1])]
 
-
-class Block2(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return Block2Manifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="output_1", kind=[MY_KIND_3]),
             OutputDefinition(name="output_2", kind=[MY_KIND_2]),
         ]
+
+
+class Block2(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return Block2Manifest
 
     async def run_locally(
         self, *args, **kwargs

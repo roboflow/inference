@@ -83,19 +83,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.3, "$inputs.height"],
     )
 
-
-class RelativeStaticCropBlock(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[BaseModel]:
-        return BlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
+
+
+class RelativeStaticCropBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[BaseModel]:
+        return BlockManifest
 
     async def run_locally(
         self,

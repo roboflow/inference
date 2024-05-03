@@ -90,18 +90,6 @@ class BlockManifest(WorkflowBlockManifest):
         ),
     ]
 
-
-class DetectionOffsetBlock(WorkflowBlock):
-    # TODO: This block breaks parent coordinates :( We need to fix,
-    # as block now does not get predictions_parent_coordinates input
-    # which is not defined explicitly it can only offset predictions
-    # in "own" coords. We need to chane the way the coords transition
-    # is handled as current approach will never work.
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -117,6 +105,18 @@ class DetectionOffsetBlock(WorkflowBlock):
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]
+
+
+class DetectionOffsetBlock(WorkflowBlock):
+    # TODO: This block breaks parent coordinates :( We need to fix,
+    # as block now does not get predictions_parent_coordinates input
+    # which is not defined explicitly it can only offset predictions
+    # in "own" coords. We need to chane the way the coords transition
+    # is handled as current approach will never work.
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
 
     async def run_locally(
         self,

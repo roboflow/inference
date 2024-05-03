@@ -69,6 +69,14 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
+
 
 class ClipComparisonBlock(WorkflowBlock):
 
@@ -85,16 +93,8 @@ class ClipComparisonBlock(WorkflowBlock):
         return ["model_manager", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
-        ]
 
     async def run_locally(
         self,

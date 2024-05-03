@@ -17,6 +17,14 @@ class WorkflowBlockManifest(BaseModel):
     type: str
     name: str = Field(description="Unique name of step in workflows")
 
+    @classmethod
+    @abstractmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        pass
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        return self.describe_outputs()
+
 
 class WorkflowBlock(ABC):
 
@@ -26,19 +34,8 @@ class WorkflowBlock(ABC):
 
     @classmethod
     @abstractmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         pass
-
-    @classmethod
-    @abstractmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        pass
-
-    @classmethod
-    def get_actual_outputs(
-        cls, manifest: WorkflowBlockManifest
-    ) -> List[OutputDefinition]:
-        return cls.describe_outputs()
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

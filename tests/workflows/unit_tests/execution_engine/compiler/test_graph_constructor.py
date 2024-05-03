@@ -29,41 +29,14 @@ from inference.enterprise.workflows.execution_engine.compiler.utils import (
     FLOW_CONTROL_NODE_KEY,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (
-    ExampleFlowControlBlock,
     ExampleFlowControlBlockManifest,
-    ExampleFusionBlock,
     ExampleFusionBlockManifest,
-    ExampleModelBlock,
     ExampleModelBlockManifest,
-    ExampleSinkBlock,
-    ExampleTransformationBlock,
     ExampleTransformationBlockManifest,
 )
 
 
-@pytest.fixture(scope="function")
-def blocks_from_test_plugin() -> List[BlockSpecification]:
-    types = [
-        ExampleModelBlock,
-        ExampleFlowControlBlock,
-        ExampleTransformationBlock,
-        ExampleSinkBlock,
-        ExampleFusionBlock,
-    ]
-    return [
-        BlockSpecification(
-            block_source="test_plugin",
-            identifier=f"test_plugin.{t.__name__}",
-            block_class=t,
-            manifest_class=t.get_input_manifest(),
-        )
-        for t in types
-    ]
-
-
-def test_execution_graph_construction_for_trivial_workflow(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_for_trivial_workflow() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -88,7 +61,6 @@ def test_execution_graph_construction_for_trivial_workflow(
     # when
     result = prepare_execution_graph(
         workflow_definition=workflow_definition,
-        available_blocks=blocks_from_test_plugin,
     )
 
     # then
@@ -112,9 +84,7 @@ def test_execution_graph_construction_for_trivial_workflow(
     ), "Model step must be connected to output"
 
 
-def test_execution_graph_construction_when_there_is_input_selector_missing(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_there_is_input_selector_missing() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -140,13 +110,12 @@ def test_execution_graph_construction_when_there_is_input_selector_missing(
     with pytest.raises(InvalidReferenceTargetError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_output_selector_points_non_existing_step(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_output_selector_points_non_existing_step() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -172,13 +141,10 @@ def test_execution_graph_construction_when_output_selector_points_non_existing_s
     with pytest.raises(InvalidReferenceTargetError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_output_defines_non_existing_output(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_output_defines_non_existing_output() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -206,13 +172,10 @@ def test_execution_graph_construction_when_output_defines_non_existing_output(
     with pytest.raises(InvalidReferenceTargetError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_there_is_a_dangling_output(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_there_is_a_dangling_output() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -233,13 +196,12 @@ def test_execution_graph_construction_when_there_is_a_dangling_output(
         # TODO: consider if that's actually good to raise error in this case
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_input_kind_does_not_match_block_manifest(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_input_kind_does_not_match_block_manifest() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -270,13 +232,12 @@ def test_execution_graph_construction_when_input_kind_does_not_match_block_manif
     with pytest.raises(ReferenceTypeError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_selector_is_injected_to_string_field(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_selector_is_injected_to_string_field() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -304,7 +265,6 @@ def test_execution_graph_construction_when_selector_is_injected_to_string_field(
     # when
     result = prepare_execution_graph(
         workflow_definition=workflow_definition,
-        available_blocks=blocks_from_test_plugin,
     )
 
     # then - we just check that selector not defined in manifest was ignored
@@ -313,9 +273,9 @@ def test_execution_graph_construction_when_selector_is_injected_to_string_field(
     ), "Expected 1 input node, 1 step node and one output node"
 
 
-def test_execution_graph_construction_when_two_parallel_execution_branches_exists(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_two_parallel_execution_branches_exists() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -357,7 +317,6 @@ def test_execution_graph_construction_when_two_parallel_execution_branches_exist
     # when
     result = prepare_execution_graph(
         workflow_definition=workflow_definition,
-        available_blocks=blocks_from_test_plugin,
     )
 
     # then
@@ -403,9 +362,7 @@ def test_execution_graph_construction_when_two_parallel_execution_branches_exist
     ), "Expected to see connection between model_2 and predictions_2 output"
 
 
-def test_execution_graph_construction_when_fusion_of_two_branches_is_present(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_fusion_of_two_branches_is_present() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -447,7 +404,6 @@ def test_execution_graph_construction_when_fusion_of_two_branches_is_present(
     # when
     result = prepare_execution_graph(
         workflow_definition=workflow_definition,
-        available_blocks=blocks_from_test_plugin,
     )
 
     # then
@@ -490,9 +446,7 @@ def test_execution_graph_construction_when_fusion_of_two_branches_is_present(
     ), "Expected to see connection between fusion step and predictions output"
 
 
-def test_execution_graph_construction_when_there_is_flow_control_step(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -535,7 +489,6 @@ def test_execution_graph_construction_when_there_is_flow_control_step(
     # when
     result = prepare_execution_graph(
         workflow_definition=workflow_definition,
-        available_blocks=blocks_from_test_plugin,
     )
 
     # then
@@ -584,9 +537,9 @@ def test_execution_graph_construction_when_there_is_flow_control_step(
     ), "Expected random_choice step to be recognised as control flow"
 
 
-def test_execution_graph_construction_when_there_is_condition_branches_collapse(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_there_is_condition_branches_collapse() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -633,13 +586,12 @@ def test_execution_graph_construction_when_there_is_condition_branches_collapse(
     with pytest.raises(ConditionalBranchesCollapseError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_there_is_collapse_of_two_conditional_branches_originated_in_different_root(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_there_is_collapse_of_two_conditional_branches_originated_in_different_root() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -717,13 +669,10 @@ def test_execution_graph_construction_when_there_is_collapse_of_two_conditional_
     with pytest.raises(ConditionalBranchesCollapseError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_cycle_is_detected(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_cycle_is_detected() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -757,13 +706,12 @@ def test_execution_graph_construction_when_cycle_is_detected(
     with pytest.raises(ExecutionGraphStructureError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_reference_to_non_existing_step_output_provided(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_reference_to_non_existing_step_output_provided() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -797,13 +745,12 @@ def test_execution_graph_construction_when_reference_to_non_existing_step_output
     with pytest.raises(ExecutionGraphStructureError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_reference_to_non_existing_step_provided(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_reference_to_non_existing_step_provided() -> (
+    None
+):
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -837,13 +784,10 @@ def test_execution_graph_construction_when_reference_to_non_existing_step_provid
     with pytest.raises(InvalidReferenceTargetError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )
 
 
-def test_execution_graph_construction_when_connection_kind_missmatch_detected(
-    blocks_from_test_plugin: List[BlockSpecification],
-) -> None:
+def test_execution_graph_construction_when_connection_kind_missmatch_detected() -> None:
     # given
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
@@ -877,5 +821,4 @@ def test_execution_graph_construction_when_connection_kind_missmatch_detected(
     with pytest.raises(ReferenceTypeError):
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
-            available_blocks=blocks_from_test_plugin,
         )

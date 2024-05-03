@@ -76,19 +76,19 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("predictions", "detections"),
     )
 
-
-class CropBlock(WorkflowBlock):
-
-    @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BlockManifest
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
         ]
+
+
+class CropBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
 
     async def run_locally(
         self,

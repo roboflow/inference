@@ -115,6 +115,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional configuration of Active Learning data sampling in the exact format explained in Active Learning docs.",
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
 
 class ActiveLearningDataCollectorBlock(WorkflowBlock):
 
@@ -133,12 +137,8 @@ class ActiveLearningDataCollectorBlock(WorkflowBlock):
         return ["active_learning_middleware", "background_tasks", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return []
 
     async def run_locally(
         self,

@@ -63,6 +63,14 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("images", "image"),
     )
 
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+        ]
+
 
 class OCRModelBlock(WorkflowBlock):
 
@@ -79,16 +87,8 @@ class OCRModelBlock(WorkflowBlock):
         return ["model_manager", "api_key"]
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
-        ]
 
     async def run_locally(
         self,

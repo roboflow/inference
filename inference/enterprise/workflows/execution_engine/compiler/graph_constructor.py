@@ -58,14 +58,9 @@ NODE_DEFINITION_KEY = "definition"
 
 def prepare_execution_graph(
     workflow_definition: ParsedWorkflowDefinition,
-    available_blocks: List[BlockSpecification],
 ) -> DiGraph:
-    manifest_class2block_class = {
-        block.manifest_class: block.block_class for block in available_blocks
-    }
     execution_graph = construct_graph(
         workflow_definition=workflow_definition,
-        manifest_class2block_class=manifest_class2block_class,
     )
     if not nx.is_directed_acyclic_graph(execution_graph):
         raise ExecutionGraphStructureError(
@@ -76,7 +71,6 @@ def prepare_execution_graph(
         )
     verify_each_node_reach_at_least_one_output(
         execution_graph=execution_graph,
-        manifest_class2block_class=manifest_class2block_class,
     )
     verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     return execution_graph
@@ -84,7 +78,6 @@ def prepare_execution_graph(
 
 def construct_graph(
     workflow_definition: ParsedWorkflowDefinition,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     execution_graph = nx.DiGraph()
     execution_graph = add_input_nodes_for_graph(
@@ -102,12 +95,10 @@ def construct_graph(
     execution_graph = add_steps_edges(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
-        manifest_class2block_class=manifest_class2block_class,
     )
     return add_edges_for_outputs(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
-        manifest_class2block_class=manifest_class2block_class,
     )
 
 
@@ -155,7 +146,6 @@ def add_output_nodes_for_graph(
 def add_steps_edges(
     workflow_definition: ParsedWorkflowDefinition,
     execution_graph: DiGraph,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     for step in workflow_definition.steps:
         step_selectors = get_step_selectors(step_manifest=step)
@@ -163,7 +153,6 @@ def add_steps_edges(
             execution_graph=execution_graph,
             step_name=step.name,
             parsed_selectors=step_selectors,
-            manifest_class2block_class=manifest_class2block_class,
         )
     return execution_graph
 
@@ -172,7 +161,6 @@ def add_edges_for_step(
     execution_graph: DiGraph,
     step_name: str,
     parsed_selectors: List[ParsedSelector],
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     step_selector = construct_step_selector(step_name=step_name)
     for parsed_selector in parsed_selectors:
@@ -180,7 +168,6 @@ def add_edges_for_step(
             execution_graph=execution_graph,
             step_selector=step_selector,
             parsed_selector=parsed_selector,
-            manifest_class2block_class=manifest_class2block_class,
         )
     return execution_graph
 
@@ -189,7 +176,6 @@ def add_edge_for_step(
     execution_graph: DiGraph,
     step_selector: str,
     parsed_selector: ParsedSelector,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     other_step_selector = get_step_selector_from_its_output(
         step_output_selector=parsed_selector.value
@@ -216,7 +202,6 @@ def add_edge_for_step(
         actual_input_kind = get_kind_of_value_provided_in_step_output(
             step_manifest=other_step_manifest,
             step_property=get_last_chunk_of_selector(selector=parsed_selector.value),
-            manifest_class2block_class=manifest_class2block_class,
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
@@ -272,15 +257,8 @@ def step_definition_allows_flow_control_references(
 def get_kind_of_value_provided_in_step_output(
     step_manifest: WorkflowBlockManifest,
     step_property: str,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> List[Kind]:
-    referred_node_manifest_type = type(step_manifest)
-    block_class_for_referred_node = manifest_class2block_class[
-        referred_node_manifest_type
-    ]
-    referred_node_outputs = block_class_for_referred_node.get_actual_outputs(
-        manifest=step_manifest
-    )
+    referred_node_outputs = step_manifest.get_actual_outputs()
     actual_kind = []
     matched_property = False
     for output in referred_node_outputs:
@@ -318,7 +296,6 @@ def add_edges_for_step_inputs(
 def add_edges_for_outputs(
     workflow_definition: ParsedWorkflowDefinition,
     execution_graph: DiGraph,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> DiGraph:
     for output in workflow_definition.outputs:
         node_selector = output.selector
@@ -334,8 +311,7 @@ def add_edges_for_outputs(
         )
         if is_step_output_selector(selector_or_value=output.selector):
             step_manifest = execution_graph.nodes[node_selector][NODE_DEFINITION_KEY]
-            block_class = manifest_class2block_class[type(step_manifest)]
-            step_outputs = block_class.get_actual_outputs(step_manifest)
+            step_outputs = step_manifest.get_actual_outputs()
             verify_output_selector_points_to_valid_output(
                 output_selector=output.selector,
                 step_outputs=step_outputs,
@@ -379,7 +355,6 @@ def verify_output_selector_points_to_valid_output(
 
 def verify_each_node_reach_at_least_one_output(
     execution_graph: DiGraph,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> None:
     all_nodes = set(execution_graph.nodes())
     output_nodes = get_nodes_of_specific_kind(
@@ -387,7 +362,6 @@ def verify_each_node_reach_at_least_one_output(
     )
     nodes_without_outputs = get_nodes_that_do_not_produce_outputs(
         execution_graph=execution_graph,
-        manifest_class2block_class=manifest_class2block_class,
     )
     nodes_that_must_be_reached = output_nodes.union(nodes_without_outputs)
     nodes_reaching_output = (
@@ -407,7 +381,6 @@ def verify_each_node_reach_at_least_one_output(
 
 def get_nodes_that_do_not_produce_outputs(
     execution_graph: DiGraph,
-    manifest_class2block_class: Dict[Type[WorkflowBlockManifest], Type[WorkflowBlock]],
 ) -> Set[str]:
     # assumption is that nodes without outputs will produce some side effect and shall be
     # treated as output nodes while checking if there is no dangling steps in graph
@@ -417,9 +390,7 @@ def get_nodes_that_do_not_produce_outputs(
     result = set()
     for step_node in step_nodes:
         step_manifest = execution_graph.nodes[step_node][NODE_DEFINITION_KEY]
-        step_manifest_type = type(step_manifest)
-        block_type = manifest_class2block_class[step_manifest_type]
-        if not block_type.get_actual_outputs(step_manifest):
+        if not step_manifest.get_actual_outputs():
             result.add(step_node)
     return result
 
