@@ -182,7 +182,9 @@ class DetectionFilterBlock(WorkflowBlock):
         result_predictions, result_parent_id = [], []
         for detections in predictions:
             filtered_prediction = [
-                deepcopy(detection) for detection in detections if filter_callable(detection)
+                deepcopy(detection)
+                for detection in detections
+                if filter_callable(detection)
             ]
             result_predictions.append(filtered_prediction)
             result_parent_id.append(

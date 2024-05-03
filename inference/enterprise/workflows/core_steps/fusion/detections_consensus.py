@@ -247,7 +247,9 @@ def get_and_validate_batch_sizes(
     return batch_sizes
 
 
-def does_not_detected_objects_in_any_source(detections_from_sources: List[List[dict]]) -> bool:
+def does_not_detected_objects_in_any_source(
+    detections_from_sources: List[List[dict]],
+) -> bool:
     return all(len(p) == 0 for p in detections_from_sources)
 
 
@@ -255,7 +257,9 @@ def get_parent_id_of_predictions_from_different_sources(
     detections_from_sources: List[List[dict]],
 ) -> str:
     encountered_parent_ids = {
-        p[PARENT_ID_KEY] for prediction_source in detections_from_sources for p in prediction_source
+        p[PARENT_ID_KEY]
+        for prediction_source in detections_from_sources
+        for p in prediction_source
     }
     if len(encountered_parent_ids) != 1:
         raise ValueError(
@@ -366,7 +370,9 @@ def agree_on_consensus_for_all_detections_sources(
     )
     detections_already_considered = set()
     consensus_detections = []
-    for source_id, detection in enumerate_detections(detections_from_sources=detections_from_sources):
+    for source_id, detection in enumerate_detections(
+        detections_from_sources=detections_from_sources
+    ):
         (
             consensus_detections_update,
             detections_already_considered,
