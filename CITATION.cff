@@ -5,7 +5,7 @@ message: >-
   metadata from this file.
 type: software
 authors:
-  - given-names: Robfolow
+  - given-names: Roboflow
     email: support@roboflow.com
 repository-code: 'https://github.com/roboflow/inference-server'
 url: 'https://roboflow.com'
