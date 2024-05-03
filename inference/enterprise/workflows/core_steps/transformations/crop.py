@@ -105,8 +105,10 @@ class CropBlock(WorkflowBlock):
         )
         result = list(
             itertools.chain.from_iterable(
-                crop_image(image=i, predictions=d, origin_size=o)
-                for i, d, o in zip(decoded_images, predictions, origin_image_shape)
+                crop_image(image=image, detections=detections, origin_size=origin_shape)
+                for image, detections, origin_shape in zip(
+                    decoded_images, predictions, origin_image_shape
+                )
             )
         )
         if len(result) == 0:
@@ -116,11 +118,11 @@ class CropBlock(WorkflowBlock):
 
 def crop_image(
     image: np.ndarray,
-    predictions: List[dict],
+    detections: List[dict],
     origin_size: dict,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
-    for detection in predictions:
+    for detection in detections:
         x_min, y_min, x_max, y_max = detection_to_xyxy(detection=detection)
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(

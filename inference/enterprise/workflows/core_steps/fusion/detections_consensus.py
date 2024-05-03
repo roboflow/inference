@@ -253,7 +253,7 @@ def does_not_detected_objects_in_any_source(
     return all(len(p) == 0 for p in detections_from_sources)
 
 
-def get_parent_id_of_predictions_from_different_sources(
+def get_parent_id_of_detections_from_sources(
     detections_from_sources: List[List[dict]],
 ) -> str:
     encountered_parent_ids = {
@@ -361,7 +361,7 @@ def agree_on_consensus_for_all_detections_sources(
         detections_from_sources=detections_from_sources
     ):
         return "undefined", False, {}, []
-    parent_id = get_parent_id_of_predictions_from_different_sources(
+    parent_id = get_parent_id_of_detections_from_sources(
         detections_from_sources=detections_from_sources,
     )
     detections_from_sources = filter_predictions(

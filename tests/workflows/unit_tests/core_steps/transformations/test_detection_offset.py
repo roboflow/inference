@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from inference.enterprise.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
+    offset_detection,
 )
 
 
@@ -69,3 +70,36 @@ def test_manifest_parsing_when_invalid_data_provided(
     # when
     with pytest.raises(ValidationError):
         _ = BlockManifest.model_validate(data)
+
+
+def test_offset_detection() -> None:
+    # given
+    detection = {
+        "x": 100,
+        "y": 200,
+        "width": 20,
+        "height": 20,
+        "parent_id": "p2",
+        "detection_id": "two",
+        "class_name": "car",
+        "confidence": 0.5,
+    }
+
+    # when
+    result = offset_detection(
+        detection=detection,
+        offset_width=50,
+        offset_height=100,
+    )
+
+    # then
+    assert result["x"] == 100, "OX center should not be changed"
+    assert result["y"] == 200, "OY center should not be changed"
+    assert result["width"] == 70, "Width should be offset by 50px"
+    assert result["height"] == 120, "Height should be offset by 100px"
+    assert (
+        result["parent_id"] == "two"
+    ), "Parent id should be set to origin detection id"
+    assert (
+        result["detection_id"] != detection["detection_id"]
+    ), "New detection id (random) must be assigned"
