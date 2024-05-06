@@ -32,16 +32,16 @@ from inference.enterprise.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Retrieve the characters in an image using Optical Character Recognition (OCR).
+ Retrieve the characters in an image using Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
 You may want to use this block in combination with a detections-based block (i.e. 
-ObjectDetectionBlock). An object detetcion model could isolate specific regions from an 
+ObjectDetectionBlock). An object detection model could isolate specific regions from an 
 image (i.e. a shipping container ID in a logistics use case) for further processing. 
 You can then use a CropBlock to crop the region of interest before running OCR.
 
-Using a detections model then croipping detections allows you to isolate your analysis 
+Using a detections model then cropping detections allows you to isolate your analysis 
 on particular regions of an image.
 """
 
