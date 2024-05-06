@@ -6,9 +6,9 @@ from inference.enterprise.workflows.core_steps.fusion.detections_consensus impor
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_STRING_KIND,
-    BATCH_OF_IMAGE_METADATA_KIND,
     STRING_KIND,
 )
 from inference.enterprise.workflows.errors import (
@@ -319,7 +319,9 @@ def test_assembly_step_parameters() -> None:
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
-            OutputDefinition(name="image_metadata", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
+            OutputDefinition(
+                name="image_metadata", kind=[BATCH_OF_IMAGE_METADATA_KIND]
+            ),
         ],
         compatible_with_batches=True,
     )

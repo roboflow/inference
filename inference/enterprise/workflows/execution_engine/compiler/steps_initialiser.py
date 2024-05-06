@@ -95,11 +95,11 @@ def retrieve_init_parameter_values(
 ) -> Any:
     full_parameter_name = f"{block_source}.{block_init_parameter}"
     if full_parameter_name in explicit_init_parameters:
-        return call_if_callable(explicit_init_parameters[full_parameter_name])
+        return explicit_init_parameters[full_parameter_name]
     if full_parameter_name in initializers:
         return call_if_callable(initializers[full_parameter_name])
     if block_init_parameter in explicit_init_parameters:
-        return call_if_callable(explicit_init_parameters[block_init_parameter])
+        return explicit_init_parameters[block_init_parameter]
     if block_init_parameter in initializers:
         return call_if_callable(initializers[block_init_parameter])
     raise BlockInitParameterNotProvidedError(

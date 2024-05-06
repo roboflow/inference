@@ -48,7 +48,7 @@ def test_call_if_callable_when_simple_value_given() -> None:
 def test_retrieve_init_parameter_values_when_explicit_parameters_define_value() -> None:
     # given
     explicit_init_parameters = {
-        "some.param": lambda: 39,
+        "some.param": 39,
     }
 
     # when
@@ -134,11 +134,11 @@ def test_retrieve_init_parameter_values_when_parameter_cannot_be_resolved() -> N
 def test_retrieve_init_parameters_values() -> None:
     # given
     explicit_init_parameters = {
-        "some.param_1": lambda: 39,
+        "some.param_1": 39,
         "param_2": 42,
     }
     initializers = {
-        "some.param_3": 37,
+        "some.param_3": lambda: 37,
         "param_4": 99,
     }
 
@@ -179,7 +179,7 @@ def test_initialise_step_when_initialisation_is_successful() -> None:
         block_specification=block_specification,
         explicit_init_parameters={
             "a": 9,
-            "b": lambda: 30,
+            "b": 30,
         },
         initializers={},
     )

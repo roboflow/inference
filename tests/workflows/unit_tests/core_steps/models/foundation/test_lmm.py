@@ -33,7 +33,7 @@ def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> Non
         images_field_alias: "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
+        "json_output": {"some_field": "some_description"},
         "remote_api_key": "$inputs.open_ai_key",
     }
 
@@ -49,7 +49,7 @@ def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> Non
         lmm_type="$inputs.lmm_type",
         lmm_config=LMMConfig(),
         remote_api_key="$inputs.open_ai_key",
-        json_output="$inputs.expected_output",
+        json_output={"some_field": "some_description"},
     )
 
 
@@ -81,7 +81,6 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
         "images": "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": "This is my prompt",
-        "json_output": "$inputs.expected_output",
         "remote_api_key": "$inputs.open_ai_key",
     }
 
@@ -97,7 +96,6 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
         lmm_type="$inputs.lmm_type",
         lmm_config=LMMConfig(),
         remote_api_key="$inputs.open_ai_key",
-        json_output="$inputs.expected_output",
     )
 
 
@@ -112,7 +110,6 @@ def test_lmm_step_validation_when_prompt_is_invalid(
         "images": "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
         "prompt": value,
-        "json_output": "$inputs.expected_output",
         "remote_api_key": "$inputs.open_ai_key",
     }
 
@@ -132,7 +129,6 @@ def test_lmm_step_validation_when_lmm_type_valid(
         "images": "$inputs.image",
         "lmm_type": value,
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
         "remote_api_key": "$inputs.open_ai_key",
     }
 
@@ -147,7 +143,6 @@ def test_lmm_step_validation_when_lmm_type_valid(
         lmm_type=value,
         lmm_config=LMMConfig(),
         remote_api_key="$inputs.open_ai_key",
-        json_output="$inputs.expected_output",
     )
 
 
@@ -162,7 +157,6 @@ def test_lmm_step_validation_when_lmm_type_invalid(
         "images": "$inputs.image",
         "lmm_type": value,
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
         "remote_api_key": "$inputs.open_ai_key",
     }
 
@@ -182,7 +176,6 @@ def test_lmm_step_validation_when_remote_api_key_valid(
         "images": "$inputs.image",
         "lmm_type": "gpt_4v",
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
         "remote_api_key": value,
     }
 
@@ -197,39 +190,6 @@ def test_lmm_step_validation_when_remote_api_key_valid(
         lmm_type="gpt_4v",
         lmm_config=LMMConfig(),
         remote_api_key=value,
-        json_output="$inputs.expected_output",
-    )
-
-
-@pytest.mark.parametrize(
-    "value", [None, "$inputs.some", {"my_field": "my_description"}]
-)
-def test_lmm_step_validation_when_json_output_valid(
-    value: Any,
-) -> None:
-    # given
-    specification = {
-        "type": "LMM",
-        "name": "step_1",
-        "images": "$inputs.image",
-        "lmm_type": "gpt_4v",
-        "prompt": "$inputs.prompt",
-        "json_output": value,
-        "remote_api_key": "some",
-    }
-
-    # when
-    result = BlockManifest.model_validate(specification)
-
-    assert result == BlockManifest(
-        type="LMM",
-        name="step_1",
-        images="$inputs.image",
-        prompt="$inputs.prompt",
-        lmm_type="gpt_4v",
-        lmm_config=LMMConfig(),
-        remote_api_key="some",
-        json_output=value,
     )
 
 

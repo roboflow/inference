@@ -108,9 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],
     )
-    json_output: Optional[
-        Union[WorkflowParameterSelector(kind=[DICTIONARY_KIND]), Dict[str, str]]
-    ] = Field(
+    json_output: Optional[Dict[str, str]] = Field(
         default=None,
         description="Holds dictionary that maps name of requested output field into its description",
         examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
