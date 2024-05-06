@@ -2,17 +2,13 @@
 
 At start, we need to see what is required to be implemented (via `block` base class interface). That would
 be the following methods:
+
 ```python
 class WorkflowBlock(ABC):
 
     @classmethod
     @abstractmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
-        pass
-
-    @classmethod
-    @abstractmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         pass
 
     @abstractmethod
@@ -77,6 +73,33 @@ class BlockManifest(WorkflowBlockManifest):
     )
 ```
 
+As an output we are going to provide cropped images, so we need to declare that:
+
+```python
+from typing import List
+
+from inference.enterprise.workflows.prototypes.block import (
+    WorkflowBlockManifest,
+)
+from inference.enterprise.workflows.entities.base import OutputDefinition
+from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGES_KIND,
+    BATCH_OF_PARENT_ID_KIND,
+)
+
+
+class BlockManifest(WorkflowBlockManifest):
+    # [...] input properties hidden
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+        ]
+```
+In the current version, it is required to define `parent_id` for each element that we output from steps.
+
 Then we define implementation starting from class method that will provide manifest:
 
 ```python
@@ -91,36 +114,9 @@ from inference.enterprise.workflows.prototypes.block import (
 class CropBlock(WorkflowBlock):
 
     @classmethod
-    def get_input_manifest(cls) -> Type[WorkflowBlockManifest]:
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 ```
-
-As an output we are going to provide cropped images, so we need to declare tha:
-
-```python
-from typing import List
-
-from inference.enterprise.workflows.prototypes.block import (
-    WorkflowBlock
-)
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    PARENT_ID_KIND,
-)
-
-
-class CropBlock(WorkflowBlock):
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-        ]
-```
-
-In the current version, it is required to define `parent_id` for each element that we output from steps.
 
 Finally, we need to provide implementation for the logic:
 ```python

@@ -13,13 +13,13 @@ from inference.enterprise.workflows.constants import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    IMAGE_METADATA_KIND,
+    BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     INTEGER_KIND,
-    PARENT_ID_KIND,
-    PREDICTION_TYPE_KIND,
     FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -76,14 +76,14 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
     image_metadata: Annotated[
-        StepOutputSelector(kind=[IMAGE_METADATA_KIND]),
+        StepOutputSelector(kind=[BATCH_OF_IMAGE_METADATA_KIND]),
         Field(
             description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.image"],
         ),
     ]
     prediction_type: Annotated[
-        StepOutputSelector(kind=[PREDICTION_TYPE_KIND]),
+        StepOutputSelector(kind=[BATCH_OF_PREDICTION_TYPE_KIND]),
         Field(
             description="Type of `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.prediction_type"],
@@ -101,9 +101,11 @@ class BlockManifest(WorkflowBlockManifest):
                     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
             ),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 

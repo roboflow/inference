@@ -22,10 +22,10 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
+    BATCH_OF_IMAGE_METADATA_KIND,
+    BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_STRING_KIND,
     DICTIONARY_KIND,
-    IMAGE_METADATA_KIND,
-    PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     FlowControl,
@@ -119,8 +119,8 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[BATCH_OF_DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="*", kind=[WILDCARD_KIND]),
@@ -128,8 +128,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
         result = [
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
         ]

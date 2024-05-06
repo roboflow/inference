@@ -19,8 +19,8 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
+    BATCH_OF_PARENT_ID_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
-    PARENT_ID_KIND,
     FloatZeroToOne,
     FlowControl,
     StepOutputImageSelector,
@@ -87,7 +87,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
 
 

@@ -175,8 +175,10 @@ those must be declared in `block` definition and will be resolved and provided b
 `Blocks` can be defined withing `workflows` core library, but may also be shipped as custom plugin in form
 of python library. This library must define `blocks` and provide two additional elements to fulfill
 the contract:
+
 * `load_blocks()` function accessible in `__init__.py` of library that provides `List[BlockSpecification]`
 with details of blocks.
+
 * optional dict of `REGISTERED_INITIALIZERS` - with mapping from init parameter name to specific value or
 parameter-free method to assembly the value.
 

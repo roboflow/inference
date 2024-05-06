@@ -7,7 +7,7 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    PREDICTION_TYPE_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     FlowControl,
     StepOutputImageSelector,
@@ -42,7 +42,7 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]),
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),

@@ -8,10 +8,10 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.utils.image_utils import load_image
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
-    BAR_CODE_DETECTION_KIND,
-    IMAGE_METADATA_KIND,
-    PARENT_ID_KIND,
-    PREDICTION_TYPE_KIND,
+    BATCH_OF_BAR_CODE_DETECTION_KIND,
+    BATCH_OF_IMAGE_METADATA_KIND,
+    BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -49,10 +49,14 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="predictions", kind=[BAR_CODE_DETECTION_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[BATCH_OF_BAR_CODE_DETECTION_KIND]
+            ),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 

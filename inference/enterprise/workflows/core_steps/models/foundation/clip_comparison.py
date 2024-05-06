@@ -18,9 +18,9 @@ from inference.enterprise.workflows.core_steps.common.utils import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     LIST_OF_VALUES_KIND,
-    PARENT_ID_KIND,
-    PREDICTION_TYPE_KIND,
     FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -73,8 +73,10 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="predictions_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(
+                name="predictions_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 

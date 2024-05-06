@@ -17,13 +17,13 @@ from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
 )
 from inference.enterprise.workflows.entities.base import OutputDefinition
 from inference.enterprise.workflows.entities.types import (
+    BATCH_OF_IMAGE_METADATA_KIND,
+    BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
-    IMAGE_METADATA_KIND,
+    BATCH_OF_TOP_CLASS_KIND,
     LIST_OF_VALUES_KIND,
-    PARENT_ID_KIND,
-    PREDICTION_TYPE_KIND,
     STRING_KIND,
-    TOP_CLASS_KIND,
     FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -90,10 +90,12 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
-            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(name="top", kind=[BATCH_OF_TOP_CLASS_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
+            OutputDefinition(
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 

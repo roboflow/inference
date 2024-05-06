@@ -27,7 +27,7 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    PARENT_ID_KIND,
+    BATCH_OF_PARENT_ID_KIND,
     FlowControl,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
-            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
 
 

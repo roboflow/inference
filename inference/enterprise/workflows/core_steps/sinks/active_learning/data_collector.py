@@ -17,11 +17,11 @@ from inference.enterprise.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
+    BATCH_OF_TOP_CLASS_KIND,
     BOOLEAN_KIND,
-    PREDICTION_TYPE_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    TOP_CLASS_KIND,
     FlowControl,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -76,14 +76,14 @@ class BlockManifest(WorkflowBlockManifest):
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
             BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            TOP_CLASS_KIND,
+            BATCH_OF_TOP_CLASS_KIND,
         ]
     ) = Field(
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
     prediction_type: Annotated[
-        StepOutputSelector(kind=[PREDICTION_TYPE_KIND]),
+        StepOutputSelector(kind=[BATCH_OF_PREDICTION_TYPE_KIND]),
         Field(
             description="Type of `predictions`. Must be output from the step referred in `predictions` field",
             examples=["$steps.detection.prediction_type"],
