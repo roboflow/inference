@@ -3,7 +3,8 @@ name: Docs Workflow
 on:
   release:
     types: [created]
-
+  workflow_dispatch:
+    
 jobs:
   deploy:
     runs-on: ubuntu-latest
