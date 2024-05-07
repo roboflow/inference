@@ -37,7 +37,7 @@ from inference import get_model
 
 image = "https://media.roboflow.com/inference/people-walking.jpg"
 
-model = get_model(model_id="coco-pose-detection/5")
+model = get_model(model_id="yolov8x-pose-640")
 results = model.infer(image)[0]
 ```
 
@@ -67,14 +67,14 @@ export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 
 ### Available Pretrained Models
 
-You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=keypoint+detection+model&t=metadata). Alternatively, here's a few `model_ids` that we found useful for pose estimation:
+You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=keypoint+detection+model&t=metadata). Alternatively, here's a few `model_ids` that we support out-of-the-box:
 
-- `coco-pose-detection/6` - yolov8x-pose-1280 (largest model)
-- `coco-pose-detection/5` - yolov8x-pose-640
-- `coco-pose-detection/4` - yolov8l-pose-640
-- `coco-pose-detection/3` - yolov8m-pose-640
-- `coco-pose-detection/2` - yolov8s-pose-640
-- `coco-pose-detection/1` - yolov8n-pose-640 (smallest model)
+- `yolov8x-pose-1280` (largest)
+- `yolov8x-pose-640`
+- `yolov8l-pose-640`
+- `yolov8m-pose-640`
+- `yolov8s-pose-640`
+- `yolov8n-pose-640` (smallest)
 
 !!! Run Keypoint Detection
 
@@ -91,7 +91,7 @@ You may use keypoint detection models available on the [Universe](https://univer
         # This can be a URL, a np.ndarray or a PIL image.
         image = "https://media.roboflow.com/inference/people-walking.jpg"
 
-        model = get_model(model_id="coco-pose-detection/5")
+        model = get_model(model_id="yolov8x-pose-640")
         results = model.infer(image)[0]
         ```
 
@@ -109,7 +109,7 @@ You may use keypoint detection models available on the [Universe](https://univer
             print(predictions)
 
         pipeline = InferencePipeline.init(
-            model_id="coco-pose-detection/5", # Roboflow model to use
+            model_id="yolov8x-pose-640", # Roboflow model to use
             video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
             on_prediction=my_custom_sink, # Function to run after each prediction
         )
@@ -133,7 +133,7 @@ You may use keypoint detection models available on the [Universe](https://univer
             api_url="https://detect.roboflow.com",
             api_key=os.environ["ROBOFLOW_API_KEY"]
         )
-        results = client.infer(image, model_id="coco-pose-detection/5")
+        results = client.infer(image, model_id="yolov8x-pose-640")
         ```
 
     === "Docker server"
@@ -161,7 +161,7 @@ You may use keypoint detection models available on the [Universe](https://univer
             api_url="http://localhost:9001",
             api_key=os.environ["ROBOFLOW_API_KEY"]
         )
-        results = client.infer(image, model_id="coco-pose-detection/5")
+        results = client.infer(image, model_id="yolov8x-pose-640")
         ```
 
 ### Visualize
@@ -189,7 +189,7 @@ import supervision as sv
 # This can be a URL, a np.ndarray or PIL image.
 image = "https://media.roboflow.com/inference/people-walking.jpg"
 
-model = get_model(model_id="coco-pose-detection/5")
+model = get_model(model_id="yolov8x-pose-640")
 results = model.infer(image)[0]
 
 # Any results object would work, regardless of which inference API is used
