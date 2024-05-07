@@ -2,10 +2,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.workflows.entities.workflows_specification import (
-    WorkflowSpecificationV1,
-)
-
 
 class WorkflowInferenceRequest(BaseModel):
     api_key: str = Field(
@@ -21,4 +17,4 @@ class WorkflowInferenceRequest(BaseModel):
 
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
-    specification: WorkflowSpecificationV1
+    specification: dict

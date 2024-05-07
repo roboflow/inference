@@ -1,65 +1,113 @@
-class WorkflowsCompilerError(Exception):
-    # Message of error must be prepared to be revealed in any API response.
-
-    def get_public_message(self) -> str:
-        return str(self)
+from typing import Optional
 
 
-class ValidationError(WorkflowsCompilerError):
+class WorkflowError(Exception):
+
+    def __init__(
+        self,
+        public_message: str,
+        context: str,
+        inner_error: Optional[Exception] = None,
+    ):
+        super().__init__(public_message)
+        self._public_message = public_message
+        self._context = context
+        self._inner_error = inner_error
+
+    @property
+    def public_message(self) -> str:
+        return self._public_message
+
+    @property
+    def context(self) -> str:
+        return self._context
+
+    @property
+    def inner_error_type(self) -> Optional[str]:
+        if self._inner_error is None:
+            return None
+        return self._inner_error.__class__.__name__
+
+    @property
+    def inner_error(self) -> Optional[Exception]:
+        return self._inner_error
+
+
+class WorkflowCompilerError(WorkflowError):
     pass
 
 
-class InvalidSpecificationVersionError(ValidationError):
+class PluginLoadingError(WorkflowCompilerError):
     pass
 
 
-class DuplicatedSymbolError(ValidationError):
+class PluginInterfaceError(WorkflowCompilerError):
     pass
 
 
-class InvalidReferenceError(ValidationError):
+class BlockInterfaceError(WorkflowCompilerError):
     pass
 
 
-class ExecutionGraphError(WorkflowsCompilerError):
+class WorkflowDefinitionError(WorkflowCompilerError):
     pass
 
 
-class SelectorToUndefinedNodeError(ExecutionGraphError):
+class WorkflowSyntaxError(WorkflowDefinitionError):
     pass
 
 
-class NotAcyclicGraphError(ExecutionGraphError):
+class DuplicatedNameError(WorkflowDefinitionError):
     pass
 
 
-class NodesNotReachingOutputError(ExecutionGraphError):
+class ExecutionGraphStructureError(WorkflowCompilerError):
     pass
 
 
-class AmbiguousPathDetected(ExecutionGraphError):
+class ReferenceTypeError(WorkflowCompilerError):
     pass
 
 
-class InvalidStepInputDetected(ExecutionGraphError):
+class InvalidReferenceTargetError(WorkflowCompilerError):
     pass
 
 
-class WorkflowsCompilerRuntimeError(WorkflowsCompilerError):
+class DanglingExecutionBranchError(ExecutionGraphStructureError):
     pass
 
 
-class RuntimePayloadError(WorkflowsCompilerRuntimeError):
+class ConditionalBranchesCollapseError(ExecutionGraphStructureError):
     pass
 
 
-class RuntimeParameterMissingError(RuntimePayloadError):
+class UnknownManifestType(WorkflowCompilerError):
     pass
 
 
-class VariableTypeError(RuntimePayloadError):
+class BlockInitParameterNotProvidedError(WorkflowCompilerError):
     pass
 
 
-class ExecutionEngineError(WorkflowsCompilerRuntimeError):
+class WorkflowExecutionEngineError(WorkflowError):
+    pass
+
+
+class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
+    pass
+
+
+class StepExecutionError(WorkflowExecutionEngineError):
+    pass
+
+
+class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):
+    pass
+
+
+class ExecutionEngineNotImplementedError(WorkflowExecutionEngineError):
+    pass
+
+
+class RuntimeInputError(WorkflowExecutionEngineError):
     pass

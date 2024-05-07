@@ -83,7 +83,11 @@ def wrap_errors(function: callable) -> callable:
             return function(*args, **kwargs)
         except HTTPError as error:
             if "application/json" in error.response.headers.get("Content-Type", ""):
-                api_message = error.response.json().get("message")
+                error_data = error.response.json()
+                api_message = error_data.get("message", "N/A")
+                if "inner_error_message" in error_data:
+                    more_details = error_data["inner_error_message"]
+                    api_message = f"{api_message}. More details: {more_details}"
             else:
                 api_message = error.response.text
             raise HTTPCallErrorError(
