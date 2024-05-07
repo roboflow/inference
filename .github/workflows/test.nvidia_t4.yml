@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    runs-on: [self-hosted, Roboflow-GPU-VM-Runner, gcp]
+    runs-on: Roboflow-GPU-VM-Runner
 
     steps:
       - name: Set up QEMU
