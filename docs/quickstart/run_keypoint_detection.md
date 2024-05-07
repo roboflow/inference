@@ -182,11 +182,14 @@ pip install supervision==0.21.0rc3
 Example usage:
 
 ```python
+import os
+import cv2
 from inference import get_model
 import supervision as sv
 
 
-# This can be a URL, a np.ndarray or PIL image.
+# Model accepts URLs, np.arrays (cv2.imread), and PIL images.
+# Annotators accept np.arrays (cv2.imread), and PIL images
 image = "https://media.roboflow.com/inference/people-walking.jpg"
 
 model = get_model(model_id="yolov8x-pose-640")
@@ -194,6 +197,12 @@ results = model.infer(image)[0]
 
 # Any results object would work, regardless of which inference API is used
 keypoints = sv.KeyPoints.from_inference(results)
+
+# Convert to numpy image
+img_name = "people-walking.jpg"
+if not os.path.exists(img_name):
+    os.system(f"wget -O {img_name} {image}")
+image_np = cv2.imread(img_name)
 
 annotated_image = sv.EdgeAnnotator(
     color=sv.Color.GREEN,
