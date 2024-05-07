@@ -198,5 +198,5 @@ keypoints = sv.KeyPoints.from_inference(results)
 annotated_image = sv.EdgeAnnotator(
     color=sv.Color.GREEN,
     thickness=5
-).annotate(keypoints)
+).annotate(image, keypoints)
 ```
