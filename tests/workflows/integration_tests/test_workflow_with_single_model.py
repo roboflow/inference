@@ -4,9 +4,9 @@ import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.entities.base import StepExecutionMode
-from inference.enterprise.workflows.errors import RuntimeInputError, StepExecutionError
-from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.entities.base import StepExecutionMode
+from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
+from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 OBJECT_DETECTION_WORKFLOW = {
     "version": "1.0",

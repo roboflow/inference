@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.transformations.detection_offset import (
+from inference.core.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
     offset_detection,
 )

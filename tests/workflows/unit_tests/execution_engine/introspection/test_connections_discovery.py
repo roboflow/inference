@@ -2,23 +2,23 @@ from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import Field
 
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import (
     FlowControl,
     Kind,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
-from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
+from inference.core.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
 )
-from inference.enterprise.workflows.execution_engine.introspection.entities import (
+from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlockPropertyPrimitiveDefinition,
     BlockPropertySelectorDefinition,
     BlocksDescription,
 )
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )

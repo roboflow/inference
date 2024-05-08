@@ -2,8 +2,8 @@ from typing import List, Literal, Union
 
 from pydantic import Field
 
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
     STRING_KIND,
@@ -11,15 +11,15 @@ from inference.enterprise.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.enterprise.workflows.execution_engine.introspection.entities import (
+from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
     ReferenceDefinition,
     SelectorDefinition,
 )
-from inference.enterprise.workflows.execution_engine.introspection.selectors_parser import (
+from inference.core.workflows.execution_engine.introspection.selectors_parser import (
     get_step_selectors,
 )
-from inference.enterprise.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def test_get_step_selectors_when_no_selectors_defined() -> None:

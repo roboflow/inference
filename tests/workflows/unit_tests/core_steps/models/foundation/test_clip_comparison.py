@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.models.foundation.clip_comparison import (
+from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     BlockManifest,
 )
 

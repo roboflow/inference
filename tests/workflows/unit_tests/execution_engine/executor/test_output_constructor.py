@@ -1,12 +1,12 @@
-from inference.enterprise.workflows.entities.base import (
+from inference.core.workflows.entities.base import (
     CoordinatesSystem,
     JsonField,
     OutputDefinition,
 )
-from inference.enterprise.workflows.execution_engine.executor.execution_cache import (
+from inference.core.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,
 )
-from inference.enterprise.workflows.execution_engine.executor.output_constructor import (
+from inference.core.workflows.execution_engine.executor.output_constructor import (
     construct_workflow_output,
 )
 

@@ -11,8 +11,8 @@ from openai.types.chat.chat_completion import Choice
 from pydantic import ValidationError
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.enterprise.workflows.core_steps.models.foundation import lmm
-from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
+from inference.core.workflows.core_steps.models.foundation import lmm
+from inference.core.workflows.core_steps.models.foundation.lmm import (
     BlockManifest,
     LMMConfig,
     execute_gpt_4v_request,
@@ -21,7 +21,6 @@ from inference.enterprise.workflows.core_steps.models.foundation.lmm import (
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
-from inference.enterprise.workflows.entities.base import StepExecutionMode
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])

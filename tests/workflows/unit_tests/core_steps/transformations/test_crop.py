@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.transformations.crop import (
+from inference.core.workflows.core_steps.transformations.crop import (
     BlockManifest,
     crop_image,
 )

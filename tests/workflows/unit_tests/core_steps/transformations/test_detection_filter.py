@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.common.operators import Operator
-from inference.enterprise.workflows.core_steps.transformations.detection_filter import (
+from inference.core.workflows.core_steps.common.operators import Operator
+from inference.core.workflows.core_steps.transformations.detection_filter import (
     BlockManifest,
     CompoundDetectionFilterDefinition,
     DetectionFilterBlock,
