@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest_schema,
 )
-from inference.core.workflows.prototypes import WorkflowBlock
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(
