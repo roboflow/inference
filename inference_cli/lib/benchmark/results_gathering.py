@@ -124,5 +124,7 @@ class ResultsCollector:
             requests_per_second=requests_per_second,
             images_per_second=images_per_second,
             error_rate=error_rate,
-            error_status_codes=", ".join(f"{exc}: {count}" for exc, count in error_status_codes.items()),
+            error_status_codes=", ".join(
+                f"{exc}: {count}" for exc, count in error_status_codes.items()
+            ),
         )

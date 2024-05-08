@@ -24,6 +24,12 @@ REGISTERED_ALIASES = {
     "yolov8l-seg-1280": "coco-dataset-vdnr1/10",
     "yolov8x-seg-640": "coco-dataset-vdnr1/3",
     "yolov8x-seg-1280": "coco-dataset-vdnr1/11",
+    "yolov8n-pose-640": "coco-pose-detection/1",
+    "yolov8s-pose-640": "coco-pose-detection/2",
+    "yolov8m-pose-640": "coco-pose-detection/3",
+    "yolov8l-pose-640": "coco-pose-detection/4",
+    "yolov8x-pose-640": "coco-pose-detection/5",
+    "yolov8x-pose-1280": "coco-pose-detection/6",
 }
 
 

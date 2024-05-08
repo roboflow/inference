@@ -1,5 +1,4 @@
 import base64
-import json
 import os
 import requests
 import time
@@ -7,10 +6,7 @@ import time
 import pytest
 
 from io import BytesIO
-from pathlib import Path
 from PIL import Image
-from requests_toolbelt.multipart.encoder import MultipartEncoder
-from copy import deepcopy
 
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
