@@ -4,7 +4,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
-    HOSTED_CLASSIFICATION_URL,
+    HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -100,7 +100,7 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(
-                name="predictions_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
         ]
 
@@ -160,7 +160,7 @@ class YoloWorldModelBlock(WorkflowBlock):
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
-            else HOSTED_CLASSIFICATION_URL
+            else HOSTED_CORE_MODEL_URL
         )
         client = InferenceHTTPClient(
             api_url=api_url,

@@ -75,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
-                name="predictions_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
         ]
 
