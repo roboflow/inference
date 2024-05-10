@@ -3,11 +3,10 @@
 This directory contains the Workflow blocks that power models
 you can deploy (and often fine-tune) via Roboflow's cloud platform.
 
-## Generic Weights
+## Generic Models
 
-When available, generic weights (eg for COCO models listed in
-our [/docs/aliases.md](model aliases list)) may be used freely
-without a Roboflow account or API Key.
+The pre-trained models listed in our [/docs/aliases.md](model aliases list)
+may be used freely without a Roboflow account or API Key.
 
 ## Fine-Tuned Models
 
