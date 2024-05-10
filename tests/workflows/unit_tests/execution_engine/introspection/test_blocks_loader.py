@@ -5,13 +5,9 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel
 
-from inference.enterprise.workflows.core_steps import loader
-from inference.enterprise.workflows.errors import (
-    PluginInterfaceError,
-    PluginLoadingError,
-)
-from inference.enterprise.workflows.execution_engine.introspection import blocks_loader
-from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
+from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
     get_manifest_type_identifiers,
     load_blocks_from_plugin,

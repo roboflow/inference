@@ -1,9 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.models.foundation.ocr import (
-    BlockManifest,
-)
+from inference.core.workflows.core_steps.models.foundation.ocr import BlockManifest
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])

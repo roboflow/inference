@@ -1,31 +1,25 @@
-from typing import List
-
 import pytest
 
-from inference.enterprise.workflows.entities.base import (
+from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.enterprise.workflows.entities.types import (
-    INTEGER_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
-)
-from inference.enterprise.workflows.errors import (
+from inference.core.workflows.entities.types import INTEGER_KIND, ROBOFLOW_MODEL_ID_KIND
+from inference.core.workflows.errors import (
     ConditionalBranchesCollapseError,
     DanglingExecutionBranchError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
 )
-from inference.enterprise.workflows.execution_engine.compiler.entities import (
-    BlockSpecification,
+from inference.core.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
 )
-from inference.enterprise.workflows.execution_engine.compiler.graph_constructor import (
+from inference.core.workflows.execution_engine.compiler.graph_constructor import (
     prepare_execution_graph,
 )
-from inference.enterprise.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.compiler.utils import (
     FLOW_CONTROL_NODE_KEY,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (

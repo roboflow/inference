@@ -1,12 +1,9 @@
 import numpy as np
 import pytest
 
-from inference.enterprise.workflows.entities.base import (
-    WorkflowImage,
-    WorkflowParameter,
-)
-from inference.enterprise.workflows.errors import RuntimeInputError
-from inference.enterprise.workflows.execution_engine.executor.runtime_input_assembler import (
+from inference.core.workflows.entities.base import WorkflowImage, WorkflowParameter
+from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.executor.runtime_input_assembler import (
     assembly_runtime_parameters,
 )
 

@@ -3,9 +3,9 @@ from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import Field
 
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import FlowControl, StepSelector
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import FlowControl, StepSelector
+from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )

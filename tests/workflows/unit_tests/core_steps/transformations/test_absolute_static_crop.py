@@ -1,6 +1,6 @@
 import numpy as np
 
-from inference.enterprise.workflows.core_steps.transformations.absolute_static_crop import (
+from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     take_static_crop,
 )
 

@@ -1,6 +1,6 @@
 import numpy as np
 
-from inference.enterprise.workflows.core_steps.common.utils import (
+from inference.core.workflows.core_steps.common.utils import (
     extract_origin_size_from_images_batch,
     filter_out_unwanted_classes_from_predictions_detections,
 )

@@ -3,10 +3,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.sinks.active_learning.data_collector import (
+from inference.core.workflows.core_steps.sinks.active_learning.data_collector import (
     BlockManifest,
 )
-from inference.enterprise.workflows.core_steps.sinks.active_learning.entities import (
+from inference.core.workflows.core_steps.sinks.active_learning.entities import (
     ActiveLearningBatchingStrategy,
     ClassesBasedSampling,
     CloseToThresholdSampling,

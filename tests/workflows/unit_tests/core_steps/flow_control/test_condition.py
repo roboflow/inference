@@ -1,12 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.common.operators import Operator
-from inference.enterprise.workflows.core_steps.flow_control.condition import (
+from inference.core.workflows.core_steps.common.operators import Operator
+from inference.core.workflows.core_steps.flow_control.condition import (
     BlockManifest,
     ConditionBlock,
 )
-from inference.enterprise.workflows.entities.types import FlowControl
+from inference.core.workflows.entities.types import FlowControl
 
 
 def test_manifest_parsing_when_valid_input_provided() -> None:

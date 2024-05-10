@@ -1,9 +1,9 @@
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.workflows.entities.types import Kind
-from inference.enterprise.workflows.execution_engine.introspection.entities import (
+from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
 )
 

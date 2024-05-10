@@ -515,12 +515,10 @@ class InferencePipeline:
                 WorkflowRunner,
             )
             from inference.core.roboflow_api import get_workflow_specification
-            from inference.enterprise.workflows.core_steps.sinks.active_learning.middleware import (
+            from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
                 WorkflowsActiveLearningMiddleware,
             )
-            from inference.enterprise.workflows.execution_engine.core import (
-                ExecutionEngine,
-            )
+            from inference.core.workflows.execution_engine import ExecutionEngine
 
             if workflow_specification is None:
                 if api_key is None:

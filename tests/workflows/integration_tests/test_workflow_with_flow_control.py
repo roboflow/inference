@@ -6,9 +6,9 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.enterprise.workflows.entities.base import StepExecutionMode
-from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
-from inference.enterprise.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.entities.base import StepExecutionMode
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.introspection import blocks_loader
 
 FLOW_CONTROL_WORKFLOW = {
     "version": "1.0",

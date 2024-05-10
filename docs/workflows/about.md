@@ -3,11 +3,7 @@
 !!! note
 
     Workflows is an alpha product undergoing active development. Stay tuned for updates as we continue to 
-    refine and enhance this feature.    
-
-!!! note
-    
-    We require a Roboflow Enterprise License to use this in production. See inference/enterpise/LICENSE.txt for details.
+    refine and enhance this feature.
 
 Inference Workflows allow you to define multi-step processes that run one or more models and returns a result based on the output of the models.
 

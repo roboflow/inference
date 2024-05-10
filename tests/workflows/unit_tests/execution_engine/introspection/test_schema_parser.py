@@ -2,7 +2,7 @@ from typing import Dict, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -14,16 +14,16 @@ from inference.enterprise.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.enterprise.workflows.execution_engine.introspection.entities import (
+from inference.core.workflows.execution_engine.introspection.entities import (
     BlockManifestMetadata,
     PrimitiveTypeDefinition,
     ReferenceDefinition,
     SelectorDefinition,
 )
-from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
+from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest,
 )
-from inference.enterprise.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def test_parse_block_manifest_when_manifest_only_defines_primitive_python_values() -> (
