@@ -174,7 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[FLOAT_ZERO_TO_ONE_KIND, DICTIONARY_KIND],
             ),
             OutputDefinition(
-                name="predictions_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
         ]
 
