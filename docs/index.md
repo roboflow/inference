@@ -5,7 +5,7 @@ hide:
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and keypoint detection, and utilize foundation models like [CLIP](https://inference.roboflow.com/foundation/clip), [Segment Anything](https://inference.roboflow.com/foundation/sam), and [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
+Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and keypoint detection, and utilize foundation models like [CLIP](/foundation/clip), [Segment Anything](/foundation/sam), and [YOLO-World](/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
 Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
@@ -33,10 +33,9 @@ Here is an example of a model running on a video using Inference:
   <source src="https://media.roboflow.com/football-video.mp4" type="video/mp4">
 </video>
 
-
 ## 💻 install
 
-Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](https://inference.roboflow.com/quickstart/docker/) to learn more about running Inference inside Docker.
+Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](/quickstart/docker/) to learn more about running Inference inside Docker.
 
 ```bash
 pip install inference
@@ -45,21 +44,21 @@ pip install inference
 <details>
 <summary>👉 additional considerations</summary>
 
-  ### Hardware
+### Hardware
 
-  Enhance model performance in GPU-accelerated environments by installing CUDA-compatible dependencies.
-  
-  ```bash
-  pip install inference-gpu
-  ```
+Enhance model performance in GPU-accelerated environments by installing CUDA-compatible dependencies.
 
-  ### Model-specific dependencies
+```bash
+pip install inference-gpu
+```
 
-  The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](https://inference.roboflow.com/#extras) supported by Inference.
+### Model-specific dependencies
 
-  ```bash
-  pip install inference[yolo-world]
-  ```
+The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](#extras) supported by Inference.
+
+```bash
+pip install inference[yolo-world]
+```
 
 </details>
 
@@ -99,8 +98,7 @@ results = model.infer(
 <details>
 <summary>👉 foundational models</summary>
 
-
-- [CLIP Embeddings](https://inference.roboflow.com/foundation/clip) - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
+- [CLIP Embeddings](/foundation/clip) - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
 
   ```python
   from inference.models import Clip
@@ -111,7 +109,7 @@ results = model.infer(
   embeddings_image = model.embed_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- [Segment Anything](https://inference.roboflow.com/foundation/sam) - segment all objects visible in the image or only those associated with selected points or boxes.
+- [Segment Anything](/foundation/sam) - segment all objects visible in the image or only those associated with selected points or boxes.
 
   ```python
   from inference.models import SegmentAnything
@@ -121,13 +119,13 @@ results = model.infer(
   result = model.segment_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) - an almost real-time zero-shot detector that enables the detection of any objects without any training.
+- [YOLO-World](/foundation/yolo_world) - an almost real-time zero-shot detector that enables the detection of any objects without any training.
 
   ```python
   from inference.models import YOLOWorld
 
   model = YOLOWorld(model_id="yolo_world/l")
-  
+
   result = model.infer(
       image="https://media.roboflow.com/inference/dog.jpeg",
       text=["person", "backpack", "dog", "eye", "nose", "ear", "tongue"],
@@ -142,33 +140,33 @@ results = model.infer(
 You can also run Inference as a microservice with Docker.
 
 ### deploy server
-  
-  The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](https://inference.roboflow.com/quickstart/docker/#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
 
-  ```bash
-  inference server start
-  ```
+The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](/quickstart/docker/#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
+
+```bash
+inference server start
+```
 
 ### run client
-  
-  Consume inference server predictions using the HTTP client available in the Inference SDK.
 
-  ```python
-  from inference_sdk import InferenceHTTPClient
-  
-  client = InferenceHTTPClient(
-      api_url="http://localhost:9001",
-      api_key=<ROBOFLOW_API_KEY>
-  )
-  with client.use_model(model_id="soccer-players-5fuqs/1"):
-      predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
-  ```
-  
-  If you're using the hosted API, change the local API URL to `https://detect.roboflow.com`. Accessing the hosted inference server and/or using any of the fine-tuned models require a `ROBOFLOW_API_KEY`. For further information, visit the 🔑 keys section.
+Consume inference server predictions using the HTTP client available in the Inference SDK.
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key=<ROBOFLOW_API_KEY>
+)
+with client.use_model(model_id="soccer-players-5fuqs/1"):
+    predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
+```
+
+If you're using the hosted API, change the local API URL to `https://detect.roboflow.com`. Accessing the hosted inference server and/or using any of the fine-tuned models require a `ROBOFLOW_API_KEY`. For further information, visit the 🔑 keys section.
 
 ## 🎥 inference pipeline
 
-The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
+The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
 
 ```python
 from inference import InferencePipeline
@@ -194,7 +192,7 @@ export ROBOFLOW_API_KEY=<YOUR_API_KEY>
 
 ## 📚 documentation
 
-Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
+Visit our [documentation](/) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
 
 ## © license
 

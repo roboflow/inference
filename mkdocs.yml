@@ -29,72 +29,77 @@ extra_css:
 
 nav:
   - Roboflow Inference:
-    - What is Inference?: index.md
-    - Enterprise Features: enterprise/enterprise.md
-    - Supported Fine-Tuned Models:
-      - From Roboflow: quickstart/explore_models.md
-      - From Local Weights: models/from_local_weights.md
-      - YOLOv9: fine-tuned/yolov9.md
-      - YOLOv8: fine-tuned/yolov8.md
-      - YOLOv7: fine-tuned/yolov7.md
-      - YOLOv5: fine-tuned/yolov5.md
-      - YOLO-NAS: fine-tuned/yolonas.md
-    - Run a Model:
-      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-      - Predict Over UDP: quickstart/run_model_over_udp.md
-      - Run Keypoint Detection: quickstart/run_keypoint_detection.md
-    - Deploy a Model:
-      - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
-      - How Do I Run Inference?: quickstart/inference_101.md
-      - What Devices Can I Use?: quickstart/devices.md
-      - Retrieve Your API Key: quickstart/configure_api_key.md
-      - Model Licenses: quickstart/licensing.md
-    - Foundation Model:
-      - What is a Foundation Model?: foundation/about.md
-      - CLIP (Classification, Embeddings): foundation/clip.md
-      - CogVLM (Multimodal Language Model): foundation/cogvlm.md
-      - DocTR (OCR): foundation/doctr.md
-      - Grounding DINO (Object Detection): foundation/grounding_dino.md
-      - L2CS-Net (Gaze Detection): foundation/gaze.md
-      - Segment Anything (Segmentation): foundation/sam.md
-      - YOLO-World (Object Detection): foundation/yolo_world.md
+      - What is Inference?: index.md
+      - Enterprise Features: enterprise/enterprise.md
+      - Inference Basics:
+          - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
+          - "Models: Popular": quickstart/aliases.md
+          - "Models: Fine-tuned": quickstart/explore_models.md
+          - "Models: Universe": quickstart/load_from_universe.md
+          - "Models: Local Weights": models/from_local_weights.md
+      - Supported Fine-Tuned Models:
+          - YOLOv9: fine-tuned/yolov9.md
+          - YOLOv8: fine-tuned/yolov8.md
+          - YOLOv7: fine-tuned/yolov7.md
+          - YOLOv5: fine-tuned/yolov5.md
+          - YOLO-NAS: fine-tuned/yolonas.md
+      - Run a Model:
+          - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
+          - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+          - Predict Over UDP: quickstart/run_model_over_udp.md
+          - Keypoint Detection: quickstart/run_keypoint_detection.md
+
+      - Deploy a Model:
+          - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
+          - How Do I Run Inference?: quickstart/inference_101.md
+          - What Devices Can I Use?: quickstart/devices.md
+          - Retrieve Your API Key: quickstart/configure_api_key.md
+          - Model Licenses: quickstart/licensing.md
+      - Foundation Model:
+          - What is a Foundation Model?: foundation/about.md
+          - CLIP (Classification, Embeddings): foundation/clip.md
+          - CogVLM (Multimodal Language Model): foundation/cogvlm.md
+          - DocTR (OCR): foundation/doctr.md
+          - Grounding DINO (Object Detection): foundation/grounding_dino.md
+          - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - Segment Anything (Segmentation): foundation/sam.md
+          - YOLO-World (Object Detection): foundation/yolo_world.md
   - Workflows:
-    - What is a Workflow?: workflows/about.md
-    - Understanding Workflows: workflows/understanding.md
-    - Workflows definitions: workflows/definitions.md
-    - How to Create and Run a Workflow: workflows/create_and_run.md
-    - Blocks: workflows/blocks.md
-    - Kinds: workflows/kinds.md
-    - Advanced Topics:
-      - Create a New Workflow Block: workflows/workflows_contribution.md
-      - Modes of Running Workflows: workflows/modes_of_running.md
+      - What is a Workflow?: workflows/about.md
+      - Understanding Workflows: workflows/understanding.md
+      - Workflows definitions: workflows/definitions.md
+      - How to Create and Run a Workflow: workflows/create_and_run.md
+      - Blocks: workflows/blocks.md
+      - Kinds: workflows/kinds.md
+      - Advanced Topics:
+          - Create a New Workflow Block: workflows/workflows_contribution.md
+          - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
-    - Inference Pipeline: using_inference/inference_pipeline.md
-    - Active Learning:
-      - Use Active Learning: enterprise/active-learning/active_learning.md
-      - Sampling Strategies:
-        - Random Sampling: enterprise/active-learning/random_sampling.md
-        - Detection Number: enterprise/active-learning/detection_number.md
-        - Close to Threshold Sampling: enterprise/active-learning/close_to_threshold_sampling.md
-        - Classes Based: enterprise/active-learning/classes_based.md
-    - Enterprise Features:
-      - Parallel HTTP API: enterprise/parallel_processing.md
-      - Stream Management API: enterprise/stream_management_api.md
-    - Inference Helpers:
-      - Inference Landing Page: inference_helpers/inference_landing_page.md
-      - Inference CLI: inference_helpers/inference_cli.md
-      - Inference SDK: inference_helpers/inference_sdk.md
-    - Reference:
-      - Inference API Reference: docs/reference/
-      - Running With Docker: quickstart/docker.md
-      - Docker Configuration Options: quickstart/docker_configuration_options.md
-      - Contribute to Inference: contributing.md
-      - Changelog: https://github.com/roboflow/inference/releases
+      - Inference Pipeline: using_inference/inference_pipeline.md
+      - Active Learning:
+          - Use Active Learning: enterprise/active-learning/active_learning.md
+          - Sampling Strategies:
+              - Random Sampling: enterprise/active-learning/random_sampling.md
+              - Detection Number: enterprise/active-learning/detection_number.md
+              - Close to Threshold Sampling: enterprise/active-learning/close_to_threshold_sampling.md
+              - Classes Based: enterprise/active-learning/classes_based.md
+      - Enterprise Features:
+          - Parallel HTTP API: enterprise/parallel_processing.md
+          - Stream Management API: enterprise/stream_management_api.md
+      - Inference Helpers:
+          - Inference Landing Page: inference_helpers/inference_landing_page.md
+          - Inference CLI: inference_helpers/inference_cli.md
+          - Inference SDK: inference_helpers/inference_sdk.md
+      - Reference:
+          - Inference API Reference: docs/reference/
+          - Running With Docker: quickstart/docker.md
+          - Docker Configuration Options: quickstart/docker_configuration_options.md
+          - Contribute to Inference: contributing.md
+          - Changelog: https://github.com/roboflow/inference/releases
   - Cookbooks: cookbooks.md
 
 theme:
-  name: 'material'
+  name: "material"
   logo: inference-icon.png
   favicon: inference-icon.png
   custom_dir: docs/theme
@@ -111,19 +116,19 @@ theme:
     - navigation.indexes
     - navigation.sections
     - content.code.copy
-  
-  palette:
-  - scheme: default
-    primary: 'custom'
-    toggle:
-      icon: material/brightness-7
-      name: Switch to dark mode
 
-  - scheme: slate
-    primary: 'custom'
-    toggle:
-      icon: material/brightness-4
-      name: Switch to light mode
+  palette:
+    - scheme: default
+      primary: "custom"
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    - scheme: slate
+      primary: "custom"
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
 
 plugins:
   - mkdocstrings:
@@ -138,7 +143,7 @@ plugins:
       cards_layout: custom
   - gen-files:
       scripts:
-      - docs/scripts/gen_ref_pages.py
+        - docs/scripts/gen_ref_pages.py
   - literate-nav:
       nav_file: nav.md
   - macros:
