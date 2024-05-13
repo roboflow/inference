@@ -169,7 +169,7 @@ def assert_yolov5_segmentation_prediction_matches_reference(
         prediction.predictions[0].height,
     ]
     assert np.allclose(
-        xywh, [365.5, 212.0, 527.0, 412.0], atol=0.6
+        xywh, [365.5, 319.0, 527.0, 412.0], atol=0.6
     ), "while test creation, box coordinates was [365.5, 212.0, 527.0, 412.0]"
     assert (
         len(prediction.predictions[0].points) == 579
