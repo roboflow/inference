@@ -135,10 +135,12 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         tradeoff_factor = kwargs["tradeoff_factor"]
         img_in_shape = preprocess_return_metadata["im_shape"]
 
+        predictions = [np.array(p) for p in predictions]
+
         for pred, proto, img_dim in zip(
             predictions, protos, preprocess_return_metadata["img_dims"]
         ):
-            if not pred:
+            if pred.size == 0:
                 masks.append([])
                 continue
             if not isinstance(pred, np.ndarray):
@@ -242,14 +244,19 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             - For each image, constructs an `InstanceSegmentationInferenceResponse` object.
             - Each response contains a list of `InstanceSegmentationPrediction` objects.
         """
-        responses = [
-            InstanceSegmentationInferenceResponse(
-                predictions=[
+        responses = []
+        for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
+            predictions = []
+            for pred, mask in zip(batch_predictions, batch_masks):
+                if class_filter and self.class_names[int(pred[6])] in class_filter:
+                    # TODO: logger.debug
+                    continue
+                # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
+                predictions.append(
                     InstanceSegmentationPrediction(
-                        # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
                         **{
-                            "x": (pred[0] + pred[2]) / 2,
-                            "y": (pred[1] + pred[3]) / 2,
+                            "x": pred[0] + (pred[2] - pred[0]) / 2,
+                            "y": pred[1] + (pred[3] - pred[1]) / 2,
                             "width": pred[2] - pred[0],
                             "height": pred[3] - pred[1],
                             "points": [Point(x=point[0], y=point[1]) for point in mask],
@@ -258,18 +265,14 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                             "class_id": int(pred[6]),
                         }
                     )
-                    for pred, mask in zip(batch_predictions, batch_masks)
-                    if not class_filter
-                    or self.class_names[int(pred[6])] in class_filter
-                ],
+                )
+            response = InstanceSegmentationInferenceResponse(
+                predictions=predictions,
                 image=InferenceResponseImage(
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
             )
-            for ind, (batch_predictions, batch_masks) in enumerate(
-                zip(predictions, masks)
-            )
-        ]
+            responses.append(response)
         return responses
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:

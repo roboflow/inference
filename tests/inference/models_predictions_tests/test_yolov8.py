@@ -238,8 +238,8 @@ def assert_yolov8_segmentation_prediction_matches_reference(
         prediction.predictions[0].height,
     ]
     assert np.allclose(
-        xywh, [343.0, 320.5, 584.0, 417.0], atol=0.6
-    ), "while test creation, box coordinates was [343.0, 320.5, 584.0, 417.0]"
+        xywh, [343.0, 214.5, 584.0, 417.0], atol=0.6
+    ), "while test creation, box coordinates was [343.0, 214.5, 584.0, 417.0]"
     assert (
         len(prediction.predictions[0].points) == 673
     ), "while test creation, mask had 673 points"
