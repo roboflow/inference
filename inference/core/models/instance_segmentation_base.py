@@ -135,7 +135,9 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         tradeoff_factor = kwargs["tradeoff_factor"]
         img_in_shape = preprocess_return_metadata["im_shape"]
 
-        for pred, proto, img_dim in zip(predictions, protos, preprocess_return_metadata["img_dims"]):
+        for pred, proto, img_dim in zip(
+            predictions, protos, preprocess_return_metadata["img_dims"]
+        ):
             if not pred:
                 masks.append([])
                 continue
