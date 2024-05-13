@@ -1,10 +1,10 @@
 import networkx as nx
 import pytest
 
-from inference.enterprise.workflows.constants import STEP_NODE_KIND
-from inference.enterprise.workflows.entities.types import FlowControl
-from inference.enterprise.workflows.errors import InvalidBlockBehaviourError
-from inference.enterprise.workflows.execution_engine.executor.flow_coordinator import (
+from inference.core.workflows.constants import STEP_NODE_KIND
+from inference.core.workflows.entities.types import FlowControl
+from inference.core.workflows.errors import InvalidBlockBehaviourError
+from inference.core.workflows.execution_engine.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
     get_all_nodes_in_execution_path,
     handle_execution_branch_selection,

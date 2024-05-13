@@ -1,18 +1,17 @@
 import pytest
 
-from inference.enterprise.workflows.core_steps.models.roboflow import object_detection
-from inference.enterprise.workflows.core_steps.transformations import crop
-from inference.enterprise.workflows.entities.base import (
+from inference.core.workflows.core_steps.models.roboflow import object_detection
+from inference.core.workflows.core_steps.transformations import crop
+from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.enterprise.workflows.errors import DuplicatedNameError
-from inference.enterprise.workflows.execution_engine.compiler.validator import (
+from inference.core.workflows.errors import DuplicatedNameError
+from inference.core.workflows.execution_engine.compiler.validator import (
     validate_inputs_names_are_unique,
     validate_outputs_names_are_unique,
     validate_steps_names_are_unique,
-    validate_workflow_specification,
 )
 
 

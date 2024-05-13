@@ -131,14 +131,11 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
-from inference.enterprise.workflows.core_steps.sinks.active_learning.middleware import (
+from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
     WorkflowsActiveLearningMiddleware,
 )
-from inference.enterprise.workflows.entities.base import (
-    OutputDefinition,
-    StepExecutionMode,
-)
-from inference.enterprise.workflows.errors import (
+from inference.core.workflows.entities.base import OutputDefinition, StepExecutionMode
+from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
@@ -146,15 +143,14 @@ from inference.enterprise.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
 )
-from inference.enterprise.workflows.execution_engine.compiler.syntactic_parser import (
+from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
-from inference.enterprise.workflows.execution_engine.core import ExecutionEngine
-from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
-    load_workflow_blocks,
 )
-from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
+from inference.core.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias

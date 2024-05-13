@@ -3,17 +3,17 @@ from typing import Any
 import networkx as nx
 import pytest
 
-from inference.enterprise.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.enterprise.workflows.core_steps.common.operators import Operator
-from inference.enterprise.workflows.core_steps.flow_control import condition
-from inference.enterprise.workflows.core_steps.models.roboflow import object_detection
-from inference.enterprise.workflows.core_steps.transformations import crop
-from inference.enterprise.workflows.entities.base import (
+from inference.core.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
+from inference.core.workflows.core_steps.common.operators import Operator
+from inference.core.workflows.core_steps.flow_control import condition
+from inference.core.workflows.core_steps.models.roboflow import object_detection
+from inference.core.workflows.core_steps.transformations import crop
+from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.enterprise.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.compiler.utils import (
     construct_input_selector,
     get_input_parameters_selectors,
     get_last_chunk_of_selector,

@@ -1,24 +1,24 @@
 import pytest
 
-from inference.enterprise.workflows.core_steps.fusion.detections_consensus import (
+from inference.core.workflows.core_steps.fusion.detections_consensus import (
     AggregationMode,
     BlockManifest,
 )
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_STRING_KIND,
     STRING_KIND,
 )
-from inference.enterprise.workflows.errors import (
+from inference.core.workflows.errors import (
     ExecutionEngineNotImplementedError,
     ExecutionEngineRuntimeError,
 )
-from inference.enterprise.workflows.execution_engine.executor.execution_cache import (
+from inference.core.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,
 )
-from inference.enterprise.workflows.execution_engine.executor.parameters_assembler import (
+from inference.core.workflows.execution_engine.executor.parameters_assembler import (
     assembly_step_parameters,
     retrieve_step_output,
     retrieve_value_from_runtime_input,

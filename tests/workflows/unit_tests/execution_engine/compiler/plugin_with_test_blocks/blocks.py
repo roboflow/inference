@@ -2,8 +2,8 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -16,7 +16,7 @@ from inference.enterprise.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )

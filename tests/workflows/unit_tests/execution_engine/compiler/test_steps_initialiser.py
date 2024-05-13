@@ -1,13 +1,13 @@
 import pytest
 
-from inference.enterprise.workflows.errors import (
+from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
 )
-from inference.enterprise.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
-from inference.enterprise.workflows.execution_engine.compiler.steps_initialiser import (
+from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
     call_if_callable,
     initialise_step,
     retrieve_init_parameter_values,

@@ -1,11 +1,11 @@
 import pytest
 
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.errors import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     InvalidBlockBehaviourError,
 )
-from inference.enterprise.workflows.execution_engine.executor.execution_cache import (
+from inference.core.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,
 )
 

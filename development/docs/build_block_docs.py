@@ -4,21 +4,21 @@ import re
 from typing import Dict, List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
-from inference.enterprise.workflows.execution_engine.introspection.blocks_loader import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
-from inference.enterprise.workflows.execution_engine.introspection.connections_discovery import (
+from inference.core.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
 )
-from inference.enterprise.workflows.execution_engine.introspection.entities import (
+from inference.core.workflows.execution_engine.introspection.entities import (
     SelectorDefinition, BlockDescription,
 )
-from inference.enterprise.workflows.execution_engine.introspection.schema_parser import (
+from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest_schema,
 )
-from inference.enterprise.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(

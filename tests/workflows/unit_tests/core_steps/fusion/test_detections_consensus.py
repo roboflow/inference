@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from inference.enterprise.workflows.core_steps.common.utils import detection_to_xyxy
-from inference.enterprise.workflows.core_steps.fusion import detections_consensus
-from inference.enterprise.workflows.core_steps.fusion.detections_consensus import (
+from inference.core.workflows.core_steps.common.utils import detection_to_xyxy
+from inference.core.workflows.core_steps.fusion import detections_consensus
+from inference.core.workflows.core_steps.fusion.detections_consensus import (
     AggregationMode,
     BlockManifest,
     aggregate_field_values,

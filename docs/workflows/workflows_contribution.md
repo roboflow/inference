@@ -33,7 +33,7 @@ Implementation:
 from typing import Literal, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -41,7 +41,7 @@ from inference.enterprise.workflows.entities.types import (
     StepOutputImageSelector,
     StepOutputSelector,
 )
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
@@ -78,11 +78,11 @@ As an output we are going to provide cropped images, so we need to declare that:
 ```python
 from typing import List
 
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
-from inference.enterprise.workflows.entities.base import OutputDefinition
-from inference.enterprise.workflows.entities.types import (
+from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_PARENT_ID_KIND,
 )
@@ -105,7 +105,7 @@ Then we define implementation starting from class method that will provide manif
 ```python
 from typing import Type
 
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -119,12 +119,13 @@ class CropBlock(WorkflowBlock):
 ```
 
 Finally, we need to provide implementation for the logic:
+
 ```python
 from typing import List, Tuple, Any
 import itertools
 import numpy as np
 
-from inference.enterprise.workflows.prototypes.block import (
+from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     FlowControl,
 )
@@ -132,11 +133,10 @@ from inference.enterprise.workflows.prototypes.block import (
 
 class CropBlock(WorkflowBlock):
 
-
     async def run_locally(
-        self,
-        image: List[dict],
-        predictions: List[List[dict]],
+            self,
+            image: List[dict],
+            predictions: List[List[dict]],
     ) -> Tuple[List[Any], FlowControl]:
         decoded_images = [load_image(e) for e in image]
         decoded_images = [
@@ -156,10 +156,11 @@ class CropBlock(WorkflowBlock):
             return result, FlowControl(mode="terminate_branch")
         return result, FlowControl(mode="pass")
 
+
 def crop_image(
-    image: np.ndarray,
-    predictions: List[dict],
-    origin_size: dict,
+        image: np.ndarray,
+        predictions: List[dict],
+        origin_size: dict,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
     for detection in predictions:
