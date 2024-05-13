@@ -1,9 +1,8 @@
 name: Test package install - inference-sdk
 
 on:
-  push:
-    branches:
-      - 'release/*'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
