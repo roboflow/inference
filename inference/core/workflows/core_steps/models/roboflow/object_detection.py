@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+import supervision as sv
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import (
@@ -15,6 +16,7 @@ from inference.core.workflows.core_steps.common.utils import (
     anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
+    convert_to_sv_detections,
     filter_out_unwanted_classes_from_predictions_detections,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -30,7 +32,6 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     FloatZeroToOne,
-    FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -179,7 +180,7 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         max_candidates: Optional[int],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         request = ObjectDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
@@ -201,12 +202,11 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         predictions = await self._model_manager.infer_from_request(
             model_id=model_id, request=request
         )
-        if isinstance(predictions, list):
-            predictions = [
-                e.dict(by_alias=True, exclude_none=True) for e in predictions
-            ]
-        else:
-            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
+        if not isinstance(predictions, list):
+            predictions = [predictions]
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -225,7 +225,7 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         max_candidates: Optional[int],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -269,7 +269,8 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         images: List[dict],
         predictions: List[dict],
         class_filter: Optional[List[str]],
-    ) -> List[dict]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        predictions = convert_to_sv_detections(predictions)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="object-detection",

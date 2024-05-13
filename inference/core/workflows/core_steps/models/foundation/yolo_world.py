@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
+import supervision as sv
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
@@ -14,6 +15,7 @@ from inference.core.workflows.core_steps.common.utils import (
     anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
+    convert_to_sv_detections,
     load_core_model,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -26,7 +28,6 @@ from inference.core.workflows.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -129,7 +130,7 @@ class YoloWorldModelBlock(WorkflowBlock):
         class_names: List[str],
         version: str,
         confidence: Optional[float],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         predictions = []
         for single_image in images:
             inference_request = YOLOWorldInferenceRequest(
@@ -147,7 +148,7 @@ class YoloWorldModelBlock(WorkflowBlock):
             prediction = await self._model_manager.infer_from_request(
                 yolo_world_model_id, inference_request
             )
-            predictions.append(prediction.dict(by_alias=True, exclude_none=True))
+            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
         return self._post_process_result(image=images, predictions=predictions)
 
     async def run_remotely(
@@ -156,7 +157,7 @@ class YoloWorldModelBlock(WorkflowBlock):
         class_names: List[str],
         version: str,
         confidence: Optional[float],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -195,7 +196,8 @@ class YoloWorldModelBlock(WorkflowBlock):
         self,
         image: List[dict],
         predictions: List[dict],
-    ) -> List[dict]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        predictions = convert_to_sv_detections(predictions)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="object-detection",

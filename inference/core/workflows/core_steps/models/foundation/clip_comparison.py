@@ -120,7 +120,7 @@ class ClipComparisonBlock(WorkflowBlock):
             prediction = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            predictions.append(prediction.dict())
+            predictions.append(prediction.model_dump())
         return self._post_process_result(image=images, predictions=predictions)
 
     async def run_remotely(
