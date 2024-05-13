@@ -30,7 +30,7 @@ stop_test_docker:
 
 create_wheels:
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt
+	python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 	rm -f dist/*
 	rm -rf build/*
 	python .release/pypi/inference.core.setup.py bdist_wheel

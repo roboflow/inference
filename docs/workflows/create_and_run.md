@@ -1,5 +1,6 @@
 Workflows allow you to define multi-step processes that run one or more models and return a result based on the output of the models.
 
+
 You can create and deploy workflows in the cloud or in Inference.
 
 To create an advanced workflow for use with Inference, you need to define a specification. A specification is a JSON document that states:

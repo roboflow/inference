@@ -435,6 +435,7 @@ class InferencePipeline:
         source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None,
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
+        workflow_init_parameters: Optional[Dict[str, Any]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -511,12 +512,13 @@ class InferencePipeline:
             )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
-                run_video_frame_through_workflow,
+                WorkflowRunner,
             )
             from inference.core.roboflow_api import get_workflow_specification
-            from inference.enterprise.workflows.complier.steps_executors.active_learning_middlewares import (
+            from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
                 WorkflowsActiveLearningMiddleware,
             )
+            from inference.core.workflows.execution_engine import ExecutionEngine
 
             if workflow_specification is None:
                 if api_key is None:
@@ -545,15 +547,26 @@ class InferencePipeline:
             if api_key is None:
                 api_key = API_KEY
             background_tasks = BackgroundTasks()
+            if workflow_init_parameters is None:
+                workflow_init_parameters = {}
+            workflow_init_parameters["workflows_core.model_manager"] = model_manager
+            workflow_init_parameters["workflows_core.api_key"] = api_key
+            workflow_init_parameters["workflows_core.active_learning_middleware"] = (
+                workflows_active_learning_middleware
+            )
+            workflow_init_parameters["workflows_core.background_tasks"] = (
+                background_tasks
+            )
+            execution_engine = ExecutionEngine.init(
+                workflow_definition=workflow_specification,
+                init_parameters=workflow_init_parameters,
+            )
+            workflow_runner = WorkflowRunner()
             on_video_frame = partial(
-                run_video_frame_through_workflow,
-                workflow_specification=workflow_specification,
-                model_manager=model_manager,
-                image_input_name=image_input_name,
+                workflow_runner.run_workflow,
                 workflows_parameters=workflows_parameters,
-                api_key=api_key,
-                workflows_active_learning_middleware=workflows_active_learning_middleware,
-                background_tasks=background_tasks,
+                execution_engine=execution_engine,
+                image_input_name=image_input_name,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
