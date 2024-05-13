@@ -103,6 +103,7 @@ class BarcodeDetectorBlock(WorkflowBlock):
             predictions=predictions,
         )
 
+
 def detect_barcodes(image: np.ndarray) -> List[dict]:
     barcodes = zxingcpp.read_barcodes(image)
     predictions = []

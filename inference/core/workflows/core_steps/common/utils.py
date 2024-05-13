@@ -55,14 +55,28 @@ def convert_to_sv_detections(
     predictions: List[Dict[str, Any]],
     predictions_key: str = "predictions",
     keypoints_key: str = "keypoints",
-    detection_id_key: str = "detection_id"
+    detection_id_key: str = "detection_id",
 ) -> List[Dict[str, Union[sv.Detections, Any]]]:
     for p in predictions:
         detections = sv.Detections.from_inference(p)
         if any(keypoints_key in d for d in p[predictions_key]):
             # keypoints arrays may have different length for each detection hence "object" type is used
-            detections[keypoints_key] = np.array([np.array([[keypoint["x"], keypoint["y"]] for keypoint in d[keypoints_key]]) for d in p[predictions_key]], dtype="object")
-        detection_ids = [d[detection_id_key] if detection_id_key in d else str(uuid.uuid4) for d in p[predictions_key]]
+            detections[keypoints_key] = np.array(
+                [
+                    np.array(
+                        [
+                            [keypoint["x"], keypoint["y"]]
+                            for keypoint in d[keypoints_key]
+                        ]
+                    )
+                    for d in p[predictions_key]
+                ],
+                dtype="object",
+            )
+        detection_ids = [
+            d[detection_id_key] if detection_id_key in d else str(uuid.uuid4)
+            for d in p[predictions_key]
+        ]
         detections[detection_id_key] = np.array(detection_ids)
         p[predictions_key] = detections
     return predictions
@@ -104,7 +118,7 @@ def anchor_detections_in_parent_coordinates(
     prediction: Dict[str, Union[sv.Detections, Any]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
-    keypoints_key: str = "keypoints"
+    keypoints_key: str = "keypoints",
 ) -> Dict[str, Union[sv.Detections, Any]]:
     prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
         prediction[detections_key]
@@ -121,20 +135,23 @@ def anchor_detections_in_parent_coordinates(
     origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
     origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
     origin_mask_base = np.full((origin_height, origin_width), False)
-    anchored_detections: sv.Detections = prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]
+    anchored_detections: sv.Detections = prediction[
+        f"{detections_key}{PARENT_COORDINATES_SUFFIX}"
+    ]
     for d in anchored_detections:
         mask_h, mask_w = d.mask.shape
         origin_mask = origin_mask_base.copy()
         # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
         #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-        origin_mask[shift_x:shift_x+mask_w, shift_y:shift_y+mask_h] = d.mask
+        origin_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = d.mask
         d.mask = origin_mask
         d.xyxy += [shift_x, shift_y, shift_x, shift_y]
         # TODO: assumed type
         if keypoints_key in d.data:
             d.data[keypoints_key] += [shift_x, shift_y]
-    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = \
-        image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY]
+    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
+        ORIGIN_COORDINATES_KEY
+    ][ORIGIN_SIZE_KEY]
     return prediction
 
 
@@ -148,7 +165,9 @@ def filter_out_unwanted_classes_from_predictions_detections(
         return predictions
     for prediction in predictions:
         detections = prediction[detections_key]
-        prediction[detections_key] = detections[np.isin(detections[class_name_key], classes_to_accept)]
+        prediction[detections_key] = detections[
+            np.isin(detections[class_name_key], classes_to_accept)
+        ]
     return predictions
 
 

@@ -125,7 +125,12 @@ class DetectionOffsetBlock(WorkflowBlock):
         for detections in predictions:
             offset_detections = deepcopy(detections)
             offset_detections.xyxy = [
-                (x1 - offset_width // 2, y1 - offset_height // 2, x2 + offset_width // 2, y2 + offset_height // 2)
+                (
+                    x1 - offset_width // 2,
+                    y1 - offset_height // 2,
+                    x2 + offset_width // 2,
+                    y2 + offset_height // 2,
+                )
                 for (x1, y1, x2, y2) in offset_detections.xyxy
             ]
             # parent ID remains unchanged
@@ -137,7 +142,7 @@ class DetectionOffsetBlock(WorkflowBlock):
                 "image": image,
                 "prediction_type": single_prediction_type,
             }
-            for offset_prediction, image, single_prediction_type, prediction  in zip(
+            for offset_prediction, image, single_prediction_type, prediction in zip(
                 offset_predictions, image_metadata, prediction_type, predictions
             )
         ]
