@@ -33,7 +33,6 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_KEY,
-    API_KEY_ENV_NAMES,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
@@ -47,17 +46,10 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
 )
-from inference.core.exceptions import (
-    MissingApiKeyError,
-    ModelArtefactError,
-    OnnxProviderNotAvailable,
-)
+from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
 from inference.core.models.base import Model
-from inference.core.models.utils.batching import (
-    calculate_input_elements,
-    create_batches,
-)
+from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -623,7 +615,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
-        input_elements = calculate_input_elements(input_value=image)
+        input_elements = len(image) if isinstance(image, list) else 1
         max_batch_size = MAX_BATCH_SIZE if self.batching_enabled else self.batch_size
         if (input_elements == 1) or (max_batch_size == float("inf")):
             return super().infer(image, **kwargs)
