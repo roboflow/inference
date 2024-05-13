@@ -1,53 +1,8 @@
 import numpy as np
 
 from inference.core.models.utils.batching import (
-    calculate_input_elements,
     create_batches,
 )
-
-
-def test_calculate_input_elements_when_non_list_given() -> None:
-    # given
-    input_value = np.zeros((128, 128, 3))
-
-    # when
-    result = calculate_input_elements(input_value=input_value)
-
-    # then
-    assert result == 1, "Single element given, so the proper value is 1"
-
-
-def test_calculate_input_elements_when_empty_list_given() -> None:
-    # given
-    input_value = []
-
-    # when
-    result = calculate_input_elements(input_value=input_value)
-
-    # then
-    assert result == 0, "No elements given, so the proper value is 0"
-
-
-def test_calculate_input_elements_when_single_element_list_given() -> None:
-    # given
-    input_value = [np.zeros((128, 128, 3))]
-
-    # when
-    result = calculate_input_elements(input_value=input_value)
-
-    # then
-    assert result == 1, "Single element given, so the proper value is 1"
-
-
-def test_calculate_input_elements_when_multi_elements_list_given() -> None:
-    # given
-    input_value = [np.zeros((128, 128, 3))] * 3
-
-    # when
-    result = calculate_input_elements(input_value=input_value)
-
-    # then
-    assert result == 3, "Three elements given, so the proper value is 3"
 
 
 def test_create_batches_when_empty_sequence_given() -> None:
