@@ -130,15 +130,18 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             num_masks=self.num_masks,
         )
         infer_shape = (self.img_size_h, self.img_size_w)
-        predictions = np.array(predictions)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
         tradeoff_factor = kwargs["tradeoff_factor"]
         img_in_shape = preprocess_return_metadata["im_shape"]
-        if predictions.shape[1] > 0:
+        if self.batching_enabled:
             for i, (pred, proto, img_dim) in enumerate(
                 zip(predictions, protos, preprocess_return_metadata["img_dims"])
             ):
+                if not pred:
+                    continue
+                if not isinstance(pred, np.ndarray):
+                    pred = np.array(pred)
                 if mask_decode_mode == "accurate":
                     batch_masks = process_mask_accurate(
                         proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
