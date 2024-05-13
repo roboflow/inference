@@ -1,15 +1,12 @@
 from copy import deepcopy
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
-from uuid import uuid4
+from typing import Any, Dict, List, Literal, Type, Union
 
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+import supervision as sv
 from typing_extensions import Annotated
 
 from inference.core.workflows.constants import (
-    DETECTION_ID_KEY,
-    HEIGHT_KEY,
     PARENT_ID_KEY,
-    WIDTH_KEY,
 )
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
@@ -20,7 +17,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
     INTEGER_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
@@ -119,45 +115,29 @@ class DetectionOffsetBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[List[dict]],
+        predictions: List[sv.Detections],
         offset_width: int,
         offset_height: int,
         image_metadata: List[dict],
         prediction_type: List[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        result_predictions, result_parent_id = [], []
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        offset_predictions = []
         for detections in predictions:
-            offset_detections = [
-                offset_detection(
-                    detection=detection,
-                    offset_width=offset_width,
-                    offset_height=offset_height,
-                )
-                for detection in detections
+            offset_detections = deepcopy(detections)
+            offset_detections.xyxy = [
+                (x1 - offset_width // 2, y1 - offset_height // 2, x2 + offset_width // 2, y2 + offset_height // 2)
+                for (x1, y1, x2, y2) in offset_detections.xyxy
             ]
-            result_predictions.append(offset_detections)
-            result_parent_id.append(
-                [detection[PARENT_ID_KEY] for detection in offset_detections]
-            )
+            # parent ID remains unchanged
+            offset_predictions.append(offset_detections)
         return [
             {
-                "predictions": prediction,
-                PARENT_ID_KEY: parent_id,
+                "predictions": offset_prediction,
+                PARENT_ID_KEY: prediction[PARENT_ID_KEY],
                 "image": image,
                 "prediction_type": single_prediction_type,
             }
-            for prediction, parent_id, image, single_prediction_type in zip(
-                result_predictions, result_parent_id, image_metadata, prediction_type
+            for offset_prediction, image, single_prediction_type, prediction  in zip(
+                offset_predictions, image_metadata, prediction_type, predictions
             )
         ]
-
-
-def offset_detection(
-    detection: Dict[str, Any], offset_width: int, offset_height: int
-) -> Dict[str, Any]:
-    detection_copy = deepcopy(detection)
-    detection_copy[WIDTH_KEY] += round(offset_width)
-    detection_copy[HEIGHT_KEY] += round(offset_height)
-    detection_copy[PARENT_ID_KEY] = detection_copy[DETECTION_ID_KEY]
-    detection_copy[DETECTION_ID_KEY] = str(uuid4())
-    return detection_copy
