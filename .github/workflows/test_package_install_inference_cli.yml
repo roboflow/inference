@@ -1,4 +1,4 @@
-name: Test package install - inference
+name: Test package install - inference-cli
 
 on:
   push:
@@ -30,8 +30,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: 📦 Installing `inference` package...
-        run: pip install ./dist/inference-*-py3-none-any.whl
+        run: pip install ./dist/inference_cli-*-py3-none-any.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
-          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
+          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}')"
+          inference --help
+        

@@ -1,4 +1,4 @@
-name: Test package install - inference
+name: Test package install - inference-gpu
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: 📦 Installing `inference` package...
-        run: pip install ./dist/inference-*-py3-none-any.whl
+        run: pip install ./dist/inference_gpu-*-py3-none-any.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
