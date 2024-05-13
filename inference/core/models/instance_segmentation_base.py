@@ -134,62 +134,59 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         mask_decode_mode = kwargs["mask_decode_mode"]
         tradeoff_factor = kwargs["tradeoff_factor"]
         img_in_shape = preprocess_return_metadata["im_shape"]
-        if self.batching_enabled:
-            for i, (pred, proto, img_dim) in enumerate(
-                zip(predictions, protos, preprocess_return_metadata["img_dims"])
-            ):
-                if not pred:
-                    continue
-                if not isinstance(pred, np.ndarray):
-                    pred = np.array(pred)
-                if mask_decode_mode == "accurate":
-                    batch_masks = process_mask_accurate(
-                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
-                    )
-                    output_mask_shape = img_in_shape[2:]
-                elif mask_decode_mode == "tradeoff":
-                    if not 0 <= tradeoff_factor <= 1:
-                        raise InvalidMaskDecodeArgument(
-                            f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
-                        )
-                    batch_masks = process_mask_tradeoff(
-                        proto,
-                        pred[:, 7:],
-                        pred[:, :4],
-                        img_in_shape[2:],
-                        tradeoff_factor,
-                    )
-                    output_mask_shape = batch_masks.shape[1:]
-                elif mask_decode_mode == "fast":
-                    batch_masks = process_mask_fast(
-                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
-                    )
-                    output_mask_shape = batch_masks.shape[1:]
-                else:
-                    raise InvalidMaskDecodeArgument(
-                        f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
-                    )
-                polys = masks2poly(batch_masks)
-                pred[:, :4] = post_process_bboxes(
-                    [pred[:, :4]],
-                    infer_shape,
-                    [img_dim],
-                    self.preproc,
-                    resize_method=self.resize_method,
-                    disable_preproc_static_crop=preprocess_return_metadata[
-                        "disable_preproc_static_crop"
-                    ],
-                )[0]
-                polys = post_process_polygons(
-                    img_dim,
-                    polys,
-                    output_mask_shape,
-                    self.preproc,
-                    resize_method=self.resize_method,
+
+        for pred, proto, img_dim in zip(predictions, protos, preprocess_return_metadata["img_dims"]):
+            if not pred:
+                masks.append([])
+                continue
+            if not isinstance(pred, np.ndarray):
+                pred = np.array(pred)
+            if mask_decode_mode == "accurate":
+                batch_masks = process_mask_accurate(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
                 )
-                masks.append(polys)
-        else:
-            masks.extend([[]] * len(predictions))
+                output_mask_shape = img_in_shape[2:]
+            elif mask_decode_mode == "tradeoff":
+                if not 0 <= tradeoff_factor <= 1:
+                    raise InvalidMaskDecodeArgument(
+                        f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
+                    )
+                batch_masks = process_mask_tradeoff(
+                    proto,
+                    pred[:, 7:],
+                    pred[:, :4],
+                    img_in_shape[2:],
+                    tradeoff_factor,
+                )
+                output_mask_shape = batch_masks.shape[1:]
+            elif mask_decode_mode == "fast":
+                batch_masks = process_mask_fast(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                )
+                output_mask_shape = batch_masks.shape[1:]
+            else:
+                raise InvalidMaskDecodeArgument(
+                    f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
+                )
+            polys = masks2poly(batch_masks)
+            pred[:, :4] = post_process_bboxes(
+                [pred[:, :4]],
+                infer_shape,
+                [img_dim],
+                self.preproc,
+                resize_method=self.resize_method,
+                disable_preproc_static_crop=preprocess_return_metadata[
+                    "disable_preproc_static_crop"
+                ],
+            )[0]
+            polys = post_process_polygons(
+                img_dim,
+                polys,
+                output_mask_shape,
+                self.preproc,
+                resize_method=self.resize_method,
+            )
+            masks.append(polys)
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )
