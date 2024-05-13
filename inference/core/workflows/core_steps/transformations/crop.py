@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
+import supervision as sv
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.core.workflows.constants import (
@@ -18,7 +19,6 @@ from inference.core.workflows.constants import (
     WIDTH_KEY,
 )
 from inference.core.workflows.core_steps.common.utils import (
-    detection_to_xyxy,
     extract_origin_size_from_images_batch,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -92,22 +92,23 @@ class CropBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
-        predictions: List[List[dict]],
+        images: List[Dict[str, Any]],
+        predictions: List[List[Dict[str, Any]]],
     ) -> Tuple[List[Any], FlowControl]:
         decoded_images = [load_image(e) for e in images]
         decoded_images = [
             i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
         ]
-        origin_image_shape = extract_origin_size_from_images_batch(
+        origin_images_shapes = extract_origin_size_from_images_batch(
             input_images=images,
             decoded_images=decoded_images,
         )
+        # TODO: ensure parent_id of detection and cropped image match
         result = list(
             itertools.chain.from_iterable(
                 crop_image(image=image, detections=detections, origin_size=origin_shape)
                 for image, detections, origin_shape in zip(
-                    decoded_images, predictions, origin_image_shape
+                    decoded_images, predictions, origin_images_shapes
                 )
             )
         )
@@ -118,12 +119,12 @@ class CropBlock(WorkflowBlock):
 
 def crop_image(
     image: np.ndarray,
-    detections: List[dict],
+    detections: List[sv.Detections],
     origin_size: dict,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
     for detection in detections:
-        x_min, y_min, x_max, y_max = detection_to_xyxy(detection=detection)
+        x_min, y_min, x_max, y_max = detection.xyxy
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(
             {
