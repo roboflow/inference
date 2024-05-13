@@ -33,7 +33,6 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     API_KEY,
-    API_KEY_ENV_NAMES,
     AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
@@ -47,15 +46,10 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
 )
-from inference.core.exceptions import (
-    ModelArtefactError,
-    OnnxProviderNotAvailable,
-)
+from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
 from inference.core.models.base import Model
-from inference.core.models.utils.batching import (
-    create_batches,
-)
+from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,

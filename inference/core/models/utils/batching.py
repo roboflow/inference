@@ -1,5 +1,4 @@
-from typing import Generator, Iterable, List, TypeVar, Union
-
+from typing import Generator, Iterable, List, TypeVar
 
 B = TypeVar("B")
 
