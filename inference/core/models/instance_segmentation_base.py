@@ -143,8 +143,6 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             if pred.size == 0:
                 masks.append([])
                 continue
-            if not isinstance(pred, np.ndarray):
-                pred = np.array(pred)
             if mask_decode_mode == "accurate":
                 batch_masks = process_mask_accurate(
                     proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
