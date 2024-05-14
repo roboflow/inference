@@ -72,6 +72,7 @@ def build_binary_statement(
         operator=operator,
         right_operand_builder=right_operand_builder,
         negate=definition.negate,
+        operation_type=definition.type,
     )
 
 
@@ -91,7 +92,7 @@ def create_static_operand_builder(
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.ops)
+    operations_fun = build_operations_chain(operations=definition.operations)
     return partial(
         static_operand_builder,
         static_value=definition.value,
@@ -115,7 +116,7 @@ def create_dynamic_operand_builder(
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.ops)
+    operations_fun = build_operations_chain(operations=definition.operations)
     return partial(
         dynamic_operand_builder,
         operand_name=definition.operand_name,
@@ -135,13 +136,23 @@ def binary_eval(
     operator: Callable[[V, V], bool],
     right_operand_builder: Callable[[Dict[str, T]], V],
     negate: bool,
+    operation_type: str,
 ) -> bool:
-    left_operand = left_operand_builder(values)
-    right_operand = right_operand_builder(values)
-    result = operator(left_operand, right_operand)
-    if negate:
-        result = not result
-    return result
+    try:
+        left_operand = left_operand_builder(values)
+        right_operand = right_operand_builder(values)
+        result = operator(left_operand, right_operand)
+        if negate:
+            result = not result
+        return result
+    except (TypeError, ValueError) as error:
+        raise EvaluationEngineError(
+            public_message=f"Attempted to execute evaluation of type: {operation_type}, "
+                           f"but encountered error: {error}",
+            context="step_execution | roboflow_query_language_evaluation",
+            inner_error=error,
+
+        )
 
 
 def build_unary_statement(definition: UnaryStatement) -> Callable[[Dict[str, T]], bool]:
@@ -152,6 +163,7 @@ def build_unary_statement(definition: UnaryStatement) -> Callable[[Dict[str, T]]
         operand_builder=operand_builder,
         operator=operator,
         negate=definition.negate,
+        operation_type=definition.type,
     )
 
 
@@ -160,12 +172,22 @@ def unary_eval(
     operand_builder: Callable[[Dict[str, T]], V],
     operator: Callable[[V], bool],
     negate: bool,
+    operation_type: str,
 ) -> bool:
-    operand = operand_builder(values)
-    result = operator(operand)
-    if negate:
-        result = not result
-    return result
+    try:
+        operand = operand_builder(values)
+        result = operator(operand)
+        if negate:
+            result = not result
+        return result
+    except (TypeError, ValueError) as error:
+        raise EvaluationEngineError(
+            public_message=f"Attempted to execute evaluation of type: {operation_type}, "
+                           f"but encountered error: {error}",
+            context="step_execution | roboflow_query_language_evaluation",
+            inner_error=error,
+
+        )
 
 
 COMPOUND_EVAL_STATEMENTS_COMBINERS = {

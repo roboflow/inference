@@ -193,12 +193,12 @@ class IsNotEmpty(UnaryOperator):
 class StaticOperand(BaseModel):
     type: Literal["StaticOperand"]
     value: Any
-    ops: List["AllOperationsType"] = Field(default_factory=lambda: [])
+    operations: List["AllOperationsType"] = Field(default_factory=lambda: [])
 
 
 class DynamicOperand(BaseModel):
     type: Literal["DynamicOperand"]
-    ops: List["AllOperationsType"] = Field(default_factory=lambda: [])
+    operations: List["AllOperationsType"] = Field(default_factory=lambda: [])
     operand_name: str = DEFAULT_OPERAND_NAME
 
 
