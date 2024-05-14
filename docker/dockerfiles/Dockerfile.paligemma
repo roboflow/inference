@@ -40,8 +40,6 @@ RUN pip3 install --upgrade pip && pip3 install -r requirements.pali.local.txt  &
 FROM scratch
 COPY --from=base / /
 
-
-
 WORKDIR /app/
 COPY inference inference
 COPY inference_sdk inference_sdk
@@ -56,7 +54,7 @@ ENV CORE_MODEL_GAZE_ENABLED=false
 ENV CORE_MODEL_DOCTR_ENABLED=false
 ENV CORE_MODEL_PALIGEMMA_ENABLED=true
 ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-staging
+ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
