@@ -45,8 +45,8 @@ class NumericSequenceAggregate(OperationDefinition):
     function: SequenceAggregationFunction
 
 
-class StringSequenceAggregate(OperationDefinition):
-    type: Literal["StringSequenceAggregate"]
+class SequenceAggregate(OperationDefinition):
+    type: Literal["SequenceAggregate"]
     mode: SequenceAggregationMode
 
 
@@ -67,12 +67,6 @@ class StringSubSequence(OperationDefinition):
 class DetectionsPropertyExtract(OperationDefinition):
     type: Literal["DetectionsPropertyExtract"]
     property_name: DetectionsProperty
-
-
-class OffsetDetection(OperationDefinition):
-    type: Literal["SingleDetectionSelector"]
-    offset_x: int
-    offset_y: int
 
 
 class ExtractDetectionProperty(OperationDefinition):
@@ -96,7 +90,7 @@ AllOperationsType = Annotated[
         StringToLowerCase, StringToUpperCase, LookupTable,
         ToNumber, NumberRound, SequenceMap, SequenceApply,
         NumericSequenceAggregate, ToString, ToBoolean, StringSubSequence,
-        DetectionsPropertyExtract, StringSequenceAggregate, DetectionsFilter,
+        DetectionsPropertyExtract, SequenceAggregate, DetectionsFilter,
         ExtractDetectionProperty, DetectionsFilter
     ],
     Field(discriminator="type")
