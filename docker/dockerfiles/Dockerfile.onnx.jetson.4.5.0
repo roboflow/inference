@@ -33,7 +33,7 @@ COPY requirements/requirements.clip.txt \
 
 RUN python3.8 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
-RUN python3.8 -m pip install --upgrade pip "h5py<=3.10.0" && python3.8 -m pip install \
+RUN python3.8 -m pip install --upgrade pip wheel Cython && python3.8 -m pip install --upgrade "h5py<=3.10.0" && python3.8 -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
@@ -52,6 +52,7 @@ RUN python3.8 -m pip install onnxruntime_gpu-1.11.0-cp38-cp38-linux_aarch64.whl 
 
 WORKDIR /app/
 COPY inference inference
+COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
