@@ -1,3 +1,4 @@
+import random
 from typing import Any
 
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -27,3 +28,11 @@ def apply_lookup(value: Any, lookup_table: dict) -> Any:
             context="step_execution | roboflow_query_language_evaluation",
             inner_error=e,
         )
+
+
+def generate_random_number(value: Any, min_value: float, max_value: float) -> float:
+    if min_value == max_value:
+        return min_value
+    raw_random = random.random()
+    diff = abs(max_value - min_value)
+    return min_value + (raw_random * diff)

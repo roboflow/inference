@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -47,3 +48,14 @@ def string_sub_sequence(value: Any, start: int, end: int) -> str:
             context="step_execution | roboflow_query_language_evaluation",
         )
     return value[start:end]
+
+
+def string_matches(value: Any, regex: str) -> bool:
+    if not isinstance(value, str):
+        value_as_str = safe_stringify(value=value)
+        raise InvalidInputTypeError(
+            public_message=f"While executing string_matches(...), "
+            f"got value which of type {type(value)}: {value_as_str}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    return not re.match(pattern=regex, string=value)

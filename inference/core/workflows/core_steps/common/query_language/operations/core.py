@@ -23,10 +23,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
     extract_detections_property,
-    filter_detections,
+    filter_detections, offset_detections, shift_detections,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
-    apply_lookup,
+    apply_lookup, generate_random_number,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
     number_round,
@@ -36,13 +36,13 @@ from inference.core.workflows.core_steps.common.query_language.operations.sequen
     aggregate_numeric_sequence,
     aggregate_sequence,
     sequence_apply,
-    sequence_map,
+    sequence_map, get_sequence_length,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.strings.base import (
     string_sub_sequence,
     string_to_lower,
     string_to_upper,
-    to_string,
+    to_string, string_matches,
 )
 
 
@@ -131,6 +131,11 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsPropertyExtract": extract_detections_property,
     "SequenceAggregate": aggregate_sequence,
     "ExtractDetectionProperty": extract_detection_property,
+    "DetectionsOffset": offset_detections,
+    "DetectionsShift": shift_detections,
+    "RandomNumber": generate_random_number,
+    "StringMatches": string_matches,
+    "SequenceLength": get_sequence_length,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

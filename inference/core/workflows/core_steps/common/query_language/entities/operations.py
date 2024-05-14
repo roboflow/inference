@@ -67,8 +67,8 @@ class ToBoolean(OperationDefinition):
 
 class StringSubSequence(OperationDefinition):
     type: Literal["StringSubSequence"]
-    start: int = 0
-    end: int = -1
+    start: int = Field(default=0)
+    end: int = Field(default=-1)
 
 
 class DetectionsPropertyExtract(OperationDefinition):
@@ -84,7 +84,34 @@ class ExtractDetectionProperty(OperationDefinition):
 
 class DetectionsFilter(OperationDefinition):
     type: Literal["DetectionsFilter"]
-    filter_operation: "AllOperationsType"
+    filter_operation: List["AllOperationsType"]
+
+
+class DetectionsOffset(OperationDefinition):
+    type: Literal["DetectionsOffset"]
+    offset_x: int
+    offset_y: int
+
+
+class DetectionsShift(OperationDefinition):
+    type: Literal["DetectionsShift"]
+    shift_x: int
+    shift_y: int
+
+
+class RandomNumber(OperationDefinition):
+    type: Literal["RandomNumber"]
+    min_value: float = Field(default=0.0)
+    max_value: float = Field(default=1.0)
+
+
+class StringMatches(OperationDefinition):
+    type: Literal["StringMatches"]
+    regex: str
+
+
+class SequenceLength(OperationDefinition):
+    type: Literal["SequenceLength"]
 
 
 class SequenceApply(OperationDefinition):
@@ -109,6 +136,11 @@ AllOperationsType = Annotated[
         SequenceAggregate,
         ExtractDetectionProperty,
         DetectionsFilter,
+        DetectionsOffset,
+        DetectionsShift,
+        RandomNumber,
+        StringMatches,
+        SequenceLength,
     ],
     Field(discriminator="type"),
 ]

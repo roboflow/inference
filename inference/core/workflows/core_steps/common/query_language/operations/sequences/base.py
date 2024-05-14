@@ -90,3 +90,15 @@ def aggregate_sequence(value: Any, mode: SequenceAggregationMode) -> Any:
             context="step_execution | roboflow_query_language_evaluation",
             inner_error=e,
         )
+
+
+def get_sequence_length(value: Any) -> int:
+    try:
+        return len(value)
+    except TypeError as e:
+        raise InvalidInputTypeError(
+            public_message=f"While executing get_sequence_length(...), encountered "
+                           f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
+            context="step_execution | roboflow_query_language_evaluation",
+            inner_error=e,
+        )

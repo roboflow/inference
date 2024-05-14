@@ -30,8 +30,8 @@ BINARY_OPERATORS = {
 UNARY_OPERATORS = {
     "Exists": lambda a: a is not None,
     "DoesNotExist": lambda a: a is None,
-    "IsTrue": lambda a: a is True,
-    "IsFalse": lambda a: a is False,
+    "(Boolean) is True": lambda a: a is True,
+    "(Boolean) is False": lambda a: a is False,
     "(Sequence) is empty": lambda a: len(a) == 0,
     "(Sequence) is not empty": lambda a: len(a) > 0,
 }
