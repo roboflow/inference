@@ -21,7 +21,6 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -33,6 +32,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -51,7 +51,6 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -64,6 +63,7 @@ from inference.core.entities.responses.inference import (
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -83,10 +83,10 @@ from inference.core.env import (
     ALLOW_ORIGINS,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_COGVLM_ENABLED,
-    CORE_MODEL_PALIGEMMA_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_PALIGEMMA_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
@@ -1390,7 +1390,9 @@ class HttpInterface(BaseInterface):
                         M.PaliGemmaResponse: The model's text response
                     """
                     logger.debug(f"Reached /llm/paligemma")
-                    paligemma_model_id = load_paligemma_model(inference_request, api_key=api_key)
+                    paligemma_model_id = load_paligemma_model(
+                        inference_request, api_key=api_key
+                    )
                     response = await self.model_manager.infer_from_request(
                         paligemma_model_id, inference_request
                     )

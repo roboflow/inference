@@ -1,8 +1,10 @@
-from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 import os
-from inference.core.env import MODEL_CACHE_DIR
-from PIL import Image
+
 import torch
+from PIL import Image
+from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+
+from inference.core.env import MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
 import time
@@ -17,11 +19,7 @@ from PIL import Image
 
 from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
-from inference.core.env import (
-    API_KEY,
-    PALIGEMMA_VERSION_ID,
-    MODEL_CACHE_DIR,
-)
+from inference.core.env import API_KEY, MODEL_CACHE_DIR, PALIGEMMA_VERSION_ID
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
@@ -46,7 +44,7 @@ class PaliGemma(RoboflowCoreModel):
         ).eval()
 
         self.processor = AutoProcessor.from_pretrained(
-           self.cache_dir,
+            self.cache_dir,
         )
         self.task_type = "lmm"
 
