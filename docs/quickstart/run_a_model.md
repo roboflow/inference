@@ -30,7 +30,7 @@ model = get_model(model_id="yolov8n-640")
 results = model.infer(image)
 ```
 
-In the code above, we loaded a model and then we used that model's `infer(...)` method to run an image through our computer vision model.
+In the code above, we loaded a model and then we used that model's `infer(...)` method to run an image through it.
 
 !!! tip
 
@@ -41,11 +41,8 @@ In the code above, we loaded a model and then we used that model's `infer(...)` 
 Running inference is fun but it's not much to look at. Let's add some code to visualize our results.
 
 ```python
-# import a utility function for loading Roboflow models
 from inference import get_model
-# import supervision to visualize our results
 import supervision as sv
-# import cv2 to helo load our image
 import cv2
 
 # define the image url to use for inference
@@ -56,10 +53,10 @@ image = cv2.imread(image_file)
 model = get_model(model_id="yolov8n-640")
 
 # run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
+results = model.infer(image)[0]
 
 # load the results into the supervision Detections api
-detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
+detections = sv.Detections.from_inference(results)
 
 # create supervision annotators
 bounding_box_annotator = sv.BoundingBoxAnnotator()
