@@ -1,7 +1,7 @@
+import uuid
 from collections import Iterable
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, Union
-import uuid
 
 import numpy as np
 import supervision as sv

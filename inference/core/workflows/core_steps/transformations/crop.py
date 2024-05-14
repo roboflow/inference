@@ -2,8 +2,8 @@ import itertools
 from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 import numpy as np
-from pydantic import AliasChoices, ConfigDict, Field
 import supervision as sv
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.utils.image_utils import ImageType, load_image
 from inference.core.workflows.constants import (

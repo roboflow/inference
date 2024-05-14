@@ -3,17 +3,17 @@ from typing import Any, Dict, List, Literal, Type, Union
 from uuid import uuid4
 
 import numpy as np
-from pydantic import AliasChoices, ConfigDict, Field
 import supervision as sv
 import zxingcpp
+from pydantic import AliasChoices, ConfigDict, Field
 
+from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.utils import (
     anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
     convert_to_sv_detections,
 )
-from inference.core.utils.image_utils import load_image
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,

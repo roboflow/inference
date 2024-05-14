@@ -1,15 +1,12 @@
+import uuid
 from copy import deepcopy
 from typing import Any, Dict, List, Literal, Type, Union
-import uuid
 
-from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 import supervision as sv
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 from typing_extensions import Annotated
 
-from inference.core.workflows.constants import (
-    DETECTION_ID_KEY,
-    PARENT_ID_KEY,
-)
+from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,

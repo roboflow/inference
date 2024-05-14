@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 import supervision as sv
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,

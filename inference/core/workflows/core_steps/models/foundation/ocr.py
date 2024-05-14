@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import AliasChoices, ConfigDict, Field
 import supervision as sv
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.env import (
