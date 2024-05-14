@@ -1,11 +1,13 @@
 from copy import deepcopy
 from typing import Any, Dict, List, Literal, Type, Union
+import uuid
 
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 import supervision as sv
 from typing_extensions import Annotated
 
 from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
     PARENT_ID_KEY,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -146,3 +148,19 @@ class DetectionOffsetBlock(WorkflowBlock):
                 offset_predictions, image_metadata, prediction_type, predictions
             )
         ]
+
+
+def offset_detections(detections: sv.Detections, offset_width: int, offset_height: int, parent_id_key: str = PARENT_ID_KEY, detection_id_key: str = DETECTION_ID_KEY) -> sv.Detections:
+    _detections = deepcopy(detections)
+    _detections.xyxy = [
+        (
+            x1 - offset_width // 2,
+            y1 - offset_height // 2,
+            x2 + offset_width // 2,
+            y2 + offset_height // 2,
+        )
+        for (x1, y1, x2, y2) in _detections.xyxy
+    ]
+    _detections[parent_id_key] = detections[detection_id_key].copy()
+    _detections[detection_id_key] = [str(uuid.uuid4()) for _ in detections]
+    return _detections

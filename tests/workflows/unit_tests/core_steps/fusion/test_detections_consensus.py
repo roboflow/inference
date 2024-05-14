@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.common.utils import detection_to_xyxy
 from inference.core.workflows.core_steps.fusion import detections_consensus
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     AggregationMode,
@@ -580,17 +579,6 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
         "height": 40,
         "width": 50,
     }
-
-
-def test_detection_to_xyxy() -> None:
-    # given
-    detection = {"x": 100, "y": 200, "height": 20, "width": 40}
-
-    # when
-    result = detection_to_xyxy(detection=detection)
-
-    # then
-    assert result == (80, 190, 120, 210)
 
 
 def test_calculate_iou_when_detections_are_zero_size() -> None:

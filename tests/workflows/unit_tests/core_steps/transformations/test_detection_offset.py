@@ -2,10 +2,14 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
+from inference.core.workflows.core_steps.common.utils import (
+    convert_to_sv_detections,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
-    offset_detection,
+    offset_detections,
 )
 
 
@@ -81,22 +85,31 @@ def test_offset_detection() -> None:
         "height": 20,
         "parent_id": "p2",
         "detection_id": "two",
-        "class_name": "car",
+        "class": "car",
+        "class_id": 1,
         "confidence": 0.5,
     }
+    predictions = convert_to_sv_detections(predictions=[{
+        "predictions": [detection],
+        "image": {
+            "width": 500,
+            "height": 500
+        }
+    }])
 
     # when
-    result = offset_detection(
-        detection=detection,
+    result = offset_detections(
+        detections=predictions[0]["predictions"],
         offset_width=50,
         offset_height=100,
     )
 
     # then
-    assert result["x"] == 100, "OX center should not be changed"
-    assert result["y"] == 200, "OY center should not be changed"
-    assert result["width"] == 70, "Width should be offset by 50px"
-    assert result["height"] == 120, "Height should be offset by 100px"
+    x1, y1, x2, y2 = result.xyxy[0]
+    assert x1 == 65, "Left corner should be moved by 25px to the left"
+    assert y1 == 140, "Top corner should be moved by 50px to the top"
+    assert x2 == 135, "Right corner should be moved by 25px to the right"
+    assert y2 == 260, "Right corner should be moved by 50px to the bottom"
     assert (
         result["parent_id"] == "two"
     ), "Parent id should be set to origin detection id"

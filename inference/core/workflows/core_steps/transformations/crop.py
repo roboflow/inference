@@ -104,6 +104,7 @@ class CropBlock(WorkflowBlock):
             decoded_images=decoded_images,
         )
         # TODO: ensure parent_id of detection and cropped image match
+        # TODO: we are not preserving information about batch of images, should this return [{"crops": [{(...), "parent_id": ...}]}, (...)]
         result = list(
             itertools.chain.from_iterable(
                 crop_image(image=image, detections=detections, origin_size=origin_shape)
@@ -119,28 +120,29 @@ class CropBlock(WorkflowBlock):
 
 def crop_image(
     image: np.ndarray,
-    detections: List[sv.Detections],
+    detections: sv.Detections,
     origin_size: dict,
+    detection_id_key = DETECTION_ID_KEY,
+    parent_id_key = PARENT_ID_KEY,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
-    for detection in detections:
-        x_min, y_min, x_max, y_max = detection.xyxy
+    for (x_min, y_min, x_max, y_max), detection_id in zip(detections.xyxy.astype(dtype=int), detections[detection_id_key]):
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(
             {
                 "crops": {
                     IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
                     IMAGE_VALUE_KEY: cropped_image,
-                    PARENT_ID_KEY: detection[DETECTION_ID_KEY],
+                    parent_id_key: detection_id,
                     ORIGIN_COORDINATES_KEY: {
                         LEFT_TOP_X_KEY: x_min,
                         LEFT_TOP_Y_KEY: y_min,
-                        WIDTH_KEY: detection[WIDTH_KEY],
-                        HEIGHT_KEY: detection[HEIGHT_KEY],
+                        WIDTH_KEY: abs(x_max - x_min),
+                        HEIGHT_KEY: abs(y_max - y_min),
                         ORIGIN_SIZE_KEY: origin_size,
                     },
                 },
-                "parent_id": detection[DETECTION_ID_KEY],
+                parent_id_key: detection_id,
             }
         )
     return crops

@@ -1,4 +1,5 @@
 import numpy as np
+import supervision as sv
 
 from inference.core.workflows.core_steps.common.utils import (
     extract_origin_size_from_images_batch,
@@ -50,25 +51,33 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     ]
 
 
-def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_classes_to_be_filtered_out() -> (
-    None
-):
+def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_classes_to_be_filtered_out():
     # given
     predictions = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections.from_inference(
+                {
+                    "image": {"height": 100, "width": 200},
+                    "predictions": [
+                        {"x": 11, "y": 12, "width": 13, "height": 14, "class_id": 1, "class": "a", "confidence": 0.5},
+                        {"x": 15, "y": 16, "width": 17, "height": 18, "class_id": 2, "class": "b", "confidence": 0.6},
+                    ],
+                },
+            )
         },
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "c", "field": "b"},
-            ],
-        },
+            "predictions": sv.Detections.from_inference(
+                {
+                    "image": {"height": 100, "width": 200},
+                    "predictions": [
+                        {"x": 21, "y": 22, "width": 23, "height": 24, "class_id": 1, "class": "a", "confidence": 0.7},
+                    ],
+                },
+            )
+        }
     ]
+    for p in predictions:
+        p["predictions"]["field"] = ["b"] * len(p["predictions"])
 
     # when
     result = filter_out_unwanted_classes_from_predictions_detections(
@@ -77,15 +86,30 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     )
 
     # then
-    assert result == [
+    expected_result = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections.from_inference(
+                {
+                    "image": {"height": 100, "width": 200},
+                    "predictions": [
+                        {"x": 15, "y": 16, "width": 17, "height": 18, "class_id": 2, "class": "b", "confidence": 0.6},
+                    ],
+                },
+            )
         },
-        {"image": {"height": 100, "width": 200}, "predictions": []},
+        {"predictions": sv.Detections.from_inference({"image": {"height": 100, "width": 200}, "predictions": []})},
     ]
+    for p in expected_result:
+        p["predictions"]["field"] = ["b"] * len(p["predictions"])
+        if not p["predictions"]:
+            empty_detections = p["predictions"]
+            empty_detections.xyxy.dtype = np.float64
+            empty_detections.xyxy.shape = (0, 4)
+            empty_detections.confidence.dtype = np.float64
+            empty_detections.data["field"].dtype = "<U1"
+            empty_detections.data["class_name"].dtype = "<U1"
+
+    assert result == expected_result
 
 
 def test_extract_origin_size_from_images() -> None:

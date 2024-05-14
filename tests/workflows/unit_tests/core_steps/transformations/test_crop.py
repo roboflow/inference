@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
+from inference.core.workflows.core_steps.common.utils import (
+    convert_to_sv_detections,
+)
 from inference.core.workflows.core_steps.transformations.crop import (
     BlockManifest,
     crop_image,
@@ -48,17 +52,20 @@ def test_crop_image() -> None:
     # given
     image = np.zeros((1000, 1000, 3), dtype=np.uint8)
     origin_size = {"height": 1000, "width": 1000}
-    predictions = [
-        {"x": 10, "y": 10, "width": 20, "height": 20, "detection_id": "one"},
-        {"x": 100, "y": 100, "width": 40, "height": 40, "detection_id": "two"},
-        {"x": 500, "y": 500, "width": 100, "height": 100, "detection_id": "three"},
-    ]
+    predictions = convert_to_sv_detections(predictions=[{
+        "predictions": [
+            {"x": 10, "y": 10, "width": 20, "height": 20, "detection_id": "one", "class_id": 1, "class": "cat", "confidence": 0.5},
+            {"x": 100, "y": 100, "width": 40, "height": 40, "detection_id": "two", "class_id": 1, "class": "cat", "confidence": 0.5},
+            {"x": 500, "y": 500, "width": 100, "height": 100, "detection_id": "three", "class_id": 1, "class": "cat", "confidence": 0.5}
+        ],
+        "image": origin_size
+    }])
     image[0:20, 0:20] = 39
     image[80:120, 80:120] = 49
     image[450:550, 450:550] = 59
 
     # when
-    result = crop_image(image=image, detections=predictions, origin_size=origin_size)
+    result = crop_image(image=image, detections=predictions[0]["predictions"], origin_size=origin_size)
 
     # then
     assert len(result) == 3, "Expected 3 crops to be created"

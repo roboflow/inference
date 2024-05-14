@@ -57,7 +57,9 @@ def convert_to_sv_detections(
     keypoints_key: str = "keypoints",
     detection_id_key: str = "detection_id",
 ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    converted_predictions: List[Dict[str, Union[sv.Detections, Any]]] = []
     for p in predictions:
+        converted_prediction = deepcopy(p)
         detections = sv.Detections.from_inference(p)
         if any(keypoints_key in d for d in p[predictions_key]):
             # keypoints arrays may have different length for each detection hence "object" type is used
@@ -78,8 +80,9 @@ def convert_to_sv_detections(
             for d in p[predictions_key]
         ]
         detections[detection_id_key] = np.array(detection_ids)
-        p[predictions_key] = detections
-    return predictions
+        converted_prediction[predictions_key] = detections
+        converted_predictions.append(converted_prediction)
+    return converted_predictions
 
 
 def attach_parent_info(
@@ -163,12 +166,15 @@ def filter_out_unwanted_classes_from_predictions_detections(
 ) -> List[Dict[str, Union[sv.Detections, Any]]]:
     if classes_to_accept is None:
         return predictions
+    filtered_predictions = []
     for prediction in predictions:
-        detections = prediction[detections_key]
-        prediction[detections_key] = detections[
-            np.isin(detections[class_name_key], classes_to_accept)
+        filtered_prediction = deepcopy(prediction)
+        filtered_detections = filtered_prediction[detections_key]
+        filtered_prediction[detections_key] = filtered_detections[
+            np.isin(filtered_detections[class_name_key], classes_to_accept)
         ]
-    return predictions
+        filtered_predictions.append(filtered_prediction)
+    return filtered_predictions
 
 
 def extract_origin_size_from_images_batch(
@@ -184,7 +190,3 @@ def extract_origin_size_from_images_batch(
                 {HEIGHT_KEY: decoded_image.shape[0], WIDTH_KEY: decoded_image.shape[1]}
             )
     return result
-
-
-def detection_to_xyxy(detection: sv.Detections) -> Tuple[int, int, int, int]:
-    return detection.xyxy
