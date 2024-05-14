@@ -49,7 +49,7 @@ COPY requirements/requirements.clip.txt \
 
 RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
-RUN python3.9 -m pip install --upgrade pip setuptools "h5py<=3.10.0" && python3.9 -m pip install \
+RUN python3.9 -m pip install --upgrade pip cython "h5py<=3.10.0" && python3.9 -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
