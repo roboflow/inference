@@ -1,9 +1,14 @@
-from typing import Literal, Any, List, Union
-from typing_extensions import Annotated
+from typing import Any, List, Literal, Union
 
 from pydantic import BaseModel, Field
+from typing_extensions import Annotated
 
-from inference.core.workflows.core_steps.common.query_language.entities import operations
+from inference.core.workflows.core_steps.common.query_language.entities import (
+    operations,
+)
+from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    StatementsGroupsOperator,
+)
 
 DEFAULT_OPERAND_NAME = "_"
 
@@ -94,30 +99,48 @@ class DynamicOperand(BaseModel):
 
 class BinaryStatement(BaseModel):
     type: Literal["BinaryStatement"]
-    left_operand: Annotated[Union[StaticOperand, DynamicOperand], Field(discriminator="type")]
+    left_operand: Annotated[
+        Union[StaticOperand, DynamicOperand], Field(discriminator="type")
+    ]
     comparator: Annotated[
         Union[
-            In, StringContains, StringEndsWith, StringStartsWith,
-            NumerLowerEqual, NumerLower, NumerGreaterEqual,
-            NumerGreater, NotEquals, Equals,
+            In,
+            StringContains,
+            StringEndsWith,
+            StringStartsWith,
+            NumerLowerEqual,
+            NumerLower,
+            NumerGreaterEqual,
+            NumerGreater,
+            NotEquals,
+            Equals,
         ],
-        Field(discriminator="type")
+        Field(discriminator="type"),
     ]
-    right_operand: Annotated[Union[StaticOperand, DynamicOperand], Field(discriminator="type")]
+    right_operand: Annotated[
+        Union[StaticOperand, DynamicOperand], Field(discriminator="type")
+    ]
     negate: bool = False
 
 
 class UnaryStatement(BaseModel):
     type: Literal["UnaryStatement"]
-    operand: Annotated[Union[StaticOperand, DynamicOperand], Field(discriminator="type")]
+    operand: Annotated[
+        Union[StaticOperand, DynamicOperand], Field(discriminator="type")
+    ]
     operator: Annotated[
         Union[Exists, DoesNotExist, IsTrue, IsFalse, IsEmpty, IsNotEmpty],
-        Field(discriminator="type")
+        Field(discriminator="type"),
     ]
     negate: bool = False
 
 
 class StatementGroup(BaseModel):
     type: Literal["StatementGroup"]
-    operator: Literal["and", "or"]
-    statements: List[Annotated[Union[BinaryStatement, UnaryStatement, "StatementGroup"], Field(discriminator="type")]]
+    operator: StatementsGroupsOperator
+    statements: List[
+        Annotated[
+            Union[BinaryStatement, UnaryStatement, "StatementGroup"],
+            Field(discriminator="type", min_items=1),
+        ]
+    ]

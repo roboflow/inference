@@ -1,11 +1,20 @@
-from typing import Literal, List, Union
+from typing import List, Literal, Union
 
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated
 
-from inference.core.workflows.core_steps.common.query_language.entities import evaluation
-from inference.core.workflows.core_steps.common.query_language.entities.enums import NumberCastingMode, \
-    SequenceAggregationFunction, SequenceAggregationMode, DetectionsProperty, SequenceUnwrapMethod
+from inference.core.workflows.core_steps.common.query_language.entities import (
+    evaluation,
+)
+from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    DetectionsProperty,
+    NumberCastingMode,
+    SequenceAggregationFunction,
+    SequenceAggregationMode,
+    SequenceUnwrapMethod,
+)
+
+TYPE_PARAMETER_NAME = "type"
 
 
 class OperationDefinition(BaseModel):
@@ -87,13 +96,24 @@ class SequenceApply(OperationDefinition):
 
 AllOperationsType = Annotated[
     Union[
-        StringToLowerCase, StringToUpperCase, LookupTable,
-        ToNumber, NumberRound, SequenceMap, SequenceApply,
-        NumericSequenceAggregate, ToString, ToBoolean, StringSubSequence,
-        DetectionsPropertyExtract, SequenceAggregate, DetectionsFilter,
-        ExtractDetectionProperty, DetectionsFilter
+        StringToLowerCase,
+        StringToUpperCase,
+        LookupTable,
+        ToNumber,
+        NumberRound,
+        SequenceMap,
+        SequenceApply,
+        NumericSequenceAggregate,
+        ToString,
+        ToBoolean,
+        StringSubSequence,
+        DetectionsPropertyExtract,
+        SequenceAggregate,
+        DetectionsFilter,
+        ExtractDetectionProperty,
+        DetectionsFilter,
     ],
-    Field(discriminator="type")
+    Field(discriminator="type"),
 ]
 
 

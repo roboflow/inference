@@ -8,3 +8,10 @@ class RoboflowQueryLanguageError(WorkflowExecutionEngineError):
 class InvalidInputTypeError(RoboflowQueryLanguageError):
     pass
 
+
+class OperationTypeNotRecognisedError(RoboflowQueryLanguageError):
+    pass
+
+
+class EvaluationEngineError(RoboflowQueryLanguageError):
+    pass

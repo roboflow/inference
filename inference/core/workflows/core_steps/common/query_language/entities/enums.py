@@ -32,3 +32,8 @@ class DetectionsProperty(Enum):
 class SequenceUnwrapMethod(Enum):
     FIRST = "first"
     LAST = "last"
+
+
+class StatementsGroupsOperator(Enum):
+    AND = "and"
+    OR = "or"

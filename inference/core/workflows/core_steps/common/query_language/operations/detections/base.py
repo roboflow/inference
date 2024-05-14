@@ -1,10 +1,16 @@
-from typing import List, Any, Callable, Dict
+from typing import Any, Callable, Dict, List
 
 import supervision as sv
 
-from inference.core.workflows.core_steps.common.query_language.entities.enums import DetectionsProperty
-from inference.core.workflows.core_steps.common.query_language.errors import InvalidInputTypeError
-from inference.core.workflows.core_steps.common.query_language.operations.utils import safe_stringify
+from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    DetectionsProperty,
+)
+from inference.core.workflows.core_steps.common.query_language.errors import (
+    InvalidInputTypeError,
+)
+from inference.core.workflows.core_steps.common.query_language.operations.utils import (
+    safe_stringify,
+)
 
 
 def extract_detections_property(
@@ -22,7 +28,9 @@ def extract_detections_property(
     return value.confidence.tolist()
 
 
-def filter_detections(value: Any, filtering_fun: Callable[[Dict[str, Any]], bool]) -> sv.Detections:
+def filter_detections(
+    value: Any, filtering_fun: Callable[[Dict[str, Any]], bool]
+) -> sv.Detections:
     if not isinstance(value, sv.Detections):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
