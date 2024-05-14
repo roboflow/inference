@@ -5,6 +5,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
 )
+from inference.core.workflows.core_steps.common.query_language.entities.operations import DEFAULT_OPERAND_NAME
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
 )
@@ -39,6 +40,6 @@ def filter_detections(
         )
     result = []
     for detection in value:
-        should_stay = filtering_fun({"_": detection})
+        should_stay = filtering_fun({DEFAULT_OPERAND_NAME: detection})
         result.append(should_stay)
     return value[result]

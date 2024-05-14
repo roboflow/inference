@@ -4,13 +4,8 @@ from typing import Any, Callable, Dict, List, Union
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     StatementsGroupsOperator,
 )
-from inference.core.workflows.core_steps.common.query_language.entities.evaluation import (
-    BinaryStatement,
-    DynamicOperand,
-    StatementGroup,
-    StaticOperand,
-    UnaryStatement,
-)
+from inference.core.workflows.core_steps.common.query_language.entities.operations import StaticOperand, DynamicOperand, \
+    BinaryStatement, UnaryStatement, StatementGroup
 from inference.core.workflows.core_steps.common.query_language.entities.types import (
     T,
     V,
@@ -96,11 +91,11 @@ def create_static_operand_builder(
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.operations)
+    operations_fun = build_operations_chain(operations=definition.ops)
     return partial(
         static_operand_builder,
         static_value=definition.value,
-        operations_fun=operations_fun,
+        operations_function=operations_fun,
     )
 
 
@@ -120,18 +115,18 @@ def create_dynamic_operand_builder(
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.operations)
+    operations_fun = build_operations_chain(operations=definition.ops)
     return partial(
         dynamic_operand_builder,
         operand_name=definition.operand_name,
-        operations_fun=operations_fun,
+        operations_function=operations_fun,
     )
 
 
 def dynamic_operand_builder(
-    values: [Dict[str, T]], operand_name: str, operations_fun: Callable[[T], V]
+    values: [Dict[str, T]], operand_name: str, operations_function: Callable[[T], V]
 ) -> V:
-    return operations_fun(values[operand_name])
+    return operations_function(values[operand_name])
 
 
 def binary_eval(

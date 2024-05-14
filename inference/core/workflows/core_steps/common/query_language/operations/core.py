@@ -5,6 +5,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
     TYPE_PARAMETER_NAME,
     DetectionsFilter,
     OperationDefinition,
+    OperationsChain,
     SequenceApply,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.types import (
@@ -45,8 +46,16 @@ from inference.core.workflows.core_steps.common.query_language.operations.string
 )
 
 
+def execute_operations(value: T, operations: List[dict]) -> V:
+    operations_parsed = OperationsChain.model_validate(
+        {"operations": operations}
+    )
+    ops_chain = build_operations_chain(operations_parsed.operations)
+    return ops_chain(value)
+
+
 def build_operations_chain(operations: List[OperationDefinition]) -> Callable[[T], V]:
-    if len(operations):
+    if not len(operations):
         return lambda x: x  # return identity function
     operations_functions = []
     for operation_definition in operations:
@@ -120,7 +129,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "ToBoolean": to_bool,
     "StringSubSequence": string_sub_sequence,
     "DetectionsPropertyExtract": extract_detections_property,
-    "StringSequenceAggregate": aggregate_sequence,
+    "SequenceAggregate": aggregate_sequence,
     "ExtractDetectionProperty": extract_detection_property,
 }
 
