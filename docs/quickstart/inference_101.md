@@ -1,8 +1,8 @@
 There are three ways to run Inference:
 
-- [Using the Python SDK (Images and Videos)](#native-python-api)
-- [Using the Python HTTP SDK (Images)](#native-python-api)
-- [Using the HTTP API (Images for all languages)](#http-api)
+- [Using the Python SDK (Images and Videos)](#using-the-python-sdk-images-and-videos)
+- [Using the Python HTTP SDK (Images)](#python-http-sdk)
+- [Using the HTTP SDK (Images for all languages)](#http-sdk)
 
 We document every method in the "Inputs" section of the Inference documentation.
 

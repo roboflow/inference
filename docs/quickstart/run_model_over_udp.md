@@ -34,15 +34,19 @@ import socket
 import json
 import time
 
+
+HOST = "localhost"
+PORT = 8000
+
 fps_array = []
 
 # Create a datagram (UDP) socket
 UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
 
 # Bind to the given IP address and port
-UDPClientSocket.bind((ip, port))
+UDPClientSocket.bind((HOST, PORT))
 
-print(f"UDP server up and listening on http://{ip}:{port}")
+print(f"UDP server up and listening on http://{HOST}:{PORT}")
 
 # Listen for incoming datagrams
 while True:
@@ -63,8 +67,6 @@ while True:
     fps_array[-150:]
     fps_average = sum(fps_array) / len(fps_array)
     print("AVERAGE FPS: " + str(fps_average))
-
-start_udp_server("localhost", arguments.port)
 ```
 
 Above, replace `port` with the port on which you want to run your server.

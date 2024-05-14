@@ -2,9 +2,10 @@ YOLO-NAS is a computer vision model architecture developed by Deci AI.
 
 ## Supported Model Types
 
-You can deploy the following YOLOv5 model types with Inference:
+You can deploy the following YOLO-NAS model types with Inference:
 
 - Object Detection
+- Keypoint Detection
 
 ## Supported Inputs
 
@@ -23,4 +24,4 @@ Starting from scratch? Use our Deployment Wizard to get a code snippet tailored 
 
 ## License
 
-See our [Licensing Guide](/licensing/) for more information about how your use of YOLOv5 is licensed when using Inference to deploy your model.
+See our [Licensing Guide](/quickstart/licensing/) for more information about how your use of YOLO-NAS is licensed when using Inference to deploy your model.
