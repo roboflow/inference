@@ -5,7 +5,7 @@ hide:
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and keypoint detection, and utilize foundation models like [CLIP](/foundation/clip), [Segment Anything](/foundation/sam), and [YOLO-World](/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
+Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and [keypoint detection](/quickstart/run_keypoint_detection/), and utilize foundation models like [CLIP](/foundation/clip), [Segment Anything](/foundation/sam), and [YOLO-World](/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
 Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
@@ -42,23 +42,31 @@ pip install inference
 ```
 
 <details>
-<summary>👉 additional considerations</summary>
+<summary>👉 running on a GPU</summary>
 
-### Hardware
+  To enhance model performance in GPU-accelerated environments, install CUDA-compatible dependencies instead:
+  
+  ```bash
+  pip install inference-gpu
+  ```
+</details>
 
-Enhance model performance in GPU-accelerated environments by installing CUDA-compatible dependencies.
+<details>
+<summary>👉 advanced models</summary>
 
-```bash
-pip install inference-gpu
-```
+  Inference supports multiple model types for specialized tasks. From Grounding DINO for identifying objects with a text prompt, to DocTR for OCR, to CogVLM for asking questions about images - you can find out more in the [Foundation Models](/foundation/about) page.
 
-### Model-specific dependencies
+  <br/><br/>
 
-The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](#extras) supported by Inference.
+  Note that `inference` and `inference-gpu` packages install only the minimal shared dependencies. **Instead**, install model-specific dependencies to ensure code compatibility and license compliance.
 
-```bash
-pip install inference[yolo-world]
-```
+  <br/><br/>
+
+  The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](#extras) supported by Inference.
+
+  ```bash
+  pip install inference[yolo-world]
+  ```
 
 </details>
 

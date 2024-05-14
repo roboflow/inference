@@ -39,9 +39,9 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
     model = YOLOWorld(model_id="yolo_world/l")
     classes = ["person", "backpack", "dog", "eye", "nose", "ear", "tongue"]
-    results = model.infer("image.jpeg", text=classes, confidence=0.03)
+    results = model.infer("image.jpeg", text=classes, confidence=0.03)[0]
 
-    detections = sv.Detections.from_inference(results[0])
+    detections = sv.Detections.from_inference(results)
 
     bounding_box_annotator = sv.BoundingBoxAnnotator()
     label_annotator = sv.LabelAnnotator()
@@ -89,14 +89,14 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
         api_key=os.environ["ROBOFLOW_API_KEY"]
     )
 
-    result = client.infer_from_yolo_world(
+    results = client.infer_from_yolo_world(
         inference_input=["https://media.roboflow.com/dog.jpeg"],
         class_names=["person", "backpack", "dog", "eye", "nose", "ear", "tongue"],
         model_version="l",
         confidence=0.1,
-    )
+    )[0]
 
-    detections = sv.Detections.from_inference(results[0])
+    detections = sv.Detections.from_inference(results)
 
     bounding_box_annotator = sv.BoundingBoxAnnotator()
     label_annotator = sv.LabelAnnotator()
