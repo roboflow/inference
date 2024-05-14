@@ -8,9 +8,6 @@ Inference is what allows you to deploy and run computer vision models. It enable
 
 Roboflow offers both a free tier, and paid [plans](https://roboflow.com/pricing), encompassing all of its products.
 
-- Inference is [open-source](https://github.com/roboflow/inference) and you can use it to run models with it locally for free. Do note that even with offline deployments, the model weights need to be downloaded from our servers at least once. See [From Local Weights](/models/from_local_weights/)
-- Under the [Free Plan](https://roboflow.com/pricing), designed for students, hobbyists and individuals, you're free to explore the services Roboflow provides. With inference, you may publicly deploy a model to our servers, and run it within certain usage limits.
-- When you're ready to upgrade, the [Starter Plan](https://roboflow.com/pricing) comes with Commercial licenses for hosted models, generous training credits, labelling and many other features.
 - Over half of Fortune 100 companies build with Roboflow. If you're an enterprise customer and interested in a custom solution, parallel processing, active learning or licenses for more than one cloud instance or edge device - **[Reach Out](https://roboflow.com/sales)** to our sales team!
 
 ## Related Products
