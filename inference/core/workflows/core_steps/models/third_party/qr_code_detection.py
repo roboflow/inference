@@ -98,9 +98,13 @@ class QRCodeDetectorBlock(WorkflowBlock):
             predictions=converted_predictions,
             prediction_type="qrcode-detection",
         )
-        converted_predictions = attach_parent_info(images=image, predictions=converted_predictions)
+        converted_predictions = attach_parent_info(
+            images=image, predictions=converted_predictions
+        )
         for converted_prediction, prediction in zip(converted_predictions, predictions):
-            converted_prediction["predictions"]["data"] = [d["data"] for d in prediction["predictions"]]
+            converted_prediction["predictions"]["data"] = [
+                d["data"] for d in prediction["predictions"]
+            ]
         return anchor_prediction_detections_in_parent_coordinates(
             image=image,
             predictions=converted_predictions,

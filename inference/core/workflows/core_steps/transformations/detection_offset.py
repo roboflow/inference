@@ -150,7 +150,13 @@ class DetectionOffsetBlock(WorkflowBlock):
         ]
 
 
-def offset_detections(detections: sv.Detections, offset_width: int, offset_height: int, parent_id_key: str = PARENT_ID_KEY, detection_id_key: str = DETECTION_ID_KEY) -> sv.Detections:
+def offset_detections(
+    detections: sv.Detections,
+    offset_width: int,
+    offset_height: int,
+    parent_id_key: str = PARENT_ID_KEY,
+    detection_id_key: str = DETECTION_ID_KEY,
+) -> sv.Detections:
     _detections = deepcopy(detections)
     _detections.xyxy = [
         (

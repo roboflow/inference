@@ -122,11 +122,13 @@ def crop_image(
     image: np.ndarray,
     detections: sv.Detections,
     origin_size: dict,
-    detection_id_key = DETECTION_ID_KEY,
-    parent_id_key = PARENT_ID_KEY,
+    detection_id_key=DETECTION_ID_KEY,
+    parent_id_key=PARENT_ID_KEY,
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
-    for (x_min, y_min, x_max, y_max), detection_id in zip(detections.xyxy.astype(dtype=int), detections[detection_id_key]):
+    for (x_min, y_min, x_max, y_max), detection_id in zip(
+        detections.xyxy.astype(dtype=int), detections[detection_id_key]
+    ):
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(
             {
