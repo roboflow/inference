@@ -81,6 +81,7 @@ A VideoFrame object contains:
 - `image`: The video frame as a NumPy array,
 - `frame_id`: The frame ID, and;
 - `frame_timestamp`: The timestamp of the frame.
+- `source_id`: The index of the video_reference element which was passed to InferencePipeline (useful when multiple streams are passed to InferencePipeline).
 
 Let's start by just printing the frame ID to the console.
 
