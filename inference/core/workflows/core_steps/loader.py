@@ -52,6 +52,11 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop im
 )
 
 
+from inference.core.workflows.core_steps.models.foundation.paligemma import (
+    PaligemmaBlock,
+)
+
+
 def load_blocks() -> list:
     return [
         ConditionBlock,
@@ -74,4 +79,5 @@ def load_blocks() -> list:
         DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
+        PaligemmaBlock,
     ]
