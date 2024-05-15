@@ -276,7 +276,7 @@ class InferenceHTTPClient:
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
-                f"Invalid model identifier: {model_id} in use."
+                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
             )
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
@@ -335,7 +335,7 @@ class InferenceHTTPClient:
         model_id_chunks = model_id_to_be_used.split("/")
         if len(model_id_chunks) != 2:
             raise InvalidModelIdentifier(
-                f"Invalid model identifier: {model_id} in use."
+                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
             )
         max_height, max_width = _determine_client_downsizing_parameters(
             client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
