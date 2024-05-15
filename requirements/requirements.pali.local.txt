@@ -1,0 +1,3 @@
+transformers @ git+https://github.com/huggingface/transformers@1360801a69c0b169e3efdbb0cd05d9a0e72bfb70
+accelerate
+onnx

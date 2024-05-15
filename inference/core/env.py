@@ -45,6 +45,7 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 COGVLM_LOAD_4BIT = str2bool(os.getenv("COGVLM_LOAD_4BIT", True))
 COGVLM_LOAD_8BIT = str2bool(os.getenv("COGVLM_LOAD_8BIT", False))
 COGVLM_VERSION_ID = os.getenv("COGVLM_VERSION_ID", "cogvlm-chat-hf")
+PALIGEMMA_VERSION_ID = os.getenv("PALIGEMMA_VERSION_ID", "paligemma-3b-mix-224")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 
@@ -100,6 +101,8 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 # Flag to enable CogVLM core model, default is True
 CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
+
+CORE_MODEL_PALIGEMMA_ENABLED = str2bool(os.getenv("CORE_MODEL_PALIGEMMA_ENABLED", True))
 
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
