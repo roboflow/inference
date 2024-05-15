@@ -2,8 +2,8 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
 import supervision as sv
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.workflows.constants import PARENT_ID_KEY
