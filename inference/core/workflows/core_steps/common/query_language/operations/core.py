@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List
+from typing import Any, Callable, Dict, List, Optional
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     TYPE_PARAMETER_NAME,
@@ -23,10 +23,13 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
     extract_detections_property,
-    filter_detections, offset_detections, shift_detections,
+    filter_detections,
+    offset_detections,
+    shift_detections,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
-    apply_lookup, generate_random_number,
+    apply_lookup,
+    generate_random_number,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
     number_round,
@@ -35,36 +38,50 @@ from inference.core.workflows.core_steps.common.query_language.operations.number
 from inference.core.workflows.core_steps.common.query_language.operations.sequences.base import (
     aggregate_numeric_sequence,
     aggregate_sequence,
+    get_sequence_length,
     sequence_apply,
-    sequence_map, get_sequence_length,
+    sequence_map,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.strings.base import (
+    string_matches,
     string_sub_sequence,
     string_to_lower,
     string_to_upper,
-    to_string, string_matches,
+    to_string,
 )
 
 
-def execute_operations(value: T, operations: List[dict]) -> V:
-    operations_parsed = OperationsChain.model_validate(
-        {"operations": operations}
-    )
+def execute_operations(
+    value: T, operations: List[dict], global_parameters: Optional[Dict[str, Any]] = None
+) -> V:
+    operations_parsed = OperationsChain.model_validate({"operations": operations})
     ops_chain = build_operations_chain(operations_parsed.operations)
-    return ops_chain(value)
+    if global_parameters is None:
+        global_parameters = {}
+    return ops_chain(value, global_parameters=global_parameters)
 
 
-def build_operations_chain(operations: List[OperationDefinition]) -> Callable[[T], V]:
+def identity(value: Any, **kwargs) -> Any:
+    return value
+
+
+def build_operations_chain(
+    operations: List[OperationDefinition],
+) -> Callable[[T, Dict[str, Any]], V]:
     if not len(operations):
-        return lambda x: x  # return identity function
+        return identity  # return identity function
     operations_functions = []
     for operation_definition in operations:
-        operation_function = build_operation(operation_definition=operation_definition)
+        operation_function = build_operation(
+            operation_definition=operation_definition,
+        )
         operations_functions.append(operation_function)
     return partial(chain, functions=operations_functions)
 
 
-def build_operation(operation_definition: OperationDefinition) -> Callable[[T], V]:
+def build_operation(
+    operation_definition: OperationDefinition,
+) -> Callable[[T], V]:
     if operation_definition.type in REGISTERED_SIMPLE_OPERATIONS:
         return build_simple_operation(
             operation_definition=operation_definition,
@@ -101,13 +118,17 @@ def build_sequence_apply_operation(definition: SequenceApply) -> Callable[[T], V
     return partial(sequence_apply, fun=chained_function)
 
 
-def chain(value: T, functions: List[Callable[[T], V]]) -> Callable[[T], V]:
+def chain(
+    value: T, global_parameters: Dict[str, Any], functions: List[Callable[[T], V]]
+) -> Callable[[T, Dict[str, Any]], V]:
     for function in functions:
-        value = function(value)
+        value = function(value, global_parameters=global_parameters)
     return value
 
 
-def build_detections_filter_operation(definition: DetectionsFilter) -> Callable[[T], V]:
+def build_detections_filter_operation(
+    definition: DetectionsFilter,
+) -> Callable[[T], V]:
     # local import to avoid circular dependency of modules with operations and evaluation
     from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
         build_eval_function,

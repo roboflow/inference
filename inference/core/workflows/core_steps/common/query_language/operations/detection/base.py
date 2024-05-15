@@ -18,10 +18,12 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.Y_MIN: lambda x: x[0][1].item(),
     DetectionsProperty.X_MAX: lambda x: x[0][2].item(),
     DetectionsProperty.Y_MAX: lambda x: x[0][3].item(),
-    DetectionsProperty.CONFIDENCE: lambda x: x[2],
-    DetectionsProperty.CLASS_ID: lambda x: x[3],
+    DetectionsProperty.CONFIDENCE: lambda x: x[2].item(),
+    DetectionsProperty.CLASS_ID: lambda x: x[3].item(),
     DetectionsProperty.CLASS_NAME: lambda x: x[5].get("class_name").item(),
-    DetectionsProperty.SIZE: lambda x: (x[0][3] - x[0][1]) * (x[0][2] - x[0][0]),
+    DetectionsProperty.SIZE: lambda x: (
+        (x[0][3] - x[0][1]) * (x[0][2] - x[0][0])
+    ).item(),
 }
 
 
@@ -29,6 +31,7 @@ def extract_detection_property(
     value: Any,
     property_name: DetectionsProperty,
     unwrap_method: SequenceUnwrapMethod,
+    **kwargs,
 ) -> Any:
     if isinstance(value, sv.Detections):
         if unwrap_method is SequenceUnwrapMethod.FIRST:

@@ -9,7 +9,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def string_to_lower(value: Any) -> str:
+def string_to_lower(value: Any, **kwargs) -> str:
     if not isinstance(value, str):
         raise InvalidInputTypeError(
             public_message=f"Using operation string_to_lower(...) requires string as input data, got: {type(value)}",
@@ -18,7 +18,7 @@ def string_to_lower(value: Any) -> str:
     return value.lower()
 
 
-def string_to_upper(value: Any) -> str:
+def string_to_upper(value: Any, **kwargs) -> str:
     if not isinstance(value, str):
         raise InvalidInputTypeError(
             public_message=f"Using operation string_to_upper(...) requires string as input data, got: {type(value)}",
@@ -27,7 +27,7 @@ def string_to_upper(value: Any) -> str:
     return value.upper()
 
 
-def to_string(value: Any) -> str:
+def to_string(value: Any, **kwargs) -> str:
     try:
         return str(value)
     except (TypeError, ValueError) as e:
@@ -39,7 +39,7 @@ def to_string(value: Any) -> str:
         )
 
 
-def string_sub_sequence(value: Any, start: int, end: int) -> str:
+def string_sub_sequence(value: Any, start: int, end: int, **kwargs) -> str:
     if not isinstance(value, str):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
@@ -50,7 +50,7 @@ def string_sub_sequence(value: Any, start: int, end: int) -> str:
     return value[start:end]
 
 
-def string_matches(value: Any, regex: str) -> bool:
+def string_matches(value: Any, regex: str, **kwargs) -> bool:
     if not isinstance(value, str):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(

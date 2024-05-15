@@ -4,8 +4,13 @@ from typing import Any, Callable, Dict, List, Union
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     StatementsGroupsOperator,
 )
-from inference.core.workflows.core_steps.common.query_language.entities.operations import StaticOperand, DynamicOperand, \
-    BinaryStatement, UnaryStatement, StatementGroup
+from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    BinaryStatement,
+    DynamicOperand,
+    StatementGroup,
+    StaticOperand,
+    UnaryStatement,
+)
 from inference.core.workflows.core_steps.common.query_language.entities.types import (
     T,
     V,
@@ -103,9 +108,9 @@ def create_static_operand_builder(
 def static_operand_builder(
     values: dict,
     static_value: T,
-    operations_function: Callable[[T], V],
+    operations_function: Callable[[T, Dict[str, Any]], V],
 ) -> V:
-    return operations_function(static_value)
+    return operations_function(static_value, global_parameters=values)
 
 
 def create_dynamic_operand_builder(
@@ -125,9 +130,11 @@ def create_dynamic_operand_builder(
 
 
 def dynamic_operand_builder(
-    values: [Dict[str, T]], operand_name: str, operations_function: Callable[[T], V]
+    values: [Dict[str, T]],
+    operand_name: str,
+    operations_function: Callable[[T, Dict[str, Any]], V],
 ) -> V:
-    return operations_function(values[operand_name])
+    return operations_function(values[operand_name], global_parameters=values)
 
 
 def binary_eval(
@@ -148,11 +155,10 @@ def binary_eval(
     except (TypeError, ValueError) as error:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of type: {operation_type}, "
-                           f"but encountered error: {error}",
+            f"but encountered error: {error}",
             context="step_execution | roboflow_query_language_evaluation",
             inner_error=error,
-
-        )
+        ) from error
 
 
 def build_unary_statement(definition: UnaryStatement) -> Callable[[Dict[str, T]], bool]:
@@ -178,16 +184,16 @@ def unary_eval(
         operand = operand_builder(values)
         result = operator(operand)
         if negate:
+            print("Negating")
             result = not result
         return result
     except (TypeError, ValueError) as error:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of type: {operation_type}, "
-                           f"but encountered error: {error}",
+            f"but encountered error: {error}",
             context="step_execution | roboflow_query_language_evaluation",
             inner_error=error,
-
-        )
+        ) from error
 
 
 COMPOUND_EVAL_STATEMENTS_COMBINERS = {

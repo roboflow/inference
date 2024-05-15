@@ -9,7 +9,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def apply_lookup(value: Any, lookup_table: dict) -> Any:
+def apply_lookup(value: Any, lookup_table: dict, **kwargs) -> Any:
     try:
         return lookup_table[value]
     except TypeError as e:
@@ -30,7 +30,9 @@ def apply_lookup(value: Any, lookup_table: dict) -> Any:
         )
 
 
-def generate_random_number(value: Any, min_value: float, max_value: float) -> float:
+def generate_random_number(
+    value: Any, min_value: float, max_value: float, **kwargs
+) -> float:
     if min_value == max_value:
         return min_value
     raw_random = random.random()

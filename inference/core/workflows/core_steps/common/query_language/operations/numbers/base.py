@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def to_number(value: Any, cast_to: NumberCastingMode) -> Union[float, int]:
+def to_number(value: Any, cast_to: NumberCastingMode, **kwargs) -> Union[float, int]:
     try:
         value = float(value)
         if cast_to is cast_to.INT:
@@ -27,7 +27,9 @@ def to_number(value: Any, cast_to: NumberCastingMode) -> Union[float, int]:
         )
 
 
-def number_round(value: Union[float, int], decimal_digits: int) -> Union[float, int]:
+def number_round(
+    value: Union[float, int], decimal_digits: int, **kwargs
+) -> Union[float, int]:
     try:
         return round(value, decimal_digits)
     except (TypeError, ValueError) as e:

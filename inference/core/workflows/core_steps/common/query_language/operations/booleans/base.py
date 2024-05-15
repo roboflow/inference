@@ -5,7 +5,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 
 
-def to_bool(value: Any) -> bool:
+def to_bool(value: Any, **kwargs) -> bool:
     try:
         return bool(value)
     except (TypeError, ValueError) as e:

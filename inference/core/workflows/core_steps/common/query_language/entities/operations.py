@@ -1,4 +1,4 @@
-from typing import List, Literal, Union, Any
+from typing import Any, List, Literal, Union
 
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated
@@ -8,7 +8,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     NumberCastingMode,
     SequenceAggregationFunction,
     SequenceAggregationMode,
-    SequenceUnwrapMethod, StatementsGroupsOperator,
+    SequenceUnwrapMethod,
+    StatementsGroupsOperator,
 )
 
 TYPE_PARAMETER_NAME = "type"
@@ -84,7 +85,7 @@ class ExtractDetectionProperty(OperationDefinition):
 
 class DetectionsFilter(OperationDefinition):
     type: Literal["DetectionsFilter"]
-    filter_operation: List["AllOperationsType"]
+    filter_operation: "StatementGroup"
 
 
 class DetectionsOffset(OperationDefinition):

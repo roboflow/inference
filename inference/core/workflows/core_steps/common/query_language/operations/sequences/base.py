@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 
 
-def sequence_map(value: Any, lookup_table: dict) -> List[Any]:
+def sequence_map(value: Any, lookup_table: dict, **kwargs) -> List[Any]:
     try:
         return [lookup_table[v] for v in value]
     except (TypeError, ValueError) as e:
@@ -30,7 +30,7 @@ def sequence_map(value: Any, lookup_table: dict) -> List[Any]:
         )
 
 
-def sequence_apply(value: Any, fun: callable) -> List[Any]:
+def sequence_apply(value: Any, fun: callable, **kwargs) -> List[Any]:
     try:
         return [fun(v) for v in value]
     except (TypeError, ValueError) as e:
@@ -49,7 +49,7 @@ AGGREGATION_FUNCTIONS = {
 
 
 def aggregate_numeric_sequence(
-    value: Any, function: SequenceAggregationFunction
+    value: Any, function: SequenceAggregationFunction, **kwargs
 ) -> Any:
     try:
         return AGGREGATION_FUNCTIONS[function](value)
@@ -69,7 +69,7 @@ def aggregate_numeric_sequence(
         )
 
 
-def aggregate_sequence(value: Any, mode: SequenceAggregationMode) -> Any:
+def aggregate_sequence(value: Any, mode: SequenceAggregationMode, **kwargs) -> Any:
     try:
         if len(value) < 1:
             raise InvalidInputTypeError(
@@ -92,13 +92,13 @@ def aggregate_sequence(value: Any, mode: SequenceAggregationMode) -> Any:
         )
 
 
-def get_sequence_length(value: Any) -> int:
+def get_sequence_length(value: Any, **kwargs) -> int:
     try:
         return len(value)
     except TypeError as e:
         raise InvalidInputTypeError(
             public_message=f"While executing get_sequence_length(...), encountered "
-                           f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
+            f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
             context="step_execution | roboflow_query_language_evaluation",
             inner_error=e,
         )
