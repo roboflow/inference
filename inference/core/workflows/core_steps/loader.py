@@ -10,6 +10,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier import
     LMMForClassificationBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
+from inference.core.workflows.core_steps.models.foundation.paligemma import (
+    PaligemmaBlock,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
 )
@@ -49,11 +52,6 @@ from inference.core.workflows.core_steps.transformations.detection_offset import
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
-)
-
-
-from inference.core.workflows.core_steps.models.foundation.paligemma import (
-    PaligemmaBlock,
 )
 
 

@@ -1,12 +1,14 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.models.paligemma.paligemma import PaliGemma
+from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.managers.base import ModelManager
-
-
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parent_info,
+    attach_prediction_type_info,
+    load_core_model,
+)
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
@@ -21,14 +23,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    attach_prediction_type_info,
-    load_core_model,
-)
-
-
-from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
+from inference.models.paligemma.paligemma import PaliGemma
 
 LONG_DESCRIPTION = """
 Paligemma block TODO
