@@ -181,15 +181,24 @@ class DetectionFilterBlock(WorkflowBlock):
         ],
         image_metadata: List[dict],
         prediction_type: List[str],
-    ) -> Union[Union[List[sv.Detections], List[Dict[str, Any]]], Tuple[Union[List[sv.Detections], List[Dict[str, Any]]], FlowControl]]:
+    ) -> Union[
+        Union[List[sv.Detections], List[Dict[str, Any]]],
+        Tuple[Union[List[sv.Detections], List[Dict[str, Any]]], FlowControl],
+    ]:
         filter_callable = build_filter_callable(definition=filter_definition)
         result_predictions, result_parent_ids = [], []
         for detections in predictions:
             if isinstance(detections, list):
-                filtered_detections = [d for d in detections if filter_callable(d[filter_definition.field_name])]
+                filtered_detections = [
+                    d
+                    for d in detections
+                    if filter_callable(d[filter_definition.field_name])
+                ]
                 filtered_parent_ids = [d[PARENT_ID_KEY] for d in filtered_detections]
             else:
-                filtered_detections = detections[[filter_callable(detections[i]) for i in range(len(detections))]]
+                filtered_detections = detections[
+                    [filter_callable(detections[i]) for i in range(len(detections))]
+                ]
                 filtered_parent_ids = filtered_detections[PARENT_ID_KEY].tolist()
             result_predictions.append(deepcopy(filtered_detections))
             result_parent_ids.append(filtered_parent_ids)
@@ -201,7 +210,8 @@ class DetectionFilterBlock(WorkflowBlock):
                 "prediction_type": single_prediction_type,
             }
             for prediction, parent_ids, image, single_prediction_type in zip(
-                result_predictions, result_parent_ids, image_metadata, prediction_type            )
+                result_predictions, result_parent_ids, image_metadata, prediction_type
+            )
         ]
 
 
@@ -220,8 +230,10 @@ def get_value(detection: Union[Dict[str, Any], sv.Detections], field_name: str):
                 return val[0]
             return None
         else:
-            raise ValueError(f"Property name '{field_name}' specified within filter definition "
-                              "could not be found in predictions.")
+            raise ValueError(
+                f"Property name '{field_name}' specified within filter definition "
+                "could not be found in predictions."
+            )
 
 
 def build_filter_callable(
@@ -234,7 +246,9 @@ def build_filter_callable(
         return lambda e: binary_operator(left_callable(e), right_callable(e))
     if definition.type == "DetectionFilterDefinition":
         operator = OPERATORS_FUNCTIONS[definition.operator]
-        return lambda e: operator(get_value(e, definition.field_name), definition.reference_value)
+        return lambda e: operator(
+            get_value(e, definition.field_name), definition.reference_value
+        )
     raise ValueError(
         f"Detected filter definition of type {definition.type} which is unknown"
     )

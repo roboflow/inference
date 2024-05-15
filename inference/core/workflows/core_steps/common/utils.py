@@ -65,14 +65,16 @@ def convert_to_sv_detections(
             # keypoints arrays may have different length for each detection hence "object" type is used
             detections[keypoints_key] = np.array(
                 [
-                    np.array(
-                        [
-                            [keypoint["x"], keypoint["y"]]
-                            for keypoint in d[keypoints_key]
-                        ]
+                    (
+                        np.array(
+                            [
+                                [keypoint["x"], keypoint["y"]]
+                                for keypoint in d[keypoints_key]
+                            ]
+                        )
+                        if d.get(keypoints_key)
+                        else np.array([])
                     )
-                    if d.get(keypoints_key)
-                    else np.array([])
                     for d in p[predictions_key]
                 ],
                 dtype="object",
@@ -80,9 +82,7 @@ def convert_to_sv_detections(
         if any(parent_id_key in d for d in p[predictions_key]):
             detections[parent_id_key] = np.array(
                 [
-                    d[parent_id_key]
-                    if d.get(parent_id_key)
-                    else None
+                    d[parent_id_key] if d.get(parent_id_key) else None
                     for d in p[predictions_key]
                 ]
             )
@@ -157,12 +157,18 @@ def anchor_detections_in_parent_coordinates(
         origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
         origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
         origin_mask_base = np.full((origin_height, origin_width), False)
-        anchored_detections.mask = [origin_mask_base.copy() for _ in anchored_detections]
-        for anchored_mask, original_mask in zip(anchored_detections.mask, prediction[detections_key].mask):
+        anchored_detections.mask = [
+            origin_mask_base.copy() for _ in anchored_detections
+        ]
+        for anchored_mask, original_mask in zip(
+            anchored_detections.mask, prediction[detections_key].mask
+        ):
             mask_h, mask_w = original_mask.shape
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-            anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = original_mask
+            anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = (
+                original_mask
+            )
     prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]

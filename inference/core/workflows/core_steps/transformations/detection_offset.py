@@ -124,15 +124,17 @@ class DetectionOffsetBlock(WorkflowBlock):
         offset_predictions = []
         for detections in predictions:
             offset_detections = deepcopy(detections)
-            offset_detections.xyxy = np.array([
-                (
-                    x1 - offset_width // 2,
-                    y1 - offset_height // 2,
-                    x2 + offset_width // 2,
-                    y2 + offset_height // 2,
-                )
-                for (x1, y1, x2, y2) in offset_detections.xyxy
-            ])
+            offset_detections.xyxy = np.array(
+                [
+                    (
+                        x1 - offset_width // 2,
+                        y1 - offset_height // 2,
+                        x2 + offset_width // 2,
+                        y2 + offset_height // 2,
+                    )
+                    for (x1, y1, x2, y2) in offset_detections.xyxy
+                ]
+            )
             # parent ID remains unchanged
             offset_predictions.append(offset_detections)
         return [
