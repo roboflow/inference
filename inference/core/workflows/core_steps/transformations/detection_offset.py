@@ -2,6 +2,7 @@ import uuid
 from copy import deepcopy
 from typing import Any, Dict, List, Literal, Type, Union
 
+import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 from typing_extensions import Annotated
@@ -123,7 +124,7 @@ class DetectionOffsetBlock(WorkflowBlock):
         offset_predictions = []
         for detections in predictions:
             offset_detections = deepcopy(detections)
-            offset_detections.xyxy = [
+            offset_detections.xyxy = np.array([
                 (
                     x1 - offset_width // 2,
                     y1 - offset_height // 2,
@@ -131,7 +132,7 @@ class DetectionOffsetBlock(WorkflowBlock):
                     y2 + offset_height // 2,
                 )
                 for (x1, y1, x2, y2) in offset_detections.xyxy
-            ]
+            ])
             # parent ID remains unchanged
             offset_predictions.append(offset_detections)
         return [

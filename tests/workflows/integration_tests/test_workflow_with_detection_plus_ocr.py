@@ -26,7 +26,7 @@ MULTI_STAGES_WORKFLOW = {
             "prediction_type": "$steps.detection.prediction_type",
             "filter_definition": {
                 "type": "DetectionFilterDefinition",
-                "field_name": "class",
+                "field_name": "class_name",
                 "operator": "==",
                 "reference_value": "car",
             },

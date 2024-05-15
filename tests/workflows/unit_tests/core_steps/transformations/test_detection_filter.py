@@ -1,6 +1,11 @@
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parent_info,
+    convert_to_sv_detections,
+)
 from inference.core.workflows.core_steps.common.operators import Operator
 from inference.core.workflows.core_steps.transformations.detection_filter import (
     BlockManifest,
@@ -171,57 +176,69 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
             },
         }
     )
-    predictions = [
-        [
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p1",
-                "detection_id": "one",
-                "class_name": "car",
-                "confidence": 0.2,
-            },
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p2",
-                "detection_id": "two",
-                "class_name": "car",
-                "confidence": 0.5,
-            },
-        ],
-        [
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p3",
-                "detection_id": "three",
-                "class_name": "dog",
-                "confidence": 0.2,
-            },
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p4",
-                "detection_id": "four",
-                "class_name": "car",
-                "confidence": 0.5,
-            },
-        ],
-    ]
+    predictions = convert_to_sv_detections([
+        {
+            "predictions": [
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 20,
+                    "height": 20,
+                    "parent_id": "p1",
+                    "detection_id": "one",
+                    "class": "car",
+                    "class_id": 0,
+                    "confidence": 0.2,
+                },
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 20,
+                    "height": 20,
+                    "parent_id": "p2",
+                    "detection_id": "two",
+                    "class": "car",
+                    "class_id": 0,
+                    "confidence": 0.5,
+                },
+            ],
+            "image": {"width": 1000, "height": 1000},
+            "parent_id": "image"
+        },
+        {
+            "predictions": [
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 20,
+                    "height": 20,
+                    "parent_id": "p3",
+                    "detection_id": "three",
+                    "class": "dog",
+                    "class_id": 0,
+                    "confidence": 0.2,
+                },
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 20,
+                    "height": 20,
+                    "parent_id": "p4",
+                    "detection_id": "four",
+                    "class": "car",
+                    "class_id": 0,
+                    "confidence": 0.5,
+                },
+            ],
+            "image": {"width": 1000, "height": 1000},
+            "parent_id": "image"
+        }
+    ])
     block = DetectionFilterBlock()
 
     # when
     result = await block.run_locally(
-        predictions=predictions,
+        predictions=[p["predictions"] for p in predictions],
         filter_definition=filter_definition,
         image_metadata=[{"height": 100, "width": 100}] * 2,
         prediction_type=["object-detection"] * 2,
@@ -234,30 +251,40 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
     assert (
         result[1]["prediction_type"] == "object-detection"
     ), "Prediction type must be preserved"
-    assert result[0]["predictions"] == [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p2",
-            "detection_id": "two",
-            "class_name": "car",
-            "confidence": 0.5,
-        }
-    ], "Only second prediction in each batch should survive"
-    assert result[1]["predictions"] == [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p4",
-            "detection_id": "four",
-            "class_name": "car",
-            "confidence": 0.5,
-        }
-    ], "Only second prediction in each batch should survive"
+    result_predictions = convert_to_sv_detections([{
+        "predictions": [
+            {
+                "x": 10,
+                "y": 10,
+                "width": 20,
+                "height": 20,
+                "parent_id": "p2",
+                "detection_id": "two",
+                "class": "car",
+                "class_id": 0,
+                "confidence": 0.5,
+            },
+        ],
+        "image": {"width": 1000, "height": 1000, "parent_id": "image"}
+    }])
+    assert result[0]["predictions"] == result_predictions[0]["predictions"], "Only second prediction in each batch should survive"
+    result_predictions = convert_to_sv_detections([{
+        "predictions": [
+            {
+                "x": 10,
+                "y": 10,
+                "width": 20,
+                "height": 20,
+                "parent_id": "p4",
+                "detection_id": "four",
+                "class": "car",
+                "class_id": 0,
+                "confidence": 0.5,
+            },
+        ],
+        "image": {"width": 1000, "height": 1000}
+    }])
+    assert result[1]["predictions"] == result_predictions[0]["predictions"], "Only second prediction in each batch should survive"
     assert result[0]["parent_id"] == [
         "p2"
     ], "Only second prediction in each batch should mark parent_id"

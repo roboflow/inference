@@ -95,7 +95,7 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
     assert np.allclose(
         crowd_image[106:318, 160:480, :], result["crop"][0]["value"], atol=5
     ), "Expected crop to be made in central area of input image, as specified in inputs"
-    parent_coordinates_detections = sv.Detections.from_inference(result["result"][0])
+    parent_coordinates_detections = result["result"][0]["predictions"]
     assert np.allclose(
         parent_coordinates_detections.xyxy,
         np.array(
@@ -110,9 +110,7 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
         ),
         atol=1,
     ), "Expected detections in parent coordinates to be as manually validated at test creation"
-    own_coordinates_detections = sv.Detections.from_inference(
-        result["result_in_own_coordinates"][0]
-    )
+    own_coordinates_detections = result["result_in_own_coordinates"][0]["predictions"]
     assert np.allclose(
         own_coordinates_detections.xyxy,
         np.array(

@@ -1,7 +1,9 @@
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
+import supervision as sv
 from typing_extensions import Annotated
 
 from inference.core.workflows.constants import PARENT_ID_KEY
@@ -38,7 +40,7 @@ class DetectionFilterDefinition(BaseModel):
             "width",
             "height",
             "confidence",
-            "class",
+            "class_name",
             "class_id",
             "points",
             "keypoints",
@@ -173,41 +175,58 @@ class DetectionFilterBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[List[dict]],
+        predictions: Union[List[Dict[str, Any]], List[sv.Detections]],
         filter_definition: Union[
             DetectionFilterDefinition, CompoundDetectionFilterDefinition
         ],
         image_metadata: List[dict],
         prediction_type: List[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> Union[Union[List[sv.Detections], List[Dict[str, Any]]], Tuple[Union[List[sv.Detections], List[Dict[str, Any]]], FlowControl]]:
         filter_callable = build_filter_callable(definition=filter_definition)
-        result_predictions, result_parent_id = [], []
+        result_predictions, result_parent_ids = [], []
         for detections in predictions:
-            filtered_prediction = [
-                deepcopy(detection)
-                for detection in detections
-                if filter_callable(detection)
-            ]
-            result_predictions.append(filtered_prediction)
-            result_parent_id.append(
-                [prediction[PARENT_ID_KEY] for prediction in filtered_prediction]
-            )
+            if isinstance(detections, list):
+                filtered_detections = [d for d in detections if filter_callable(d[filter_definition.field_name])]
+                filtered_parent_ids = [d[PARENT_ID_KEY] for d in filtered_detections]
+            else:
+                filtered_detections = detections[[filter_callable(detections[i]) for i in range(len(detections))]]
+                filtered_parent_ids = filtered_detections[PARENT_ID_KEY].tolist()
+            result_predictions.append(deepcopy(filtered_detections))
+            result_parent_ids.append(filtered_parent_ids)
         return [
             {
                 "predictions": prediction,
-                PARENT_ID_KEY: parent_id,
+                PARENT_ID_KEY: parent_ids,
                 "image": image,
                 "prediction_type": single_prediction_type,
             }
-            for prediction, parent_id, image, single_prediction_type in zip(
-                result_predictions, result_parent_id, image_metadata, prediction_type
-            )
+            for prediction, parent_ids, image, single_prediction_type in zip(
+                result_predictions, result_parent_ids, image_metadata, prediction_type            )
         ]
+
+
+def get_value(detection: Union[Dict[str, Any], sv.Detections], field_name: str):
+    if isinstance(detection, dict):
+        return detection[field_name]
+    else:
+        if hasattr(detection, field_name):
+            val: Optional[np.ndarray] = getattr(detection, field_name)
+            if val:
+                return val[0]
+            return None
+        elif hasattr(detection, "data") and field_name in detection.data:
+            val: Optional[np.ndarray] = detection[field_name]
+            if val:
+                return val[0]
+            return None
+        else:
+            raise ValueError(f"Property name '{field_name}' specified within filter definition "
+                              "could not be found in predictions.")
 
 
 def build_filter_callable(
     definition: Union[DetectionFilterDefinition, CompoundDetectionFilterDefinition],
-) -> Callable[[dict], bool]:
+) -> Callable[[Union[Dict[str, Any], sv.Detections]], bool]:
     if definition.type == "CompoundDetectionFilterDefinition":
         left_callable = build_filter_callable(definition=definition.left)
         right_callable = build_filter_callable(definition=definition.right)
@@ -215,7 +234,7 @@ def build_filter_callable(
         return lambda e: binary_operator(left_callable(e), right_callable(e))
     if definition.type == "DetectionFilterDefinition":
         operator = OPERATORS_FUNCTIONS[definition.operator]
-        return lambda e: operator(e[definition.field_name], definition.reference_value)
+        return lambda e: operator(get_value(e, definition.field_name), definition.reference_value)
     raise ValueError(
         f"Detected filter definition of type {definition.type} which is unknown"
     )

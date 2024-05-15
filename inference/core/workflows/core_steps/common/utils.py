@@ -55,6 +55,7 @@ def convert_to_sv_detections(
     predictions_key: str = "predictions",
     keypoints_key: str = "keypoints",
     detection_id_key: str = "detection_id",
+    parent_id_key: str = PARENT_ID_KEY,
 ) -> List[Dict[str, Union[sv.Detections, Any]]]:
     converted_predictions: List[Dict[str, Union[sv.Detections, Any]]] = []
     for p in predictions:
@@ -70,9 +71,20 @@ def convert_to_sv_detections(
                             for keypoint in d[keypoints_key]
                         ]
                     )
+                    if d.get(keypoints_key)
+                    else np.array([])
                     for d in p[predictions_key]
                 ],
                 dtype="object",
+            )
+        if any(parent_id_key in d for d in p[predictions_key]):
+            detections[parent_id_key] = np.array(
+                [
+                    d[parent_id_key]
+                    if d.get(parent_id_key)
+                    else None
+                    for d in p[predictions_key]
+                ]
             )
         detection_ids = [
             d[detection_id_key] if detection_id_key in d else str(uuid.uuid4)
@@ -134,23 +146,23 @@ def anchor_detections_in_parent_coordinates(
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_X_KEY],
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_Y_KEY],
     )
-    origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
-    origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
-    origin_mask_base = np.full((origin_height, origin_width), False)
     anchored_detections: sv.Detections = prediction[
         f"{detections_key}{PARENT_COORDINATES_SUFFIX}"
     ]
-    for d in anchored_detections:
-        mask_h, mask_w = d.mask.shape
-        origin_mask = origin_mask_base.copy()
-        # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
-        #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-        origin_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = d.mask
-        d.mask = origin_mask
-        d.xyxy += [shift_x, shift_y, shift_x, shift_y]
-        # TODO: assumed type
-        if keypoints_key in d.data:
-            d.data[keypoints_key] += [shift_x, shift_y]
+    anchored_detections.xyxy += [shift_x, shift_y, shift_x, shift_y]
+    # TODO: assumed type
+    if keypoints_key in anchored_detections.data:
+        anchored_detections[keypoints_key] += [shift_x, shift_y]
+    if anchored_detections.mask:
+        origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
+        origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
+        origin_mask_base = np.full((origin_height, origin_width), False)
+        anchored_detections.mask = [origin_mask_base.copy() for _ in anchored_detections]
+        for anchored_mask, original_mask in zip(anchored_detections.mask, prediction[detections_key].mask):
+            mask_h, mask_w = original_mask.shape
+            # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
+            #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
+            anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = original_mask
     prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]

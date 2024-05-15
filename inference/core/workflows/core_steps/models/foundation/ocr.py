@@ -149,8 +149,6 @@ class OCRModelBlock(WorkflowBlock):
         image: List[dict],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        # TODO: test
-        predictions = convert_to_sv_detections(predictions)
         predictions = attach_parent_info(
             images=image,
             predictions=predictions,
