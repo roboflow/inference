@@ -104,7 +104,7 @@ def build_operation(
 
 def build_simple_operation(
     operation_definition: OperationDefinition,
-    operation_function: Callable[[T, ...], V],
+    operation_function: Callable[[T], V],
     execution_context: str,
 ) -> Callable[[T], V]:
     predefined_arguments_names = [
