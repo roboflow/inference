@@ -20,7 +20,6 @@ import numpy as np
 import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
-from torchvision.ops import boxes
 
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
@@ -342,9 +341,7 @@ def enumerate_detections(
 
 
 def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
-    box_a = torch.tensor(detection_a.xyxy, dtype=torch.float)
-    box_b = torch.tensor(detection_b.xyxy, dtype=torch.float)
-    iou = float(boxes.box_iou(box_a, box_b))
+    iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
     if math.isnan(iou):
         iou = 0
     return iou
