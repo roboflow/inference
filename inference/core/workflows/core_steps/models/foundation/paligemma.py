@@ -24,7 +24,7 @@ from inference.core.workflows.prototypes.block import (
 
 
 LONG_DESCRIPTION = """
-PaliGemma block TODO
+PaliGemmaModel block is used to run PaliGemma model. It takes an image and a prompt as input and returns the model output.
 """
 
 
@@ -37,7 +37,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "model",
         }
     )
-    type: Literal["PaliGemma"]
+    type: Literal["PaliGemmaModel"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class PaliGemmaBlock(WorkflowBlock):
+class PaliGemmaModelBlock(WorkflowBlock):
 
     def __init__(
         self,
