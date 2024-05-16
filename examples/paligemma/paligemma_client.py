@@ -3,8 +3,7 @@ import requests
 import os
 
 PORT = 9001
-# API_KEY = os.environ["API_KEY"]
-API_KEY = "yqoRhbDSjh25rkRRkmbL"
+API_KEY = os.environ["API_KEY"]
 IMAGE_PATH = "../cogvlm/image.jpg"
 
 def encode_bas64(image_path):
