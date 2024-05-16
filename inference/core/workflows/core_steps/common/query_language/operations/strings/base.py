@@ -13,7 +13,7 @@ def string_to_lower(value: Any, execution_context: str, **kwargs) -> str:
     if not isinstance(value, str):
         raise InvalidInputTypeError(
             public_message=f"Using operation string_to_lower(...) in context {execution_context} which requires "
-                           f"string as input data, got: {type(value)}",
+            f"string as input data, got: {type(value)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     return value.lower()
@@ -23,7 +23,7 @@ def string_to_upper(value: Any, execution_context: str, **kwargs) -> str:
     if not isinstance(value, str):
         raise InvalidInputTypeError(
             public_message=f"Using operation string_to_upper(...) in context {execution_context} which requires "
-                           f"string as input data, got: {type(value)}",
+            f"string as input data, got: {type(value)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     return value.upper()
@@ -35,13 +35,15 @@ def to_string(value: Any, execution_context: str, **kwargs) -> str:
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
             public_message=f"Using operation to_string(...) in context {execution_context} which requires "
-                           f"value possible to be converted into string, got: {type(value)}",
+            f"value possible to be converted into string, got: {type(value)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
 
-def string_sub_sequence(value: Any, start: int, end: int, execution_context: str, **kwargs) -> str:
+def string_sub_sequence(
+    value: Any, start: int, end: int, execution_context: str, **kwargs
+) -> str:
     if not isinstance(value, str):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(

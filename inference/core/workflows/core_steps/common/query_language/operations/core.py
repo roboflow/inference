@@ -66,8 +66,7 @@ def identity(value: Any, **kwargs) -> Any:
 
 
 def build_operations_chain(
-    operations: List[OperationDefinition],
-    execution_context: str = "<root>"
+    operations: List[OperationDefinition], execution_context: str = "<root>"
 ) -> Callable[[T, Dict[str, Any]], V]:
     if not len(operations):
         return identity  # return identity function
@@ -94,8 +93,7 @@ def build_operation(
         )
     if operation_definition.type in REGISTERED_COMPOUND_OPERATIONS_BUILDERS:
         return REGISTERED_COMPOUND_OPERATIONS_BUILDERS[operation_definition.type](
-            operation_definition,
-            execution_context
+            operation_definition, execution_context
         )
     raise OperationTypeNotRecognisedError(
         public_message=f"Attempted to build operation with declared type: {operation_definition.type} "
@@ -117,10 +115,14 @@ def build_simple_operation(
     return partial(operation_function, **kwargs)
 
 
-def build_sequence_apply_operation(definition: SequenceApply, execution_context: str) -> Callable[[T], V]:
+def build_sequence_apply_operation(
+    definition: SequenceApply, execution_context: str
+) -> Callable[[T], V]:
     operations_functions = []
     for operation in definition.operations:
-        operation_function = build_operation(operation_definition=operation, execution_context=execution_context)
+        operation_function = build_operation(
+            operation_definition=operation, execution_context=execution_context
+        )
         operations_functions.append(operation_function)
     chained_function = partial(chain, functions=operations_functions)
     return partial(sequence_apply, fun=chained_function)

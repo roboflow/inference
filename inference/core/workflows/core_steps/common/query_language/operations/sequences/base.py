@@ -10,7 +10,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 
 
-def sequence_map(value: Any, lookup_table: dict, execution_context: str, **kwargs) -> List[Any]:
+def sequence_map(
+    value: Any, lookup_table: dict, execution_context: str, **kwargs
+) -> List[Any]:
     try:
         return [lookup_table[v] for v in value]
     except (TypeError, ValueError) as e:
@@ -30,7 +32,9 @@ def sequence_map(value: Any, lookup_table: dict, execution_context: str, **kwarg
         )
 
 
-def sequence_apply(value: Any, fun: callable, execution_context: str, **kwargs) -> List[Any]:
+def sequence_apply(
+    value: Any, fun: callable, execution_context: str, **kwargs
+) -> List[Any]:
     try:
         return [fun(v) for v in value]
     except (TypeError, ValueError) as e:
@@ -56,8 +60,8 @@ def aggregate_numeric_sequence(
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
             public_message=f"While executing aggregate_numeric_sequence(...) in context {execution_context}, "
-                           f"encountered value of type {type(value)} which is not suited to execute operation. "
-                           f"Details: {e}",
+            f"encountered value of type {type(value)} which is not suited to execute operation. "
+            f"Details: {e}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
@@ -70,7 +74,9 @@ def aggregate_numeric_sequence(
         )
 
 
-def aggregate_sequence(value: Any, mode: SequenceAggregationMode, execution_context: str, **kwargs) -> Any:
+def aggregate_sequence(
+    value: Any, mode: SequenceAggregationMode, execution_context: str, **kwargs
+) -> Any:
     try:
         if len(value) < 1:
             raise InvalidInputTypeError(

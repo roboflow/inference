@@ -11,7 +11,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def to_number(value: Any, cast_to: NumberCastingMode, execution_context: str, **kwargs) -> Union[float, int]:
+def to_number(
+    value: Any, cast_to: NumberCastingMode, execution_context: str, **kwargs
+) -> Union[float, int]:
     try:
         value = float(value)
         if cast_to is cast_to.INT:

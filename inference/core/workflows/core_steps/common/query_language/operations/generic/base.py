@@ -9,13 +9,15 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def apply_lookup(value: Any, lookup_table: dict, execution_context: str, **kwargs) -> Any:
+def apply_lookup(
+    value: Any, lookup_table: dict, execution_context: str, **kwargs
+) -> Any:
     try:
         return lookup_table[value]
     except TypeError as e:
         raise InvalidInputTypeError(
             public_message=f"While executing operation apply_lookup(...) in context {execution_context}, "
-                           f"passed value of type {type(value)} which does not let it be searched in lookup table.",
+            f"passed value of type {type(value)} which does not let it be searched in lookup table.",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )

@@ -40,7 +40,7 @@ def extract_detections_property(
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
             public_message=f"Executing extract_detections_property(...) in context {execution_context}, "
-                           f"expected sv.Detections object as value, got {value_as_str} of type {type(value)}",
+            f"expected sv.Detections object as value, got {value_as_str} of type {type(value)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     return PROPERTIES_EXTRACTORS[property_name](value)

@@ -50,7 +50,7 @@ def evaluate(values: dict, definition: dict) -> bool:
 
 def build_eval_function(
     definition: Union[BinaryStatement, UnaryStatement, StatementGroup],
-    execution_context: str = "<root>"
+    execution_context: str = "<root>",
 ) -> Callable[[T], bool]:
     if isinstance(definition, BinaryStatement):
         return build_binary_statement(definition, execution_context=execution_context)
@@ -59,7 +59,11 @@ def build_eval_function(
     statements_functions = []
     for statement_id, statement in enumerate(definition.statements):
         statement_execution_context = f"{execution_context}.statements[{statement_id}]"
-        statements_functions.append(build_eval_function(statement, execution_context=statement_execution_context))
+        statements_functions.append(
+            build_eval_function(
+                statement, execution_context=statement_execution_context
+            )
+        )
     return partial(
         compound_eval,
         statements_functions=statements_functions,
@@ -73,8 +77,12 @@ def build_binary_statement(
     execution_context: str,
 ) -> Callable[[Dict[str, T]], bool]:
     operator = BINARY_OPERATORS[definition.comparator.type]
-    left_operand_builder = create_operand_builder(definition=definition.left_operand, execution_context=execution_context)
-    right_operand_builder = create_operand_builder(definition=definition.right_operand, execution_context=execution_context)
+    left_operand_builder = create_operand_builder(
+        definition=definition.left_operand, execution_context=execution_context
+    )
+    right_operand_builder = create_operand_builder(
+        definition=definition.right_operand, execution_context=execution_context
+    )
     return partial(
         binary_eval,
         left_operand_builder=left_operand_builder,
@@ -91,8 +99,12 @@ def create_operand_builder(
     execution_context: str,
 ) -> Callable[[Dict[str, T]], V]:
     if isinstance(definition, StaticOperand):
-        return create_static_operand_builder(definition, execution_context=execution_context)
-    return create_dynamic_operand_builder(definition, execution_context=execution_context)
+        return create_static_operand_builder(
+            definition, execution_context=execution_context
+        )
+    return create_dynamic_operand_builder(
+        definition, execution_context=execution_context
+    )
 
 
 def create_static_operand_builder(
@@ -176,9 +188,13 @@ def binary_eval(
         ) from error
 
 
-def build_unary_statement(definition: UnaryStatement, execution_context: str) -> Callable[[Dict[str, T]], bool]:
+def build_unary_statement(
+    definition: UnaryStatement, execution_context: str
+) -> Callable[[Dict[str, T]], bool]:
     operator = UNARY_OPERATORS[definition.operator.type]
-    operand_builder = create_operand_builder(definition=definition.operand, execution_context=execution_context)
+    operand_builder = create_operand_builder(
+        definition=definition.operand, execution_context=execution_context
+    )
     return partial(
         unary_eval,
         operand_builder=operand_builder,
@@ -226,13 +242,13 @@ def compound_eval(
     if not statements_functions:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of statements in context of {execution_context}, "
-                           f"but empty statements list provided.",
+            f"but empty statements list provided.",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     if operator not in COMPOUND_EVAL_STATEMENTS_COMBINERS:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of statements in context of {execution_context} "
-                           f"using operator: {operator} which is not registered.",
+            f"using operator: {operator} which is not registered.",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     operator_fun = COMPOUND_EVAL_STATEMENTS_COMBINERS[operator]
