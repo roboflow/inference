@@ -53,7 +53,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations: List[OperationDefinition]
     operations_parameters: Dict[
-        str, Union[WorkflowImageSelector, WorkflowParameterSelector]
+        str, Union[WorkflowImageSelector, WorkflowParameterSelector()]
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=["$inputs.confidence", "$inputs.image"],

@@ -873,6 +873,7 @@ class HttpInterface(BaseInterface):
                             property_description=c.property_description,
                             compatible_element=c.compatible_element,
                             is_list_element=c.is_list_element,
+                            is_dict_element=c.is_dict_element,
                         )
                         for c in connections
                     ]

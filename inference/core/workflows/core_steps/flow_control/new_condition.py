@@ -38,7 +38,8 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["NewCondition"]
     condition_statement: StatementGroup
     evaluation_parameters: Dict[
-        str, Union[WorkflowImageSelector, WorkflowParameterSelector, StepOutputSelector]
+        str,
+        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],

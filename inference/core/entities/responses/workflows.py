@@ -28,6 +28,9 @@ class ExternalWorkflowsBlockSelectorDefinition(BaseModel):
     is_list_element: bool = Field(
         description="Boolean flag defining if list of references will be accepted"
     )
+    is_dict_element: bool = Field(
+        description="Boolean flag defining if dict of references will be accepted"
+    )
 
 
 class ExternalBlockPropertyPrimitiveDefinition(BaseModel):

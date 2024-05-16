@@ -83,6 +83,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                     )
                 ],
                 is_list_element=False,
+                is_dict_element=False,
             ),
             step_name="my_step",
             value="$inputs.image",
@@ -99,6 +100,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                     )
                 ],
                 is_list_element=False,
+                is_dict_element=False,
             ),
             step_name="my_step",
             value="$inputs.param",
