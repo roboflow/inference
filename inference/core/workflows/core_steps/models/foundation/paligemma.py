@@ -24,20 +24,20 @@ from inference.core.workflows.prototypes.block import (
 
 
 LONG_DESCRIPTION = """
-Paligemma block TODO
+PaliGemma block TODO
 """
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run Paligemma model.",
+            "short_description": "Run PaliGemma model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
         }
     )
-    type: Literal["Paligemma"]
+    type: Literal["PaliGemma"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class PaligemmaBlock(WorkflowBlock):
+class PaliGemmaBlock(WorkflowBlock):
 
     def __init__(
         self,
