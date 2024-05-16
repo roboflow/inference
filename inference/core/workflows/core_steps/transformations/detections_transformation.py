@@ -97,5 +97,11 @@ class DetectionsTransformationBlock(WorkflowBlock):
             transformed_detections = operations_chain(
                 detections, global_parameters=operations_parameters
             )
+            if not isinstance(transformed_detections, sv.Detections):
+                raise ValueError(
+                    "Definition of operation chain provided to `DetectionsTransformation` block "
+                    f"transforms sv.Detections into different type: {type(transformed_detections)} "
+                    "which is not allowed."
+                )
             result.append({"predictions": transformed_detections})
         return result
