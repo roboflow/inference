@@ -50,27 +50,31 @@ def evaluate(values: dict, definition: dict) -> bool:
 
 def build_eval_function(
     definition: Union[BinaryStatement, UnaryStatement, StatementGroup],
+    execution_context: str = "<root>"
 ) -> Callable[[T], bool]:
     if isinstance(definition, BinaryStatement):
-        return build_binary_statement(definition)
+        return build_binary_statement(definition, execution_context=execution_context)
     if isinstance(definition, UnaryStatement):
-        return build_unary_statement(definition)
+        return build_unary_statement(definition, execution_context=execution_context)
     statements_functions = []
-    for statement in definition.statements:
-        statements_functions.append(build_eval_function(statement))
+    for statement_id, statement in enumerate(definition.statements):
+        statement_execution_context = f"{execution_context}.statements[{statement_id}]"
+        statements_functions.append(build_eval_function(statement, execution_context=statement_execution_context))
     return partial(
         compound_eval,
         statements_functions=statements_functions,
         operator=definition.operator,
+        execution_context=execution_context,
     )
 
 
 def build_binary_statement(
     definition: BinaryStatement,
+    execution_context: str,
 ) -> Callable[[Dict[str, T]], bool]:
     operator = BINARY_OPERATORS[definition.comparator.type]
-    left_operand_builder = create_operand_builder(definition=definition.left_operand)
-    right_operand_builder = create_operand_builder(definition=definition.right_operand)
+    left_operand_builder = create_operand_builder(definition=definition.left_operand, execution_context=execution_context)
+    right_operand_builder = create_operand_builder(definition=definition.right_operand, execution_context=execution_context)
     return partial(
         binary_eval,
         left_operand_builder=left_operand_builder,
@@ -78,26 +82,32 @@ def build_binary_statement(
         right_operand_builder=right_operand_builder,
         negate=definition.negate,
         operation_type=definition.type,
+        execution_context=execution_context,
     )
 
 
 def create_operand_builder(
-    definition: Union[StaticOperand, DynamicOperand]
+    definition: Union[StaticOperand, DynamicOperand],
+    execution_context: str,
 ) -> Callable[[Dict[str, T]], V]:
     if isinstance(definition, StaticOperand):
-        return create_static_operand_builder(definition)
-    return create_dynamic_operand_builder(definition)
+        return create_static_operand_builder(definition, execution_context=execution_context)
+    return create_dynamic_operand_builder(definition, execution_context=execution_context)
 
 
 def create_static_operand_builder(
     definition: StaticOperand,
+    execution_context: str,
 ) -> Callable[[Dict[str, T]], V]:
     # local import to avoid circular dependency of modules with operations and evaluation
     from inference.core.workflows.core_steps.common.query_language.operations.core import (
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.operations)
+    operations_fun = build_operations_chain(
+        operations=definition.operations,
+        execution_context=f"{execution_context}.operations",
+    )
     return partial(
         static_operand_builder,
         static_value=definition.value,
@@ -115,13 +125,17 @@ def static_operand_builder(
 
 def create_dynamic_operand_builder(
     definition: DynamicOperand,
+    execution_context: str,
 ) -> Callable[[Dict[str, T]], V]:
     # local import to avoid circular dependency of modules with operations and evaluation
     from inference.core.workflows.core_steps.common.query_language.operations.core import (
         build_operations_chain,
     )
 
-    operations_fun = build_operations_chain(operations=definition.operations)
+    operations_fun = build_operations_chain(
+        operations=definition.operations,
+        execution_context=f"{execution_context}.operations",
+    )
     return partial(
         dynamic_operand_builder,
         operand_name=definition.operand_name,
@@ -144,6 +158,7 @@ def binary_eval(
     right_operand_builder: Callable[[Dict[str, T]], V],
     negate: bool,
     operation_type: str,
+    execution_context: str,
 ) -> bool:
     try:
         left_operand = left_operand_builder(values)
@@ -154,16 +169,16 @@ def binary_eval(
         return result
     except (TypeError, ValueError) as error:
         raise EvaluationEngineError(
-            public_message=f"Attempted to execute evaluation of type: {operation_type}, "
+            public_message=f"Attempted to execute evaluation of type: {operation_type} in context {execution_context}, "
             f"but encountered error: {error}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=error,
         ) from error
 
 
-def build_unary_statement(definition: UnaryStatement) -> Callable[[Dict[str, T]], bool]:
+def build_unary_statement(definition: UnaryStatement, execution_context: str) -> Callable[[Dict[str, T]], bool]:
     operator = UNARY_OPERATORS[definition.operator.type]
-    operand_builder = create_operand_builder(definition=definition.operand)
+    operand_builder = create_operand_builder(definition=definition.operand, execution_context=execution_context)
     return partial(
         unary_eval,
         operand_builder=operand_builder,
@@ -206,17 +221,19 @@ def compound_eval(
     values: Dict[str, T],
     statements_functions: List[Callable[[Dict[str, T]], bool]],
     operator: StatementsGroupsOperator,
+    execution_context: str,
 ) -> bool:
     if not statements_functions:
         raise EvaluationEngineError(
-            public_message=f"Attempted to execute evaluation of statements, but empty statements list provided.",
-            context="step_execution | roboflow_query_language_evaluation",
+            public_message=f"Attempted to execute evaluation of statements in context of {execution_context}, "
+                           f"but empty statements list provided.",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     if operator not in COMPOUND_EVAL_STATEMENTS_COMBINERS:
         raise EvaluationEngineError(
-            public_message=f"Attempted to execute evaluation of statements, using operator: "
-            f"{operator} which is not registered.",
-            context="step_execution | roboflow_query_language_evaluation",
+            public_message=f"Attempted to execute evaluation of statements in context of {execution_context} "
+                           f"using operator: {operator} which is not registered.",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     operator_fun = COMPOUND_EVAL_STATEMENTS_COMBINERS[operator]
     result = statements_functions[0](values)

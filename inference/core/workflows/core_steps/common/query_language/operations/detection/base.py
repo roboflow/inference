@@ -31,6 +31,7 @@ def extract_detection_property(
     value: Any,
     property_name: DetectionsProperty,
     unwrap_method: SequenceUnwrapMethod,
+    execution_context: str,
     **kwargs,
 ) -> Any:
     if isinstance(value, sv.Detections):
@@ -41,9 +42,9 @@ def extract_detection_property(
     if not isinstance(value, tuple) or len(value) != 6:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
-            public_message=f"While executing extract_detection_property(...) operation it was "
-            f"expected to get 6-elements tuple representing single element. Got value: "
-            f"{value_as_str} of type {type(value)} ",
-            context="step_execution | roboflow_query_language_evaluation",
+            public_message=f"While executing extract_detection_property(...) operation in context {execution_context} "
+                           f"it was expected to get 6-elements tuple representing single element. Got value: "
+                           f"{value_as_str} of type {type(value)} ",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
     return DETECTION_PROPERTY_EXTRACTION[property_name](value)

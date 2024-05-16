@@ -10,34 +10,34 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 
 
-def sequence_map(value: Any, lookup_table: dict, **kwargs) -> List[Any]:
+def sequence_map(value: Any, lookup_table: dict, execution_context: str, **kwargs) -> List[Any]:
     try:
         return [lookup_table[v] for v in value]
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing sequence_map(...), encountered "
+            public_message=f"While executing sequence_map(...) in context {execution_context}, encountered "
             f"value of type {type(value)} which is not a sequence to be iterated",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
     except KeyError as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing operation sequence_map(...), encountered "
+            public_message=f"While executing operation sequence_map(...) in context {execution_context}, encountered "
             f"value `{e}` which cannot be found in lookup "
             f"table with keys: {list(lookup_table.keys())}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
 
-def sequence_apply(value: Any, fun: callable, **kwargs) -> List[Any]:
+def sequence_apply(value: Any, fun: callable, execution_context: str, **kwargs) -> List[Any]:
     try:
         return [fun(v) for v in value]
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing sequence_apply(...), encountered "
+            public_message=f"While executing sequence_apply(...) in context {execution_context}, encountered "
             f"value of type {type(value)} which is not a sequence to be iterated",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
@@ -49,33 +49,34 @@ AGGREGATION_FUNCTIONS = {
 
 
 def aggregate_numeric_sequence(
-    value: Any, function: SequenceAggregationFunction, **kwargs
+    value: Any, function: SequenceAggregationFunction, execution_context: str, **kwargs
 ) -> Any:
     try:
         return AGGREGATION_FUNCTIONS[function](value)
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing aggregate_numeric_sequence(...), encountered "
-            f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
-            context="step_execution | roboflow_query_language_evaluation",
+            public_message=f"While executing aggregate_numeric_sequence(...) in context {execution_context}, "
+                           f"encountered value of type {type(value)} which is not suited to execute operation. "
+                           f"Details: {e}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
     except KeyError as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing aggregate_numeric_sequence(...), "
+            public_message=f"While executing aggregate_numeric_sequence(...) in context {execution_context}, "
             f"requested aggregation function {function.value} which is not supported.",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
 
-def aggregate_sequence(value: Any, mode: SequenceAggregationMode, **kwargs) -> Any:
+def aggregate_sequence(value: Any, mode: SequenceAggregationMode, execution_context: str, **kwargs) -> Any:
     try:
         if len(value) < 1:
             raise InvalidInputTypeError(
-                public_message=f"While executing aggregate_sequence(...), encountered "
+                public_message=f"While executing aggregate_sequence(...) in context {execution_context}, encountered "
                 f"value empty sequence which cannot be aggregated",
-                context="step_execution | roboflow_query_language_evaluation",
+                context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             )
         if mode in {SequenceAggregationMode.FIRST, SequenceAggregationMode.LAST}:
             index = 0 if mode is SequenceAggregationMode.FIRST else -1
@@ -85,20 +86,20 @@ def aggregate_sequence(value: Any, mode: SequenceAggregationMode, **kwargs) -> A
         return ctr_ordered[index]
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing aggregate_sequence(...), encountered "
+            public_message=f"While executing aggregate_sequence(...) in context {execution_context}, encountered "
             f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
 
-def get_sequence_length(value: Any, **kwargs) -> int:
+def get_sequence_length(value: Any, execution_context: str, **kwargs) -> int:
     try:
         return len(value)
     except TypeError as e:
         raise InvalidInputTypeError(
-            public_message=f"While executing get_sequence_length(...), encountered "
+            public_message=f"While executing get_sequence_length(...) in context {execution_context}, encountered "
             f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )

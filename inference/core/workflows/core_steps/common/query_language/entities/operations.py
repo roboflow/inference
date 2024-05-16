@@ -1,6 +1,6 @@
 from typing import Any, List, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
@@ -11,6 +11,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     SequenceUnwrapMethod,
     StatementsGroupsOperator,
 )
+from inference.core.workflows.entities.types import STRING_KIND, WILDCARD_KIND, INTEGER_KIND, FLOAT_KIND, \
+    FLOAT_ZERO_TO_ONE_KIND, BOOLEAN_KIND, LIST_OF_VALUES_KIND
 
 TYPE_PARAMETER_NAME = "type"
 DEFAULT_OPERAND_NAME = "_"
@@ -21,58 +23,144 @@ class OperationDefinition(BaseModel):
 
 
 class StringToLowerCase(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Executes lowercase operation on input string",
+            "compound": False,
+            "input_kind": [STRING_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
     type: Literal["StringToLowerCase"]
 
 
 class StringToUpperCase(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Executes uppercase operation on input string",
+            "compound": False,
+            "input_kind": [STRING_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
     type: Literal["StringToUpperCase"]
 
 
 class LookupTable(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes value according to mapping stated in lookup table",
+            "input_kind": [WILDCARD_KIND],
+            "output_kind": [WILDCARD_KIND],
+        },
+    )
     type: Literal["LookupTable"]
     lookup_table: dict
 
 
 class ToNumber(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes value into number - float or int depending on configuration",
+            "input_kind": [STRING_KIND, BOOLEAN_KIND, INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
     type: Literal["ToNumber"]
     cast_to: NumberCastingMode
 
 
 class NumberRound(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Rounds the number",
+            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
     type: Literal["NumberRound"]
     decimal_digits: int
 
 
 class SequenceMap(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes each value of sequence according to mapping stated in lookup table",
+            "input_kind": [LIST_OF_VALUES_KIND],
+            "output_kind": [LIST_OF_VALUES_KIND],
+        },
+    )
     type: Literal["SequenceMap"]
     lookup_table: dict
 
 
 class NumericSequenceAggregate(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Aggregates numeric sequence using aggregation function like min or max - adjusted to work on numbers",
+            "input_kind": [LIST_OF_VALUES_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
     type: Literal["NumericSequenceAggregate"]
     function: SequenceAggregationFunction
 
 
 class SequenceAggregate(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Aggregates sequence using generic aggregation methods - adjusted to majority data types",
+            "input_kind": [LIST_OF_VALUES_KIND],
+            "output_kind": [WILDCARD_KIND],
+        },
+    )
     type: Literal["SequenceAggregate"]
     mode: SequenceAggregationMode
 
 
 class ToString(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Stringifies data",
+            "input_kind": [WILDCARD_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
     type: Literal["ToString"]
 
 
 class ToBoolean(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes input data into boolean",
+            "input_kind": [FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND, INTEGER_KIND],
+            "output_kind": [BOOLEAN_KIND],
+        },
+    )
     type: Literal["ToBoolean"]
 
 
 class StringSubSequence(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Takes sub-string of the input string",
+            "input_kind": [STRING_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
     type: Literal["StringSubSequence"]
     start: int = Field(default=0)
     end: int = Field(default=-1)
 
 
 class DetectionsPropertyExtract(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts properties from ",
+            "input_kind": [STRING_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
     type: Literal["DetectionsPropertyExtract"]
     property_name: DetectionsProperty
 

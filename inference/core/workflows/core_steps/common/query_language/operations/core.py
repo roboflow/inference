@@ -67,13 +67,16 @@ def identity(value: Any, **kwargs) -> Any:
 
 def build_operations_chain(
     operations: List[OperationDefinition],
+    execution_context: str = "<root>"
 ) -> Callable[[T, Dict[str, Any]], V]:
     if not len(operations):
         return identity  # return identity function
     operations_functions = []
-    for operation_definition in operations:
+    for operation_id, operation_definition in enumerate(operations):
+        operation_context = f"{execution_context}[{operation_id}]"
         operation_function = build_operation(
             operation_definition=operation_definition,
+            execution_context=operation_context,
         )
         operations_functions.append(operation_function)
     return partial(chain, functions=operations_functions)
@@ -81,15 +84,18 @@ def build_operations_chain(
 
 def build_operation(
     operation_definition: OperationDefinition,
+    execution_context: str,
 ) -> Callable[[T], V]:
     if operation_definition.type in REGISTERED_SIMPLE_OPERATIONS:
         return build_simple_operation(
             operation_definition=operation_definition,
             operation_function=REGISTERED_SIMPLE_OPERATIONS[operation_definition.type],
+            execution_context=execution_context,
         )
     if operation_definition.type in REGISTERED_COMPOUND_OPERATIONS_BUILDERS:
         return REGISTERED_COMPOUND_OPERATIONS_BUILDERS[operation_definition.type](
-            operation_definition
+            operation_definition,
+            execution_context
         )
     raise OperationTypeNotRecognisedError(
         public_message=f"Attempted to build operation with declared type: {operation_definition.type} "
@@ -101,18 +107,20 @@ def build_operation(
 def build_simple_operation(
     operation_definition: OperationDefinition,
     operation_function: Callable[[T, ...], V],
+    execution_context: str,
 ) -> Callable[[T], V]:
     predefined_arguments_names = [
         t for t in type(operation_definition).model_fields if t != TYPE_PARAMETER_NAME
     ]
     kwargs = {a: getattr(operation_definition, a) for a in predefined_arguments_names}
+    kwargs["execution_context"] = execution_context
     return partial(operation_function, **kwargs)
 
 
-def build_sequence_apply_operation(definition: SequenceApply) -> Callable[[T], V]:
+def build_sequence_apply_operation(definition: SequenceApply, execution_context: str) -> Callable[[T], V]:
     operations_functions = []
     for operation in definition.operations:
-        operation_function = build_operation(operation_definition=operation)
+        operation_function = build_operation(operation_definition=operation, execution_context=execution_context)
         operations_functions.append(operation_function)
     chained_function = partial(chain, functions=operations_functions)
     return partial(sequence_apply, fun=chained_function)
@@ -128,13 +136,17 @@ def chain(
 
 def build_detections_filter_operation(
     definition: DetectionsFilter,
+    execution_context: str,
 ) -> Callable[[T], V]:
     # local import to avoid circular dependency of modules with operations and evaluation
     from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
         build_eval_function,
     )
 
-    filtering_fun = build_eval_function(definition.filter_operation)
+    filtering_fun = build_eval_function(
+        definition=definition.filter_operation,
+        execution_context=execution_context,
+    )
     return partial(filter_detections, filtering_fun=filtering_fun)
 
 

@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def to_number(value: Any, cast_to: NumberCastingMode, **kwargs) -> Union[float, int]:
+def to_number(value: Any, cast_to: NumberCastingMode, execution_context: str, **kwargs) -> Union[float, int]:
     try:
         value = float(value)
         if cast_to is cast_to.INT:
@@ -20,23 +20,23 @@ def to_number(value: Any, cast_to: NumberCastingMode, **kwargs) -> Union[float, 
     except (TypeError, ValueError) as e:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
-            public_message=f"While executing operation to_number(...), encountered "
+            public_message=f"While executing operation to_number(...) in context {execution_context}, encountered "
             f"value `{value_as_str}` of type {type(value)} which cannot be casted into {cast_to.value}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
 
 
 def number_round(
-    value: Union[float, int], decimal_digits: int, **kwargs
+    value: Union[float, int], decimal_digits: int, execution_context: str, **kwargs
 ) -> Union[float, int]:
     try:
         return round(value, decimal_digits)
     except (TypeError, ValueError) as e:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
-            public_message=f"While executing number_round to_number(...), encountered "
+            public_message=f"While executing number_round to_number(...) in context {execution_context}, encountered "
             f"value `{value_as_str}` of type {type(value)} which cannot be rounded",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
