@@ -18,7 +18,6 @@ from uuid import uuid4
 
 import numpy as np
 import supervision as sv
-import torch
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.constants import (
