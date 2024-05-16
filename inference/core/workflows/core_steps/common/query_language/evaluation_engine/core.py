@@ -215,7 +215,6 @@ def unary_eval(
         operand = operand_builder(values)
         result = operator(operand)
         if negate:
-            print("Negating")
             result = not result
         return result
     except (TypeError, ValueError) as error:

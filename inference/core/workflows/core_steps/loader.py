@@ -1,4 +1,7 @@
 from inference.core.workflows.core_steps.flow_control.condition import ConditionBlock
+from inference.core.workflows.core_steps.flow_control.new_condition import (
+    NewConditionBlock,
+)
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
 )
@@ -34,6 +37,9 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
+from inference.core.workflows.core_steps.sampling.detections_sampler import (
+    DetectionsSamplerBlock,
+)
 from inference.core.workflows.core_steps.sinks.active_learning.data_collector import (
     ActiveLearningDataCollectorBlock,
 )
@@ -46,6 +52,9 @@ from inference.core.workflows.core_steps.transformations.detection_filter import
 )
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     DetectionOffsetBlock,
+)
+from inference.core.workflows.core_steps.transformations.detections_transformation import (
+    DetectionsTransformationBlock,
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
@@ -74,4 +83,7 @@ def load_blocks() -> list:
         DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
+        DetectionsTransformationBlock,
+        DetectionsSamplerBlock,
+        NewConditionBlock,
     ]
