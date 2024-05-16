@@ -7,9 +7,8 @@ from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 from inference.core.env import MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
-import time
-
 import os
+import time
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
