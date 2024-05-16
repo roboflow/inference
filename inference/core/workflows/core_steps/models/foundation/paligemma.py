@@ -4,9 +4,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-)
+from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
@@ -21,7 +19,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 
 LONG_DESCRIPTION = """
 PaliGemmaModel block is used to run PaliGemma model. It takes an image and a prompt as input and returns the model output.
