@@ -20,7 +20,7 @@ def do_gemma_request():
     infer_payload = {
         "image": {
             "type": "base64",
-            "value": encode_bas64("youtube-19-small.jpg"),
+            "value": encode_bas64(IMAGE_PATH),
         },
         "api_key": API_KEY,
         "prompt": prompt
