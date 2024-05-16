@@ -37,6 +37,17 @@ def assembly_step_parameters(
                 )
                 for v in value
             ]
+        elif isinstance(value, dict):
+            value = {
+                k: retrieve_value(
+                    value=v,
+                    step_name=step_manifest.name,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                    accepts_batch_input=accepts_batch_input,
+                )
+                for k, v in value.items()
+            }
         else:
             value = retrieve_value(
                 value=value,

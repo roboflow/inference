@@ -1,3 +1,5 @@
+from typing import Dict, List, Literal
+
 import pytest
 
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
@@ -10,6 +12,7 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_STRING_KIND,
     STRING_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.errors import (
     ExecutionEngineNotImplementedError,
@@ -23,6 +26,7 @@ from inference.core.workflows.execution_engine.executor.parameters_assembler imp
     retrieve_step_output,
     retrieve_value_from_runtime_input,
 )
+from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
 def test_retrieve_value_from_runtime_input_when_miss_detected() -> None:
@@ -377,3 +381,47 @@ def test_assembly_step_parameters() -> None:
     assert (
         result["detections_merge_coordinates_aggregation"] is AggregationMode.AVERAGE
     ), "Expected to see default value for block"
+
+
+class ExampleManifest(WorkflowBlockManifest):
+    name: str
+    type: Literal["Example"]
+    simple_dict: Dict[str, int]
+    reference_dict: Dict[str, WorkflowParameterSelector()]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
+def test_assembly_step_parameters_when_selectors_are_present_in_dictionary() -> None:
+    # given
+    execution_cache = ExecutionCache.init()
+    manifest = ExampleManifest(
+        type="Example",
+        name="my_step",
+        simple_dict={"a": 3, "b": 7},
+        reference_dict={
+            "c": "$inputs.c",
+            "d": "$inputs.d",
+        },
+    )
+
+    # when
+    result = assembly_step_parameters(
+        step_manifest=manifest,
+        runtime_parameters={"c": 0.9, "d": 0.7},
+        execution_cache=execution_cache,
+        accepts_batch_input=True,
+    )
+
+    # then
+    assert len(result) == 2, "Expected 2 elements to be present in assembled kwargs"
+    assert result["simple_dict"] == {
+        "a": 3,
+        "b": 7,
+    }, "Expected to `simple_dict` value from manifest entity, without changes"
+    assert result["reference_dict"] == {
+        "c": 0.9,
+        "d": 0.7,
+    }, "Expected `reference_dict` to be injected from inputs"
