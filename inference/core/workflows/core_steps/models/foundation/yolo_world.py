@@ -197,12 +197,17 @@ class YoloWorldModelBlock(WorkflowBlock):
         image: List[dict],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = convert_to_sv_detections(predictions)
+        detections = convert_to_sv_detections(predictions)
+        for p, d in zip(predictions, detections):
+            p["predictions"] = d
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="object-detection",
         )
-        predictions = attach_parent_info(images=image, predictions=predictions)
+        predictions = attach_parent_info(
+            images=image,
+            predictions=predictions,
+        )
         return anchor_prediction_detections_in_parent_coordinates(
             image=image,
             predictions=predictions,

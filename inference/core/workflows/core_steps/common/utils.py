@@ -11,7 +11,13 @@ from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
     HEIGHT_KEY,
+    KEYPOINTS_KEY,
+    KEYPOINTS_CLASS_ID_KEY,
+    KEYPOINTS_CLASS_NAME_KEY,
+    KEYPOINTS_CONFIDENCE_KEY,
+    KEYPOINTS_XY_KEY,
     LEFT_TOP_X_KEY,
     LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
@@ -51,49 +57,52 @@ def attach_prediction_type_info(
 
 
 def convert_to_sv_detections(
-    predictions: List[Dict[str, Any]],
+    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
     predictions_key: str = "predictions",
-    keypoints_key: str = "keypoints",
-    detection_id_key: str = "detection_id",
-    parent_id_key: str = PARENT_ID_KEY,
-) -> List[Dict[str, Union[sv.Detections, Any]]]:
-    converted_predictions: List[Dict[str, Union[sv.Detections, Any]]] = []
+) -> List[sv.Detections]:
+    batch_of_detections: List[sv.Detections] = []
     for p in predictions:
-        converted_prediction = deepcopy(p)
         detections = sv.Detections.from_inference(p)
-        if any(keypoints_key in d for d in p[predictions_key]):
-            # keypoints arrays may have different length for each detection hence "object" type is used
-            detections[keypoints_key] = np.array(
-                [
-                    (
-                        np.array(
-                            [
-                                [keypoint["x"], keypoint["y"]]
-                                for keypoint in d[keypoints_key]
-                            ]
-                        )
-                        if d.get(keypoints_key)
-                        else np.array([])
-                    )
-                    for d in p[predictions_key]
-                ],
-                dtype="object",
-            )
-        if any(parent_id_key in d for d in p[predictions_key]):
-            detections[parent_id_key] = np.array(
-                [
-                    d[parent_id_key] if d.get(parent_id_key) else None
-                    for d in p[predictions_key]
-                ]
-            )
-        detection_ids = [
-            d[detection_id_key] if detection_id_key in d else str(uuid.uuid4)
+        parent_ids = [
+            d.get(PARENT_ID_KEY, "")
             for d in p[predictions_key]
         ]
-        detections[detection_id_key] = np.array(detection_ids)
-        converted_prediction[predictions_key] = detections
-        converted_predictions.append(converted_prediction)
-    return converted_predictions
+        detection_ids = [
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4))
+            for d in p[predictions_key]
+        ]
+        detections[DETECTION_ID_KEY] = np.array(detection_ids)
+        detections[PARENT_ID_KEY] = np.array(parent_ids)
+        batch_of_detections.append(detections)
+    return batch_of_detections
+
+
+def add_keypoints_to_detections(
+    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
+    detections: sv.Detections,
+):
+    keypoints_class_names = []
+    keypoints_class_ids = []
+    keypoints_confidences = []
+    keypoints_xy = []
+    for p in predictions:
+        keypoints = p.get(KEYPOINTS_KEY, [])
+        keypoints_class_names.append(
+            np.array([k.get(KEYPOINTS_CLASS_NAME_KEY, "") for k in keypoints])
+        )
+        keypoints_class_ids.append(
+            np.array([k.get(KEYPOINTS_CLASS_ID_KEY, "") for k in keypoints])
+        )
+        keypoints_confidences.append(
+            np.array([k.get(KEYPOINTS_CONFIDENCE_KEY, "") for k in keypoints], dtype=np.float64)
+        )
+        keypoints_xy.append(
+            np.array([k.get(KEYPOINTS_XY_KEY, [-1, -1]) for k in keypoints], dtype=np.float64)
+        )
+    detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(keypoints_class_names, dtype="object")
+    detections[KEYPOINTS_CLASS_ID_KEY] = np.array(keypoints_class_ids, dtype="object")
+    detections[KEYPOINTS_CONFIDENCE_KEY] = np.array(keypoints_confidences, dtype="object")
+    detections[KEYPOINTS_XY_KEY] = np.array(keypoints_xy, dtype="object")
 
 
 def attach_parent_info(
@@ -132,7 +141,7 @@ def anchor_detections_in_parent_coordinates(
     prediction: Dict[str, Union[sv.Detections, Any]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
-    keypoints_key: str = "keypoints",
+    keypoints_key: str = KEYPOINTS_KEY,
 ) -> Dict[str, Union[sv.Detections, Any]]:
     prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
         prediction[detections_key]

@@ -15,6 +15,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
+    add_keypoints_to_detections,
     anchor_prediction_detections_in_parent_coordinates,
     attach_parent_info,
     attach_prediction_type_info,
@@ -284,7 +285,13 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = convert_to_sv_detections(predictions)
+        detections = convert_to_sv_detections(predictions)
+        for p, d in zip(predictions, detections):
+            add_keypoints_to_detections(
+                predictions=p,
+                detections=d,
+            )
+            p["predictions"] = d
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="keypoint-detection",
@@ -293,7 +300,10 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             predictions=predictions,
             classes_to_accept=class_filter,
         )
-        predictions = attach_parent_info(images=images, predictions=predictions)
+        predictions = attach_parent_info(
+            images=images,
+            predictions=predictions
+        )
         return anchor_prediction_detections_in_parent_coordinates(
             image=images,
             predictions=predictions,

@@ -93,18 +93,19 @@ class QRCodeDetectorBlock(WorkflowBlock):
         image: List[dict],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        converted_predictions = convert_to_sv_detections(predictions)
+        batch_of_detections = convert_to_sv_detections(predictions)
+        for prediction, detections in zip(predictions, batch_of_detections):
+            detections["data"] = np.array([
+                p.get("data", "") for p in prediction["predictions"]
+            ])
+            prediction["predictions"] = detections
         converted_predictions = attach_prediction_type_info(
-            predictions=converted_predictions,
+            predictions=predictions,
             prediction_type="qrcode-detection",
         )
         converted_predictions = attach_parent_info(
             images=image, predictions=converted_predictions
         )
-        for converted_prediction, prediction in zip(converted_predictions, predictions):
-            converted_prediction["predictions"]["data"] = [
-                d["data"] for d in prediction["predictions"]
-            ]
         return anchor_prediction_detections_in_parent_coordinates(
             image=image,
             predictions=converted_predictions,

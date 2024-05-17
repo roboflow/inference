@@ -211,5 +211,7 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
             prediction_type="classification",
         )
         return attach_parent_info(
-            images=images, predictions=predictions, nested_key=None
+            images=images,
+            predictions=predictions,
+            nested_key=None
         )

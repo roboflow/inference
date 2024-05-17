@@ -210,6 +210,8 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             prediction_type="classification",
         )
         predictions = attach_parent_info(
-            images=images, predictions=predictions, nested_key=None
+            images=images,
+            predictions=predictions,
+            nested_key=None
         )
         return predictions

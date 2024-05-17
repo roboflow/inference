@@ -298,9 +298,11 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = convert_to_sv_detections(
+        detections = convert_to_sv_detections(
             predictions=predictions,
         )
+        for p, d in zip(predictions, detections):
+            p["predictions"] = d
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="instance-segmentation",
@@ -309,7 +311,10 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
             predictions=predictions,
             classes_to_accept=class_filter,
         )
-        predictions = attach_parent_info(images=images, predictions=predictions)
+        predictions = attach_parent_info(
+            images=images,
+            predictions=predictions,
+        )
         return anchor_prediction_detections_in_parent_coordinates(
             image=images,
             predictions=predictions,

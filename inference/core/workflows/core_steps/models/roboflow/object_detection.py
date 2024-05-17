@@ -270,7 +270,9 @@ class RoboflowObjectDetectionModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = convert_to_sv_detections(predictions)
+        detections = convert_to_sv_detections(predictions)
+        for p, d in zip(predictions, detections):
+            p["predictions"] = d
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="object-detection",
