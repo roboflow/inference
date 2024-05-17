@@ -632,15 +632,15 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
 
 def test_calculate_iou_when_detections_are_zero_size() -> None:
     # given
-    detections = sv.Detections.from_inference(
-        {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"x": 100, "y": 200, "height": 0, "width": 1, "class_id": 1, "class": "a", "confidence": 0.5},
-                {"x": 100, "y": 220, "height": 1, "width": 0, "class_id": 2, "class": "b", "confidence": 0.6},
-            ],
-        },
+    detections = sv.Detections(
+        xyxy=np.array([[99.5, 200, 100.5, 200], [100, 219.5, 100, 221.5]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
     )
+
     detection_a = detections[0]
     detection_b = detections[1]
 
@@ -656,14 +656,13 @@ def test_calculate_iou_when_detections_are_zero_size() -> None:
 
 def test_calculate_iou_when_detections_do_not_overlap() -> None:
     # given
-    detections = sv.Detections.from_inference(
-        {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"x": 100, "y": 200, "height": 20, "width": 40, "class_id": 1, "class": "a", "confidence": 0.5},
-                {"x": 100, "y": 220, "height": 20, "width": 40, "class_id": 2, "class": "b", "confidence": 0.6},
-            ],
-        },
+    detections = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [80, 210, 120, 230]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
     )
     detection_a = detections[0]
     detection_b = detections[1]
@@ -680,13 +679,13 @@ def test_calculate_iou_when_detections_do_not_overlap() -> None:
 
 def test_calculate_iou_when_detections_do_overlap_fully() -> None:
     # given
-    detection_a = sv.Detections.from_inference(
-        {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"x": 100, "y": 200, "height": 20, "width": 40, "class_id": 1, "class": "a", "confidence": 0.5},
-            ],
-        },
+    detection_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "class_name": np.array(["a"])
+        }
     )
 
     # when
@@ -701,14 +700,13 @@ def test_calculate_iou_when_detections_do_overlap_fully() -> None:
 
 def test_calculate_iou_when_detections_do_overlap_partially() -> None:
     # given
-    detections = sv.Detections.from_inference(
-        {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"x": 100, "y": 200, "height": 20, "width": 40, "class_id": 1, "class": "a", "confidence": 0.5},
-                {"x": 120, "y": 210, "height": 20, "width": 40, "class_id": 2, "class": "b", "confidence": 0.6},
-            ],
-        },
+    detections = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [100, 200, 140, 220]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
     )
     detection_a = detections[0]
     detection_b = detections[1]
@@ -737,34 +735,144 @@ def test_enumerate_detections_when_no_predictions_given() -> None:
 
 def test_enumerate_detections_when_source_with_no_predictions_given() -> None:
     # given
-    source_a = []
-    source_b = [{"a": 1}, {"b": 1}]
+    empty_detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "class_name": np.array(["a"])
+        }
+    )[[]]
+    source_b = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
+    )
 
     # when
-    result = list(enumerate_detections(detections_from_sources=[source_a, source_b]))
+    result = list(enumerate_detections(detections_from_sources=[empty_detections, source_b]))
 
     # then
-    assert result == [(1, {"a": 1}), (1, {"b": 1})]
+    assert result == [
+        (
+            1,
+            sv.Detections(
+                xyxy=np.array([[1, 1, 2, 2],], dtype=np.float64),
+                confidence=np.array([0.5], dtype=np.float64),
+                class_id=np.array([1]),
+                data={
+                    "class_name": np.array(["a"])
+                }
+            )
+        ),
+        (
+            1,
+            sv.Detections(
+                xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
+                confidence=np.array([0.6], dtype=np.float64),
+                class_id=np.array([2]),
+                data={
+                    "class_name": np.array(["b"])
+                }
+            )
+        )
+    ]
 
 
 def test_enumerate_detections_when_sources_with_predictions_given() -> None:
     # given
-    source_a = [{"a": 1}, {"b": 1}]
-    source_b = [{"c": 1}, {"d": 1}]
+    source_a = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
+        confidence=np.array([0.7, 0.8], dtype=np.float64),
+        class_id=np.array([3, 4]),
+        data={
+            "class_name": np.array(["c", "d"])
+        }
+    )
 
     # when
     result = list(enumerate_detections(detections_from_sources=[source_a, source_b]))
 
     # then
-    assert result == [(0, {"a": 1}), (0, {"b": 1}), (1, {"c": 1}), (1, {"d": 1})]
+    assert result == [
+        (
+            0,
+            sv.Detections(
+                xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+                confidence=np.array([0.5], dtype=np.float64),
+                class_id=np.array([1]),
+                data={
+                    "class_name": np.array(["a"])
+                }
+            )
+        ),
+        (
+            0,
+            sv.Detections(
+                xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
+                confidence=np.array([0.6], dtype=np.float64),
+                class_id=np.array([2]),
+                data={
+                    "class_name": np.array(["b"])
+                }
+            )
+        ),
+        (
+            1,
+            sv.Detections(
+                xyxy=np.array([[5, 5, 6, 6]], dtype=np.float64),
+                confidence=np.array([0.7], dtype=np.float64),
+                class_id=np.array([3]),
+                data={
+                    "class_name": np.array(["c"])
+                }
+            )
+        ),
+        (
+            1,
+            sv.Detections(
+                xyxy=np.array([[7, 7, 8, 8]], dtype=np.float64),
+                confidence=np.array([0.8], dtype=np.float64),
+                class_id=np.array([4]),
+                data={
+                    "class_name": np.array(["d"])
+                }
+            )
+        )
+    ]
 
 
 def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_be_excluded() -> (
     None
 ):
     # given
-    source_a = [{"a": 1}, {"b": 1}]
-    source_b = [{"c": 1}, {"d": 1}]
+    source_a = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"])
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
+        confidence=np.array([0.7, 0.8], dtype=np.float64),
+        class_id=np.array([3, 4]),
+        data={
+            "class_name": np.array(["c", "d"])
+        }
+    )
 
     # when
     result = list(
@@ -775,23 +883,64 @@ def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_
     )
 
     # then
-    assert result == [(0, {"a": 1}), (0, {"b": 1})]
+    assert result == [
+        (
+            0,
+            sv.Detections(
+                xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+                confidence=np.array([0.5], dtype=np.float64),
+                class_id=np.array([1]),
+                data={
+                    "class_name": np.array(["a"])
+                }
+            )
+        ),
+        (
+            0,
+            sv.Detections(
+                xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
+                confidence=np.array([0.6], dtype=np.float64),
+                class_id=np.array([2]),
+                data={
+                    "class_name": np.array(["b"])
+                }
+            )
+        ),
+    ]
 
 
 def test_get_detections_from_different_sources_with_max_overlap_when_candidate_already_considered() -> (
     None
 ):
     # given
-    detections_from_sources = [[{"detection_id": "a"}], [{"detection_id": "b"}]]
+    source_a = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        confidence=np.array([0.5, 0.6], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["a", "b"]),
+            "detection_id": np.array(["a", "b"])
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[7, 7, 8, 8]], dtype=np.float64),
+        confidence=np.array([0.8], dtype=np.float64),
+        class_id=np.array([4]),
+        data={
+            "class_name": np.array(["d"]),
+            "detection_id": np.array(["d"])
+        }
+    )
+    detections_from_sources = [source_a, source_b]
 
     # when
     result = get_detections_from_different_sources_with_max_overlap(
-        detection={"detection_id": "a"},
+        detection=source_a[0],
         source=0,
         detections_from_sources=detections_from_sources,
         iou_threshold=0.5,
         class_aware=True,
-        detections_already_considered={"b"},
+        detections_already_considered={"b", "d"},
     )
 
     # then
@@ -802,32 +951,30 @@ def test_get_detections_from_different_sources_with_max_overlap_when_candidate_o
     None
 ):
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["a", "c"],
-                "class_name": ["a", "a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["b"],
-                "class_name": ["a"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["a", "c"],
+            "class_name": ["a", "a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["b"],
+            "class_name": ["a"]
+        }
+    )
 
     # when
     result = get_detections_from_different_sources_with_max_overlap(
-        detection=predictions[0][0],
+        detection=source_a[0],
         source=0,
-        detections_from_sources=predictions,
+        detections_from_sources=[source_a, source_b],
         iou_threshold=0.5,
         class_aware=True,
         detections_already_considered=set(),
@@ -841,41 +988,39 @@ def test_get_detections_from_different_sources_with_max_overlap_when_class_does_
     None
 ):
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["a", "b"],
-                "class_name": ["a", "a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["c"],
-                "class_name": ["b"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["b"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["a", "b"],
+            "class_name": ["a", "a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["c"],
+            "class_name": ["b"]
+        }
+    )
+    source_c = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["d"],
+            "class_name": ["b"]
+        }
+    )
 
     # when
     result = get_detections_from_different_sources_with_max_overlap(
-        detection=predictions[0][0],
+        detection=source_a[0],
         source=0,
-        detections_from_sources=predictions,
+        detections_from_sources=[source_a, source_b, source_c],
         iou_threshold=0.5,
         class_aware=True,
         detections_already_considered=set(),
@@ -889,41 +1034,39 @@ def test_get_detections_from_different_sources_with_max_overlap_when_class_does_
     None
 ):
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["a", "b"],
-                "class_name": ["a", "a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["c"],
-                "class_name": ["b"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["b"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["a", "b"],
+            "class_name": ["a", "a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["c"],
+            "class_name": ["b"]
+        }
+    )
+    source_c = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["d"],
+            "class_name": ["b"]
+        }
+    )
 
     # when
     result = get_detections_from_different_sources_with_max_overlap(
-        detection=predictions[0][0],
+        detection=source_a[0],
         source=0,
-        detections_from_sources=predictions,
+        detections_from_sources=[source_a, source_b, source_c],
         iou_threshold=0.5,
         class_aware=False,
         detections_already_considered=set(),
@@ -932,27 +1075,11 @@ def test_get_detections_from_different_sources_with_max_overlap_when_class_does_
     # then
     assert result == {
         1: (
-            sv.Detections(
-                xyxy=np.array([[80, 190, 120, 210]]),
-                confidence=np.array([0.5]),
-                class_id=np.array([1]),
-                data={
-                    "detection_id": ["c"],
-                    "class_name": ["b"]
-                }
-            ),
+            source_b,
             1.0,
         ),
         2: (
-            sv.Detections(
-                xyxy=np.array([[80, 190, 120, 210]]),
-                confidence=np.array([0.5]),
-                class_id=np.array([1]),
-                data={
-                    "detection_id": ["d"],
-                    "class_name": ["b"]
-                }
-            ),
+            source_c,
             1.0,
         ),
     }, "In both sources other than source 0 it is expected to find fully overlapping prediction, but differ in class"
@@ -962,41 +1089,39 @@ def test_get_detections_from_different_sources_with_max_overlap_when_multiple_ca
     None
 ):
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["a", "b"],
-                "class_name": ["a", "a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["too_small", "c"],
-                "class_name": ["a", "a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["too_small", "d"],
-                "class_name": ["a", "a"]
-            }
-        ),
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["a", "b"],
+            "class_name": ["a", "a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["too_small", "c"],
+            "class_name": ["a", "a"]
+        }
+    )
+    source_c = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["too_small", "d"],
+            "class_name": ["a", "a"]
+        }
+    )
 
     # when
     result = get_detections_from_different_sources_with_max_overlap(
-        detection=predictions[0][0],
+        detection=source_a,
         source=0,
-        detections_from_sources=predictions,
+        detections_from_sources=[source_a, source_b, source_c],
         iou_threshold=0.5,
         class_aware=True,
         detections_already_considered=set(),
@@ -1005,27 +1130,11 @@ def test_get_detections_from_different_sources_with_max_overlap_when_multiple_ca
     # then
     assert result == {
         1: (
-            sv.Detections(
-                xyxy=np.array([[80, 190, 120, 210]]),
-                confidence=np.array([0.5]),
-                class_id=np.array([1]),
-                data={
-                    "detection_id": ["c"],
-                    "class_name": ["a"]
-                }
-            ),
+            source_b[1],
             1.0,
         ),
         2: (
-            sv.Detections(
-                xyxy=np.array([[80, 190, 120, 210]]),
-                confidence=np.array([0.5]),
-                class_id=np.array([1]),
-                data={
-                    "detection_id": ["d"],
-                    "class_name": ["a"]
-                }
-            ),
+            source_c[1],
             1.0,
         ),
     }, "In both sources other than source 0 it is expected to find fully overlapping prediction"
@@ -1033,92 +1142,98 @@ def test_get_detections_from_different_sources_with_max_overlap_when_multiple_ca
 
 def test_filter_predictions_when_no_classes_to_consider_given() -> None:
     # given
-    predictions = [[{"class": "a"}], [], [{"class": "b"}, {"class": "a"}]]
+    source_a = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["a"],
+            "class_name": ["a"]
+        }
+    )
+    empty_detections = sv.Detections(
+        xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
+        confidence=np.array([0.6], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["b"],
+            "class_name": ["a"]
+        }
+    )[[]]
+    source_c = sv.Detections(
+        xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
+        confidence=np.array([0.7, 0.8], dtype=np.float64),
+        class_id=np.array([2, 1]),
+        data={
+            "detection_id": ["c", "d"],
+            "class_name": ["b", "a"]
+        }
+    )
 
     # when
-    result = filter_predictions(predictions=predictions, classes_to_consider=None)
+    result = filter_predictions(predictions=[source_a, empty_detections, source_c], classes_to_consider=None)
 
     # then
-    assert result == [[{"class": "a"}], [], [{"class": "b"}, {"class": "a"}]]
+    assert result == [source_a, empty_detections, source_c]
 
 
 def test_filter_predictions_when_classes_to_consider_given() -> None:
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["e", "f"],
-                "class_name": ["a", "b"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["d"],
+            "class_name": ["a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["e", "f"],
+            "class_name": ["a", "b"]
+        }
+    )
 
     # when
-    result = filter_predictions(predictions=predictions, classes_to_consider=["a", "c"])
+    result = filter_predictions(predictions=[source_a, source_b], classes_to_consider=["a", "c"])
 
     # then
     assert result == [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["e"],
-                "class_name": ["a"]
-            }
-        )
+        source_a,
+        source_b[0]
     ]
 
 
 def test_get_parent_id_of_detections_from_sources_when_parent_id_matches() -> None:
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["a"],
-                "parent_id": ["a"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["e", "f"],
-                "class_name": ["a", "b"],
-                "parent_id": ["a", "a"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5], dtype=np.float64),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["d"],
+            "class_name": ["a"],
+            "parent_id": ["a"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
+        confidence=np.array([0.5, 0.5], dtype=np.float64),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["e", "f"],
+            "class_name": ["a", "b"],
+            "parent_id": ["a", "a"]
+        }
+    )
 
     # when
     result = get_parent_id_of_detections_from_sources(
-        detections_from_sources=predictions,
+        detections_from_sources=[source_a, source_b],
     )
 
     # then
@@ -1127,41 +1242,39 @@ def test_get_parent_id_of_detections_from_sources_when_parent_id_matches() -> No
 
 def test_get_parent_id_of_detections_from_sources_parent_id_does_not_match() -> None:
     # given
-    predictions = [
-        sv.Detections(
-            xyxy=np.array([[80, 190, 120, 210]]),
-            confidence=np.array([0.5]),
-            class_id=np.array([1]),
-            data={
-                "detection_id": ["d"],
-                "class_name": ["a"],
-                "parent_id": ["b"]
-            }
-        ),
-        sv.Detections(
-            xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
-            confidence=np.array([0.5, 0.5]),
-            class_id=np.array([1, 1]),
-            data={
-                "detection_id": ["e", "f"],
-                "class_name": ["a", "b"],
-                "parent_id": ["a", "a"]
-            }
-        )
-    ]
+    source_a = sv.Detections(
+        xyxy=np.array([[80, 190, 120, 210]]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["d"],
+            "class_name": ["a"],
+            "parent_id": ["b"]
+        }
+    )
+    source_b = sv.Detections(
+        xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
+        confidence=np.array([0.5, 0.5]),
+        class_id=np.array([1, 1]),
+        data={
+            "detection_id": ["e", "f"],
+            "class_name": ["a", "b"],
+            "parent_id": ["a", "a"]
+        }
+    )
 
     # when
     with pytest.raises(ValueError):
         _ = get_parent_id_of_detections_from_sources(
-            detections_from_sources=predictions,
+            detections_from_sources=[source_a, source_b],
         )
 
 def test_does_not_detect_objects_in_any_source_when_all_sources_give_empty_prediction() -> (
     None
 ):
     empty_detections = sv.Detections(
-        xyxy=np.array([[1, 1, 2, 2]]),
-        confidence=np.array([0.9]),
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        confidence=np.array([0.9], dtype=np.float64),
         class_id=np.array([1]),
         data={}
     )[[]]
@@ -1197,14 +1310,26 @@ def test_does_not_detect_objects_in_any_source_when_not_all_sources_give_empty_p
     None
 ):
     # given
-    detections_from_sources = [
-        [],
-        [{"parent_id": "b"}],
-    ]
+    empty_detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        confidence=np.array([0.9], dtype=np.float64),
+        class_id=np.array([1]),
+        data={}
+    )[[]]
+    source_a = sv.Detections(
+        xyxy=np.array([[3, 3, 4, 4]]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={
+            "detection_id": ["b"],
+            "class_name": ["b"],
+            "parent_id": ["b"]
+        }
+    )
 
     # when
     result = does_not_detect_objects_in_any_source(
-        detections_from_sources=detections_from_sources,
+        detections_from_sources=[empty_detections, source_a],
     )
 
     # then

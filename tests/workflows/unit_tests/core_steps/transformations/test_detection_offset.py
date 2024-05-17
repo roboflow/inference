@@ -1,12 +1,10 @@
 from typing import Any
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 import supervision as sv
 
-from inference.core.workflows.core_steps.common.utils import (
-    convert_to_sv_detections,
-)
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
     offset_detections,
@@ -78,28 +76,20 @@ def test_manifest_parsing_when_invalid_data_provided(
 
 def test_offset_detection() -> None:
     # given
-    detection = {
-        "x": 100,
-        "y": 200,
-        "width": 20,
-        "height": 20,
-        "parent_id": "p2",
-        "detection_id": "two",
-        "class": "car",
-        "class_id": 1,
-        "confidence": 0.5,
-    }
-    predictions = convert_to_sv_detections(predictions=[{
-        "predictions": [detection],
-        "image": {
-            "width": 500,
-            "height": 500
+    detections = sv.Detections(
+        xyxy=np.array([[90, 190, 110, 210]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["two"]),
+            "class_name": np.array(["car"]),
+            "parent_id": np.array(["p2"])
         }
-    }])
+    )
 
     # when
     result = offset_detections(
-        detections=predictions[0]["predictions"],
+        detections=detections,
         offset_width=50,
         offset_height=100,
     )
@@ -111,8 +101,8 @@ def test_offset_detection() -> None:
     assert x2 == 135, "Right corner should be moved by 25px to the right"
     assert y2 == 260, "Right corner should be moved by 50px to the bottom"
     assert (
-        result["parent_id"] == "two"
+        result["parent_id"] == str(detections["detection_id"][0])
     ), "Parent id should be set to origin detection id"
     assert (
-        result["detection_id"] != detection["detection_id"]
+        result["detection_id"] != str(detections["parent_id"][0])
     ), "New detection id (random) must be assigned"

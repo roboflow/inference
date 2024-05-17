@@ -25,11 +25,15 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     # given
     predictions = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 1]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "a"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         }
     ]
 
@@ -42,11 +46,15 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     # then
     assert result == [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 1]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "a"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         }
     ]
 
@@ -55,29 +63,28 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     # given
     predictions = [
         {
-            "predictions": sv.Detections.from_inference(
-                {
-                    "image": {"height": 100, "width": 200},
-                    "predictions": [
-                        {"x": 11, "y": 12, "width": 13, "height": 14, "class_id": 1, "class": "a", "confidence": 0.5},
-                        {"x": 15, "y": 16, "width": 17, "height": 18, "class_id": 2, "class": "b", "confidence": 0.6},
-                    ],
-                },
-            )
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 2]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "b"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         },
         {
-            "predictions": sv.Detections.from_inference(
-                {
-                    "image": {"height": 100, "width": 200},
-                    "predictions": [
-                        {"x": 21, "y": 22, "width": 23, "height": 24, "class_id": 1, "class": "a", "confidence": 0.7},
-                    ],
-                },
-            )
+            "predictions": sv.Detections(
+                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                    class_id=np.array([1]),
+                    confidence=np.array([0.7], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a"]),
+                        "field": np.array(["a"])
+                    }
+                )
         }
     ]
-    for p in predictions:
-        p["predictions"]["field"] = ["b"] * len(p["predictions"])
 
     # when
     result = filter_out_unwanted_classes_from_predictions_detections(
@@ -88,26 +95,28 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     # then
     expected_result = [
         {
-            "predictions": sv.Detections.from_inference(
-                {
-                    "image": {"height": 100, "width": 200},
-                    "predictions": [
-                        {"x": 15, "y": 16, "width": 17, "height": 18, "class_id": 2, "class": "b", "confidence": 0.6},
-                    ],
-                },
-            )
+            "predictions": sv.Detections(
+                    xyxy=np.array([[6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([2]),
+                    confidence=np.array([0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["b"]),
+                        "field": np.array(["a"])
+                    }
+                )
         },
-        {"predictions": sv.Detections.from_inference({"image": {"height": 100, "width": 200}, "predictions": []})},
+        {
+            "predictions": sv.Detections(
+                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                    class_id=np.array([1]),
+                    confidence=np.array([0.7], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a"]),
+                        "field": np.array(["a"])
+                    }
+                )[[]]
+        }
     ]
-    for p in expected_result:
-        p["predictions"]["field"] = ["b"] * len(p["predictions"])
-        if not p["predictions"]:
-            empty_detections = p["predictions"]
-            empty_detections.xyxy.dtype = np.float64
-            empty_detections.xyxy.shape = (0, 4)
-            empty_detections.confidence.dtype = np.float64
-            empty_detections.data["field"].dtype = "<U1"
-            empty_detections.data["class_name"].dtype = "<U1"
 
     assert result == expected_result
 
