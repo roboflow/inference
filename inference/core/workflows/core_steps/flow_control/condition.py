@@ -6,13 +6,14 @@ from inference.core.workflows.core_steps.common.operators import (
     OPERATORS_FUNCTIONS,
     Operator,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import OutputDefinition, WorkflowParameter
 from inference.core.workflows.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    WILDCARD_KIND,
     FlowControl,
     StepOutputSelector,
     StepSelector,
@@ -66,6 +67,16 @@ class BlockManifest(WorkflowBlockManifest):
                 LIST_OF_VALUES_KIND,
             ]
         ),
+        WorkflowParameter(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+                WILDCARD_KIND,
+            ]
+        ),
         str,
         list,
         set,
@@ -88,6 +99,16 @@ class BlockManifest(WorkflowBlockManifest):
                 BOOLEAN_KIND,
                 STRING_KIND,
                 LIST_OF_VALUES_KIND,
+            ]
+        ),
+        WorkflowParameter(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+                WILDCARD_KIND,
             ]
         ),
         str,
