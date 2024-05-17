@@ -558,7 +558,7 @@ class InferencePipeline:
                 background_tasks
             )
             execution_engine = ExecutionEngine.init(
-                workflow_definition=workflow_specification,
+                workflow_definition=workflow_specification["specification"],
                 init_parameters=workflow_init_parameters,
             )
             workflow_runner = WorkflowRunner()
