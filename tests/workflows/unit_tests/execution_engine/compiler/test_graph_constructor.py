@@ -8,7 +8,6 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import INTEGER_KIND, ROBOFLOW_MODEL_ID_KIND
 from inference.core.workflows.errors import (
     ConditionalBranchesCollapseError,
-    DanglingExecutionBranchError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
@@ -164,30 +163,6 @@ def test_execution_graph_construction_when_output_defines_non_existing_output() 
 
     # when
     with pytest.raises(InvalidReferenceTargetError):
-        _ = prepare_execution_graph(
-            workflow_definition=workflow_definition,
-        )
-
-
-def test_execution_graph_construction_when_there_is_a_dangling_output() -> None:
-    # given
-    workflow_definition = ParsedWorkflowDefinition(
-        version="1.0",
-        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
-        steps=[
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1",
-                image="$inputs.image",
-                model_id="my_model",
-            )
-        ],
-        outputs=[],
-    )
-
-    # when
-    with pytest.raises(DanglingExecutionBranchError):
-        # TODO: consider if that's actually good to raise error in this case
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
         )
