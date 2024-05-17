@@ -14,6 +14,7 @@ from inference.core.workflows.execution_engine.executor.execution_cache import (
 def construct_workflow_output(
     workflow_outputs: List[JsonField],
     execution_cache: ExecutionCache,
+    runtime_parameters: Dict[str, Any],
 ) -> Dict[str, List[Any]]:
     result = {}
     for node in workflow_outputs:
@@ -23,7 +24,10 @@ def construct_workflow_output(
         step_name = get_last_chunk_of_selector(selector=step_selector)
         cache_contains_step = execution_cache.contains_step(step_name=step_name)
         if not cache_contains_step:
-            result[node.name] = []
+            if runtime_parameters.get(step_name) is not None:
+                result[step_name] = [runtime_parameters[step_name]]
+            else:
+                result[node.name] = []
             continue
         if node.selector.endswith(".*"):
             result[node.name] = construct_wildcard_output(
