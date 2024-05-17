@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
     disable_active_learning: Union[
         bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
-        default=False,
+        default=True,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )

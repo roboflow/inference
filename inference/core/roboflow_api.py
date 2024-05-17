@@ -228,7 +228,7 @@ def register_image_at_roboflow(
     image_bytes: bytes,
     batch_name: str,
     tags: Optional[List[str]] = None,
-    inference_id=None,
+    inference_id: Optional[str] = None,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
