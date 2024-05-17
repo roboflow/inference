@@ -181,17 +181,16 @@ def filter_out_unwanted_classes_from_predictions_detections(
     detections_key: str = "predictions",
     class_name_key: str = "class_name",
 ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-    if classes_to_accept is None:
+    if not classes_to_accept:
         return predictions
     filtered_predictions = []
     for prediction in predictions:
-        filtered_prediction = deepcopy(prediction)
-        filtered_detections = filtered_prediction[detections_key]
-        filtered_prediction[detections_key] = filtered_detections[
-            np.isin(filtered_detections[class_name_key], classes_to_accept)
+        detections = prediction[detections_key]
+        prediction[detections_key] = detections[
+            np.isin(detections[class_name_key], classes_to_accept)
         ]
-        filtered_predictions.append(filtered_prediction)
-    return filtered_predictions
+        filtered_predictions.append(prediction)
+    return predictions
 
 
 def extract_origin_size_from_images_batch(

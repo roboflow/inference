@@ -127,7 +127,7 @@ def crop_image(
 ) -> List[Dict[str, Union[dict, str]]]:
     crops = []
     for (x_min, y_min, x_max, y_max), detection_id in zip(
-        detections.xyxy.astype(dtype=int), detections[detection_id_key]
+        detections.xyxy.round().astype(dtype=int), detections[detection_id_key]
     ):
         cropped_image = image[y_min:y_max, x_min:x_max]
         crops.append(

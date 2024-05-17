@@ -188,18 +188,10 @@ class DetectionFilterBlock(WorkflowBlock):
         filter_callable = build_filter_callable(definition=filter_definition)
         result_predictions, result_parent_ids = [], []
         for detections in predictions:
-            if isinstance(detections, list):
-                filtered_detections = [
-                    d
-                    for d in detections
-                    if filter_callable(d[filter_definition.field_name])
-                ]
-                filtered_parent_ids = [d[PARENT_ID_KEY] for d in filtered_detections]
-            else:
-                filtered_detections = detections[
-                    [filter_callable(detections[i]) for i in range(len(detections))]
-                ]
-                filtered_parent_ids = filtered_detections[PARENT_ID_KEY].tolist()
+            filtered_detections = detections[
+                [filter_callable(detections[i]) for i in range(len(detections))]
+            ]
+            filtered_parent_ids = filtered_detections[PARENT_ID_KEY].tolist()
             result_predictions.append(deepcopy(filtered_detections))
             result_parent_ids.append(filtered_parent_ids)
         return [
@@ -218,22 +210,21 @@ class DetectionFilterBlock(WorkflowBlock):
 def get_value(detection: Union[Dict[str, Any], sv.Detections], field_name: str):
     if isinstance(detection, dict):
         return detection[field_name]
-    else:
-        if hasattr(detection, field_name):
-            val: Optional[np.ndarray] = getattr(detection, field_name)
-            if val:
-                return val[0]
-            return None
-        elif hasattr(detection, "data") and field_name in detection.data:
-            val: Optional[np.ndarray] = detection[field_name]
-            if val:
-                return val[0]
-            return None
-        else:
-            raise ValueError(
-                f"Property name '{field_name}' specified within filter definition "
-                "could not be found in predictions."
-            )
+
+    if hasattr(detection, field_name):
+        val: Optional[np.ndarray] = getattr(detection, field_name)
+        if val:
+            return val[0]
+        return None
+    elif hasattr(detection, "data") and field_name in detection.data:
+        val: Optional[np.ndarray] = detection[field_name]
+        if val:
+            return val[0]
+        return None
+    raise ValueError(
+        f"Property name '{field_name}' specified within filter definition "
+        "could not be found in predictions."
+    )
 
 
 def build_filter_callable(
