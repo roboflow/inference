@@ -6,7 +6,7 @@ from inference.core.workflows.core_steps.common.operators import (
     OPERATORS_FUNCTIONS,
     Operator,
 )
-from inference.core.workflows.entities.base import OutputDefinition, WorkflowParameter
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
@@ -17,6 +17,7 @@ from inference.core.workflows.entities.types import (
     FlowControl,
     StepOutputSelector,
     StepSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -67,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
                 LIST_OF_VALUES_KIND,
             ]
         ),
-        WorkflowParameter(
+        WorkflowParameterSelector(
             kind=[
                 FLOAT_KIND,
                 INTEGER_KIND,
@@ -101,7 +102,7 @@ class BlockManifest(WorkflowBlockManifest):
                 LIST_OF_VALUES_KIND,
             ]
         ),
-        WorkflowParameter(
+        WorkflowParameterSelector(
             kind=[
                 FLOAT_KIND,
                 INTEGER_KIND,
