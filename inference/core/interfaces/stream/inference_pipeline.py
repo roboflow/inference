@@ -518,7 +518,7 @@ class InferencePipeline:
             from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
                 WorkflowsActiveLearningMiddleware,
             )
-            from inference.core.workflows.execution_engine import ExecutionEngine
+            from inference.core.workflows.execution_engine.core import ExecutionEngine
 
             if workflow_specification is None:
                 if api_key is None:
