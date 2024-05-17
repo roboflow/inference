@@ -518,7 +518,7 @@ class InferencePipeline:
             from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
                 WorkflowsActiveLearningMiddleware,
             )
-            from inference.core.workflows.execution_engine import ExecutionEngine
+            from inference.core.workflows.execution_engine.core import ExecutionEngine
 
             if workflow_specification is None:
                 if api_key is None:
@@ -558,7 +558,7 @@ class InferencePipeline:
                 background_tasks
             )
             execution_engine = ExecutionEngine.init(
-                workflow_definition=workflow_specification,
+                workflow_definition=workflow_specification["specification"],
                 init_parameters=workflow_init_parameters,
             )
             workflow_runner = WorkflowRunner()
