@@ -13,9 +13,11 @@ from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    WILDCARD_KIND,
     FlowControl,
     StepOutputSelector,
     StepSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -66,6 +68,16 @@ class BlockManifest(WorkflowBlockManifest):
                 LIST_OF_VALUES_KIND,
             ]
         ),
+        WorkflowParameterSelector(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+                WILDCARD_KIND,
+            ]
+        ),
         str,
         list,
         set,
@@ -88,6 +100,16 @@ class BlockManifest(WorkflowBlockManifest):
                 BOOLEAN_KIND,
                 STRING_KIND,
                 LIST_OF_VALUES_KIND,
+            ]
+        ),
+        WorkflowParameterSelector(
+            kind=[
+                FLOAT_KIND,
+                INTEGER_KIND,
+                BOOLEAN_KIND,
+                STRING_KIND,
+                LIST_OF_VALUES_KIND,
+                WILDCARD_KIND,
             ]
         ),
         str,

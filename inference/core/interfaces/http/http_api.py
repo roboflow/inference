@@ -32,6 +32,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -62,6 +63,7 @@ from inference.core.entities.responses.inference import (
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -84,6 +86,7 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_PALIGEMMA_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
@@ -543,6 +546,7 @@ class HttpInterface(BaseInterface):
         The DocTR model ID.
         """
         load_cogvlm_model = partial(load_core_model, core_model="cogvlm")
+        load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
             load_core_model, core_model="grounding_dino"
@@ -1356,6 +1360,48 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(cog_model_id, actor)
+                    return response
+
+            if CORE_MODEL_PALIGEMMA_ENABLED:
+
+                @app.post(
+                    "/llm/paligemma",
+                    response_model=PaliGemmaInferenceResponse,
+                    summary="PaliGemma",
+                    description="Run the PaliGemma model to describe an image.",
+                )
+                @with_route_exceptions
+                async def paligemma(
+                    inference_request: PaliGemmaInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Describe image using PaliGemmaInferenceRequest
+
+                    Args:
+                        inference_request (M.PaliGemmaInferenceRequest): The request containing the prompt and image to be described.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.PaliGemmaResponse: The model's text response
+                    """
+                    logger.debug(f"Reached /llm/paligemma")
+                    paligemma_model_id = load_paligemma_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        paligemma_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(paligemma_model_id, actor)
                     return response
 
         if LEGACY_ROUTE_ENABLED:

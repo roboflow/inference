@@ -72,7 +72,7 @@ export default function Home() {
           </div>
           <div className="flex items-center justify-center gap-2 md:gap-4 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
-              href="https://inference.roboflow.com/inference_sdk/http_client/"
+              href="https://inference.roboflow.com/quickstart/run_model_on_image/"
               className=""
               label="Start with code snippets"
               icon="💻"
@@ -123,7 +123,7 @@ export default function Home() {
               icon="👁️"
             />
             <ExampleLink
-              href="https://inference.roboflow.com/inference_sdk/http_client"
+              href="https://inference.roboflow.com/inference_helpers/inference_sdk/"
               title="Inference Client"
               body="Quickstart HTTP and UDP clients for use with Inference."
               icon="⚡"

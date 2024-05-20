@@ -193,7 +193,7 @@ Visit our [documentation](https://inference.roboflow.com) to explore comprehensi
 
 ## © license
 
-The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
+See the "Self Hosting and Edge Deployment" section of the [Roboflow Licensing](https://roboflow.com/licensing) documentation for information on how Roboflow Inference is licensed.
 
 ## 🏆 contribution
 

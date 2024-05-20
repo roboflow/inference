@@ -8,10 +8,14 @@ You can deploy the following YOLOv9 model types with Inference:
 
 ## Supported Inputs
 
-Click a link below to see instructions on how to run a YOLOv8 model on different inputs:
+Click a link below to see instructions on how to run a YOLOv9 model on different inputs:
 
 - [Image](/quickstart/run_model_on_image/)
 - [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam/)
+
+### Available Pretrained Models
+
+You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=model:yolov9).
 
 ## Configure Your Deployment
 
@@ -21,4 +25,8 @@ Starting from scratch? Use our Deployment Wizard to get a code snippet tailored 
 
 ## License
 
-See our [Licensing Guide](/licensing/) for more information about how your use of YOLOv7 is licensed when using Inference to deploy your model.
+See our [Licensing Guide](/quickstart/licensing/) for more information about how your use of YOLOv9 is licensed when using Inference to deploy your model.
+
+## See Also
+
+- [YOLOv9 on Roboflow Blog](https://blog.roboflow.com/tag/yolov9/)

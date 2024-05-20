@@ -130,63 +130,65 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             num_masks=self.num_masks,
         )
         infer_shape = (self.img_size_h, self.img_size_w)
-        predictions = np.array(predictions)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
         tradeoff_factor = kwargs["tradeoff_factor"]
         img_in_shape = preprocess_return_metadata["im_shape"]
-        if predictions.shape[1] > 0:
-            for i, (pred, proto, img_dim) in enumerate(
-                zip(predictions, protos, preprocess_return_metadata["img_dims"])
-            ):
-                if mask_decode_mode == "accurate":
-                    batch_masks = process_mask_accurate(
-                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
-                    )
-                    output_mask_shape = img_in_shape[2:]
-                elif mask_decode_mode == "tradeoff":
-                    if not 0 <= tradeoff_factor <= 1:
-                        raise InvalidMaskDecodeArgument(
-                            f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
-                        )
-                    batch_masks = process_mask_tradeoff(
-                        proto,
-                        pred[:, 7:],
-                        pred[:, :4],
-                        img_in_shape[2:],
-                        tradeoff_factor,
-                    )
-                    output_mask_shape = batch_masks.shape[1:]
-                elif mask_decode_mode == "fast":
-                    batch_masks = process_mask_fast(
-                        proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
-                    )
-                    output_mask_shape = batch_masks.shape[1:]
-                else:
-                    raise InvalidMaskDecodeArgument(
-                        f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
-                    )
-                polys = masks2poly(batch_masks)
-                pred[:, :4] = post_process_bboxes(
-                    [pred[:, :4]],
-                    infer_shape,
-                    [img_dim],
-                    self.preproc,
-                    resize_method=self.resize_method,
-                    disable_preproc_static_crop=preprocess_return_metadata[
-                        "disable_preproc_static_crop"
-                    ],
-                )[0]
-                polys = post_process_polygons(
-                    img_dim,
-                    polys,
-                    output_mask_shape,
-                    self.preproc,
-                    resize_method=self.resize_method,
+
+        predictions = [np.array(p) for p in predictions]
+
+        for pred, proto, img_dim in zip(
+            predictions, protos, preprocess_return_metadata["img_dims"]
+        ):
+            if pred.size == 0:
+                masks.append([])
+                continue
+            if mask_decode_mode == "accurate":
+                batch_masks = process_mask_accurate(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
                 )
-                masks.append(polys)
-        else:
-            masks.extend([[]] * len(predictions))
+                output_mask_shape = img_in_shape[2:]
+            elif mask_decode_mode == "tradeoff":
+                if not 0 <= tradeoff_factor <= 1:
+                    raise InvalidMaskDecodeArgument(
+                        f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
+                    )
+                batch_masks = process_mask_tradeoff(
+                    proto,
+                    pred[:, 7:],
+                    pred[:, :4],
+                    img_in_shape[2:],
+                    tradeoff_factor,
+                )
+                output_mask_shape = batch_masks.shape[1:]
+            elif mask_decode_mode == "fast":
+                batch_masks = process_mask_fast(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                )
+                output_mask_shape = batch_masks.shape[1:]
+            else:
+                raise InvalidMaskDecodeArgument(
+                    f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
+                )
+            polys = masks2poly(batch_masks)
+            pred[:, :4] = post_process_bboxes(
+                [pred[:, :4]],
+                infer_shape,
+                [img_dim],
+                self.preproc,
+                resize_method=self.resize_method,
+                disable_preproc_static_crop=preprocess_return_metadata[
+                    "disable_preproc_static_crop"
+                ],
+            )[0]
+            polys = post_process_polygons(
+                img_dim,
+                polys,
+                output_mask_shape,
+                self.preproc,
+                resize_method=self.resize_method,
+            )
+            masks.append(polys)
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )
@@ -240,14 +242,19 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             - For each image, constructs an `InstanceSegmentationInferenceResponse` object.
             - Each response contains a list of `InstanceSegmentationPrediction` objects.
         """
-        responses = [
-            InstanceSegmentationInferenceResponse(
-                predictions=[
+        responses = []
+        for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
+            predictions = []
+            for pred, mask in zip(batch_predictions, batch_masks):
+                if class_filter and self.class_names[int(pred[6])] in class_filter:
+                    # TODO: logger.debug
+                    continue
+                # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
+                predictions.append(
                     InstanceSegmentationPrediction(
-                        # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
                         **{
-                            "x": (pred[0] + pred[2]) / 2,
-                            "y": (pred[1] + pred[3]) / 2,
+                            "x": pred[0] + (pred[2] - pred[0]) / 2,
+                            "y": pred[1] + (pred[3] - pred[1]) / 2,
                             "width": pred[2] - pred[0],
                             "height": pred[3] - pred[1],
                             "points": [Point(x=point[0], y=point[1]) for point in mask],
@@ -256,18 +263,14 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                             "class_id": int(pred[6]),
                         }
                     )
-                    for pred, mask in zip(batch_predictions, batch_masks)
-                    if not class_filter
-                    or self.class_names[int(pred[6])] in class_filter
-                ],
+                )
+            response = InstanceSegmentationInferenceResponse(
+                predictions=predictions,
                 image=InferenceResponseImage(
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
             )
-            for ind, (batch_predictions, batch_masks) in enumerate(
-                zip(predictions, masks)
-            )
-        ]
+            responses.append(response)
         return responses
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray, np.ndarray]:

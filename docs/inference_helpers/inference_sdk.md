@@ -518,6 +518,10 @@ CLIENT.run_workflow(
         ],
         # ...
     },
+    # OR
+    # workspace_name="my_workspace_name",
+    # workflow_id="my_workflow_id",
+
     images={
         "image": "url or your np.array",
     },
@@ -528,9 +532,9 @@ CLIENT.run_workflow(
 ```
 
 Please note that either `specification` is provided with specification of workflow as described
-[here](https://github.com/roboflow/inference/blob/main/inference/enterprise/deployments/README.md) or 
+[here](../workflows/definitions.md) or 
 both `workspace_name` and `workflow_id` are given to use workflow predefined in Roboflow app. `workspace_name`
-can be found in Roboflow APP URL once browser shows the main panel of workspace. 
+can be found in Roboflow APP URL once browser shows the main panel of workspace.
 
 
 ## Details about client configuration

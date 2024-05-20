@@ -90,7 +90,7 @@ async def test_object_detection_workflow_when_minimal_valid_input_provided(
         "result"
     }, "Only single output key should be extracted"
     assert len(result["result"]) == 1, "Result for single image is expected"
-    detections = sv.Detections.from_inference(result["result"][0])
+    detections: sv.Detections = result["result"][0]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -133,8 +133,8 @@ async def test_object_detection_workflow_when_batch_input_provided(
         "result"
     }, "Only single output key should be extracted"
     assert len(result["result"]) == 2, "Results for botch images are expected"
-    detections_1 = sv.Detections.from_inference(result["result"][0])
-    detections_2 = sv.Detections.from_inference(result["result"][1])
+    detections_1: sv.Detections = result["result"][0]["predictions"]
+    detections_2: sv.Detections = result["result"][1]["predictions"]
     assert np.allclose(
         detections_1.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -188,7 +188,7 @@ async def test_object_detection_workflow_when_confidence_is_restricted_by_input_
         "result"
     }, "Only single output key should be extracted"
     assert len(result["result"]) == 1, "Result for single image is expected"
-    detections = sv.Detections.from_inference(result["result"][0])
+    detections: sv.Detections = result["result"][0]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES[:4],

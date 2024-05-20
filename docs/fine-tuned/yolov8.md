@@ -27,4 +27,4 @@ Starting from scratch? Use our Deployment Wizard to get a code snippet tailored 
 
 ## License
 
-See our [Licensing Guide](/licensing/) for more information about how your use of YOLOv7 is licensed when using Inference to deploy your model.
+See our [Licensing Guide](/quickstart/licensing/) for more information about how your use of YOLOv8 is licensed when using Inference to deploy your model.

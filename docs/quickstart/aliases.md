@@ -2,13 +2,23 @@ Inference supports running any of the 50,000+ pre-trained public models hosted o
 
 We have defined IDs for common models for ease of use. These models do not require an API key for use unlike other public or private models.
 
+Using it in `inference` is as simple as:
+
+```python
+from inference import get_model
+
+model = get_model(model_id="yolov8n-640")
+
+results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
+```
+
 !!! Tip
 
-    See the [Use a fine-tuned model](../guides/use-a-fine-tuned-model.md) guide for an example on how to deploy a model.
-
-You can click the link associated with a model below to test the model in your browser, and use the ID with Inference to deploy the model to the edge.
+    See the [Use a fine-tuned model](/quickstart/explore_models) guide for an example on how to deploy your own model.
 
 ## Supported Pre-Trained Models
+
+You can click the link associated with a model below to test the model in your browser, and use the ID with Inference to deploy the model to the edge.
 
 <style>
 table {
@@ -180,9 +190,51 @@ table {
 </tr>
 <tr>
     <td>YOLOv8x Instance Segmentation</td>
-    <td>640</td>
+    <td>1280</td>
     <td>Instance Segmentation</td>
     <td>yolov8x-seg-1280</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/11">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8x Keypoint Detection</td>
+    <td>1280</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8x-pose-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/6">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8x Keypoint Detection</td>
+    <td>640</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8x-pose-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/5">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8l Keypoint Detection</td>
+    <td>640</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8l-pose-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/4">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8m Keypoint Detection</td>
+    <td>640</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8m-pose-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/3">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8s Keypoint Detection</td>
+    <td>640</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8s-pose-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/2">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv8n Keypoint Detection</td>
+    <td>640</td>
+    <td>Keypoint Detection</td>
+    <td>yolov8n-pose-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/1">Test in Browser</a></td>
 </tr>
 </table>

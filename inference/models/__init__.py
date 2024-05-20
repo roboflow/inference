@@ -29,6 +29,11 @@ except:
     pass
 
 try:
+    from inference.models.paligemma import PaliGemma
+except:
+    pass
+
+try:
     from inference.models.yolo_world import YOLOWorld
 except:
     pass

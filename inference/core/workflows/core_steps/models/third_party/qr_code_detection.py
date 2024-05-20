@@ -1,18 +1,24 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 from uuid import uuid4
 
 import cv2
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.utils.image_utils import load_image
+from inference.core.workflows.core_steps.common.utils import (
+    anchor_prediction_detections_in_parent_coordinates,
+    attach_parent_info,
+    attach_prediction_type_info,
+    convert_to_sv_detections,
+)
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
-    FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -69,21 +75,44 @@ class QRCodeDetectorBlock(WorkflowBlock):
     async def run_locally(
         self,
         images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         decoded_images = [load_image(e)[0] for e in images]
         image_parent_ids = [img["parent_id"] for img in images]
-        return [
+        predictions = [
             {
-                "predictions": detect_qr_codes(image=image, parent_id=parent_id),
-                "parent_id": parent_id,
+                "predictions": detect_qr_codes(image=image),
                 "image": {"width": image.shape[1], "height": image.shape[0]},
                 "prediction_type": "qrcode-detection",
             }
             for image, parent_id in zip(decoded_images, image_parent_ids)
         ]
+        return self._post_process_result(image=images, predictions=predictions)
+
+    def _post_process_result(
+        self,
+        image: List[dict],
+        predictions: List[dict],
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        batch_of_detections = convert_to_sv_detections(predictions)
+        for prediction, detections in zip(predictions, batch_of_detections):
+            detections["data"] = np.array(
+                [p.get("data", "") for p in prediction["predictions"]]
+            )
+            prediction["predictions"] = detections
+        converted_predictions = attach_prediction_type_info(
+            predictions=predictions,
+            prediction_type="qrcode-detection",
+        )
+        converted_predictions = attach_parent_info(
+            images=image, predictions=converted_predictions
+        )
+        return anchor_prediction_detections_in_parent_coordinates(
+            image=image,
+            predictions=converted_predictions,
+        )
 
 
-def detect_qr_codes(image: np.ndarray, parent_id: str) -> List[dict]:
+def detect_qr_codes(image: np.ndarray) -> List[dict]:
     detector = cv2.QRCodeDetector()
     retval, detections, points_list, _ = detector.detectAndDecodeMulti(image)
     predictions = []
@@ -92,7 +121,6 @@ def detect_qr_codes(image: np.ndarray, parent_id: str) -> List[dict]:
         height = points[2][1] - points[0][1]
         predictions.append(
             {
-                "parent_id": parent_id,
                 "class": "qr_code",
                 "class_id": 0,
                 "confidence": 1.0,

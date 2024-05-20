@@ -75,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
-                name="predictions_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
         ]
 
@@ -120,7 +120,7 @@ class ClipComparisonBlock(WorkflowBlock):
             prediction = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            predictions.append(prediction.dict())
+            predictions.append(prediction.model_dump())
         return self._post_process_result(image=images, predictions=predictions)
 
     async def run_remotely(

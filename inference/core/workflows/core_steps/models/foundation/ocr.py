@@ -1,5 +1,6 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -14,6 +15,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
     attach_parent_info,
     attach_prediction_type_info,
+    convert_to_sv_detections,
     load_core_model,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -21,7 +23,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
-    FlowControl,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -95,7 +96,7 @@ class OCRModelBlock(WorkflowBlock):
     async def run_locally(
         self,
         images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         serialised_result = []
         for single_image in images:
             inference_request = DoctrOCRInferenceRequest(
@@ -110,7 +111,7 @@ class OCRModelBlock(WorkflowBlock):
             result = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            serialised_result.append(result.dict())
+            serialised_result.append(result.model_dump())
         return self._post_process_result(
             predictions=serialised_result,
             image=images,
@@ -119,7 +120,7 @@ class OCRModelBlock(WorkflowBlock):
     async def run_remotely(
         self,
         images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -147,7 +148,7 @@ class OCRModelBlock(WorkflowBlock):
         self,
         image: List[dict],
         predictions: List[dict],
-    ) -> List[dict]:
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         predictions = attach_parent_info(
             images=image,
             predictions=predictions,

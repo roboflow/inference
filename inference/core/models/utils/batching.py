@@ -1,10 +1,6 @@
-from typing import Generator, Iterable, List, TypeVar, Union
+from typing import Generator, Iterable, List, TypeVar
 
 B = TypeVar("B")
-
-
-def calculate_input_elements(input_value: Union[B, List[B]]) -> int:
-    return len(input_value) if issubclass(type(input_value), list) else 1
 
 
 def create_batches(

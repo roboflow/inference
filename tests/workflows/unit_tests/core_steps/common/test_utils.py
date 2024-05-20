@@ -1,4 +1,5 @@
 import numpy as np
+import supervision as sv
 
 from inference.core.workflows.core_steps.common.utils import (
     extract_origin_size_from_images_batch,
@@ -24,11 +25,15 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     # given
     predictions = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 1]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "a"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         }
     ]
 
@@ -41,33 +46,44 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     # then
     assert result == [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 1]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "a"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         }
     ]
 
 
-def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_classes_to_be_filtered_out() -> (
-    None
-):
+def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_classes_to_be_filtered_out():
     # given
     predictions = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "a", "field": "b"},
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([1, 2]),
+                    confidence=np.array([0.5, 0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a", "b"]),
+                        "field": np.array(["a", "a"])
+                    }
+                )
         },
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "c", "field": "b"},
-            ],
-        },
+            "predictions": sv.Detections(
+                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                    class_id=np.array([1]),
+                    confidence=np.array([0.7], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a"]),
+                        "field": np.array(["a"])
+                    }
+                )
+        }
     ]
 
     # when
@@ -77,15 +93,32 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     )
 
     # then
-    assert result == [
+    expected_result = [
         {
-            "image": {"height": 100, "width": 200},
-            "predictions": [
-                {"class": "b", "field": "b"},
-            ],
+            "predictions": sv.Detections(
+                    xyxy=np.array([[6.5, 7, 23.5, 25]], dtype=np.float64),
+                    class_id=np.array([2]),
+                    confidence=np.array([0.6], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["b"]),
+                        "field": np.array(["a"])
+                    }
+                )
         },
-        {"image": {"height": 100, "width": 200}, "predictions": []},
+        {
+            "predictions": sv.Detections(
+                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                    class_id=np.array([1]),
+                    confidence=np.array([0.7], dtype=np.float64),
+                    data={
+                        "class_name" : np.array(["a"]),
+                        "field": np.array(["a"])
+                    }
+                )[[]]
+        }
     ]
+
+    assert result == expected_result
 
 
 def test_extract_origin_size_from_images() -> None:

@@ -1,4 +1,8 @@
+import os
+
 import requests
+
+API_KEY = os.environ.get("API_KEY")
 
 
 def test_getting_blocks_descriptions(server_url) -> None:
@@ -165,7 +169,7 @@ def test_workflow_run(
         f"{server_url}/workflows/run",
         json={
             "specification": valid_workflow_definition,
-            "api_key": "dummy",
+            "api_key": API_KEY,
             "inputs": {
                 "image": {
                     "type": "url",

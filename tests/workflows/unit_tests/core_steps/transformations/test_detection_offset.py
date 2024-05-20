@@ -1,11 +1,13 @@
 from typing import Any
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
-    offset_detection,
+    offset_detections,
 )
 
 
@@ -74,32 +76,33 @@ def test_manifest_parsing_when_invalid_data_provided(
 
 def test_offset_detection() -> None:
     # given
-    detection = {
-        "x": 100,
-        "y": 200,
-        "width": 20,
-        "height": 20,
-        "parent_id": "p2",
-        "detection_id": "two",
-        "class_name": "car",
-        "confidence": 0.5,
-    }
+    detections = sv.Detections(
+        xyxy=np.array([[90, 190, 110, 210]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["two"]),
+            "class_name": np.array(["car"]),
+            "parent_id": np.array(["p2"])
+        }
+    )
 
     # when
-    result = offset_detection(
-        detection=detection,
+    result = offset_detections(
+        detections=detections,
         offset_width=50,
         offset_height=100,
     )
 
     # then
-    assert result["x"] == 100, "OX center should not be changed"
-    assert result["y"] == 200, "OY center should not be changed"
-    assert result["width"] == 70, "Width should be offset by 50px"
-    assert result["height"] == 120, "Height should be offset by 100px"
+    x1, y1, x2, y2 = result.xyxy[0]
+    assert x1 == 65, "Left corner should be moved by 25px to the left"
+    assert y1 == 140, "Top corner should be moved by 50px to the top"
+    assert x2 == 135, "Right corner should be moved by 25px to the right"
+    assert y2 == 260, "Right corner should be moved by 50px to the bottom"
     assert (
-        result["parent_id"] == "two"
+        result["parent_id"] == str(detections["detection_id"][0])
     ), "Parent id should be set to origin detection id"
     assert (
-        result["detection_id"] != detection["detection_id"]
+        result["detection_id"] != str(detections["parent_id"][0])
     ), "New detection id (random) must be assigned"

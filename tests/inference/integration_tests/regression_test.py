@@ -15,7 +15,6 @@ from copy import deepcopy
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
 TIME_TOLERANCE = 0.75
-
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -404,8 +403,11 @@ INFER_RESPONSE_FUNCTIONS = [
 ]
 
 SKIP_YOLOV8_TEST = bool_env(os.getenv("SKIP_YOLOV8_TEST", False))
+is_parallel_server = bool_env(os.getenv("IS_PARALLEL_SERVER", False))
 DETECTION_TEST_PARAMS = []
 for test in TESTS:
+    if test["description"] == "YOLACT Instance Segmentation" and is_parallel_server:
+        continue # Skip YOLACT tests for parallel server
     if "expected_response" in test:
         if not SKIP_YOLOV8_TEST or "YOLOv8" not in test["description"]:
             for res_func in INFER_RESPONSE_FUNCTIONS:

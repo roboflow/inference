@@ -1,5 +1,7 @@
+import numpy as np
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
 from inference.core.workflows.core_steps.common.operators import Operator
 from inference.core.workflows.core_steps.transformations.detection_filter import (
@@ -171,57 +173,31 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
             },
         }
     )
-    predictions = [
-        [
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p1",
-                "detection_id": "one",
-                "class_name": "car",
-                "confidence": 0.2,
-            },
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p2",
-                "detection_id": "two",
-                "class_name": "car",
-                "confidence": 0.5,
-            },
-        ],
-        [
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p3",
-                "detection_id": "three",
-                "class_name": "dog",
-                "confidence": 0.2,
-            },
-            {
-                "x": 10,
-                "y": 10,
-                "width": 20,
-                "height": 20,
-                "parent_id": "p4",
-                "detection_id": "four",
-                "class_name": "car",
-                "confidence": 0.5,
-            },
-        ],
-    ]
+    batch_1_detections = sv.Detections(
+        xyxy=np.array([[0, 0, 20, 20], [0, 0, 20, 20]], dtype=np.float64),
+        class_id=np.array([0, 0]),
+        confidence=np.array([0.2, 0.5], dtype=np.float64),
+        data={
+            "parent_id": np.array(["p1", "p2"]),
+            "detection_id": np.array(["one", "two"]),
+            "class_name": np.array(["car", "car"])
+        }
+    )
+    batch_2_detections = sv.Detections(
+        xyxy=np.array([[0, 0, 20, 20], [0, 0, 20, 20]], dtype=np.float64),
+        class_id=np.array([1, 0]),
+        confidence=np.array([0.2, 0.5], dtype=np.float64),
+        data={
+            "parent_id": np.array(["p3", "p4"]),
+            "detection_id": np.array(["three", "four"]),
+            "class_name": np.array(["dog", "car"])
+        }
+)
     block = DetectionFilterBlock()
 
     # when
     result = await block.run_locally(
-        predictions=predictions,
+        predictions=[batch_1_detections, batch_2_detections],
         filter_definition=filter_definition,
         image_metadata=[{"height": 100, "width": 100}] * 2,
         prediction_type=["object-detection"] * 2,
@@ -234,30 +210,8 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
     assert (
         result[1]["prediction_type"] == "object-detection"
     ), "Prediction type must be preserved"
-    assert result[0]["predictions"] == [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p2",
-            "detection_id": "two",
-            "class_name": "car",
-            "confidence": 0.5,
-        }
-    ], "Only second prediction in each batch should survive"
-    assert result[1]["predictions"] == [
-        {
-            "x": 10,
-            "y": 10,
-            "width": 20,
-            "height": 20,
-            "parent_id": "p4",
-            "detection_id": "four",
-            "class_name": "car",
-            "confidence": 0.5,
-        }
-    ], "Only second prediction in each batch should survive"
+    assert result[0]["predictions"] == batch_1_detections[1], "Only second prediction in each batch should survive"
+    assert result[1]["predictions"] == batch_2_detections[1], "Only second prediction in each batch should survive"
     assert result[0]["parent_id"] == [
         "p2"
     ], "Only second prediction in each batch should mark parent_id"

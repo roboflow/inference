@@ -14,7 +14,6 @@ from tests.inference.integration_tests.regression_test import compare_detection_
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
 TIME_TOLERANCE = 0.75
-
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -198,7 +197,10 @@ INFER_RESPONSE_FUNCTIONS = [
 ]
 
 DETECTION_TEST_PARAMS = []
+is_parallel_server = bool_env(os.getenv("IS_PARALLEL_SERVER", False))
 for test in TESTS:
+    if test["description"] == "YOLACT Instance Segmentation" and is_parallel_server:
+        continue # Skip YOLACT tests for parallel server
     if "expected_response" in test:
         for res_func in INFER_RESPONSE_FUNCTIONS:
             DETECTION_TEST_PARAMS.append((test, res_func))

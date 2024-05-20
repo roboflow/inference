@@ -1,7 +1,9 @@
+import uuid
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import supervision as sv
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
@@ -9,7 +11,13 @@ from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
     HEIGHT_KEY,
+    KEYPOINTS_CLASS_ID_KEY,
+    KEYPOINTS_CLASS_NAME_KEY,
+    KEYPOINTS_CONFIDENCE_KEY,
+    KEYPOINTS_KEY,
+    KEYPOINTS_XY_KEY,
     LEFT_TOP_X_KEY,
     LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
@@ -48,38 +56,78 @@ def attach_prediction_type_info(
     return predictions
 
 
+def convert_to_sv_detections(
+    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
+    predictions_key: str = "predictions",
+) -> List[sv.Detections]:
+    batch_of_detections: List[sv.Detections] = []
+    for p in predictions:
+        detections = sv.Detections.from_inference(p)
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
+        detection_ids = [
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4)) for d in p[predictions_key]
+        ]
+        detections[DETECTION_ID_KEY] = np.array(detection_ids)
+        detections[PARENT_ID_KEY] = np.array(parent_ids)
+        batch_of_detections.append(detections)
+    return batch_of_detections
+
+
+def add_keypoints_to_detections(
+    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
+    detections: sv.Detections,
+):
+    keypoints_class_names = []
+    keypoints_class_ids = []
+    keypoints_confidences = []
+    keypoints_xy = []
+    for p in predictions:
+        keypoints = p.get(KEYPOINTS_KEY, [])
+        keypoints_class_names.append(
+            np.array([k[KEYPOINTS_CLASS_NAME_KEY] for k in keypoints])
+        )
+        keypoints_class_ids.append(
+            np.array([k[KEYPOINTS_CLASS_ID_KEY] for k in keypoints])
+        )
+        keypoints_confidences.append(
+            np.array(
+                [k[KEYPOINTS_CONFIDENCE_KEY] for k in keypoints],
+                dtype=np.float64,
+            )
+        )
+        keypoints_xy.append(
+            np.array([k[KEYPOINTS_XY_KEY] for k in keypoints], dtype=np.float64)
+        )
+    detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(
+        keypoints_class_names, dtype="object"
+    )
+    detections[KEYPOINTS_CLASS_ID_KEY] = np.array(keypoints_class_ids, dtype="object")
+    detections[KEYPOINTS_CONFIDENCE_KEY] = np.array(
+        keypoints_confidences, dtype="object"
+    )
+    detections[KEYPOINTS_XY_KEY] = np.array(keypoints_xy, dtype="object")
+
+
 def attach_parent_info(
     images: List[Dict[str, Any]],
-    predictions: List[Dict[str, Any]],
+    predictions: List[Dict[str, Union[sv.Detections, Any]]],
     nested_key: Optional[str] = "predictions",
-) -> List[Dict[str, Any]]:
-    return [
-        attach_parent_info_to_prediction(
-            image=image, prediction=prediction, nested_key=nested_key
-        )
-        for image, prediction in zip(images, predictions)
-    ]
-
-
-def attach_parent_info_to_prediction(
-    image: Dict[str, Any],
-    prediction: Dict[str, Any],
-    nested_key: Optional[str],
-) -> Dict[str, Any]:
-    prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
-    if nested_key is None:
-        return prediction
-    for detection in prediction[nested_key]:
-        detection[PARENT_ID_KEY] = image[PARENT_ID_KEY]
-    return prediction
+) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    for image, prediction in zip(images, predictions):
+        prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
+        if nested_key is None:
+            continue
+        detections = prediction[nested_key]
+        detections[PARENT_ID_KEY] = [image[PARENT_ID_KEY]] * len(detections)
+    return predictions
 
 
 def anchor_prediction_detections_in_parent_coordinates(
     image: List[Dict[str, Any]],
-    predictions: List[Dict[str, Any]],
+    predictions: List[Dict[str, Union[sv.Detections, Any]]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
-) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Union[sv.Detections, Any]]]:
     return [
         anchor_detections_in_parent_coordinates(
             image=image,
@@ -93,10 +141,11 @@ def anchor_prediction_detections_in_parent_coordinates(
 
 def anchor_detections_in_parent_coordinates(
     image: Dict[str, Any],
-    prediction: Dict[str, Any],
+    prediction: Dict[str, Union[sv.Detections, Any]],
     image_metadata_key: str = "image",
     detections_key: str = "predictions",
-) -> Dict[str, Any]:
+    keypoints_key: str = KEYPOINTS_KEY,
+) -> Dict[str, Union[sv.Detections, Any]]:
     prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
         prediction[detections_key]
     )
@@ -109,15 +158,29 @@ def anchor_detections_in_parent_coordinates(
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_X_KEY],
         image[ORIGIN_COORDINATES_KEY][LEFT_TOP_Y_KEY],
     )
-    for detection in prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"]:
-        detection["x"] += shift_x
-        detection["y"] += shift_y
-        for point in detection.get("points", []):
-            point["x"] += shift_x
-            point["y"] += shift_y
-        for point in detection.get("keypoints", []):
-            point["x"] += shift_x
-            point["y"] += shift_y
+    anchored_detections: sv.Detections = prediction[
+        f"{detections_key}{PARENT_COORDINATES_SUFFIX}"
+    ]
+    anchored_detections.xyxy += [shift_x, shift_y, shift_x, shift_y]
+    # TODO: assumed type
+    if keypoints_key in anchored_detections.data:
+        anchored_detections[keypoints_key] += [shift_x, shift_y]
+    if anchored_detections.mask:
+        origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
+        origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
+        origin_mask_base = np.full((origin_height, origin_width), False)
+        anchored_detections.mask = [
+            origin_mask_base.copy() for _ in anchored_detections
+        ]
+        for anchored_mask, original_mask in zip(
+            anchored_detections.mask, prediction[detections_key].mask
+        ):
+            mask_h, mask_w = original_mask.shape
+            # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
+            #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
+            anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = (
+                original_mask
+            )
     prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
         ORIGIN_COORDINATES_KEY
     ][ORIGIN_SIZE_KEY]
@@ -125,24 +188,21 @@ def anchor_detections_in_parent_coordinates(
 
 
 def filter_out_unwanted_classes_from_predictions_detections(
-    predictions: List[Dict[str, Any]],
+    predictions: List[Dict[str, Union[sv.Detections, Any]]],
     classes_to_accept: Optional[List[str]],
     detections_key: str = "predictions",
-    class_name_key: str = "class",
-) -> List[Dict[str, Any]]:
-    if classes_to_accept is None:
+    class_name_key: str = "class_name",
+) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    if not classes_to_accept:
         return predictions
-    classes_to_accept = set(classes_to_accept)
-    results = []
+    filtered_predictions = []
     for prediction in predictions:
-        filtered_image_result = deepcopy(prediction)
-        filtered_image_result[detections_key] = [
-            prediction
-            for prediction in prediction[detections_key]
-            if prediction[class_name_key] in classes_to_accept
+        detections = prediction[detections_key]
+        prediction[detections_key] = detections[
+            np.isin(detections[class_name_key], classes_to_accept)
         ]
-        results.append(filtered_image_result)
-    return results
+        filtered_predictions.append(prediction)
+    return predictions
 
 
 def extract_origin_size_from_images_batch(
@@ -160,6 +220,7 @@ def extract_origin_size_from_images_batch(
     return result
 
 
+# TODO: remove once fusion is migrated
 def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
     x_min = round(detection["x"] - detection[WIDTH_KEY] / 2)
     y_min = round(detection["y"] - detection[HEIGHT_KEY] / 2)
