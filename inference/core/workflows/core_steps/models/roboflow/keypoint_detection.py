@@ -300,10 +300,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             predictions=predictions,
             classes_to_accept=class_filter,
         )
-        predictions = attach_parent_info(
-            images=images,
-            predictions=predictions
-        )
+        predictions = attach_parent_info(images=images, predictions=predictions)
         return anchor_prediction_detections_in_parent_coordinates(
             image=images,
             predictions=predictions,

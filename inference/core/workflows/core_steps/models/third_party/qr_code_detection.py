@@ -95,9 +95,9 @@ class QRCodeDetectorBlock(WorkflowBlock):
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         batch_of_detections = convert_to_sv_detections(predictions)
         for prediction, detections in zip(predictions, batch_of_detections):
-            detections["data"] = np.array([
-                p.get("data", "") for p in prediction["predictions"]
-            ])
+            detections["data"] = np.array(
+                [p.get("data", "") for p in prediction["predictions"]]
+            )
             prediction["predictions"] = detections
         converted_predictions = attach_prediction_type_info(
             predictions=predictions,

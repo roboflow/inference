@@ -63,13 +63,9 @@ def convert_to_sv_detections(
     batch_of_detections: List[sv.Detections] = []
     for p in predictions:
         detections = sv.Detections.from_inference(p)
-        parent_ids = [
-            d.get(PARENT_ID_KEY, "")
-            for d in p[predictions_key]
-        ]
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
         detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4))
-            for d in p[predictions_key]
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4)) for d in p[predictions_key]
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
@@ -94,14 +90,23 @@ def add_keypoints_to_detections(
             np.array([k.get(KEYPOINTS_CLASS_ID_KEY, "") for k in keypoints])
         )
         keypoints_confidences.append(
-            np.array([k.get(KEYPOINTS_CONFIDENCE_KEY, "") for k in keypoints], dtype=np.float64)
+            np.array(
+                [k.get(KEYPOINTS_CONFIDENCE_KEY, "") for k in keypoints],
+                dtype=np.float64,
+            )
         )
         keypoints_xy.append(
-            np.array([k.get(KEYPOINTS_XY_KEY, [-1, -1]) for k in keypoints], dtype=np.float64)
+            np.array(
+                [k.get(KEYPOINTS_XY_KEY, [-1, -1]) for k in keypoints], dtype=np.float64
+            )
         )
-    detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(keypoints_class_names, dtype="object")
+    detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(
+        keypoints_class_names, dtype="object"
+    )
     detections[KEYPOINTS_CLASS_ID_KEY] = np.array(keypoints_class_ids, dtype="object")
-    detections[KEYPOINTS_CONFIDENCE_KEY] = np.array(keypoints_confidences, dtype="object")
+    detections[KEYPOINTS_CONFIDENCE_KEY] = np.array(
+        keypoints_confidences, dtype="object"
+    )
     detections[KEYPOINTS_XY_KEY] = np.array(keypoints_xy, dtype="object")
 
 

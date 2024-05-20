@@ -146,10 +146,12 @@ def serialise_sv_detections(detections: sv.Detections) -> List[Dict[str, Any]]:
             polygon = sv.mask_to_polygons(mask=mask)
             detection_dict[POLYGON_KEY] = []
             for x, y in polygon[0]:
-                detection_dict[POLYGON_KEY].append({
-                    X_KEY: float(x),
-                    Y_KEY: float(y),
-                })
+                detection_dict[POLYGON_KEY].append(
+                    {
+                        X_KEY: float(x),
+                        Y_KEY: float(y),
+                    }
+                )
         if tracker_id is not None:
             detection_dict[TRACKER_ID_KEY] = int(tracker_id)
         if "class_name" in data:
@@ -158,23 +160,31 @@ def serialise_sv_detections(detections: sv.Detections) -> List[Dict[str, Any]]:
             detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
-        if KEYPOINTS_CLASS_ID_KEY in data \
-                and KEYPOINTS_CLASS_NAME_KEY in data \
-                and KEYPOINTS_CONFIDENCE_KEY in data \
-                and KEYPOINTS_XY_KEY in data:
+        if (
+            KEYPOINTS_CLASS_ID_KEY in data
+            and KEYPOINTS_CLASS_NAME_KEY in data
+            and KEYPOINTS_CONFIDENCE_KEY in data
+            and KEYPOINTS_XY_KEY in data
+        ):
             kp_class_id = data[KEYPOINTS_CLASS_ID_KEY]
             kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY]
             kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY]
             kp_xy = data[KEYPOINTS_XY_KEY]
             detection_dict[KEYPOINTS_KEY] = []
-            for keypoint_class_id, keypoint_class_name, keypoint_confidence, (x, y) \
-                    in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
-                detection_dict[KEYPOINTS_KEY].append({
-                    KEYPOINTS_CLASS_ID_KEY: int(keypoint_class_id),
-                    KEYPOINTS_CLASS_NAME_KEY: str(keypoint_class_name),
-                    KEYPOINTS_CONFIDENCE_KEY: float(keypoint_confidence),
-                    X_KEY: float(x),
-                    Y_KEY: float(y),
-                })
+            for (
+                keypoint_class_id,
+                keypoint_class_name,
+                keypoint_confidence,
+                (x, y),
+            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
+                detection_dict[KEYPOINTS_KEY].append(
+                    {
+                        KEYPOINTS_CLASS_ID_KEY: int(keypoint_class_id),
+                        KEYPOINTS_CLASS_NAME_KEY: str(keypoint_class_name),
+                        KEYPOINTS_CONFIDENCE_KEY: float(keypoint_confidence),
+                        X_KEY: float(x),
+                        Y_KEY: float(y),
+                    }
+                )
         serialized_detections.append(detection_dict)
     return serialized_detections
