@@ -61,9 +61,6 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 

@@ -23,7 +23,6 @@ MULTI_STAGES_WORKFLOW = {
             "name": "filter",
             "predictions": "$steps.detection.predictions",
             "image_metadata": "$steps.detection.image",
-            "prediction_type": "$steps.detection.prediction_type",
             "filter_definition": {
                 "type": "DetectionFilterDefinition",
                 "field_name": "class_name",
@@ -36,7 +35,6 @@ MULTI_STAGES_WORKFLOW = {
             "name": "offset",
             "predictions": "$steps.filter.predictions",
             "image_metadata": "$steps.filter.image",
-            "prediction_type": "$steps.filter.prediction_type",
             "offset_width": 10,
             "offset_height": 10,
         },
@@ -57,7 +55,6 @@ MULTI_STAGES_WORKFLOW = {
             "name": "plates_offset",
             "predictions": "$steps.plates_detection.predictions",
             "image_metadata": "$steps.plates_detection.image",
-            "prediction_type": "$steps.plates_detection.prediction_type",
             "offset_width": 50,
             "offset_height": 50,
         },

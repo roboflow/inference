@@ -131,27 +131,6 @@ def test_manifest_parsing_when_invalid_image_metadata_provided() -> None:
         _ = BlockManifest.model_validate(data)
 
 
-def test_manifest_parsing_when_predictions_type_provided() -> None:
-    # given
-    data = {
-        "type": "DetectionFilter",
-        "name": "some",
-        "predictions": "$steps.some.predictions",
-        "filter_definition": {
-            "type": "DetectionFilterDefinition",
-            "field_name": "confidence",
-            "operator": ">",
-            "reference_value": 0.3,
-        },
-        "image_metadata": "$steps.some.image",
-        "prediction_type": "invalid",
-    }
-
-    # when
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(data)
-
-
 @pytest.mark.asyncio
 async def test_run_detection_filter_step_when_batch_detections_given() -> None:
     # given
@@ -180,7 +159,8 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
         data={
             "parent_id": np.array(["p1", "p2"]),
             "detection_id": np.array(["one", "two"]),
-            "class_name": np.array(["car", "car"])
+            "class_name": np.array(["car", "car"]),
+            "prediction_type": np.array(["object-detection", "object-detection"]),
         }
     )
     batch_2_detections = sv.Detections(
@@ -190,9 +170,10 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
         data={
             "parent_id": np.array(["p3", "p4"]),
             "detection_id": np.array(["three", "four"]),
-            "class_name": np.array(["dog", "car"])
+            "class_name": np.array(["dog", "car"]),
+            "prediction_type": np.array(["object-detection", "object-detection"]),
         }
-)
+    )
     block = DetectionFilterBlock()
 
     # when
@@ -200,15 +181,14 @@ async def test_run_detection_filter_step_when_batch_detections_given() -> None:
         predictions=[batch_1_detections, batch_2_detections],
         filter_definition=filter_definition,
         image_metadata=[{"height": 100, "width": 100}] * 2,
-        prediction_type=["object-detection"] * 2,
     )
 
     # then
     assert (
-        result[0]["prediction_type"] == "object-detection"
+        str(result[0]["predictions"]["prediction_type"][0]) == "object-detection"
     ), "Prediction type must be preserved"
     assert (
-        result[1]["prediction_type"] == "object-detection"
+        str(result[1]["predictions"]["prediction_type"][0]) == "object-detection"
     ), "Prediction type must be preserved"
     assert result[0]["predictions"] == batch_1_detections[1], "Only second prediction in each batch should survive"
     assert result[1]["predictions"] == batch_2_detections[1], "Only second prediction in each batch should survive"

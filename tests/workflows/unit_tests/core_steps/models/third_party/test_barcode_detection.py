@@ -61,8 +61,8 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     values = ["47205255193", "37637448832", "21974251554", "81685630817"]
     preds = result[0]["predictions"]
     assert len(preds) == 4
-    for class_id, (x1, y1, x2, y2), class_name, detection_id, parent_id, confidence, data in \
-            zip(preds.class_id, preds.xyxy, preds["class_name"], preds["detection_id"], preds["parent_id"], preds.confidence, preds["data"]):
+    for class_id, (x1, y1, x2, y2), class_name, detection_id, parent_id, confidence, data, prediction_type in \
+            zip(preds.class_id, preds.xyxy, preds["class_name"], preds["detection_id"], preds["parent_id"], preds.confidence, preds.data["data"], preds.data["prediction_type"]):
         assert class_name == "barcode"
         assert class_id == 0
         assert confidence == 1.0
@@ -73,10 +73,8 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
         assert detection_id is not None
         assert data in values
         assert parent_id == "$inputs.image"
+        assert prediction_type == "barcode-detection"
 
     actual_image = result[0]["image"]
     assert actual_image["height"] == 480
     assert actual_image["width"] == 800
-
-    actual_prediction_type = result[0]["prediction_type"]
-    assert actual_prediction_type == "barcode-detection"

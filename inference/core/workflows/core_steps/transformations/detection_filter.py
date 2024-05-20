@@ -140,13 +140,6 @@ class BlockManifest(WorkflowBlockManifest):
             examples=["$steps.detection.image"],
         ),
     ]
-    prediction_type: Annotated[
-        Union[StepOutputSelector(kind=[BATCH_OF_PREDICTION_TYPE_KIND])],
-        Field(
-            description="Type of `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.prediction_type"],
-        ),
-    ]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -161,9 +154,6 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -180,7 +170,6 @@ class DetectionFilterBlock(WorkflowBlock):
             DetectionFilterDefinition, CompoundDetectionFilterDefinition
         ],
         image_metadata: List[dict],
-        prediction_type: List[str],
     ) -> Union[
         Union[List[sv.Detections], List[Dict[str, Any]]],
         Tuple[Union[List[sv.Detections], List[Dict[str, Any]]], FlowControl],
@@ -188,6 +177,7 @@ class DetectionFilterBlock(WorkflowBlock):
         filter_callable = build_filter_callable(definition=filter_definition)
         result_predictions, result_parent_ids = [], []
         for detections in predictions:
+            # TODO: below results in copy of each detection object
             filtered_detections = detections[
                 [filter_callable(detections[i]) for i in range(len(detections))]
             ]
@@ -199,10 +189,9 @@ class DetectionFilterBlock(WorkflowBlock):
                 "predictions": prediction,
                 PARENT_ID_KEY: parent_ids,
                 "image": image,
-                "prediction_type": single_prediction_type,
             }
-            for prediction, parent_ids, image, single_prediction_type in zip(
-                result_predictions, result_parent_ids, image_metadata, prediction_type
+            for prediction, parent_ids, image in zip(
+                result_predictions, result_parent_ids, image_metadata
             )
         ]
 

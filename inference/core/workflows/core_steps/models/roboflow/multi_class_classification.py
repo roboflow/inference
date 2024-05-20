@@ -11,10 +11,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    attach_prediction_type_info,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
@@ -154,10 +151,10 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         )
         if isinstance(predictions, list):
             predictions = [
-                e.dict(by_alias=True, exclude_none=True) for e in predictions
+                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
+            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             predictions=predictions,
             images=images,
@@ -205,11 +202,7 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         images: List[dict],
         predictions: List[dict],
     ) -> List[dict]:
-        predictions = attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="classification",
-        )
-        predictions = attach_parent_info(
-            images=images, predictions=predictions, nested_key=None
-        )
+        for p, i in zip(predictions, images):
+            p[PREDICTION_TYPE_KEY] = "lmm"
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
         return predictions
