@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from pydantic import ValidationError
+import supervision as sv
 
 from inference.core.workflows.core_steps.transformations.crop import (
     BlockManifest,
@@ -48,17 +49,21 @@ def test_crop_image() -> None:
     # given
     image = np.zeros((1000, 1000, 3), dtype=np.uint8)
     origin_size = {"height": 1000, "width": 1000}
-    predictions = [
-        {"x": 10, "y": 10, "width": 20, "height": 20, "detection_id": "one"},
-        {"x": 100, "y": 100, "width": 40, "height": 40, "detection_id": "two"},
-        {"x": 500, "y": 500, "width": 100, "height": 100, "detection_id": "three"},
-    ]
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64),
+        class_id=np.array([1, 1, 1]),
+        confidence=np.array([0.5, 0.5, 0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one", "two", "three"]),
+            "class_name": np.array(["cat", "cat", "cat"])
+        }
+    )
     image[0:20, 0:20] = 39
     image[80:120, 80:120] = 49
     image[450:550, 450:550] = 59
 
     # when
-    result = crop_image(image=image, detections=predictions, origin_size=origin_size)
+    result = crop_image(image=image, detections=detections, origin_size=origin_size)
 
     # then
     assert len(result) == 3, "Expected 3 crops to be created"
