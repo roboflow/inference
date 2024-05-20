@@ -96,9 +96,7 @@ def add_keypoints_to_detections(
             )
         )
         keypoints_xy.append(
-            np.array(
-                [k[KEYPOINTS_XY_KEY] for k in keypoints], dtype=np.float64
-            )
+            np.array([k[KEYPOINTS_XY_KEY] for k in keypoints], dtype=np.float64)
         )
     detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(
         keypoints_class_names, dtype="object"
