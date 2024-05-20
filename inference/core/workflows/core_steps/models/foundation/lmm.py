@@ -15,8 +15,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.workflows.constants import (
+    PARENT_ID_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
     load_core_model,
 )
 from inference.core.workflows.entities.base import OutputDefinition
@@ -24,6 +26,7 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
     DICTIONARY_KIND,
     STRING_KIND,
@@ -197,11 +200,9 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for p, i in zip(predictions, images):
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions
 
     async def run_remotely(
         self,
@@ -243,11 +244,9 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for p, i in zip(predictions, images):
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions
 
 
 async def run_gpt_4v_llm_prompting(

@@ -11,8 +11,11 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.constants import (
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
     attach_prediction_type_info,
     load_core_model,
 )
@@ -121,7 +124,7 @@ class ClipComparisonBlock(WorkflowBlock):
                 doctr_model_id, inference_request
             )
             predictions.append(prediction.model_dump())
-        return self._post_process_result(image=images, predictions=predictions)
+        return self._post_process_result(images=images, predictions=predictions)
 
     async def run_remotely(
         self,
@@ -156,19 +159,14 @@ class ClipComparisonBlock(WorkflowBlock):
                 coroutines.append(coroutine)
             sub_batch_predictions = list(await asyncio.gather(*coroutines))
             predictions.extend(sub_batch_predictions)
-        return self._post_process_result(image=images, predictions=predictions)
+        return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[dict],
         predictions: List[dict],
     ) -> List[dict]:
-        predictions = attach_parent_info(
-            images=image,
-            predictions=predictions,
-            nested_key=None,
-        )
-        return attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="embeddings-comparison",
-        )
+        for p, i in zip(predictions, images):
+            p[PREDICTION_TYPE_KEY] = "classification"
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions

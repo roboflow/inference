@@ -22,9 +22,7 @@ from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
-    HEIGHT_KEY,
     PARENT_ID_KEY,
-    WIDTH_KEY,
 )
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
@@ -175,9 +173,6 @@ class BlockManifest(WorkflowBlockManifest):
                 name="presence_confidence",
                 kind=[FLOAT_ZERO_TO_ONE_KIND, DICTIONARY_KIND],
             ),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -239,7 +234,6 @@ class DetectionsConsensusBlock(WorkflowBlock):
                     "object_present": object_present,
                     "presence_confidence": presence_confidence,
                     "image": image_metadata[batch_index],
-                    "prediction_type": "object-detection",
                 }
             )
         return results

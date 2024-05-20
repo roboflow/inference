@@ -159,9 +159,6 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
-            OutputDefinition(
                 name="predictions",
                 kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),

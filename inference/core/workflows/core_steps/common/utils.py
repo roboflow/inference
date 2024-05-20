@@ -24,6 +24,7 @@ from inference.core.workflows.constants import (
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
     PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
     WIDTH_KEY,
 )
 
@@ -49,10 +50,11 @@ def load_core_model(
 def attach_prediction_type_info(
     predictions: List[Dict[str, Any]],
     prediction_type: str,
-    key: str = "prediction_type",
+    predictions_key: str = "predictions",
 ) -> List[Dict[str, Any]]:
-    for result in predictions:
-        result[key] = prediction_type
+    for prediction in predictions:
+        detections = prediction[predictions_key]
+        detections[PREDICTION_TYPE_KEY] = np.array([prediction_type] * len(detections))
     return predictions
 
 

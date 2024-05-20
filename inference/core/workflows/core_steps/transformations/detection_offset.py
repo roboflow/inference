@@ -78,13 +78,6 @@ class BlockManifest(WorkflowBlockManifest):
             examples=["$steps.detection.image"],
         ),
     ]
-    prediction_type: Annotated[
-        StepOutputSelector(kind=[BATCH_OF_PREDICTION_TYPE_KIND]),
-        Field(
-            description="Type of `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.prediction_type"],
-        ),
-    ]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -99,9 +92,6 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -119,7 +109,6 @@ class DetectionOffsetBlock(WorkflowBlock):
         offset_width: int,
         offset_height: int,
         image_metadata: List[dict],
-        prediction_type: List[str],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         offset_predictions = []
         for detections in predictions:
@@ -142,10 +131,9 @@ class DetectionOffsetBlock(WorkflowBlock):
                 "predictions": offset_prediction,
                 PARENT_ID_KEY: prediction[PARENT_ID_KEY],
                 "image": image,
-                "prediction_type": single_prediction_type,
             }
-            for offset_prediction, image, single_prediction_type, prediction in zip(
-                offset_predictions, image_metadata, prediction_type, predictions
+            for offset_prediction, image, prediction in zip(
+                offset_predictions, image_metadata, predictions
             )
         ]
 

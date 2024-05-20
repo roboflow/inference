@@ -52,6 +52,14 @@ class StepCache:
     def get_all_outputs(self) -> List[Dict[str, Any]]:
         all_keys = list(self._cache_content.keys())
         values = list(self._cache_content.values())
+        expected_length = max(len(v) for v in values)
+        if any(len(v) < expected_length for v in values):
+            malformed_outputs = [k for (k, v) in zip(all_keys, values) if len(v) < expected_length]
+            raise ExecutionEngineRuntimeError(
+                public_message="Block produced malformed output for following outputs: "
+                              f"{','.join(malformed_outputs)}",
+                context="workflow_execution"
+            )
         result = []
         for all_keys_values_pack in zip(*values):
             result.append(dict(zip(all_keys, all_keys_values_pack)))
@@ -109,7 +117,7 @@ class ExecutionCache:
             # meeting contract and we want graceful error handling
             raise InvalidBlockBehaviourError(
                 public_message=f"Block implementing step {step_name} should return outputs which are lists of "
-                f"dicts, but the type of output does not much expectation.",
+                f"dicts, but the type of output does not match expectation.",
                 context="workflow_execution | step_output_registration",
                 inner_error=e,
             ) from e
