@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Type, Union, Optional
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -7,11 +7,19 @@ import zxingcpp
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY, PREDICTION_TYPE_KEY
+from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_detections,
 )
-from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     StepOutputImageSelector,
@@ -52,7 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_BAR_CODE_DETECTION_KIND]
-            ),
+            )
         ]
 
 
@@ -70,7 +78,9 @@ class BarcodeDetectorBlock(WorkflowBlock):
         for image in images.iter_nonempty():
             qr_code_detections = detect_barcodes(image=image)
             results.append({"predictions": qr_code_detections})
-        return images.align_batch_results(results=results, null_element={"predictions": None})
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
 
 def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
@@ -98,11 +108,15 @@ def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
         xyxy=np.array(xyxy),
         confidence=confidence,
         class_id=class_id,
-        data={CLASS_NAME_DATA_FIELD: class_name}
+        data={CLASS_NAME_DATA_FIELD: class_name},
     )
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
-    detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection" for _ in range(len(detections))])
-    detections["data"] = np.array(extracted_data) if len(extracted_data) > 0 else np.empty(0)
+    detections[PREDICTION_TYPE_KEY] = np.array(
+        ["barcode-detection" for _ in range(len(detections))]
+    )
+    detections["data"] = (
+        np.array(extracted_data) if len(extracted_data) > 0 else np.empty(0)
+    )
     return attach_parents_coordinates_to_detections(
         detections=detections,
         image=image,

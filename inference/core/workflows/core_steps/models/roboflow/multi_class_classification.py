@@ -12,10 +12,12 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
-from inference.core.workflows.core_steps.common.utils import (
-    attach_prediction_type_info,
+from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
 )
-from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
@@ -128,7 +130,9 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.to_inference_format(numpy_preferred=True) for i in non_empty_images]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
         request = ClassificationInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
@@ -147,15 +151,17 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         )
         if isinstance(predictions, list):
             predictions = [
-                e.dict(by_alias=True, exclude_none=True) for e in predictions
+                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
+            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
         results = self._post_process_result(
             predictions=predictions,
             images=non_empty_images,
         )
-        return images.align_batch_results(results=results, null_element={"predictions": None})
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
     async def run_remotely(
         self,
@@ -197,7 +203,9 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             predictions=predictions,
             images=non_empty_images,
         )
-        return images.align_batch_results(results=results, null_element={"predictions": None})
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
     def _post_process_result(
         self,
@@ -210,5 +218,7 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         )
         for prediction, image in zip(predictions, images):
             predictions[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            predictions[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
+            predictions[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
         return [{"predictions": prediction} for prediction in predictions]

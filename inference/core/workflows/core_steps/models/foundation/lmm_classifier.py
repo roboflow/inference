@@ -3,10 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    attach_prediction_type_info,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.models.foundation.lmm import (
     GPT_4V_MODEL_TYPE,
     LMMConfig,
@@ -156,20 +153,10 @@ class LMMForClassificationBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        predictions = attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
-        predictions = attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="classification",
-        )
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for p, i in zip(predictions, images):
+            p[PREDICTION_TYPE_KEY] = "classification"
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions
 
     async def run_remotely(
         self,
@@ -209,17 +196,7 @@ class LMMForClassificationBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        predictions = attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
-        predictions = attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="classification",
-        )
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for p, i in zip(predictions, images):
+            p[PREDICTION_TYPE_KEY] = "classification"
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions

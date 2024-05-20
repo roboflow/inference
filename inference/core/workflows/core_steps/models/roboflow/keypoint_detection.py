@@ -16,11 +16,16 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
     add_keypoints_to_detections,
-    convert_to_sv_detections,
+    attach_parents_coordinates_to_list_of_detections,
     attach_prediction_type_info_to_sv_detections,
-    filter_out_unwanted_classes_from_sv_detections, attach_parents_coordinates_to_list_of_detections,
+    convert_to_sv_detections,
+    filter_out_unwanted_classes_from_sv_detections,
 )
-from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
@@ -184,7 +189,9 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.to_inference_format(numpy_preferred=True) for i in non_empty_images]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
         request = KeypointsDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
@@ -218,8 +225,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             class_filter=class_filter,
         )
         return images.align_batch_results(
-            results=results,
-            null_element={"predictions": None}
+            results=results, null_element={"predictions": None}
         )
 
     async def run_remotely(
@@ -276,8 +282,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             class_filter=class_filter,
         )
         return images.align_batch_results(
-            results=results,
-            null_element={"predictions": None}
+            results=results, null_element={"predictions": None}
         )
 
     def _post_process_result(

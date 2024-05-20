@@ -6,9 +6,9 @@ from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.entities.base import (
     Batch,
-    ParentImageMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
+    ParentImageMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (

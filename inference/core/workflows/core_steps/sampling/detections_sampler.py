@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Any, Dict, List, Literal, Tuple, Type, Union, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -11,8 +11,11 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
     build_eval_function,
 )
-from inference.core.workflows.core_steps.common.utils import grab_batch_parameters, grab_non_batch_parameters
-from inference.core.workflows.entities.base import OutputDefinition, Batch
+from inference.core.workflows.core_steps.common.utils import (
+    grab_batch_parameters,
+    grab_non_batch_parameters,
+)
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -55,7 +58,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     sampling_statement: StatementGroup
     operations_parameters: Dict[
-        str, Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()]
+        str,
+        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=["$inputs.confidence", "$inputs.image"],

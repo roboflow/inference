@@ -26,7 +26,11 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
 )
 from inference.core.utils.image_utils import load_image
-from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,

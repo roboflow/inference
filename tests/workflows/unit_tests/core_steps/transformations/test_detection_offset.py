@@ -50,7 +50,6 @@ def test_manifest_parsing_when_valid_data_provided(
         ("offset_width", -1),
         ("offset_height", -1),
         ("image_metadata", "invalid"),
-        ("prediction_type", "invalid"),
     ],
 )
 def test_manifest_parsing_when_invalid_data_provided(
@@ -65,7 +64,6 @@ def test_manifest_parsing_when_invalid_data_provided(
         "offset_width": "$inputs.offset_x",
         "offset_height": 40,
         "image_metadata": "$steps.some.image",
-        "prediction_type": "$steps.some.prediction_type",
     }
     data[field_name] = value
 

@@ -9,9 +9,9 @@ from inference.core.utils.image_utils import (
     load_image_from_url,
 )
 from inference.core.workflows.entities.base import (
-    ParentImageMetadata,
     InputType,
     OriginCoordinatesSystem,
+    ParentImageMetadata,
     WorkflowImage,
     WorkflowImageData,
 )

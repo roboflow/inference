@@ -11,7 +11,10 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
-from inference.core.workflows.core_steps.common.utils import grab_batch_parameters, grab_non_batch_parameters
+from inference.core.workflows.core_steps.common.utils import (
+    grab_batch_parameters,
+    grab_non_batch_parameters,
+)
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,

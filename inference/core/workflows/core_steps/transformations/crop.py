@@ -8,9 +8,9 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.workflows.constants import DETECTION_ID_KEY
 from inference.core.workflows.entities.base import (
     Batch,
-    ParentImageMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
+    ParentImageMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (

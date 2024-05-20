@@ -12,6 +12,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.common.utils import (
     attach_parent_info,
     attach_prediction_type_info,
@@ -69,9 +70,6 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -114,7 +112,7 @@ class OCRModelBlock(WorkflowBlock):
             serialised_result.append(result.model_dump())
         return self._post_process_result(
             predictions=serialised_result,
-            image=images,
+            images=images,
         )
 
     async def run_remotely(
@@ -142,19 +140,14 @@ class OCRModelBlock(WorkflowBlock):
         )
         if len(images) == 1:
             predictions = [predictions]
-        return self._post_process_result(image=images, predictions=predictions)
+        return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[dict],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = attach_parent_info(
-            images=image,
-            predictions=predictions,
-            nested_key=None,
-        )
-        return attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="ocr",
-        )
+        for p, i in zip(predictions, images):
+            p[PREDICTION_TYPE_KEY] = "lmm"
+            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        return predictions

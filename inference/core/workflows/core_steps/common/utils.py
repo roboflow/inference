@@ -23,13 +23,22 @@ from inference.core.workflows.constants import (
     LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
+    PARENT_COORDINATES_KEY,
     PARENT_COORDINATES_SUFFIX,
+    PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
-    WIDTH_KEY, ROOT_PARENT_COORDINATES_KEY, ROOT_PARENT_DIMENSIONS_KEY, PARENT_COORDINATES_KEY,
-    PARENT_DIMENSIONS_KEY, PREDICTION_TYPE_KEY, ROOT_PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    WIDTH_KEY,
 )
-from inference.core.workflows.entities.base import Batch, WorkflowImageData, OriginCoordinatesSystem, \
-    ParentImageMetadata
+from inference.core.workflows.entities.base import (
+    Batch,
+    OriginCoordinatesSystem,
+    ParentImageMetadata,
+    WorkflowImageData,
+)
 
 
 def load_core_model(
@@ -142,10 +151,12 @@ def attach_parents_coordinates_to_list_of_detections(
 ) -> List[sv.Detections]:
     result = []
     for prediction, image in zip(predictions, images):
-        result.append(attach_parents_coordinates_to_detections(
-            detections=prediction,
-            image=image,
-        ))
+        result.append(
+            attach_parents_coordinates_to_detections(
+                detections=prediction,
+                image=image,
+            )
+        )
     return result
 
 
@@ -178,13 +189,20 @@ def attach_parent_coordinates_to_detections(
 ) -> sv.Detections:
     parent_coordinates_system = parent_metadata.origin_coordinates
     detections[parent_id_key] = np.array([parent_metadata.parent_id] * len(detections))
-    coordinates = np.array([
-        [parent_coordinates_system.left_top_x, parent_coordinates_system.left_top_y]
-    ] * len(detections))
+    coordinates = np.array(
+        [[parent_coordinates_system.left_top_x, parent_coordinates_system.left_top_y]]
+        * len(detections)
+    )
     detections[coordinates_key] = coordinates
-    dimensions = np.array([
-        [parent_coordinates_system.origin_height, parent_coordinates_system.origin_width]
-    ] * len(detections))
+    dimensions = np.array(
+        [
+            [
+                parent_coordinates_system.origin_height,
+                parent_coordinates_system.origin_width,
+            ]
+        ]
+        * len(detections)
+    )
     detections[dimensions_key] = dimensions
     return detections
 
