@@ -84,20 +84,20 @@ def add_keypoints_to_detections(
     for p in predictions:
         keypoints = p.get(KEYPOINTS_KEY, [])
         keypoints_class_names.append(
-            np.array([k.get(KEYPOINTS_CLASS_NAME_KEY, "") for k in keypoints])
+            np.array([k[KEYPOINTS_CLASS_NAME_KEY] for k in keypoints])
         )
         keypoints_class_ids.append(
-            np.array([k.get(KEYPOINTS_CLASS_ID_KEY, "") for k in keypoints])
+            np.array([k[KEYPOINTS_CLASS_ID_KEY] for k in keypoints])
         )
         keypoints_confidences.append(
             np.array(
-                [k.get(KEYPOINTS_CONFIDENCE_KEY, "") for k in keypoints],
+                [k[KEYPOINTS_CONFIDENCE_KEY] for k in keypoints],
                 dtype=np.float64,
             )
         )
         keypoints_xy.append(
             np.array(
-                [k.get(KEYPOINTS_XY_KEY, [-1, -1]) for k in keypoints], dtype=np.float64
+                [k[KEYPOINTS_XY_KEY] for k in keypoints], dtype=np.float64
             )
         )
     detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(
