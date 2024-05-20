@@ -3,10 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import (
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.models.foundation.lmm import (
     GPT_4V_MODEL_TYPE,
     LMMConfig,

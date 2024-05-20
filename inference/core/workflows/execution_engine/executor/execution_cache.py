@@ -54,11 +54,13 @@ class StepCache:
         values = list(self._cache_content.values())
         expected_length = max(len(v) for v in values)
         if any(len(v) < expected_length for v in values):
-            malformed_outputs = [k for (k, v) in zip(all_keys, values) if len(v) < expected_length]
+            malformed_outputs = [
+                k for (k, v) in zip(all_keys, values) if len(v) < expected_length
+            ]
             raise ExecutionEngineRuntimeError(
                 public_message="Block produced malformed output for following outputs: "
-                              f"{','.join(malformed_outputs)}",
-                context="workflow_execution"
+                f"{','.join(malformed_outputs)}",
+                context="workflow_execution",
             )
         result = []
         for all_keys_values_pack in zip(*values):

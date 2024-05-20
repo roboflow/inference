@@ -11,10 +11,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import (
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,

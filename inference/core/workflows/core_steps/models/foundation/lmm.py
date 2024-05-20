@@ -15,12 +15,8 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.constants import (
-    PARENT_ID_KEY,
-)
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY
+from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,

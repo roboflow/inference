@@ -20,10 +20,7 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.constants import (
-    DETECTION_ID_KEY,
-    PARENT_ID_KEY,
-)
+from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,

@@ -11,10 +11,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import (
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-)
+from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info,
     load_core_model,
