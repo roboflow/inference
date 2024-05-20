@@ -13,10 +13,10 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
-    KEYPOINTS_KEY,
     KEYPOINTS_CLASS_ID_KEY,
     KEYPOINTS_CLASS_NAME_KEY,
     KEYPOINTS_CONFIDENCE_KEY,
+    KEYPOINTS_KEY,
     KEYPOINTS_XY_KEY,
     LEFT_TOP_X_KEY,
     LEFT_TOP_Y_KEY,

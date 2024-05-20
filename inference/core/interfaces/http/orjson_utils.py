@@ -1,11 +1,11 @@
 import base64
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi.responses import ORJSONResponse
 import numpy as np
 import orjson
-from pydantic import BaseModel
 import supervision as sv
+from fastapi.responses import ORJSONResponse
+from pydantic import BaseModel
 
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.utils.image_utils import ImageType, encode_image_to_jpeg_bytes
@@ -20,10 +20,10 @@ from inference.core.workflows.constants import (
     KEYPOINTS_CONFIDENCE_KEY,
     KEYPOINTS_KEY,
     KEYPOINTS_XY_KEY,
+    PARENT_ID_KEY,
     POLYGON_KEY,
     TRACKER_ID_KEY,
     WIDTH_KEY,
-    PARENT_ID_KEY,
     X_KEY,
     Y_KEY,
 )
