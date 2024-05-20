@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.errors import (
     ExecutionEngineNotImplementedError,
     ExecutionEngineRuntimeError,
@@ -100,11 +101,12 @@ def retrieve_step_output(
     step_name: str,
 ) -> Any:
     value = execution_cache.get_output(selector=selector)
+    value = Batch(content=value)
     if not execution_cache.output_represent_batch(selector=selector):
         value = value[0]
     if accepts_batch_input:
         return value
-    if isinstance(value, list):
+    if isinstance(value, Batch):
         if len(value) > 1:
             raise ExecutionEngineNotImplementedError(
                 public_message=f"Step `{step_name}` defines input pointing to {selector} which "
@@ -127,7 +129,10 @@ def retrieve_value_from_runtime_input(
     try:
         parameter_name = get_last_chunk_of_selector(selector=selector)
         value = runtime_parameters[parameter_name]
-        if not _retrieved_inference_image(value=value) or accepts_batch_input:
+        if not _retrieved_inference_image(value=value):
+            return value
+        value = Batch(content=value)
+        if accepts_batch_input:
             return value
         if len(value) > 1:
             raise ExecutionEngineNotImplementedError(

@@ -1,25 +1,18 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from dataclasses import replace
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
-import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.utils.image_utils import ImageType, load_image
-from inference.core.workflows.constants import (
-    IMAGE_TYPE_KEY,
-    IMAGE_VALUE_KEY,
-    LEFT_TOP_X_KEY,
-    LEFT_TOP_Y_KEY,
-    ORIGIN_COORDINATES_KEY,
-    ORIGIN_SIZE_KEY,
-    PARENT_ID_KEY,
+from inference.core.workflows.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    OriginCoordinatesSystem,
+    OutputDefinition,
+    WorkflowImageData,
 )
-from inference.core.workflows.core_steps.common.utils import (
-    extract_origin_size_from_images_batch,
-)
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
-    BATCH_OF_PARENT_ID_KIND,
     INTEGER_KIND,
     FlowControl,
     StepOutputImageSelector,
@@ -81,7 +74,6 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
 
 
@@ -93,59 +85,60 @@ class AbsoluteStaticCropBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         x_center: int,
         y_center: int,
         width: int,
         height: int,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        decoded_images = [load_image(e) for e in images]
-        images_parents = [i[PARENT_ID_KEY] for i in images]
-        decoded_images = [
-            i[0] if i[1] is True else i[0][:, :, ::-1] for i in decoded_images
+        results = [
+            {
+                "crops": take_static_crop(
+                    image=image,
+                    x_center=x_center,
+                    y_center=y_center,
+                    width=width,
+                    height=height,
+                )
+            }
+            for image in images.iter_nonempty()
         ]
-        origin_image_shape = extract_origin_size_from_images_batch(
-            input_images=images,
-            decoded_images=decoded_images,
-        )
-        crops = [
-            take_static_crop(
-                image=i,
-                x_center=x_center,
-                y_center=y_center,
-                width=width,
-                height=height,
-                origin_size=size,
-                image_parent=image_parent,
-            )
-            for i, image_parent, size in zip(
-                decoded_images, images_parents, origin_image_shape
-            )
-        ]
-        return [{"crops": c, PARENT_ID_KEY: c[PARENT_ID_KEY]} for c in crops]
+        return images.align_batch_results(results=results, null_element={"crops": None})
 
 
 def take_static_crop(
-    image: np.ndarray,
+    image: WorkflowImageData,
     x_center: int,
     y_center: int,
     width: int,
     height: int,
-    origin_size: dict,
-    image_parent: str,
-) -> Dict[str, Union[str, np.ndarray]]:
+) -> WorkflowImageData:
     x_min = round(x_center - width / 2)
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
     cropped_image = image[y_min:y_max, x_min:x_max]
-    return {
-        IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
-        IMAGE_VALUE_KEY: cropped_image,
-        PARENT_ID_KEY: image_parent,
-        ORIGIN_COORDINATES_KEY: {
-            LEFT_TOP_X_KEY: x_min,
-            LEFT_TOP_Y_KEY: y_min,
-            ORIGIN_SIZE_KEY: origin_size,
-        },
-    }
+    workflow_root_ancestor_coordinates = replace(
+        image.workflow_root_ancestor_metadata.origin_coordinates,
+        left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+        + x_min,
+        left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+        + y_min,
+    )
+    workflow_root_ancestor_metadata = ImageParentMetadata(
+        parent_id=image.workflow_root_ancestor_metadata.parent_id,
+        origin_coordinates=workflow_root_ancestor_coordinates,
+    )
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(
+            parent_id=f"absolute_static_crop.{uuid4()}",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=x_min,
+                left_top_y=y_min,
+                origin_width=image.numpy_image.shape[1],
+                origin_height=image.numpy_image.shape[0],
+            ),
+        ),
+        workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+        numpy_image=cropped_image,
+    )

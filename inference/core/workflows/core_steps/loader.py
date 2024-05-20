@@ -47,9 +47,6 @@ from inference.core.workflows.core_steps.transformations.absolute_static_crop im
     AbsoluteStaticCropBlock,
 )
 from inference.core.workflows.core_steps.transformations.crop import CropBlock
-from inference.core.workflows.core_steps.transformations.detection_filter import (
-    DetectionFilterBlock,
-)
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     DetectionOffsetBlock,
 )
@@ -80,7 +77,6 @@ def load_blocks() -> list:
         ActiveLearningDataCollectorBlock,
         AbsoluteStaticCropBlock,
         CropBlock,
-        DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,

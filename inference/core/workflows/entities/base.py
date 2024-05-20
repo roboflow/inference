@@ -1,10 +1,17 @@
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Iterator, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
 
+import cv2
 import numpy as np
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, Literal
 
+from inference.core.utils.image_utils import (
+    attempt_loading_image_from_string,
+    load_image_from_url,
+    np_image_to_base64,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     WILDCARD_KIND,
@@ -64,7 +71,9 @@ class Batch(Generic[B]):
     @classmethod
     def zip_nonempty(cls, batches: List["Batch"]) -> Iterator[tuple]:
         mask = cls.mask_common_empty_elements(batches=batches)
-        for zipped in zip(*(batch.iter_nonempty(masks=mask) for batch in batches)):
+        for zipped in zip(
+            *(batch.iter_nonempty(mask=mask, return_index=False) for batch in batches)
+        ):
             yield zipped
 
     @classmethod
@@ -82,15 +91,11 @@ class Batch(Generic[B]):
                 f"batch results ({len(results)}) does not match the number of non-empty "
                 f"batches elements: {non_empty_batches_elements}."
             )
-        results_index = 0
-        aligned_results = []
-        for mask_element in mask:
-            if mask_element:
-                aligned_results.append(results[results_index])
-                results_index += 1
-            else:
-                aligned_results.append(null_element)
-        return aligned_results
+        return align_results(
+            results=results,
+            mask=mask,
+            null_element=null_element,
+        )
 
     @classmethod
     def mask_common_empty_elements(cls, batches: List["Batch"]) -> List[bool]:
@@ -115,7 +120,7 @@ class Batch(Generic[B]):
                 f"Mask provided to select batch element has length {len(index)} which does "
                 f"not match batch length: {len(self._content)}"
             )
-        return list(self.iter_nonempty(masks=index))
+        return list(self.iter_nonempty(mask=index, return_index=False))
 
     def __len__(self):
         return len(self._content)
@@ -123,13 +128,40 @@ class Batch(Generic[B]):
     def __iter__(self) -> Iterator[B]:
         yield from self._content
 
-    def iter_nonempty(self, masks: Optional[List[int]] = None) -> Iterator[B]:
-        if masks is None:
-            masks = self.mask_empty_elements()
+    def iter_nonempty(
+        self,
+        mask: Optional[List[bool]] = None,
+        return_index: bool = False,
+    ) -> Iterator[B]:
+        if mask is None:
+            mask = self.mask_empty_elements()
         yield from (
-            batch_element
-            for (batch_element, mask_element) in zip(self._content, masks)
-            if mask_element is True
+            batch_element if not return_index else (idx, batch_element)
+            for idx, (batch_element, mask_element) in enumerate(
+                zip(self._content, mask)
+            )
+            if mask_element
+        )
+
+    def align_batch_results(
+        self,
+        results: List[Any],
+        null_element: Any = None,
+        mask: Optional[List[bool]] = None,
+    ) -> List[Any]:
+        if mask is None:
+            mask = self.mask_empty_elements()
+        non_empty_batches_elements = sum(mask)
+        if non_empty_batches_elements != len(results):
+            raise ValueError(
+                "Attempted to align batches results in original batch dimensions, but size of "
+                f"batch results ({len(results)}) does not match the number of non-empty "
+                f"batches elements: {non_empty_batches_elements}."
+            )
+        return align_results(
+            results=results,
+            mask=mask,
+            null_element=null_element,
         )
 
     def mask_empty_elements(self) -> List[bool]:
@@ -147,3 +179,96 @@ class Batch(Generic[B]):
         raise ValueError(
             f"Could not broadcast batch of size {len(self._content)} to size {n}"
         )
+
+
+def align_results(results: List[Any], mask: List[bool], null_element: Any) -> List[Any]:
+    results_index = 0
+    aligned_results = []
+    for mask_element in mask:
+        if mask_element:
+            aligned_results.append(results[results_index])
+            results_index += 1
+        else:
+            aligned_results.append(null_element)
+    return aligned_results
+
+
+@dataclass(frozen=True)
+class OriginCoordinatesSystem:
+    left_top_x: int
+    left_top_y: int
+    origin_width: int
+    origin_height: int
+
+
+@dataclass(frozen=True)
+class ImageParentMetadata:
+    parent_id: str
+    origin_coordinates: OriginCoordinatesSystem
+
+
+class WorkflowImageData:
+
+    def __init__(
+        self,
+        parent_metadata: ImageParentMetadata,
+        workflow_root_ancestor_metadata: Optional[ImageParentMetadata] = None,
+        image_reference: Optional[str] = None,
+        base64_image: Optional[str] = None,
+        numpy_image: Optional[np.ndarray] = None,
+    ):
+        if not base64_image and not numpy_image and not image_reference:
+            raise ValueError("Could not initialise empty `WorkflowImageData`.")
+        self._parent_metadata = parent_metadata
+        self._workflow_root_ancestor_metadata = (
+            workflow_root_ancestor_metadata
+            if workflow_root_ancestor_metadata
+            else self._parent_metadata
+        )
+        self._image_reference = image_reference
+        self._base64_image = base64_image
+        self._numpy_image = numpy_image
+
+    @property
+    def parent_metadata(self) -> ImageParentMetadata:
+        return self._parent_metadata
+
+    @property
+    def workflow_root_ancestor_metadata(self) -> ImageParentMetadata:
+        return self._workflow_root_ancestor_metadata
+
+    @property
+    def numpy_image(self) -> np.ndarray:
+        if self._numpy_image:
+            return self._numpy_image
+        if self._base64_image:
+            self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
+            return self._numpy_image
+        if self._image_reference.startswith(
+            "http://"
+        ) or self._image_reference.startswith("https://"):
+            self._numpy_image = load_image_from_url(value=self._image_reference)
+        else:
+            self._numpy_image = cv2.imread(self._image_reference)
+        return self._numpy_image
+
+    @property
+    def base64_image(self) -> str:
+        if self._base64_image:
+            return self._base64_image
+        numpy_image = self.numpy_image
+        self._base64_image = np_image_to_base64(image=numpy_image).decode("utf-8")
+        return self._base64_image
+
+    def to_inference_format(self, numpy_preferred: bool = False) -> Dict[str, Any]:
+        if numpy_preferred:
+            return {"type": "numpy_object", "value": self.numpy_image}
+        if self._image_reference:
+            if self._image_reference.startswith(
+                "http://"
+            ) or self._image_reference.startswith("https://"):
+                return {"type": "url", "value": self._image_reference}
+            return {"type": "file", "value": self._image_reference}
+        if self._base64_image is None:
+            return {"type": "base64", "value": self.base64_image}
+        return {"type": "numpy_object", "value": self.numpy_image}

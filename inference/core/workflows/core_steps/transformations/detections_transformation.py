@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from copy import copy
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -10,7 +11,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -53,7 +54,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations: List[OperationDefinition]
     operations_parameters: Dict[
-        str, Union[WorkflowImageSelector, WorkflowParameterSelector()]
+        str,
+        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=["$inputs.confidence", "$inputs.image"],
@@ -82,7 +84,7 @@ class DetectionsTransformationBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[sv.Detections],
+        predictions: Batch[Optional[sv.Detections]],
         operations: List[OperationDefinition],
         operations_parameters: Dict[str, Any],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
@@ -92,10 +94,26 @@ class DetectionsTransformationBlock(WorkflowBlock):
                 f"of `DetectionsTransformation` block."
             )
         operations_chain = build_operations_chain(operations=operations)
-        result = []
-        for detections in predictions:
+        batch_parameters = grab_batch_parameters(
+            operations_parameters=operations_parameters,
+            predictions=predictions,
+        )
+        non_batch_parameters = grab_non_batch_parameters(
+            operations_parameters=operations_parameters,
+        )
+        batch_parameters_keys = list(batch_parameters.keys())
+        batches_to_align = [predictions] + [
+            batch_parameters[k] for k in batch_parameters_keys
+        ]
+        results = []
+        for payload in Batch.zip_nonempty(batches=batches_to_align):
+            detections = payload[0]
+            single_evaluation_parameters = copy(non_batch_parameters)
+            for key, value in zip(batch_parameters_keys, payload[1:]):
+                single_evaluation_parameters[key] = value
             transformed_detections = operations_chain(
-                detections, global_parameters=operations_parameters
+                detections,
+                global_parameters=single_evaluation_parameters,
             )
             if not isinstance(transformed_detections, sv.Detections):
                 raise ValueError(
@@ -103,5 +121,28 @@ class DetectionsTransformationBlock(WorkflowBlock):
                     f"transforms sv.Detections into different type: {type(transformed_detections)} "
                     "which is not allowed."
                 )
-            result.append({"predictions": transformed_detections})
-        return result
+            results.append({"predictions": transformed_detections})
+        return Batch.align_batches_results(
+            batches=batches_to_align,
+            results=results,
+            null_element={"predictions": None},
+        )
+
+
+def grab_batch_parameters(
+    operations_parameters: Dict[str, Any],
+    predictions: Batch[Optional[sv.Detections]],
+) -> Dict[str, Any]:
+    return {
+        key: value.broadcast(n=len(predictions))
+        for key, value in operations_parameters.items()
+        if isinstance(value, Batch)
+    }
+
+
+def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in operations_parameters.items()
+        if not isinstance(value, Batch)
+    }

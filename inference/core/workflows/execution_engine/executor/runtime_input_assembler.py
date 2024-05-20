@@ -1,14 +1,20 @@
-from typing import Any, Dict, List, Optional, Union
+import os.path
+from typing import Any, Dict, List, Optional
 
+import cv2
 import numpy as np
 
-from inference.core.utils.image_utils import ImageType
-from inference.core.workflows.constants import (
-    IMAGE_TYPE_KEY,
-    IMAGE_VALUE_KEY,
-    PARENT_ID_KEY,
+from inference.core.utils.image_utils import (
+    attempt_loading_image_from_string,
+    load_image_from_url,
 )
-from inference.core.workflows.entities.base import InputType, WorkflowImage
+from inference.core.workflows.entities.base import (
+    ImageParentMetadata,
+    InputType,
+    OriginCoordinatesSystem,
+    WorkflowImage,
+    WorkflowImageData,
+)
 from inference.core.workflows.errors import RuntimeInputError
 
 
@@ -31,9 +37,7 @@ def assembly_runtime_parameters(
     return runtime_parameters
 
 
-def assembly_input_image(
-    parameter: str, image: Any
-) -> List[Dict[str, Union[str, np.ndarray]]]:
+def assembly_input_image(parameter: str, image: Any) -> List[WorkflowImageData]:
     if image is None:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` defined as "
@@ -50,21 +54,62 @@ def assembly_input_image(
 
 def _assembly_input_image(
     parameter: str, image: Any, identifier: Optional[int] = None
-) -> Dict[str, Union[str, np.ndarray]]:
-    parent = parameter
+) -> WorkflowImageData:
+    parent_id = parameter
     if identifier is not None:
-        parent = f"{parent}.[{identifier}]"
-    if isinstance(image, dict):
-        image[PARENT_ID_KEY] = parent
-        return image
+        parent_id = f"{parent_id}.[{identifier}]"
     if isinstance(image, np.ndarray):
-        return {
-            IMAGE_TYPE_KEY: ImageType.NUMPY_OBJECT.value,
-            IMAGE_VALUE_KEY: image,
-            PARENT_ID_KEY: parent,
-        }
+        parent_metadata = ImageParentMetadata(
+            parent_id=parent_id,
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=0,
+                left_top_y=0,
+                origin_width=image.shape[1],
+                origin_height=image.shape[0],
+            ),
+        )
+        return WorkflowImageData(
+            parent_metadata=parent_metadata,
+            numpy_image=image,
+        )
+    try:
+        if isinstance(image, dict):
+            image = image["value"]
+        if isinstance(image, str):
+            base64_image = None
+            image_reference = None
+            if image.startswith("http://") or image.startswith("https://"):
+                image_reference = image
+                image = load_image_from_url(value=image)
+            elif os.path.exists(image):
+                image_reference = image
+                image = cv2.imread(image)
+            else:
+                base64_image = image
+                image = attempt_loading_image_from_string(image)[0]
+            parent_metadata = ImageParentMetadata(
+                parent_id=parent_id,
+                origin_coordinates=OriginCoordinatesSystem(
+                    left_top_x=0,
+                    left_top_y=0,
+                    origin_width=image.shape[1],
+                    origin_height=image.shape[0],
+                ),
+            )
+            return WorkflowImageData(
+                parent_metadata=parent_metadata,
+                numpy_image=image,
+                base64_image=base64_image,
+                image_reference=image_reference,
+            )
+    except Exception as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as `WorkflowImage` "
+            f"that is invalid. Failed on input validation. Details: {error}",
+            context="workflow_execution | runtime_input_validation",
+        ) from error
     raise RuntimeInputError(
-        public_message=f"Detected runtime parameter `{parameter}` defined as `InferenceImage` "
+        public_message=f"Detected runtime parameter `{parameter}` defined as `WorkflowImage` "
         f"with type {type(image)} that is invalid. Workflows accept only np.arrays "
         f"and dicts with keys `type` and `value` compatible with `inference` (or list of them).",
         context="workflow_execution | runtime_input_validation",
