@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
+from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
@@ -24,8 +25,11 @@ from inference.core.workflows.constants import (
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_SUFFIX,
     PARENT_ID_KEY,
-    WIDTH_KEY,
+    WIDTH_KEY, ROOT_PARENT_COORDINATES_KEY, ROOT_PARENT_DIMENSIONS_KEY, PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY, PREDICTION_TYPE_KEY, ROOT_PARENT_ID_KEY,
 )
+from inference.core.workflows.entities.base import Batch, WorkflowImageData, OriginCoordinatesSystem, \
+    ParentImageMetadata
 
 
 def load_core_model(
@@ -49,10 +53,20 @@ def load_core_model(
 def attach_prediction_type_info(
     predictions: List[Dict[str, Any]],
     prediction_type: str,
-    key: str = "prediction_type",
+    key: str = PREDICTION_TYPE_KEY,
 ) -> List[Dict[str, Any]]:
     for result in predictions:
         result[key] = prediction_type
+    return predictions
+
+
+def attach_prediction_type_info_to_sv_detections(
+    predictions: List[sv.Detections],
+    prediction_type: str,
+    key: str = PREDICTION_TYPE_KEY,
+) -> List[sv.Detections]:
+    for prediction in predictions:
+        prediction[key] = np.array([prediction_type] * len(prediction))
     return predictions
 
 
@@ -120,6 +134,59 @@ def attach_parent_info(
         detections = prediction[nested_key]
         detections[PARENT_ID_KEY] = [image[PARENT_ID_KEY]] * len(detections)
     return predictions
+
+
+def attach_parents_coordinates_to_list_of_detections(
+    predictions: List[sv.Detections],
+    images: List[WorkflowImageData],
+) -> List[sv.Detections]:
+    result = []
+    for prediction, image in zip(predictions, images):
+        result.append(attach_parents_coordinates_to_detections(
+            detections=prediction,
+            image=image,
+        ))
+    return result
+
+
+def attach_parents_coordinates_to_detections(
+    detections: sv.Detections,
+    image: WorkflowImageData,
+) -> sv.Detections:
+    detections = attach_parent_coordinates_to_detections(
+        detections=detections,
+        parent_metadata=image.workflow_root_ancestor_metadata,
+        parent_id_key=ROOT_PARENT_ID_KEY,
+        coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+        dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+    )
+    return attach_parent_coordinates_to_detections(
+        detections=detections,
+        parent_metadata=image.parent_metadata,
+        parent_id_key=PARENT_ID_KEY,
+        coordinates_key=PARENT_COORDINATES_KEY,
+        dimensions_key=PARENT_DIMENSIONS_KEY,
+    )
+
+
+def attach_parent_coordinates_to_detections(
+    detections: sv.Detections,
+    parent_metadata: ParentImageMetadata,
+    parent_id_key: str,
+    coordinates_key: str,
+    dimensions_key: str,
+) -> sv.Detections:
+    parent_coordinates_system = parent_metadata.origin_coordinates
+    detections[parent_id_key] = np.array([parent_metadata.parent_id] * len(detections))
+    coordinates = np.array([
+        [parent_coordinates_system.left_top_x, parent_coordinates_system.left_top_y]
+    ] * len(detections))
+    detections[coordinates_key] = coordinates
+    dimensions = np.array([
+        [parent_coordinates_system.origin_height, parent_coordinates_system.origin_width]
+    ] * len(detections))
+    detections[dimensions_key] = dimensions
+    return detections
 
 
 def anchor_prediction_detections_in_parent_coordinates(
@@ -205,6 +272,21 @@ def filter_out_unwanted_classes_from_predictions_detections(
     return predictions
 
 
+def filter_out_unwanted_classes_from_sv_detections(
+    predictions: List[sv.Detections],
+    classes_to_accept: Optional[List[str]],
+) -> List[sv.Detections]:
+    if not classes_to_accept:
+        return predictions
+    filtered_predictions = []
+    for prediction in predictions:
+        filtered_prediction = prediction[
+            np.isin(prediction[CLASS_NAME_DATA_FIELD], classes_to_accept)
+        ]
+        filtered_predictions.append(filtered_prediction)
+    return filtered_predictions
+
+
 def extract_origin_size_from_images_batch(
     input_images: List[Union[dict, np.ndarray]],
     decoded_images: List[np.ndarray],
@@ -227,3 +309,22 @@ def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
     x_max = round(x_min + detection[WIDTH_KEY])
     y_max = round(y_min + detection[HEIGHT_KEY])
     return x_min, y_min, x_max, y_max
+
+
+def grab_batch_parameters(
+    operations_parameters: Dict[str, Any],
+    predictions: Batch[Optional[sv.Detections]],
+) -> Dict[str, Any]:
+    return {
+        key: value.broadcast(n=len(predictions))
+        for key, value in operations_parameters.items()
+        if isinstance(value, Batch)
+    }
+
+
+def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in operations_parameters.items()
+        if not isinstance(value, Batch)
+    }

@@ -40,9 +40,6 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 from inference.core.workflows.core_steps.sampling.detections_sampler import (
     DetectionsSamplerBlock,
 )
-from inference.core.workflows.core_steps.sinks.active_learning.data_collector import (
-    ActiveLearningDataCollectorBlock,
-)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
@@ -74,7 +71,6 @@ def load_blocks() -> list:
         RoboflowObjectDetectionModelBlock,
         BarcodeDetectorBlock,
         QRCodeDetectorBlock,
-        ActiveLearningDataCollectorBlock,
         AbsoluteStaticCropBlock,
         CropBlock,
         DetectionOffsetBlock,

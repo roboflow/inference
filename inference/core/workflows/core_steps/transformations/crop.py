@@ -8,7 +8,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.workflows.constants import DETECTION_ID_KEY
 from inference.core.workflows.entities.base import (
     Batch,
-    ImageParentMetadata,
+    ParentImageMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
@@ -107,7 +107,7 @@ def crop_image(
         detections.xyxy.round().astype(dtype=int), detections[detection_id_key]
     ):
         cropped_image = image[y_min:y_max, x_min:x_max]
-        parent_metadata = ImageParentMetadata(
+        parent_metadata = ParentImageMetadata(
             parent_id=detection_id,
             origin_coordinates=OriginCoordinatesSystem(
                 left_top_x=x_min,
@@ -123,7 +123,7 @@ def crop_image(
             left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
             + y_min,
         )
-        workflow_root_ancestor_metadata = ImageParentMetadata(
+        workflow_root_ancestor_metadata = ParentImageMetadata(
             parent_id=image.workflow_root_ancestor_metadata.parent_id,
             origin_coordinates=workflow_root_ancestor_coordinates,
         )

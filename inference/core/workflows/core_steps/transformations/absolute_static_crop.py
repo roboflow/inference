@@ -6,7 +6,7 @@ from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.entities.base import (
     Batch,
-    ImageParentMetadata,
+    ParentImageMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
@@ -125,12 +125,12 @@ def take_static_crop(
         left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
         + y_min,
     )
-    workflow_root_ancestor_metadata = ImageParentMetadata(
+    workflow_root_ancestor_metadata = ParentImageMetadata(
         parent_id=image.workflow_root_ancestor_metadata.parent_id,
         origin_coordinates=workflow_root_ancestor_coordinates,
     )
     return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(
+        parent_metadata=ParentImageMetadata(
             parent_id=f"absolute_static_crop.{uuid4()}",
             origin_coordinates=OriginCoordinatesSystem(
                 left_top_x=x_min,

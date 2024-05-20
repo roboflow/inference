@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
+from inference.core.workflows.core_steps.common.utils import grab_batch_parameters, grab_non_batch_parameters
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -127,22 +128,3 @@ class DetectionsTransformationBlock(WorkflowBlock):
             results=results,
             null_element={"predictions": None},
         )
-
-
-def grab_batch_parameters(
-    operations_parameters: Dict[str, Any],
-    predictions: Batch[Optional[sv.Detections]],
-) -> Dict[str, Any]:
-    return {
-        key: value.broadcast(n=len(predictions))
-        for key, value in operations_parameters.items()
-        if isinstance(value, Batch)
-    }
-
-
-def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        key: value
-        for key, value in operations_parameters.items()
-        if not isinstance(value, Batch)
-    }

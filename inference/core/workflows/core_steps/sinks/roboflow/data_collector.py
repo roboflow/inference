@@ -26,7 +26,7 @@ from inference.core.roboflow_api import (
     register_image_at_roboflow,
 )
 from inference.core.utils.image_utils import load_image
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -192,8 +192,8 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[Optional[dict]],
-        predictions: Optional[List[Optional[sv.Detections]]],
+        images: Batch[Optional[WorkflowImageData]],
+        predictions: Optional[Batch[Optional[sv.Detections]]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
@@ -249,7 +249,7 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
 
 
 def register_datapoint_at_roboflow(
-    image: Optional[dict],
+    image: Optional[WorkflowImageData],
     prediction: Optional[sv.Detections],
     target_project: str,
     usage_quota_name: str,

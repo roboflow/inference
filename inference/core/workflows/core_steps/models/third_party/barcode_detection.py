@@ -1,25 +1,19 @@
-import math
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union, Optional
 from uuid import uuid4
 
 import numpy as np
 import supervision as sv
 import zxingcpp
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.utils.image_utils import load_image
+from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.common.utils import (
-    anchor_prediction_detections_in_parent_coordinates,
-    attach_parent_info,
-    attach_prediction_type_info,
-    convert_to_sv_detections,
+    attach_parents_coordinates_to_detections,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
-    BATCH_OF_IMAGE_METADATA_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -59,11 +53,6 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_BAR_CODE_DETECTION_KIND]
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -75,59 +64,46 @@ class BarcodeDetectorBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        decoded_images = [load_image(e)[0] for e in images]
-        predictions = [
-            {
-                "predictions": detect_barcodes(image=image),
-                "image": {"width": image.shape[1], "height": image.shape[0]},
-            }
-            for image in decoded_images
-        ]
-        return self._post_process_result(image=images, predictions=predictions)
-
-    def _post_process_result(
-        self,
-        image: List[dict],
-        predictions: List[dict],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        batch_of_detections = convert_to_sv_detections(predictions)
-        for prediction, detections in zip(predictions, batch_of_detections):
-            detections["data"] = np.array(
-                [p.get("data", "") for p in prediction["predictions"]]
-            )
-            prediction["predictions"] = detections
-        converted_predictions = attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="barcode-detection",
-        )
-        converted_predictions = attach_parent_info(
-            images=image, predictions=converted_predictions
-        )
-        return anchor_prediction_detections_in_parent_coordinates(
-            image=image,
-            predictions=converted_predictions,
-        )
+        results = []
+        for image in images.iter_nonempty():
+            qr_code_detections = detect_barcodes(image=image)
+            results.append({"predictions": qr_code_detections})
+        return images.align_batch_results(results=results, null_element={"predictions": None})
 
 
-def detect_barcodes(image: np.ndarray) -> List[dict]:
-    barcodes = zxingcpp.read_barcodes(image)
-    predictions = []
+def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
+    barcodes = zxingcpp.read_barcodes(image.numpy_image)
+    xyxy = []
+    confidence = []
+    class_id = []
+    class_name = []
+    extracted_data = []
     for barcode in barcodes:
-        width = barcode.position.top_right.x - barcode.position.top_left.x
-        height = barcode.position.bottom_left.y - barcode.position.top_left.y
-        predictions.append(
-            {
-                "class": "barcode",
-                "class_id": 0,
-                "confidence": 1.0,
-                "x": int(math.floor(barcode.position.top_left.x + width / 2)),
-                "y": int(math.floor(barcode.position.top_left.y + height / 2)),
-                "width": width,
-                "height": height,
-                "detection_id": str(uuid4()),
-                "data": barcode.text,
-            }
-        )
-    return predictions
+        x_min = barcode.position.top_left.x
+        y_min = barcode.position.top_left.y
+        x_max = barcode.position.bottom_right.x
+        y_max = barcode.position.bottom_right.y
+        xyxy.append([x_min, y_min, x_max, y_max])
+        class_id.append(0)
+        class_name.append("barcode")
+        confidence.append(1.0)
+        extracted_data.append(barcode.text)
+    xyxy = np.array(xyxy) if len(xyxy) > 0 else np.empty((0, 4))
+    confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
+    class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
+    class_name = np.array(class_name) if len(class_name) > 0 else np.empty(0)
+    detections = sv.Detections(
+        xyxy=np.array(xyxy),
+        confidence=confidence,
+        class_id=class_id,
+        data={CLASS_NAME_DATA_FIELD: class_name}
+    )
+    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection" for _ in range(len(detections))])
+    detections["data"] = np.array(extracted_data) if len(extracted_data) > 0 else np.empty(0)
+    return attach_parents_coordinates_to_detections(
+        detections=detections,
+        image=image,
+    )

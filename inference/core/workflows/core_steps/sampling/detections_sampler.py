@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Tuple, Type, Union, Optional
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -11,7 +11,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
     build_eval_function,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.core_steps.common.utils import grab_batch_parameters, grab_non_batch_parameters
+from inference.core.workflows.entities.base import OutputDefinition, Batch
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -54,7 +55,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     sampling_statement: StatementGroup
     operations_parameters: Dict[
-        str, Union[WorkflowImageSelector, WorkflowParameterSelector()]
+        str, Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()]
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=["$inputs.confidence", "$inputs.image"],
@@ -83,7 +84,7 @@ class DetectionsSamplerBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[sv.Detections],
+        predictions: Batch[Optional[sv.Detections]],
         sampling_statement: StatementGroup,
         operations_parameters: Dict[str, Any],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
@@ -93,10 +94,27 @@ class DetectionsSamplerBlock(WorkflowBlock):
                 f"of `DetectionsTransformation` block."
             )
         sampling_function = build_eval_function(definition=sampling_statement)
-        operations_parameters_copy = copy(operations_parameters)
-        result = []
-        for detections in predictions:
-            operations_parameters_copy[DEFAULT_OPERAND_NAME] = detections
+        batch_parameters = grab_batch_parameters(
+            operations_parameters=operations_parameters,
+            predictions=predictions,
+        )
+        non_batch_parameters = grab_non_batch_parameters(
+            operations_parameters=operations_parameters,
+        )
+        batch_parameters_keys = list(batch_parameters.keys())
+        batches_to_align = [predictions] + [
+            batch_parameters[k] for k in batch_parameters_keys
+        ]
+        results = []
+        for payload in Batch.zip_nonempty(batches=batches_to_align):
+            operations_parameters_copy = copy(non_batch_parameters)
+            operations_parameters_copy[DEFAULT_OPERAND_NAME] = payload[0]
+            for key, value in zip(batch_parameters_keys, payload[1:]):
+                operations_parameters_copy[key] = value
             should_stay = sampling_function(operations_parameters_copy)
-            result.append({"predictions": detections if should_stay else None})
-        return result
+            results.append({"predictions": payload[0] if should_stay else None})
+        return Batch.align_batches_results(
+            batches=batches_to_align,
+            results=results,
+            null_element={"predictions": None},
+        )

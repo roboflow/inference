@@ -11,16 +11,13 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
     attach_prediction_type_info,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import OutputDefinition, Batch, WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
-    BATCH_OF_TOP_CLASS_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
@@ -99,14 +96,8 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
-            OutputDefinition(
                 name="predictions", kind=[BATCH_OF_CLASSIFICATION_PREDICTION_KIND]
             ),
-            OutputDefinition(name="top", kind=[BATCH_OF_TOP_CLASS_KIND]),
-            OutputDefinition(name="confidence", kind=[FLOAT_ZERO_TO_ONE_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
 
 
@@ -130,16 +121,18 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         model_id: str,
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.to_inference_format(numpy_preferred=True) for i in non_empty_images]
         request = ClassificationInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
-            image=images,
+            image=non_empty_inference_images,
             confidence=confidence,
             disable_active_learning=disable_active_learning,
             source="workflow-execution",
@@ -158,14 +151,15 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             ]
         else:
             predictions = [predictions.dict(by_alias=True, exclude_none=True)]
-        return self._post_process_result(
+        results = self._post_process_result(
             predictions=predictions,
-            images=images,
+            images=non_empty_images,
         )
+        return images.align_batch_results(results=results, null_element={"predictions": None})
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         model_id: str,
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
@@ -191,25 +185,30 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_input = [i["value"] for i in images]
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
         predictions = await client.infer_async(
-            inference_input=inference_input,
+            inference_input=non_empty_inference_images,
             model_id=model_id,
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        return self._post_process_result(images=images, predictions=predictions)
+        results = self._post_process_result(
+            predictions=predictions,
+            images=non_empty_images,
+        )
+        return images.align_batch_results(results=results, null_element={"predictions": None})
 
     def _post_process_result(
         self,
-        images: List[dict],
+        images: List[WorkflowImageData],
         predictions: List[dict],
     ) -> List[dict]:
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",
         )
-        predictions = attach_parent_info(
-            images=images, predictions=predictions, nested_key=None
-        )
-        return predictions
+        for prediction, image in zip(predictions, images):
+            predictions[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            predictions[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
+        return [{"predictions": prediction} for prediction in predictions]
