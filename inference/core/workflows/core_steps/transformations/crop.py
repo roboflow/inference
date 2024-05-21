@@ -106,7 +106,7 @@ def crop_image(
     for (x_min, y_min, x_max, y_max), detection_id in zip(
         detections.xyxy.round().astype(dtype=int), detections[detection_id_key]
     ):
-        cropped_image = image[y_min:y_max, x_min:x_max]
+        cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
         parent_metadata = ParentImageMetadata(
             parent_id=detection_id,
             origin_coordinates=OriginCoordinatesSystem(

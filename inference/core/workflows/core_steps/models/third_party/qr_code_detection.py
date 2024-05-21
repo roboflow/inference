@@ -84,7 +84,6 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     retval, detections, points_list, _ = detector.detectAndDecodeMulti(
         image.numpy_image
     )
-    detections = []
     xyxy = []
     confidence = []
     class_id = []
@@ -93,8 +92,8 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     for data, points in zip(detections, points_list):
         width = points[2][0] - points[0][0]
         height = points[2][1] - points[0][1]
-        x_min = points[0][0] - width / 2
-        y_min = points[0][1] - height / 2
+        x_min = points[0][0]
+        y_min = points[0][1]
         x_max = x_min + width
         y_max = y_min + height
         xyxy.append([x_min, y_min, x_max, y_max])

@@ -110,7 +110,9 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
         ),
         atol=1,
     ), "Expected detections in parent coordinates to be as manually validated at test creation"
-    own_coordinates_detections: sv.Detections = result["result_in_own_coordinates"][0]["predictions"]
+    own_coordinates_detections: sv.Detections = result["result_in_own_coordinates"][0][
+        "predictions"
+    ]
     assert np.allclose(
         own_coordinates_detections.xyxy,
         np.array(

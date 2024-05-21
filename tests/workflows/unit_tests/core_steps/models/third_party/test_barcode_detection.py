@@ -6,8 +6,12 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
     BarcodeDetectorBlock,
     BlockManifest,
 )
-from inference.core.workflows.entities.base import Batch, WorkflowImageData, ParentImageMetadata, \
-    OriginCoordinatesSystem
+from inference.core.workflows.entities.base import (
+    Batch,
+    OriginCoordinatesSystem,
+    ParentImageMetadata,
+    WorkflowImageData,
+)
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
@@ -50,20 +54,22 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
 async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     # given
     step = BarcodeDetectorBlock()
-    images = Batch([
-        WorkflowImageData(
-            parent_metadata=ParentImageMetadata(
-                parent_id="$inputs.image",
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_y=0,
-                    left_top_x=0,
-                    origin_height=barcode_image.shape[0],
-                    origin_width=barcode_image.shape[1],
-                )
-            ),
-            numpy_image=barcode_image,
-        )
-    ])
+    images = Batch(
+        [
+            WorkflowImageData(
+                parent_metadata=ParentImageMetadata(
+                    parent_id="$inputs.image",
+                    origin_coordinates=OriginCoordinatesSystem(
+                        left_top_y=0,
+                        left_top_x=0,
+                        origin_height=barcode_image.shape[0],
+                        origin_width=barcode_image.shape[1],
+                    ),
+                ),
+                numpy_image=barcode_image,
+            )
+        ]
+    )
 
     # when
     result = await step.run_locally(images=images)
@@ -75,15 +81,32 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     values = ["47205255193", "37637448832", "21974251554", "81685630817"]
     preds = result[0]["predictions"]
     assert len(preds) == 4
-    for class_id, (x1, y1, x2, y2), class_name, detection_id, parent_id, confidence, data, prediction_type in \
-            zip(preds.class_id, preds.xyxy, preds["class_name"], preds["detection_id"], preds["parent_id"], preds.confidence, preds.data["data"], preds.data["prediction_type"]):
+    for (
+        class_id,
+        (x1, y1, x2, y2),
+        class_name,
+        detection_id,
+        parent_id,
+        confidence,
+        data,
+        prediction_type,
+    ) in zip(
+        preds.class_id,
+        preds.xyxy,
+        preds["class_name"],
+        preds["detection_id"],
+        preds["parent_id"],
+        preds.confidence,
+        preds.data["data"],
+        preds.data["prediction_type"],
+    ):
         assert class_name == "barcode"
         assert class_id == 0
         assert confidence == 1.0
         assert x1 > 0
         assert y1 > 0
-        assert x2-x1 > 0
-        assert y2-y1 > 0
+        assert x2 - x1 > 0
+        assert y2 - y1 > 0
         assert detection_id is not None
         assert data in values
         assert parent_id == "$inputs.image"

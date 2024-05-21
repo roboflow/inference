@@ -26,14 +26,16 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     predictions = [
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
-                    class_id=np.array([1, 1]),
-                    confidence=np.array([0.5, 0.6], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["a", "a"]),
-                        "field": np.array(["a", "a"])
-                    }
-                )
+                xyxy=np.array(
+                    [[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64
+                ),
+                class_id=np.array([1, 1]),
+                confidence=np.array([0.5, 0.6], dtype=np.float64),
+                data={
+                    "class_name": np.array(["a", "a"]),
+                    "field": np.array(["a", "a"]),
+                },
+            )
         }
     ]
 
@@ -47,14 +49,16 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_no_class_f
     assert result == [
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
-                    class_id=np.array([1, 1]),
-                    confidence=np.array([0.5, 0.6], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["a", "a"]),
-                        "field": np.array(["a", "a"])
-                    }
-                )
+                xyxy=np.array(
+                    [[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64
+                ),
+                class_id=np.array([1, 1]),
+                confidence=np.array([0.5, 0.6], dtype=np.float64),
+                data={
+                    "class_name": np.array(["a", "a"]),
+                    "field": np.array(["a", "a"]),
+                },
+            )
         }
     ]
 
@@ -64,26 +68,25 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     predictions = [
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64),
-                    class_id=np.array([1, 2]),
-                    confidence=np.array([0.5, 0.6], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["a", "b"]),
-                        "field": np.array(["a", "a"])
-                    }
-                )
+                xyxy=np.array(
+                    [[4.5, 5, 17.5, 19], [6.5, 7, 23.5, 25]], dtype=np.float64
+                ),
+                class_id=np.array([1, 2]),
+                confidence=np.array([0.5, 0.6], dtype=np.float64),
+                data={
+                    "class_name": np.array(["a", "b"]),
+                    "field": np.array(["a", "a"]),
+                },
+            )
         },
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
-                    class_id=np.array([1]),
-                    confidence=np.array([0.7], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["a"]),
-                        "field": np.array(["a"])
-                    }
-                )
-        }
+                xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                class_id=np.array([1]),
+                confidence=np.array([0.7], dtype=np.float64),
+                data={"class_name": np.array(["a"]), "field": np.array(["a"])},
+            )
+        },
     ]
 
     # when
@@ -96,26 +99,20 @@ def test_filter_out_unwanted_classes_from_predictions_detections_when_there_are_
     expected_result = [
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[6.5, 7, 23.5, 25]], dtype=np.float64),
-                    class_id=np.array([2]),
-                    confidence=np.array([0.6], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["b"]),
-                        "field": np.array(["a"])
-                    }
-                )
+                xyxy=np.array([[6.5, 7, 23.5, 25]], dtype=np.float64),
+                class_id=np.array([2]),
+                confidence=np.array([0.6], dtype=np.float64),
+                data={"class_name": np.array(["b"]), "field": np.array(["a"])},
+            )
         },
         {
             "predictions": sv.Detections(
-                    xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
-                    class_id=np.array([1]),
-                    confidence=np.array([0.7], dtype=np.float64),
-                    data={
-                        "class_name" : np.array(["a"]),
-                        "field": np.array(["a"])
-                    }
-                )[[]]
-        }
+                xyxy=np.array([[9.5, 10, 32.5, 34]], dtype=np.float64),
+                class_id=np.array([1]),
+                confidence=np.array([0.7], dtype=np.float64),
+                data={"class_name": np.array(["a"]), "field": np.array(["a"])},
+            )[[]]
+        },
     ]
 
     assert result == expected_result

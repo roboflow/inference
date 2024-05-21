@@ -2,8 +2,8 @@ from typing import Any
 
 import numpy as np
 import pytest
-from pydantic import ValidationError
 import supervision as sv
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     BlockManifest,
@@ -49,7 +49,6 @@ def test_manifest_parsing_when_valid_data_provided(
         ("predictions", "invalid"),
         ("offset_width", -1),
         ("offset_height", -1),
-        ("image_metadata", "invalid"),
     ],
 )
 def test_manifest_parsing_when_invalid_data_provided(
@@ -81,8 +80,8 @@ def test_offset_detection() -> None:
         data={
             "detection_id": np.array(["two"]),
             "class_name": np.array(["car"]),
-            "parent_id": np.array(["p2"])
-        }
+            "parent_id": np.array(["p2"]),
+        },
     )
 
     # when
@@ -98,9 +97,9 @@ def test_offset_detection() -> None:
     assert y1 == 140, "Top corner should be moved by 50px to the top"
     assert x2 == 135, "Right corner should be moved by 25px to the right"
     assert y2 == 260, "Right corner should be moved by 50px to the bottom"
-    assert (
-        result["parent_id"] == str(detections["detection_id"][0])
+    assert result["parent_id"] == str(
+        detections["detection_id"][0]
     ), "Parent id should be set to origin detection id"
-    assert (
-        result["detection_id"] != str(detections["parent_id"][0])
+    assert result["detection_id"] != str(
+        detections["parent_id"][0]
     ), "New detection id (random) must be assigned"

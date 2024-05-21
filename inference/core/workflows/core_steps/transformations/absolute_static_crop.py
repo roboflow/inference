@@ -117,7 +117,7 @@ def take_static_crop(
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
-    cropped_image = image[y_min:y_max, x_min:x_max]
+    cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
     workflow_root_ancestor_coordinates = replace(
         image.workflow_root_ancestor_metadata.origin_coordinates,
         left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
