@@ -81,7 +81,7 @@ class ExternalOperationDescription(BaseModel):
 
 
 class ExternalOperatorDescription(BaseModel):
-    operation_type: str
+    operator_type: str
     operands_number: int
     operands_kinds: List[List[str]]
     description: Optional[str] = None
@@ -94,7 +94,7 @@ class ExternalOperatorDescription(BaseModel):
             [k.name for k in kind] for kind in operator_description.operands_kinds
         ]
         return cls(
-            operation_type=operator_description.operation_type,
+            operator_type=operator_description.operator_type,
             operands_number=operator_description.operands_number,
             operands_kinds=operands_kinds,
             description=operator_description.description,

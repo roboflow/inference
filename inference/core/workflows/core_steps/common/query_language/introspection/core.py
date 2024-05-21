@@ -81,7 +81,7 @@ def prepare_operators_descriptions() -> List[OperatorDescription]:
         operator_schema = operator_type.schema()
         results.append(
             OperatorDescription(
-                operation_type=operator_schema["properties"]["type"]["const"],
+                operator_type=operator_schema["properties"]["type"]["const"],
                 operands_number=operator_schema["operands_number"],
                 operands_kinds=operator_schema["operands_kinds"],
                 description=operator_schema.get("description"),

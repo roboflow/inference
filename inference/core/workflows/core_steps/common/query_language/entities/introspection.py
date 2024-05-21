@@ -16,7 +16,7 @@ class OperationDescription(BaseModel):
 
 
 class OperatorDescription(BaseModel):
-    operation_type: str
+    operator_type: str
     operands_number: int
     operands_kinds: List[List[Kind]]
     description: Optional[str] = None
