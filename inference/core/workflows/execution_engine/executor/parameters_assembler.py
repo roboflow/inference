@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.errors import (
     ExecutionEngineNotImplementedError,
     ExecutionEngineRuntimeError,
@@ -162,8 +162,6 @@ def _retrieved_inference_image(value: Any) -> bool:
         return False
     if len(value) < 1:
         return False
-    if not isinstance(value[0], dict):
+    if not isinstance(value[0], WorkflowImageData):
         return False
-    if "type" in value[0] and "value" in value[0]:
-        return True
-    return False
+    return True

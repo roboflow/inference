@@ -1,12 +1,19 @@
 from typing import Dict, List, Literal
 
+import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     AggregationMode,
     BlockManifest,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OriginCoordinatesSystem,
+    OutputDefinition,
+    ParentImageMetadata,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -64,15 +71,20 @@ def test_retrieve_value_from_runtime_input_when_value_is_batch_of_images_which_i
             selector="$inputs.param",
             runtime_parameters={
                 "param": [
-                    {
-                        "type": "url",
-                        "value": "https://some.com/image1.jpg",
-                    },
-                    {
-                        "type": "url",
-                        "value": "https://some.com/image2.jpg",
-                    },
-                ],
+                    WorkflowImageData(
+                        parent_metadata=ParentImageMetadata(
+                            parent_id="some",
+                            origin_coordinates=OriginCoordinatesSystem(
+                                left_top_x=0,
+                                left_top_y=0,
+                                origin_height=100,
+                                origin_width=100,
+                            ),
+                        ),
+                        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+                    )
+                ]
+                * 3,
             },
             accepts_batch_input=False,
             step_name="my_step",
@@ -87,10 +99,18 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         selector="$inputs.param",
         runtime_parameters={
             "param": [
-                {
-                    "type": "url",
-                    "value": "https://some.com/image1.jpg",
-                }
+                WorkflowImageData(
+                    parent_metadata=ParentImageMetadata(
+                        parent_id="some",
+                        origin_coordinates=OriginCoordinatesSystem(
+                            left_top_x=0,
+                            left_top_y=0,
+                            origin_height=100,
+                            origin_width=100,
+                        ),
+                    ),
+                    numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+                )
             ],
         },
         accepts_batch_input=False,
@@ -98,10 +118,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
     )
 
     # then
-    assert result == {
-        "type": "url",
-        "value": "https://some.com/image1.jpg",
-    }
+    assert np.allclose(result.numpy_image, np.zeros((100, 100, 3), dtype=np.uint8))
 
 
 def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_is_supported() -> (
@@ -112,10 +129,18 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         selector="$inputs.param",
         runtime_parameters={
             "param": [
-                {
-                    "type": "url",
-                    "value": "https://some.com/image1.jpg",
-                }
+                WorkflowImageData(
+                    parent_metadata=ParentImageMetadata(
+                        parent_id="some",
+                        origin_coordinates=OriginCoordinatesSystem(
+                            left_top_x=0,
+                            left_top_y=0,
+                            origin_height=100,
+                            origin_width=100,
+                        ),
+                    ),
+                    numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+                )
             ],
         },
         accepts_batch_input=True,
@@ -123,12 +148,11 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
     )
 
     # then
-    assert result == [
-        {
-            "type": "url",
-            "value": "https://some.com/image1.jpg",
-        }
-    ]
+    assert isinstance(result, Batch), "Batch wrapper is required"
+    assert len(result) == 1, "Single element expected"
+    assert np.allclose(
+        result[0].numpy_image, np.zeros((100, 100, 3), dtype=np.uint8)
+    ), "Expected correct image numpy data to be returned"
 
 
 def test_retrieve_value_from_runtime_input_when_value_is_batch_of_images_and_batch_input_is_supported() -> (
@@ -311,7 +335,8 @@ def test_retrieve_step_output_when_batch_output_registered_input_compatible_with
     )
 
     # then
-    assert result == ["value_1", "value_2"]
+    assert isinstance(result, Batch), "Expected result wrapped in Batch"
+    assert list(result) == ["value_1", "value_2"]
 
 
 def test_assembly_step_parameters() -> None:
@@ -323,17 +348,14 @@ def test_assembly_step_parameters() -> None:
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
-            OutputDefinition(
-                name="image_metadata", kind=[BATCH_OF_IMAGE_METADATA_KIND]
-            ),
         ],
         compatible_with_batches=True,
     )
     execution_cache.register_step_outputs(
         step_name="some",
         outputs=[
-            {"predictions": "a", "image_metadata": 1},
-            {"predictions": "b", "image_metadata": 2},
+            {"predictions": "a"},
+            {"predictions": "b"},
         ],
     )
     manifest = BlockManifest(
@@ -343,7 +365,6 @@ def test_assembly_step_parameters() -> None:
             "$steps.some.predictions",
             "$steps.some.predictions",
         ],
-        image_metadata="$steps.some.image_metadata",
         required_votes=1,
         iou_threshold="$inputs.iou_threshold",
     )
@@ -357,11 +378,22 @@ def test_assembly_step_parameters() -> None:
     )
 
     # then
-    assert result["predictions_batches"] == [
+    assert (
+        len(result["predictions_batches"]) == 2
+    ), "Expected to see 2 predictions batches collected"
+    assert isinstance(
+        result["predictions_batches"][0], Batch
+    ), "Batch wrapper expected for `predictions_batches`"
+    assert isinstance(
+        result["predictions_batches"][1], Batch
+    ), "Batch wrapper expected for `predictions_batches`"
+    assert [
+        list(result["predictions_batches"][0]),
+        list(result["predictions_batches"][1]),
+    ] == [
         ["a", "b"],
         ["a", "b"],
     ], "Expected to see 2x dummy predictions"
-    assert result["image_metadata"] == [1, 2], "Expected to see dummy image metadata"
     assert result["required_votes"] == 1, "Expected to see default value for block"
     assert result["class_aware"] is True, "Expected to see default value for block"
     assert (

@@ -58,6 +58,8 @@ def _assembly_input_image(
     parent_id = parameter
     if identifier is not None:
         parent_id = f"{parent_id}.[{identifier}]"
+    if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
+        image = image["value"]
     if isinstance(image, np.ndarray):
         parent_metadata = ParentImageMetadata(
             parent_id=parent_id,
