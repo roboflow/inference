@@ -1,3 +1,4 @@
+import base64
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
@@ -9,8 +10,8 @@ from typing_extensions import Annotated, Literal
 
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
+    encode_image_to_jpeg_bytes,
     load_image_from_url,
-    np_image_to_base64,
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
@@ -257,7 +258,9 @@ class WorkflowImageData:
         if self._base64_image is not None:
             return self._base64_image
         numpy_image = self.numpy_image
-        self._base64_image = np_image_to_base64(image=numpy_image).decode("utf-8")
+        self._base64_image = base64.b64encode(
+            encode_image_to_jpeg_bytes(numpy_image)
+        ).decode("ascii")
         return self._base64_image
 
     def to_inference_format(self, numpy_preferred: bool = False) -> Dict[str, Any]:

@@ -419,6 +419,7 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
 
 def np_image_to_base64(image: np.ndarray) -> bytes:
     """
+    TODO: This function is probably broken!
     Convert a numpy image to a base64 encoded byte string.
 
     Args:
