@@ -1,7 +1,11 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from inference.core.workflows.core_steps.common.query_language.entities.introspection import (
+    OperationDescription,
+    OperatorDescription,
+)
 from inference.core.workflows.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
@@ -43,6 +47,88 @@ class ExternalBlockPropertyPrimitiveDefinition(BaseModel):
     )
 
 
+class ExternalOperationDescription(BaseModel):
+    operation_type: str
+    compound: bool
+    input_kind: List[str]
+    output_kind: List[str]
+    nested_operation_input_kind: Optional[List[str]] = None
+    nested_operation_output_kind: Optional[List[str]] = None
+    description: Optional[str] = None
+
+    @classmethod
+    def from_internal_entity(
+        cls, operation_description: OperationDescription
+    ) -> "ExternalOperationDescription":
+        nested_operation_input_kind, nested_operation_output_kind = None, None
+        if operation_description.nested_operation_input_kind:
+            nested_operation_input_kind = [
+                k.name for k in operation_description.nested_operation_input_kind
+            ]
+        if operation_description.nested_operation_output_kind:
+            nested_operation_output_kind = [
+                k.name for k in operation_description.nested_operation_output_kind
+            ]
+        return cls(
+            operation_type=operation_description.operation_type,
+            compound=operation_description.compound,
+            input_kind=[k.name for k in operation_description.input_kind],
+            output_kind=[k.name for k in operation_description.output_kind],
+            nested_operation_input_kind=nested_operation_input_kind,
+            nested_operation_output_kind=nested_operation_output_kind,
+            description=operation_description.description,
+        )
+
+
+class ExternalOperatorDescription(BaseModel):
+    operation_type: str
+    operands_number: int
+    operands_kinds: List[List[str]]
+    description: Optional[str] = None
+
+    @classmethod
+    def from_internal_entity(
+        cls, operator_description: OperatorDescription
+    ) -> "ExternalOperatorDescription":
+        operands_kinds = [
+            [k.name for k in kind] for kind in operator_description.operands_kinds
+        ]
+        return cls(
+            operation_type=operator_description.operation_type,
+            operands_number=operator_description.operands_number,
+            operands_kinds=operands_kinds,
+            description=operator_description.description,
+        )
+
+
+class UniversalQueryLanguageDescription(BaseModel):
+    operations_description: List[ExternalOperationDescription]
+    operators_descriptions: List[ExternalOperatorDescription]
+
+    @classmethod
+    def from_internal_entities(
+        cls,
+        operations_descriptions: List[OperationDescription],
+        operators_descriptions: List[OperatorDescription],
+    ) -> "UniversalQueryLanguageDescription":
+        operations_descriptions = [
+            ExternalOperationDescription.from_internal_entity(
+                operation_description=operation_description
+            )
+            for operation_description in operations_descriptions
+        ]
+        operators_descriptions = [
+            ExternalOperatorDescription.from_internal_entity(
+                operator_description=operator_description
+            )
+            for operator_description in operators_descriptions
+        ]
+        return cls(
+            operations_description=operations_descriptions,
+            operators_descriptions=operators_descriptions,
+        )
+
+
 class WorkflowsBlocksDescription(BaseModel):
     blocks: List[BlockDescription] = Field(
         description="List of loaded blocks descriptions"
@@ -56,4 +142,7 @@ class WorkflowsBlocksDescription(BaseModel):
     primitives_connections: List[ExternalBlockPropertyPrimitiveDefinition] = Field(
         description="List defining all properties for all blocks that can be filled "
         "with primitive values in workflow definition."
+    )
+    universal_query_language_description: UniversalQueryLanguageDescription = Field(
+        description="Definitions of Universal Query Language operations and operators"
     )

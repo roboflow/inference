@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     DEFAULT_OPERAND_NAME,
+    AllOperationsType,
     OperationDefinition,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
@@ -56,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    operations: List[OperationDefinition]
+    operations: List[AllOperationsType]
     operations_parameters: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],

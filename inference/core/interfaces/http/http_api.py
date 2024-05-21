@@ -75,6 +75,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     ExternalBlockPropertyPrimitiveDefinition,
     ExternalWorkflowsBlockSelectorDefinition,
+    UniversalQueryLanguageDescription,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowValidationStatus,
@@ -134,8 +135,9 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
-from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
-    WorkflowsActiveLearningMiddleware,
+from inference.core.workflows.core_steps.common.query_language.introspection.core import (
+    prepare_operations_descriptions,
+    prepare_operators_descriptions,
 )
 from inference.core.workflows.entities.base import OutputDefinition, StepExecutionMode
 from inference.core.workflows.errors import (
@@ -426,9 +428,6 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
-        self.workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
-            cache=cache,
-        )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -459,7 +458,6 @@ class HttpInterface(BaseInterface):
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
-                "workflows_core.active_learning_middleware": self.workflows_active_learning_middleware,
                 "workflows_core.background_tasks": background_tasks,
             }
             execution_engine = ExecutionEngine.init(
@@ -892,11 +890,20 @@ class HttpInterface(BaseInterface):
                     )
                     for primitives_connection in blocks_connections.primitives_connections
                 ]
+                uql_operations_descriptions = prepare_operations_descriptions()
+                uql_operators_descriptions = prepare_operators_descriptions()
+                universal_query_language_description = (
+                    UniversalQueryLanguageDescription.from_internal_entities(
+                        operations_descriptions=uql_operations_descriptions,
+                        operators_descriptions=uql_operators_descriptions,
+                    )
+                )
                 return WorkflowsBlocksDescription(
                     blocks=blocks_description.blocks,
                     declared_kinds=blocks_description.declared_kinds,
                     kinds_connections=kinds_connections,
                     primitives_connections=primitives_connections,
+                    universal_query_language_description=universal_query_language_description,
                 )
 
             @app.post(
