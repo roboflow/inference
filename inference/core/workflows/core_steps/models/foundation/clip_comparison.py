@@ -11,12 +11,20 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import PARENT_ID_KEY, PREDICTION_TYPE_KEY
+from inference.core.workflows.constants import (
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info,
     load_core_model,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
@@ -100,13 +108,14 @@ class ClipComparisonBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         texts: List[str],
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         predictions = []
-        for single_image in images:
+        non_empty_images = [i for i in images.iter_nonempty()]
+        for single_image in non_empty_images:
             inference_request = ClipCompareRequest(
-                subject=single_image,
+                subject=single_image.to_inference_format(numpy_preferred=True),
                 subject_type="image",
                 prompt=texts,
                 prompt_type="text",
@@ -121,7 +130,19 @@ class ClipComparisonBlock(WorkflowBlock):
                 doctr_model_id, inference_request
             )
             predictions.append(prediction.model_dump())
-        return self._post_process_result(images=images, predictions=predictions)
+        results = self._post_process_result(
+            images=non_empty_images,
+            predictions=predictions,
+        )
+        return images.align_batch_results(
+            results=results,
+            null_element={
+                "similarity": None,
+                PARENT_ID_KEY: None,
+                ROOT_PARENT_ID_KEY: None,
+                "prediction_type": None,
+            },
+        )
 
     async def run_remotely(
         self,
@@ -160,10 +181,13 @@ class ClipComparisonBlock(WorkflowBlock):
 
     def _post_process_result(
         self,
-        images: List[dict],
+        images: List[WorkflowImageData],
         predictions: List[dict],
     ) -> List[dict]:
-        for p, i in zip(predictions, images):
-            p[PREDICTION_TYPE_KEY] = "classification"
-            p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
+        for prediction, image in zip(predictions, images):
+            prediction[PREDICTION_TYPE_KEY] = "classification"
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
         return predictions

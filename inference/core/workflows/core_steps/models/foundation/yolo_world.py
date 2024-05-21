@@ -12,18 +12,18 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
-    anchor_prediction_detections_in_parent_coordinates,
-    attach_parent_info,
-    attach_prediction_type_info,
+    attach_parents_coordinates_to_list_of_detections,
+    attach_prediction_type_info_to_sv_detections,
     convert_to_sv_detections,
     load_core_model,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
@@ -47,7 +47,7 @@ returns the location of objects that meet the specified class, if YOLO-World is 
 identify objects of that class.
 
 We recommend experimenting with YOLO-World to evaluate the model on your use case 
-before using this block in production. For avice on how to effectively prompt 
+before using this block in production. For example on how to effectively prompt 
 YOLO-World, refer to the [Roboflow YOLO-World prompting 
 guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
 """
@@ -95,11 +95,9 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
         ]
 
 
@@ -123,13 +121,17 @@ class YoloWorldModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         predictions = []
-        for single_image in images:
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
+        for single_image in non_empty_inference_images:
             inference_request = YOLOWorldInferenceRequest(
                 image=single_image,
                 yolo_world_version_id=version,
@@ -146,11 +148,17 @@ class YoloWorldModelBlock(WorkflowBlock):
                 yolo_world_model_id, inference_request
             )
             predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
-        return self._post_process_result(image=images, predictions=predictions)
+        results = self._post_process_result(
+            images=non_empty_images,
+            predictions=predictions,
+        )
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
@@ -172,9 +180,11 @@ class YoloWorldModelBlock(WorkflowBlock):
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
         image_sub_batches = list(
             make_batches(
-                iterable=images,
+                iterable=non_empty_inference_images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
@@ -187,25 +197,25 @@ class YoloWorldModelBlock(WorkflowBlock):
                 confidence=confidence,
             )
             predictions.extend(sub_batch_predictions)
-        return self._post_process_result(image=images, predictions=predictions)
+        results = self._post_process_result(
+            images=non_empty_images, predictions=predictions
+        )
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[WorkflowImageData],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        detections = convert_to_sv_detections(predictions)
-        for p, d in zip(predictions, detections):
-            p["predictions"] = d
-        predictions = attach_prediction_type_info(
+        predictions = convert_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections(
             predictions=predictions,
             prediction_type="object-detection",
         )
-        predictions = attach_parent_info(
-            images=image,
+        predictions = attach_parents_coordinates_to_list_of_detections(
+            images=images,
             predictions=predictions,
         )
-        return anchor_prediction_detections_in_parent_coordinates(
-            image=image,
-            predictions=predictions,
-        )
+        return [{"predictions": prediction} for prediction in predictions]

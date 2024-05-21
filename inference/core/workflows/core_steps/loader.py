@@ -1,7 +1,4 @@
 from inference.core.workflows.core_steps.flow_control.condition import ConditionBlock
-from inference.core.workflows.core_steps.flow_control.new_condition import (
-    NewConditionBlock,
-)
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
 )
@@ -57,7 +54,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop im
 
 def load_blocks() -> list:
     return [
-        ConditionBlock,
         DetectionsConsensusBlock,
         ClipComparisonBlock,
         LMMBlock,
@@ -77,5 +73,5 @@ def load_blocks() -> list:
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
         DetectionsSamplerBlock,
-        NewConditionBlock,
+        ConditionBlock,
     ]

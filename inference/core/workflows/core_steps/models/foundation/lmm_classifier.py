@@ -12,7 +12,11 @@ from inference.core.workflows.core_steps.models.foundation.lmm import (
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
@@ -116,7 +120,7 @@ class LMMForClassificationBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         lmm_type: str,
         classes: List[str],
         lmm_config: LMMConfig,
@@ -127,16 +131,20 @@ class LMMForClassificationBlock(WorkflowBlock):
             f"assigned one of the following classes: {classes}. "
             f'Your response must be JSON in format: {{"top": "some_class"}}'
         )
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 model_manager=self._model_manager,
                 api_key=self._api_key,
@@ -156,11 +164,20 @@ class LMMForClassificationBlock(WorkflowBlock):
         for p, i in zip(predictions, images):
             p[PREDICTION_TYPE_KEY] = "classification"
             p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
-        return predictions
+        return images.align_batch_results(
+            results=predictions,
+            null_element={
+                "raw_output": None,
+                "top": None,
+                "parent_id": None,
+                "image": None,
+                "prediction_type": None,
+            },
+        )
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         lmm_type: str,
         classes: List[str],
         lmm_config: LMMConfig,
@@ -171,16 +188,18 @@ class LMMForClassificationBlock(WorkflowBlock):
             f"assigned one of the following classes: {classes}. "
             f'Your response must be JSON in format: {{"top": "some_class"}}'
         )
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.to_inference_format() for i in non_empty_images]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 api_key=self._api_key,
             )
@@ -199,4 +218,13 @@ class LMMForClassificationBlock(WorkflowBlock):
         for p, i in zip(predictions, images):
             p[PREDICTION_TYPE_KEY] = "classification"
             p[PARENT_ID_KEY] = i[PARENT_ID_KEY]
-        return predictions
+        return images.align_batch_results(
+            results=predictions,
+            null_element={
+                "raw_output": None,
+                "top": None,
+                "parent_id": None,
+                "image": None,
+                "prediction_type": None,
+            },
+        )
