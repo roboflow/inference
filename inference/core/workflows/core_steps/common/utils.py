@@ -207,69 +207,54 @@ def attach_parent_coordinates_to_detections(
     return detections
 
 
-def anchor_prediction_detections_in_parent_coordinates(
-    image: List[Dict[str, Any]],
-    predictions: List[Dict[str, Union[sv.Detections, Any]]],
-    image_metadata_key: str = "image",
-    detections_key: str = "predictions",
-) -> List[Dict[str, Union[sv.Detections, Any]]]:
-    return [
-        anchor_detections_in_parent_coordinates(
-            image=image,
-            prediction=prediction,
-            image_metadata_key=image_metadata_key,
-            detections_key=detections_key,
-        )
-        for image, prediction in zip(image, predictions)
-    ]
-
-
-def anchor_detections_in_parent_coordinates(
-    image: Dict[str, Any],
-    prediction: Dict[str, Union[sv.Detections, Any]],
-    image_metadata_key: str = "image",
-    detections_key: str = "predictions",
-    keypoints_key: str = KEYPOINTS_KEY,
-) -> Dict[str, Union[sv.Detections, Any]]:
-    prediction[f"{detections_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
-        prediction[detections_key]
-    )
-    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = deepcopy(
-        prediction[image_metadata_key]
-    )
-    if ORIGIN_COORDINATES_KEY not in image:
-        return prediction
-    shift_x, shift_y = (
-        image[ORIGIN_COORDINATES_KEY][LEFT_TOP_X_KEY],
-        image[ORIGIN_COORDINATES_KEY][LEFT_TOP_Y_KEY],
-    )
-    anchored_detections: sv.Detections = prediction[
-        f"{detections_key}{PARENT_COORDINATES_SUFFIX}"
-    ]
-    anchored_detections.xyxy += [shift_x, shift_y, shift_x, shift_y]
-    # TODO: assumed type
-    if keypoints_key in anchored_detections.data:
-        anchored_detections[keypoints_key] += [shift_x, shift_y]
-    if anchored_detections.mask:
-        origin_width = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][WIDTH_KEY]
-        origin_height = image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY][HEIGHT_KEY]
+def detections_to_root_coordinates(
+    detections: sv.Detections, keypoints_key: str = KEYPOINTS_KEY
+) -> sv.Detections:
+    detections_copy = deepcopy(detections)
+    if len(detections_copy) == 0:
+        return detections_copy
+    if ROOT_PARENT_COORDINATES_KEY not in detections_copy.data:
+        return detections_copy
+    origin_height = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0]
+    origin_width = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][1]
+    root_coordinates = detections_copy[ROOT_PARENT_COORDINATES_KEY]
+    shift_x, shift_y = root_coordinates[0]
+    detections_copy.xyxy += [shift_x, shift_y, shift_x, shift_y]
+    if keypoints_key in detections_copy.data:
+        detections_copy[keypoints_key] += [shift_x, shift_y]
+    if detections_copy.mask:
         origin_mask_base = np.full((origin_height, origin_width), False)
-        anchored_detections.mask = [
-            origin_mask_base.copy() for _ in anchored_detections
-        ]
-        for anchored_mask, original_mask in zip(
-            anchored_detections.mask, prediction[detections_key].mask
-        ):
+        detections_copy.mask = [origin_mask_base.copy() for _ in detections_copy]
+        for anchored_mask, original_mask in zip(detections_copy.mask, detections.mask):
             mask_h, mask_w = original_mask.shape
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
             anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = (
                 original_mask
             )
-    prediction[f"{image_metadata_key}{PARENT_COORDINATES_SUFFIX}"] = image[
-        ORIGIN_COORDINATES_KEY
-    ][ORIGIN_SIZE_KEY]
-    return prediction
+    new_root_metadata = ParentImageMetadata(
+        parent_id=f"detections_to_root_coordinates.{uuid.uuid4()}",
+        origin_coordinates=OriginCoordinatesSystem(
+            left_top_y=0,
+            left_top_x=0,
+            origin_width=origin_height,
+            origin_height=origin_height,
+        ),
+    )
+    detections_copy = attach_parent_coordinates_to_detections(
+        detections=detections_copy,
+        parent_metadata=new_root_metadata,
+        parent_id_key=ROOT_PARENT_ID_KEY,
+        coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+        dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+    )
+    return attach_parent_coordinates_to_detections(
+        detections=detections_copy,
+        parent_metadata=new_root_metadata,
+        parent_id_key=PARENT_ID_KEY,
+        coordinates_key=PARENT_COORDINATES_KEY,
+        dimensions_key=PARENT_DIMENSIONS_KEY,
+    )
 
 
 def filter_out_unwanted_classes_from_predictions_detections(
@@ -318,15 +303,6 @@ def extract_origin_size_from_images_batch(
                 {HEIGHT_KEY: decoded_image.shape[0], WIDTH_KEY: decoded_image.shape[1]}
             )
     return result
-
-
-# TODO: remove once fusion is migrated
-def detection_to_xyxy(detection: dict) -> Tuple[int, int, int, int]:
-    x_min = round(detection["x"] - detection[WIDTH_KEY] / 2)
-    y_min = round(detection["y"] - detection[HEIGHT_KEY] / 2)
-    x_max = round(x_min + detection[WIDTH_KEY])
-    y_max = round(y_min + detection[HEIGHT_KEY])
-    return x_min, y_min, x_max, y_max
 
 
 def grab_batch_parameters(

@@ -1,6 +1,10 @@
 from typing import Any, Dict, List
 
-from inference.core.workflows.constants import PARENT_COORDINATES_SUFFIX
+import supervision as sv
+
+from inference.core.workflows.core_steps.common.utils import (
+    detections_to_root_coordinates,
+)
 from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
@@ -15,6 +19,9 @@ def construct_workflow_output(
     workflow_outputs: List[JsonField],
     execution_cache: ExecutionCache,
 ) -> Dict[str, List[Any]]:
+    # TODO: figure out if we needed generic "to-root coordinates" transformation?
+    # Maybe output constructor should never touch this? Maybe it's better to
+    # have steps transforming to specific coordinates systems?
     result = {}
     for node in workflow_outputs:
         step_selector = get_step_selector_from_its_output(
@@ -51,19 +58,10 @@ def construct_wildcard_output(
     for element in step_outputs:
         element_result = {}
         for key, value in element.items():
-            if key.endswith(PARENT_COORDINATES_SUFFIX):
-                if use_parents_coordinates:
-                    element_result[key[: -len(PARENT_COORDINATES_SUFFIX)]] = value
-                else:
-                    continue
+            if isinstance(value, sv.Detections) and use_parents_coordinates:
+                element_result[key] = detections_to_root_coordinates(detections=value)
             else:
-                if (
-                    f"{key}{PARENT_COORDINATES_SUFFIX}" in step_outputs
-                    and use_parents_coordinates
-                ):
-                    continue
-                else:
-                    element_result[key] = value
+                element_result[key] = value
         result.append(element_result)
     return result
 
@@ -74,14 +72,21 @@ def construct_specific_property_output(
     coordinates_system: CoordinatesSystem,
 ) -> List[Any]:
     cache_contains_selector = execution_cache.is_value_registered(selector=selector)
-    if coordinates_system is CoordinatesSystem.OWN:
-        if cache_contains_selector:
-            return execution_cache.get_output(selector=selector)
-        else:
-            return []
-    parent_selector = f"{selector}{PARENT_COORDINATES_SUFFIX}"
-    if execution_cache.is_value_registered(selector=parent_selector):
-        return execution_cache.get_output(selector=parent_selector)
-    if cache_contains_selector:
-        return execution_cache.get_output(selector=selector)
-    return []
+    if not cache_contains_selector:
+        return []
+    value = execution_cache.get_output(selector=selector)
+    if (
+        not is_batch_of_sv_detections(value=value)
+        or coordinates_system is CoordinatesSystem.OWN
+    ):
+        return value
+    return [
+        detections_to_root_coordinates(detections=v) if v is not None else None
+        for v in value
+    ]
+
+
+def is_batch_of_sv_detections(value: Any) -> bool:
+    if not isinstance(value, list):
+        return False
+    return all(isinstance(v, sv.Detections) or v is None for v in value)

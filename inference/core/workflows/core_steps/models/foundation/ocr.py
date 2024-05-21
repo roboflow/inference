@@ -108,7 +108,7 @@ class OCRModelBlock(WorkflowBlock):
         non_empty_images = [i for i in images.iter_nonempty()]
         for single_image in non_empty_images:
             inference_request = DoctrOCRInferenceRequest(
-                image=single_image.numpy_image,
+                image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
             )
             doctr_model_id = load_core_model(
@@ -180,8 +180,8 @@ class OCRModelBlock(WorkflowBlock):
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         for prediction, image in zip(predictions, images):
             prediction[PREDICTION_TYPE_KEY] = "ocr"
-            predictions[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            predictions[ROOT_PARENT_ID_KEY] = (
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
         return predictions

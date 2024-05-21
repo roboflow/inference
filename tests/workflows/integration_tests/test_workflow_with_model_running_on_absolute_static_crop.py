@@ -87,13 +87,13 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
     assert (
         len(result["crop"]) == 1
     ), "Expected to see one cropped image as a result of static crop"
-    assert result["crop"][0]["value"].shape == (
+    assert result["crop"][0].numpy_image.shape == (
         212,
         320,
         3,
     ), "Expected cropped image to be half the size of original image"
     assert np.allclose(
-        crowd_image[106:318, 160:480, :], result["crop"][0]["value"], atol=5
+        crowd_image[106:318, 160:480, :], result["crop"][0].numpy_image, atol=5
     ), "Expected crop to be made in central area of input image, as specified in inputs"
     parent_coordinates_detections: sv.Detections = result["result"][0]["predictions"]
     assert np.allclose(

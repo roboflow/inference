@@ -2,6 +2,7 @@ import uuid
 from copy import deepcopy
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
@@ -118,15 +119,17 @@ def offset_detections(
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> sv.Detections:
     _detections = deepcopy(detections)
-    _detections.xyxy = [
-        (
-            x1 - offset_width // 2,
-            y1 - offset_height // 2,
-            x2 + offset_width // 2,
-            y2 + offset_height // 2,
-        )
-        for (x1, y1, x2, y2) in _detections.xyxy
-    ]
+    _detections.xyxy = np.array(
+        [
+            (
+                x1 - offset_width // 2,
+                y1 - offset_height // 2,
+                x2 + offset_width // 2,
+                y2 + offset_height // 2,
+            )
+            for (x1, y1, x2, y2) in _detections.xyxy
+        ]
+    )
     _detections[parent_id_key] = detections[detection_id_key].copy()
     _detections[detection_id_key] = [str(uuid.uuid4()) for _ in detections]
     return _detections
