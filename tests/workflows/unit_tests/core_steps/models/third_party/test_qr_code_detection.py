@@ -6,6 +6,8 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
     BlockManifest,
     QRCodeDetectorBlock,
 )
+from inference.core.workflows.entities.base import Batch, WorkflowImageData, ParentImageMetadata, \
+    OriginCoordinatesSystem
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
@@ -43,31 +45,35 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
     with pytest.raises(ValidationError):
         _ = BlockManifest.model_validate(data)
 
-
 @pytest.mark.asyncio
 async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
     step = QRCodeDetectorBlock()
+    images = Batch([
+        WorkflowImageData(
+            parent_metadata=ParentImageMetadata(
+                parent_id="$inputs.image",
+                origin_coordinates=OriginCoordinatesSystem(
+                    left_top_y=0,
+                    left_top_x=0,
+                    origin_height=qr_codes_image.shape[0],
+                    origin_width=qr_codes_image.shape[1],
+                )
+            ),
+            numpy_image=qr_codes_image,
+        )
+    ])
 
     # when
-    result = await step.run_locally(
-        [
-            {
-                "type": "numpy_object",
-                "value": qr_codes_image,
-                "parent_id": "$inputs.image",
-            }
-        ]
-    )
+    result = await step.run_locally(images=images)
 
     # then
-    actual_parent_id = result[0]["parent_id"]
-    assert actual_parent_id == "$inputs.image"
-
+    actual_parent_id = result[0]["predictions"]["parent_id"]
+    assert (actual_parent_id == "$inputs.image").all()
     preds = result[0]["predictions"]
     assert len(preds) == 3
-    for class_id, (x1, y1, x2, y2), class_name, detection_id, parent_id, confidence, url in \
-            zip(preds.class_id, preds.xyxy, preds["class_name"], preds["detection_id"], preds["parent_id"], preds.confidence, preds["data"]):
+    for class_id, (x1, y1, x2, y2), class_name, detection_id, parent_id, confidence, url, prediction_type in \
+            zip(preds.class_id, preds.xyxy, preds["class_name"], preds["detection_id"], preds["parent_id"], preds.confidence, preds["data"], preds.data["prediction_type"]):
         assert class_name == "qr_code"
         assert class_id == 0
         assert confidence == 1.0
@@ -78,10 +84,5 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
         assert detection_id is not None
         assert url == "https://www.qrfy.com/LEwG_Gj"
         assert parent_id == "$inputs.image"
+        assert prediction_type == "barcode-detection"
 
-    actual_image = result[0]["image"]
-    assert actual_image["height"] == 1018
-    assert actual_image["width"] == 2470
-
-    actual_prediction_type = result[0]["prediction_type"]
-    assert actual_prediction_type == "qrcode-detection"

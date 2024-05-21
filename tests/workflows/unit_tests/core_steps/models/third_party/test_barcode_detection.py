@@ -6,6 +6,8 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
     BarcodeDetectorBlock,
     BlockManifest,
 )
+from inference.core.workflows.entities.base import Batch, WorkflowImageData, ParentImageMetadata, \
+    OriginCoordinatesSystem
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
@@ -48,15 +50,27 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
 async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     # given
     step = BarcodeDetectorBlock()
+    images = Batch([
+        WorkflowImageData(
+            parent_metadata=ParentImageMetadata(
+                parent_id="$inputs.image",
+                origin_coordinates=OriginCoordinatesSystem(
+                    left_top_y=0,
+                    left_top_x=0,
+                    origin_height=barcode_image.shape[0],
+                    origin_width=barcode_image.shape[1],
+                )
+            ),
+            numpy_image=barcode_image,
+        )
+    ])
 
     # when
-    result = await step.run_locally(
-        [{"type": "numpy_object", "value": barcode_image, "parent_id": "$inputs.image"}]
-    )
+    result = await step.run_locally(images=images)
 
     # then
-    actual_parent_id = result[0]["parent_id"]
-    assert actual_parent_id == "$inputs.image"
+    actual_parent_id = result[0]["predictions"]["parent_id"]
+    assert (actual_parent_id == "$inputs.image").all()
 
     values = ["47205255193", "37637448832", "21974251554", "81685630817"]
     preds = result[0]["predictions"]
@@ -74,7 +88,3 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
         assert data in values
         assert parent_id == "$inputs.image"
         assert prediction_type == "barcode-detection"
-
-    actual_image = result[0]["image"]
-    assert actual_image["height"] == 480
-    assert actual_image["width"] == 800

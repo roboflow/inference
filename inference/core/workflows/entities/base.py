@@ -217,7 +217,7 @@ class WorkflowImageData:
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
     ):
-        if not base64_image and not numpy_image and not image_reference:
+        if not base64_image and numpy_image is None and not image_reference:
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
         self._parent_metadata = parent_metadata
         self._workflow_root_ancestor_metadata = (
@@ -239,7 +239,7 @@ class WorkflowImageData:
 
     @property
     def numpy_image(self) -> np.ndarray:
-        if self._numpy_image:
+        if self._numpy_image is not None:
             return self._numpy_image
         if self._base64_image:
             self._numpy_image = attempt_loading_image_from_string(self._base64_image)[0]
@@ -254,7 +254,7 @@ class WorkflowImageData:
 
     @property
     def base64_image(self) -> str:
-        if self._base64_image:
+        if self._base64_image is not None:
             return self._base64_image
         numpy_image = self.numpy_image
         self._base64_image = np_image_to_base64(image=numpy_image).decode("utf-8")
