@@ -298,13 +298,13 @@ def register_datapoint_at_roboflow(
         api_key=api_key,
     )
     if fire_and_forget and background_tasks:
-        background_tasks.add_task(execute_registration)
+        background_tasks.add_task(registration_task)
         return False, "Element registration happens in the background task"
     return registration_task()
 
 
 def execute_registration(
-    image: dict,
+    image: WorkflowImageData,
     prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
@@ -346,13 +346,8 @@ def execute_registration(
     credit_to_be_returned = False
     try:
         local_image_id = str(uuid4())
-        image, is_bgr = load_image(
-            value=image,
-        )
-        if not is_bgr:
-            image = image[:, :, ::-1]
         encoded_image, scaling_factor = prepare_image_to_registration(
-            image=image,
+            image=image.numpy_image,
             desired_size=ImageDimensions(
                 width=max_image_size[0], height=max_image_size[1]
             ),
@@ -474,6 +469,7 @@ def register_datapoint(
         annotation_file_type=prediction_format,
         is_prediction=True,
     )
+    return "Successfully registered image and annotation"
 
 
 def safe_register_image_at_roboflow(
