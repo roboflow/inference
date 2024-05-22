@@ -1,6 +1,6 @@
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import supervision as sv
@@ -19,12 +19,9 @@ from inference.core.workflows.constants import (
     KEYPOINTS_CONFIDENCE_KEY,
     KEYPOINTS_KEY,
     KEYPOINTS_XY_KEY,
-    LEFT_TOP_X_KEY,
-    LEFT_TOP_Y_KEY,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_KEY,
-    PARENT_COORDINATES_SUFFIX,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
@@ -208,7 +205,7 @@ def attach_parent_coordinates_to_detections(
 
 
 def detections_to_root_coordinates(
-    detections: sv.Detections, keypoints_key: str = KEYPOINTS_KEY
+    detections: sv.Detections, keypoints_key: str = KEYPOINTS_XY_KEY
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
@@ -322,3 +319,55 @@ def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str
         for key, value in operations_parameters.items()
         if not isinstance(value, Batch)
     }
+
+
+def scale_sv_detections(
+    detections: sv.Detections, scale: float, keypoints_key: str = KEYPOINTS_XY_KEY
+) -> sv.Detections:
+    detections_copy = deepcopy(detections)
+    if len(detections_copy) == 0:
+        return detections_copy
+    detections_copy.xyxy = (detections_copy.xyxy * scale).round()
+    if keypoints_key in detections_copy.data:
+        detections_copy[keypoints_key] = (
+            detections_copy[keypoints_key] * scale
+        ).round()
+    if detections_copy.mask:
+        scaled_masks = []
+        original_mask_size_wh = (
+            detections_copy.mask.shape[2],
+            detections_copy.mask.shape[1],
+        )
+        scaled_mask_size_wh = round(original_mask_size_wh[0] * scale), round(
+            original_mask_size_wh[1] * scale
+        )
+        for detection_mask in detections_copy.mask:
+            polygons = sv.mask_to_polygons(mask=detection_mask)
+            polygon_masks = []
+            for polygon in polygons:
+                scaled_polygon = polygon * scale
+                polygon_masks.append(
+                    sv.polygon_to_mask(
+                        polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
+                    )
+                )
+            scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
+            scaled_masks.append(scaled_detection_mask)
+        detections_copy.mask = np.array(scaled_masks)
+    if PARENT_DIMENSIONS_KEY in detections_copy:
+        detections_copy[PARENT_DIMENSIONS_KEY] = (
+            detections_copy[PARENT_DIMENSIONS_KEY] * scale
+        ).round()
+    if PARENT_COORDINATES_KEY in detections_copy:
+        detections_copy[PARENT_DIMENSIONS_KEY] = (
+            detections_copy[PARENT_DIMENSIONS_KEY] * scale
+        ).round()
+    if ROOT_PARENT_DIMENSIONS_KEY in detections_copy:
+        detections_copy[PARENT_DIMENSIONS_KEY] = (
+            detections_copy[PARENT_DIMENSIONS_KEY] * scale
+        ).round()
+    if ROOT_PARENT_COORDINATES_KEY in detections_copy:
+        detections_copy[PARENT_DIMENSIONS_KEY] = (
+            detections_copy[PARENT_DIMENSIONS_KEY] * scale
+        ).round()
+    return detections_copy

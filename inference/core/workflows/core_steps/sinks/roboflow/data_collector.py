@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -22,10 +23,15 @@ from inference.core.active_learning.entities import (
 )
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import (
+    annotate_image_at_roboflow,
     get_roboflow_workspace,
     register_image_at_roboflow,
 )
 from inference.core.utils.image_utils import load_image
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
+from inference.core.workflows.core_steps.common.utils import scale_sv_detections
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
@@ -33,6 +39,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
+    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -83,11 +90,12 @@ class BlockManifest(WorkflowBlockManifest):
                 BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
                 BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
             ]
         )
     ] = Field(
         default=None,
-        description="Reference to detection-like predictions",
+        description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
     target_project: Union[
@@ -197,7 +205,7 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
     async def run_locally(
         self,
         images: Batch[Optional[WorkflowImageData]],
-        predictions: Optional[Batch[Optional[sv.Detections]]],
+        predictions: Optional[Batch[Optional[Union[sv.Detections, dict]]]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
@@ -254,7 +262,7 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
 
 def register_datapoint_at_roboflow(
     image: Optional[WorkflowImageData],
-    prediction: Optional[sv.Detections],
+    prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
     minutely_usage_limit: int,
@@ -297,7 +305,7 @@ def register_datapoint_at_roboflow(
 
 def execute_registration(
     image: dict,
-    prediction: Optional[sv.Detections],
+    prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
     minutely_usage_limit: int,
@@ -354,8 +362,10 @@ def execute_registration(
             labeling_batch_prefix=labeling_batch_prefix,
             new_labeling_batch_frequency=new_labeling_batch_frequency,
         )
-        if prediction is not None:
-            prediction = ...  # TODO: Adjust to scaled image
+        if isinstance(prediction, sv.Detections):
+            prediction = scale_sv_detections(
+                detections=prediction, scale=scaling_factor
+            )
         status = register_datapoint(
             target_project=target_project,
             encoded_image=encoded_image,
@@ -437,7 +447,7 @@ def register_datapoint(
     target_project: str,
     encoded_image: bytes,
     local_image_id: str,
-    prediction: Optional[sv.Detections],
+    prediction: Optional[Union[sv.Detections, dict]],
     api_key: str,
     batch_name: str,
     tags: List[str],
@@ -452,9 +462,18 @@ def register_datapoint(
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
-    if prediction is None:
+    if is_prediction_registration_forbidden(prediction=prediction):
         return "Successfully registered image"
-    # TODO: part for saving prediction
+    encoded_prediction, prediction_format = encode_prediction(prediction=prediction)
+    _ = annotate_image_at_roboflow(
+        api_key=api_key,
+        dataset_id=target_project,
+        local_image_id=local_image_id,
+        roboflow_image_id=roboflow_image_id,
+        annotation_content=encoded_prediction,
+        annotation_file_type=prediction_format,
+        is_prediction=True,
+    )
 
 
 def safe_register_image_at_roboflow(
@@ -478,3 +497,24 @@ def safe_register_image_at_roboflow(
         logging.warning(f"Image duplication detected: {registration_response}.")
         return None
     return registration_response["id"]
+
+
+def is_prediction_registration_forbidden(
+    prediction: Optional[Union[sv.Detections, dict]],
+) -> bool:
+    if prediction is None:
+        return True
+    if isinstance(prediction, sv.Detections) and len(prediction) == 0:
+        return True
+    if isinstance(prediction, dict) and "top" not in prediction:
+        return True
+    return False
+
+
+def encode_prediction(
+    prediction: Union[sv.Detections, dict],
+) -> Tuple[str, str]:
+    if isinstance(prediction, dict):
+        return prediction["top"], "txt"
+    detections_in_inference_format = serialise_sv_detections(detections=prediction)
+    return json.dumps(detections_in_inference_format), "json"
