@@ -32,6 +32,7 @@ def construct_workflow_output(
         step_name = get_last_chunk_of_selector(selector=step_selector)
         cache_contains_step = execution_cache.contains_step(step_name=step_name)
         if not cache_contains_step:
+            result[node.name] = []
             continue
         if node.selector.endswith(".*"):
             result[node.name] = construct_wildcard_output(
