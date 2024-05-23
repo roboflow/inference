@@ -37,7 +37,7 @@ problems with workflow and make those problems to be visible while running the w
 WILDCARD_KIND = Kind(
     name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS
 )
-
+IMAGE_KIND = Kind(name="image", description="Image in workflows", docs="TODO")
 IMAGE_KIND_DOCS = f"""
 This is the representation of image batch in `workflows`. The value behind this kind 
 is Python list of dictionaries. Each of this dictionary is native `inference` image with

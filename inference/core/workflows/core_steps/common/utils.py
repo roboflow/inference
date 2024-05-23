@@ -323,7 +323,7 @@ def grab_batch_parameters(
     predictions: Batch[Optional[sv.Detections]],
 ) -> Dict[str, Any]:
     return {
-        key: value.broadcast(n=len(predictions))
+        key: Batch(value.broadcast(n=len(predictions)))
         for key, value in operations_parameters.items()
         if isinstance(value, Batch)
     }

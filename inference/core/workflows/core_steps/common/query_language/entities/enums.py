@@ -37,3 +37,9 @@ class SequenceUnwrapMethod(Enum):
 class StatementsGroupsOperator(Enum):
     AND = "and"
     OR = "or"
+
+
+class ImageProperty(Enum):
+    SIZE = "size"
+    HEIGHT = "height"
+    WIDTH = "width"

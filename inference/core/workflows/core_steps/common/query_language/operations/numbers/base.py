@@ -42,3 +42,33 @@ def number_round(
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
+
+
+def multiply(
+    value: Union[float, int], other: Union[float, int], execution_context: str, **kwargs
+) -> Union[float, int]:
+    try:
+        return value * other
+    except (TypeError, ValueError) as e:
+        value_as_str = safe_stringify(value=value)
+        raise InvalidInputTypeError(
+            public_message=f"While executing multiply to_number(...) in context {execution_context}, encountered "
+            f"value `{value_as_str}` of type {type(value)} which cannot be multiplied with {other}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=e,
+        )
+
+
+def divide(
+    value: Union[float, int], other: Union[float, int], execution_context: str, **kwargs
+) -> Union[float, int]:
+    try:
+        return value / other
+    except (TypeError, ValueError, ZeroDivisionError) as e:
+        value_as_str = safe_stringify(value=value)
+        raise InvalidInputTypeError(
+            public_message=f"While executing multiply divide(...) in context {execution_context}, encountered "
+            f"value `{value_as_str}` of type {type(value)} which cannot be multiplied with {other}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=e,
+        )

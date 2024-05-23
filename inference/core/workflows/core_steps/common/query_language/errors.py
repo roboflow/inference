@@ -13,5 +13,9 @@ class OperationTypeNotRecognisedError(RoboflowQueryLanguageError):
     pass
 
 
+class OperationError(RoboflowQueryLanguageError):
+    pass
+
+
 class EvaluationEngineError(RoboflowQueryLanguageError):
     pass

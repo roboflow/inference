@@ -31,7 +31,12 @@ from inference.core.workflows.core_steps.common.query_language.operations.generi
     apply_lookup,
     generate_random_number,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.images.base import (
+    extract_image_property,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
+    divide,
+    multiply,
     number_round,
     to_number,
 )
@@ -171,6 +176,9 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "RandomNumber": generate_random_number,
     "StringMatches": string_matches,
     "SequenceLength": get_sequence_length,
+    "ExtractImageProperty": extract_image_property,
+    "Multiply": multiply,
+    "Divide": divide,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

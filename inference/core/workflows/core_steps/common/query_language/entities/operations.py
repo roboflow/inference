@@ -5,6 +5,7 @@ from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
+    ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
     SequenceAggregationMode,
@@ -17,6 +18,7 @@ from inference.core.workflows.entities.types import (
     DICTIONARY_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -301,6 +303,18 @@ class RandomNumber(OperationDefinition):
     max_value: float = Field(default=1.0)
 
 
+class ExtractImageProperty(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts specific property of image (like size)",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [INTEGER_KIND],
+        },
+    )
+    type: Literal["ExtractImageProperty"]
+    property_name: ImageProperty
+
+
 class StringMatches(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -347,6 +361,32 @@ class SequenceApply(OperationDefinition):
     operations: List["AllOperationsType"]
 
 
+class Multiply(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Multiplication",
+            "compound": False,
+            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
+    type: Literal["Multiply"]
+    other: Union[int, float]
+
+
+class Divide(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Dividing value against other",
+            "compound": False,
+            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
+    type: Literal["Divide"]
+    other: Union[int, float]
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -368,7 +408,10 @@ AllOperationsType = Annotated[
         DetectionsShift,
         RandomNumber,
         StringMatches,
+        ExtractImageProperty,
         SequenceLength,
+        Multiply,
+        Divide,
     ],
     Field(discriminator="type"),
 ]
