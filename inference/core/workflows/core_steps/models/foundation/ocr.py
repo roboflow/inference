@@ -58,7 +58,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )

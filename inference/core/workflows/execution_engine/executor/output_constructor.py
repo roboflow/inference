@@ -5,6 +5,7 @@ from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
+    is_input_selector,
 )
 from inference.core.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,
@@ -14,9 +15,17 @@ from inference.core.workflows.execution_engine.executor.execution_cache import (
 def construct_workflow_output(
     workflow_outputs: List[JsonField],
     execution_cache: ExecutionCache,
+    runtime_parameters: Dict[str, Any],
 ) -> Dict[str, List[Any]]:
     result = {}
     for node in workflow_outputs:
+        if is_input_selector(selector_or_value=node.selector):
+            input_name = get_last_chunk_of_selector(selector=node.selector)
+            result[node.name] = runtime_parameters[input_name]
+            # above returns List[<image>]
+            # for image input and value of parameter for singular input, we do not
+            # check parameter existence, as that should be checked by EE at compilation
+            continue
         step_selector = get_step_selector_from_its_output(
             step_output_selector=node.selector
         )

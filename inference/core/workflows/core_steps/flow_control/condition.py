@@ -83,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
         set,
     ] = Field(
         description="Left operand of expression `left operator right` to evaluate boolean value of condition statement",
-        examples=["$steps.classification.top", 3, "some"],
+        examples=["$steps.classification.top", 3, "foo"],
     )
     operator: Operator = Field(
         description="Operator in expression `left operator right` to evaluate boolean value of condition statement",
@@ -117,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
         set,
     ] = Field(
         description="Right operand of expression `left operator right` to evaluate boolean value of condition statement",
-        examples=["$steps.classification.top", 3, "some"],
+        examples=["$steps.classification.top", 3, "bar"],
     )
     step_if_true: StepSelector = Field(
         description="Reference to step which shall be executed if expression evaluates to true",

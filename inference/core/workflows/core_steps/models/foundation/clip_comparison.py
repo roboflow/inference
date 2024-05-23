@@ -57,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
@@ -112,13 +112,13 @@ class ClipComparisonBlock(WorkflowBlock):
                 prompt_type="text",
                 api_key=self._api_key,
             )
-            doctr_model_id = load_core_model(
+            clip_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
                 core_model="clip",
             )
             prediction = await self._model_manager.infer_from_request(
-                doctr_model_id, inference_request
+                clip_model_id, inference_request
             )
             predictions.append(prediction.dict())
         return self._post_process_result(image=images, predictions=predictions)
