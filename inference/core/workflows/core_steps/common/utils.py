@@ -1,3 +1,4 @@
+import logging
 import uuid
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
@@ -14,11 +15,14 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
-    KEYPOINTS_CLASS_ID_KEY,
-    KEYPOINTS_CLASS_NAME_KEY,
-    KEYPOINTS_CONFIDENCE_KEY,
-    KEYPOINTS_KEY,
-    KEYPOINTS_XY_KEY,
+    KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CONFIDENCE_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     ORIGIN_COORDINATES_KEY,
     ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_KEY,
@@ -29,6 +33,8 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
     WIDTH_KEY,
+    X_KEY,
+    Y_KEY,
 )
 from inference.core.workflows.entities.base import (
     Batch,
@@ -94,38 +100,47 @@ def convert_to_sv_detections(
 
 
 def add_keypoints_to_detections(
-    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
+    prediction: List[dict],
     detections: sv.Detections,
-):
+) -> sv.Detections:
     keypoints_class_names = []
     keypoints_class_ids = []
     keypoints_confidences = []
     keypoints_xy = []
-    for p in predictions:
-        keypoints = p.get(KEYPOINTS_KEY, [])
+    for inference_detection in prediction:
+        keypoints = inference_detection.get(KEYPOINTS_KEY_IN_INFERENCE_RESPONSE, [])
         keypoints_class_names.append(
-            np.array([k[KEYPOINTS_CLASS_NAME_KEY] for k in keypoints])
+            np.array(
+                [k[KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
+            )
         )
         keypoints_class_ids.append(
-            np.array([k[KEYPOINTS_CLASS_ID_KEY] for k in keypoints])
+            np.array(
+                [k[KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE] for k in keypoints]
+            )
         )
         keypoints_confidences.append(
             np.array(
-                [k[KEYPOINTS_CONFIDENCE_KEY] for k in keypoints],
-                dtype=np.float64,
+                [k[KEYPOINTS_CONFIDENCE_KEY_IN_INFERENCE_RESPONSE] for k in keypoints],
+                dtype=np.float32,
             )
         )
         keypoints_xy.append(
-            np.array([k[KEYPOINTS_XY_KEY] for k in keypoints], dtype=np.float64)
+            np.array([[k[X_KEY], k[Y_KEY]] for k in keypoints], dtype=np.float32)
         )
-    detections[KEYPOINTS_CLASS_NAME_KEY] = np.array(
+    detections[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS] = np.array(
         keypoints_class_names, dtype="object"
     )
-    detections[KEYPOINTS_CLASS_ID_KEY] = np.array(keypoints_class_ids, dtype="object")
-    detections[KEYPOINTS_CONFIDENCE_KEY] = np.array(
+    detections[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS] = np.array(
+        keypoints_class_ids, dtype="object"
+    )
+    detections[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS] = np.array(
         keypoints_confidences, dtype="object"
     )
-    detections[KEYPOINTS_XY_KEY] = np.array(keypoints_xy, dtype="object")
+    detections[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
+        keypoints_xy, dtype="object"
+    )
+    return detections
 
 
 def attach_parent_info(
@@ -204,33 +219,52 @@ def attach_parent_coordinates_to_detections(
     return detections
 
 
+KEYS_REQUIRED_TO_EMBED_IN_ROOT_COORDINATES = {
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+}
+
+
 def detections_to_root_coordinates(
-    detections: sv.Detections, keypoints_key: str = KEYPOINTS_XY_KEY
+    detections: sv.Detections, keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
         return detections_copy
-    if ROOT_PARENT_COORDINATES_KEY not in detections_copy.data:
+
+    if any(
+        key not in detections_copy.data
+        for key in KEYS_REQUIRED_TO_EMBED_IN_ROOT_COORDINATES
+    ):
+        logging.warning(
+            "Could not execute detections_to_root_coordinates(...) on detections with "
+            f"the following metadata registered: {list(detections_copy.data.keys())}"
+        )
         return detections_copy
-    origin_height = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0]
-    origin_width = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][1]
-    root_coordinates = detections_copy[ROOT_PARENT_COORDINATES_KEY]
-    shift_x, shift_y = root_coordinates[0]
+    origin_height = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][0]
+    origin_width = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][1]
+    root_parent_id = detections_copy[ROOT_PARENT_ID_KEY][0]
+    shift_x, shift_y = detections_copy[ROOT_PARENT_COORDINATES_KEY][0]
     detections_copy.xyxy += [shift_x, shift_y, shift_x, shift_y]
     if keypoints_key in detections_copy.data:
-        detections_copy[keypoints_key] += [shift_x, shift_y]
-    if detections_copy.mask:
+        for keypoints in detections_copy[keypoints_key]:
+            if len(keypoints):
+                keypoints += [shift_x, shift_y]
+    if detections_copy.mask is not None:
         origin_mask_base = np.full((origin_height, origin_width), False)
-        detections_copy.mask = [origin_mask_base.copy() for _ in detections_copy]
+        detections_copy.mask = np.array(
+            [origin_mask_base.copy() for _ in detections_copy]
+        )
         for anchored_mask, original_mask in zip(detections_copy.mask, detections.mask):
             mask_h, mask_w = original_mask.shape
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-            anchored_mask[shift_x : shift_x + mask_w, shift_y : shift_y + mask_h] = (
+            anchored_mask[shift_y : shift_y + mask_h, shift_x : shift_x + mask_w] = (
                 original_mask
             )
     new_root_metadata = ParentImageMetadata(
-        parent_id=f"detections_to_root_coordinates.{uuid.uuid4()}",
+        parent_id=root_parent_id,
         origin_coordinates=OriginCoordinatesSystem(
             left_top_y=0,
             left_top_x=0,
@@ -252,24 +286,6 @@ def detections_to_root_coordinates(
         coordinates_key=PARENT_COORDINATES_KEY,
         dimensions_key=PARENT_DIMENSIONS_KEY,
     )
-
-
-def filter_out_unwanted_classes_from_predictions_detections(
-    predictions: List[Dict[str, Union[sv.Detections, Any]]],
-    classes_to_accept: Optional[List[str]],
-    detections_key: str = "predictions",
-    class_name_key: str = "class_name",
-) -> List[Dict[str, Union[sv.Detections, Any]]]:
-    if not classes_to_accept:
-        return predictions
-    filtered_predictions = []
-    for prediction in predictions:
-        detections = prediction[detections_key]
-        prediction[detections_key] = detections[
-            np.isin(detections[class_name_key], classes_to_accept)
-        ]
-        filtered_predictions.append(prediction)
-    return predictions
 
 
 def filter_out_unwanted_classes_from_sv_detections(
@@ -322,17 +338,20 @@ def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str
 
 
 def scale_sv_detections(
-    detections: sv.Detections, scale: float, keypoints_key: str = KEYPOINTS_XY_KEY
+    detections: sv.Detections,
+    scale: float,
+    keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
     if len(detections_copy) == 0:
         return detections_copy
     detections_copy.xyxy = (detections_copy.xyxy * scale).round()
     if keypoints_key in detections_copy.data:
-        detections_copy[keypoints_key] = (
-            detections_copy[keypoints_key] * scale
-        ).round()
-    if detections_copy.mask:
+        for i in range(len(detections_copy[keypoints_key])):
+            detections_copy[keypoints_key][i] = (
+                detections_copy[keypoints_key][i].astype(np.float32) * scale
+            ).round()
+    if detections_copy.mask is not None:
         scaled_masks = []
         original_mask_size_wh = (
             detections_copy.mask.shape[2],
@@ -345,7 +364,7 @@ def scale_sv_detections(
             polygons = sv.mask_to_polygons(mask=detection_mask)
             polygon_masks = []
             for polygon in polygons:
-                scaled_polygon = polygon * scale
+                scaled_polygon = (polygon * scale).round().astype(np.int32)
                 polygon_masks.append(
                     sv.polygon_to_mask(
                         polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
@@ -354,19 +373,19 @@ def scale_sv_detections(
             scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
             scaled_masks.append(scaled_detection_mask)
         detections_copy.mask = np.array(scaled_masks)
-    if PARENT_DIMENSIONS_KEY in detections_copy:
+    if PARENT_DIMENSIONS_KEY in detections_copy.data:
         detections_copy[PARENT_DIMENSIONS_KEY] = (
             detections_copy[PARENT_DIMENSIONS_KEY] * scale
         ).round()
-    if PARENT_COORDINATES_KEY in detections_copy:
+    if PARENT_COORDINATES_KEY in detections_copy.data:
         detections_copy[PARENT_DIMENSIONS_KEY] = (
             detections_copy[PARENT_DIMENSIONS_KEY] * scale
         ).round()
-    if ROOT_PARENT_DIMENSIONS_KEY in detections_copy:
+    if ROOT_PARENT_DIMENSIONS_KEY in detections_copy.data:
         detections_copy[PARENT_DIMENSIONS_KEY] = (
             detections_copy[PARENT_DIMENSIONS_KEY] * scale
         ).round()
-    if ROOT_PARENT_COORDINATES_KEY in detections_copy:
+    if ROOT_PARENT_COORDINATES_KEY in detections_copy.data:
         detections_copy[PARENT_DIMENSIONS_KEY] = (
             detections_copy[PARENT_DIMENSIONS_KEY] * scale
         ).round()

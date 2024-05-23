@@ -460,6 +460,7 @@ def register_datapoint(
     if is_prediction_registration_forbidden(prediction=prediction):
         return "Successfully registered image"
     encoded_prediction, prediction_format = encode_prediction(prediction=prediction)
+    print(encoded_prediction)
     _ = annotate_image_at_roboflow(
         api_key=api_key,
         dataset_id=target_project,

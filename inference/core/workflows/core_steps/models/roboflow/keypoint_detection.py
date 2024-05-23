@@ -294,7 +294,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         detections = convert_to_sv_detections(predictions)
         for prediction, image_detections in zip(predictions, detections):
             add_keypoints_to_detections(
-                predictions=prediction,
+                prediction=prediction["predictions"],
                 detections=image_detections,
             )
         detections = attach_prediction_type_info_to_sv_detections(

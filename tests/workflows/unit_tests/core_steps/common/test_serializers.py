@@ -1,7 +1,9 @@
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 
 
 def test_serialise_sv_detections() -> None:
@@ -58,10 +60,12 @@ def test_serialise_sv_detections() -> None:
                 ],
                 dtype="object",
             ),
-            "parent_dimensions": np.array([
-                [192, 168],
-                [192, 168],
-            ])
+            "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
         },
     )
 
@@ -164,5 +168,5 @@ def test_serialise_sv_detections() -> None:
                     },
                 ],
             },
-        ]
+        ],
     }

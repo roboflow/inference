@@ -9,11 +9,11 @@ from inference.core.workflows.constants import (
     CONFIDENCE_KEY,
     DETECTION_ID_KEY,
     HEIGHT_KEY,
-    KEYPOINTS_CLASS_ID_KEY,
-    KEYPOINTS_CLASS_NAME_KEY,
-    KEYPOINTS_CONFIDENCE_KEY,
-    KEYPOINTS_KEY,
-    KEYPOINTS_XY_KEY,
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     POLYGON_KEY,
@@ -57,23 +57,23 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
         if (
-            KEYPOINTS_CLASS_ID_KEY in data
-            and KEYPOINTS_CLASS_NAME_KEY in data
-            and KEYPOINTS_CONFIDENCE_KEY in data
-            and KEYPOINTS_XY_KEY in data
+            KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS in data
+            and KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in data
         ):
-            kp_class_id = data[KEYPOINTS_CLASS_ID_KEY]
-            kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY]
-            kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY]
-            kp_xy = data[KEYPOINTS_XY_KEY]
-            detection_dict[KEYPOINTS_KEY] = []
+            kp_class_id = data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS]
+            kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
+            kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
+            kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+            detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
             for (
                 keypoint_class_id,
                 keypoint_class_name,
                 keypoint_confidence,
                 (x, y),
             ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
-                detection_dict[KEYPOINTS_KEY].append(
+                detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
                     {
                         "class_id": int(keypoint_class_id),
                         "class": str(keypoint_class_name),
