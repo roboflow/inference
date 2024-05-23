@@ -50,6 +50,7 @@ nav:
           - DocTR (OCR): foundation/doctr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
       - Run a Model:
