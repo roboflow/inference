@@ -54,7 +54,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov10"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10s"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10n"): YOLOv10ObjectDetection,
-    ("object-detection", "yolov10s"): YOLOv10ObjectDetection,
+    ("object-detection", "yolov10b"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10m"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10l"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10x"): YOLOv10ObjectDetection,

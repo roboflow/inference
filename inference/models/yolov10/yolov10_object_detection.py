@@ -10,7 +10,7 @@ from inference.core.models.object_detection_base import (
 class YOLOv10ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
 
-    This class is responsible for performing object detection using the YOLOv8 model
+    This class is responsible for performing object detection using the YOLOv10 model
     with ONNX runtime.
 
     Attributes:
