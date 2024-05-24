@@ -12,9 +12,9 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_list_of_detections,
-    attach_prediction_type_info_to_sv_detections,
-    convert_to_sv_detections,
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
 from inference.core.workflows.entities.base import (
@@ -209,12 +209,12 @@ class YoloWorldModelBlock(WorkflowBlock):
         images: List[WorkflowImageData],
         predictions: List[dict],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        predictions = convert_to_sv_detections(predictions)
-        predictions = attach_prediction_type_info_to_sv_detections(
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="object-detection",
         )
-        predictions = attach_parents_coordinates_to_list_of_detections(
+        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
             predictions=predictions,
         )

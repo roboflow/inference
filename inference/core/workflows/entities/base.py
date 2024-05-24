@@ -1,5 +1,5 @@
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
 
@@ -205,7 +205,7 @@ class OriginCoordinatesSystem:
 @dataclass(frozen=True)
 class ParentImageMetadata:
     parent_id: str
-    origin_coordinates: OriginCoordinatesSystem
+    origin_coordinates: Optional[OriginCoordinatesSystem] = None
 
 
 class WorkflowImageData:
@@ -232,10 +232,33 @@ class WorkflowImageData:
 
     @property
     def parent_metadata(self) -> ParentImageMetadata:
+        if self._parent_metadata.origin_coordinates is None:
+            numpy_image = self.numpy_image
+            origin_coordinates = OriginCoordinatesSystem(
+                left_top_y=0,
+                left_top_x=0,
+                origin_width=numpy_image.shape[1],
+                origin_height=numpy_image.shape[0],
+            )
+            self._parent_metadata = replace(
+                self._parent_metadata, origin_coordinates=origin_coordinates
+            )
         return self._parent_metadata
 
     @property
     def workflow_root_ancestor_metadata(self) -> ParentImageMetadata:
+        if self._workflow_root_ancestor_metadata.origin_coordinates is None:
+            numpy_image = self.numpy_image
+            origin_coordinates = OriginCoordinatesSystem(
+                left_top_y=0,
+                left_top_x=0,
+                origin_width=numpy_image.shape[1],
+                origin_height=numpy_image.shape[0],
+            )
+            self._workflow_root_ancestor_metadata = replace(
+                self._workflow_root_ancestor_metadata,
+                origin_coordinates=origin_coordinates,
+            )
         return self._workflow_root_ancestor_metadata
 
     @property

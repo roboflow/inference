@@ -72,15 +72,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_batch_of_images_which_i
             runtime_parameters={
                 "param": [
                     WorkflowImageData(
-                        parent_metadata=ParentImageMetadata(
-                            parent_id="some",
-                            origin_coordinates=OriginCoordinatesSystem(
-                                left_top_x=0,
-                                left_top_y=0,
-                                origin_height=100,
-                                origin_width=100,
-                            ),
-                        ),
+                        parent_metadata=ParentImageMetadata(parent_id="some"),
                         numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                     )
                 ]
@@ -100,15 +92,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         runtime_parameters={
             "param": [
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(
-                        parent_id="some",
-                        origin_coordinates=OriginCoordinatesSystem(
-                            left_top_x=0,
-                            left_top_y=0,
-                            origin_height=100,
-                            origin_width=100,
-                        ),
-                    ),
+                    parent_metadata=ParentImageMetadata(parent_id="some"),
                     numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                 )
             ],
@@ -130,15 +114,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         runtime_parameters={
             "param": [
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(
-                        parent_id="some",
-                        origin_coordinates=OriginCoordinatesSystem(
-                            left_top_x=0,
-                            left_top_y=0,
-                            origin_height=100,
-                            origin_width=100,
-                        ),
-                    ),
+                    parent_metadata=ParentImageMetadata(parent_id="some"),
                     numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                 )
             ],

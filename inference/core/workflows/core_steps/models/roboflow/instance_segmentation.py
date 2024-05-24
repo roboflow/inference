@@ -15,9 +15,9 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_list_of_detections,
-    attach_prediction_type_info_to_sv_detections,
-    convert_to_sv_detections,
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections,
 )
 from inference.core.workflows.entities.base import (
@@ -304,8 +304,8 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, sv.Detections]]:
-        predictions = convert_to_sv_detections(predictions)
-        predictions = attach_prediction_type_info_to_sv_detections(
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="instance-segmentation",
         )
@@ -313,7 +313,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
             predictions=predictions,
             classes_to_accept=class_filter,
         )
-        predictions = attach_parents_coordinates_to_list_of_detections(
+        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
             predictions=predictions,
         )

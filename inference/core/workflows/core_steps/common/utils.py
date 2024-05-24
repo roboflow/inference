@@ -72,7 +72,7 @@ def attach_prediction_type_info(
     return predictions
 
 
-def attach_prediction_type_info_to_sv_detections(
+def attach_prediction_type_info_to_sv_detections_batch(
     predictions: List[sv.Detections],
     prediction_type: str,
     key: str = PREDICTION_TYPE_KEY,
@@ -82,7 +82,7 @@ def attach_prediction_type_info_to_sv_detections(
     return predictions
 
 
-def convert_to_sv_detections(
+def convert_inference_detections_batch_to_sv_detections(
     predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
     predictions_key: str = "predictions",
 ) -> List[sv.Detections]:
@@ -99,15 +99,20 @@ def convert_to_sv_detections(
     return batch_of_detections
 
 
-def add_keypoints_to_detections(
-    prediction: List[dict],
+def add_inference_keypoints_to_sv_detections(
+    inference_prediction: List[dict],
     detections: sv.Detections,
 ) -> sv.Detections:
+    if len(inference_prediction) != len(detections):
+        raise ValueError(
+            f"Detected missmatch in number of detections in sv.Detections instance ({len(detections)}) "
+            f"and `inference` predictions ({len(inference_prediction)}) while attempting to add keypoints metadata."
+        )
     keypoints_class_names = []
     keypoints_class_ids = []
     keypoints_confidences = []
     keypoints_xy = []
-    for inference_detection in prediction:
+    for inference_detection in inference_prediction:
         keypoints = inference_detection.get(KEYPOINTS_KEY_IN_INFERENCE_RESPONSE, [])
         keypoints_class_names.append(
             np.array(
@@ -143,28 +148,14 @@ def add_keypoints_to_detections(
     return detections
 
 
-def attach_parent_info(
-    images: List[Dict[str, Any]],
-    predictions: List[Dict[str, Union[sv.Detections, Any]]],
-    nested_key: Optional[str] = "predictions",
-) -> List[Dict[str, Union[sv.Detections, Any]]]:
-    for image, prediction in zip(images, predictions):
-        prediction[PARENT_ID_KEY] = image[PARENT_ID_KEY]
-        if nested_key is None:
-            continue
-        detections = prediction[nested_key]
-        detections[PARENT_ID_KEY] = [image[PARENT_ID_KEY]] * len(detections)
-    return predictions
-
-
-def attach_parents_coordinates_to_list_of_detections(
+def attach_parents_coordinates_to_batch_of_sv_detections(
     predictions: List[sv.Detections],
     images: List[WorkflowImageData],
 ) -> List[sv.Detections]:
     result = []
     for prediction, image in zip(predictions, images):
         result.append(
-            attach_parents_coordinates_to_detections(
+            attach_parents_coordinates_to_sv_detections(
                 detections=prediction,
                 image=image,
             )
@@ -172,7 +163,7 @@ def attach_parents_coordinates_to_list_of_detections(
     return result
 
 
-def attach_parents_coordinates_to_detections(
+def attach_parents_coordinates_to_sv_detections(
     detections: sv.Detections,
     image: WorkflowImageData,
 ) -> sv.Detections:
@@ -226,7 +217,7 @@ KEYS_REQUIRED_TO_EMBED_IN_ROOT_COORDINATES = {
 }
 
 
-def detections_to_root_coordinates(
+def sv_detections_to_root_coordinates(
     detections: sv.Detections, keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 ) -> sv.Detections:
     detections_copy = deepcopy(detections)
@@ -268,7 +259,7 @@ def detections_to_root_coordinates(
         origin_coordinates=OriginCoordinatesSystem(
             left_top_y=0,
             left_top_x=0,
-            origin_width=origin_height,
+            origin_width=origin_width,
             origin_height=origin_height,
         ),
     )
@@ -301,21 +292,6 @@ def filter_out_unwanted_classes_from_sv_detections(
         ]
         filtered_predictions.append(filtered_prediction)
     return filtered_predictions
-
-
-def extract_origin_size_from_images_batch(
-    input_images: List[Union[dict, np.ndarray]],
-    decoded_images: List[np.ndarray],
-) -> List[Dict[str, int]]:
-    result = []
-    for input_image, decoded_image in zip(input_images, decoded_images):
-        if isinstance(input_image, dict) and ORIGIN_COORDINATES_KEY in input_image:
-            result.append(input_image[ORIGIN_COORDINATES_KEY][ORIGIN_SIZE_KEY])
-        else:
-            result.append(
-                {HEIGHT_KEY: decoded_image.shape[0], WIDTH_KEY: decoded_image.shape[1]}
-            )
-    return result
 
 
 def grab_batch_parameters(

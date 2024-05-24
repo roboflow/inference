@@ -10,7 +10,6 @@ from inference.core.utils.image_utils import (
 )
 from inference.core.workflows.entities.base import (
     InputType,
-    OriginCoordinatesSystem,
     ParentImageMetadata,
     WorkflowImage,
     WorkflowImageData,
@@ -61,15 +60,7 @@ def _assembly_input_image(
     if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
-        parent_metadata = ParentImageMetadata(
-            parent_id=parent_id,
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=0,
-                left_top_y=0,
-                origin_width=image.shape[1],
-                origin_height=image.shape[0],
-            ),
-        )
+        parent_metadata = ParentImageMetadata(parent_id=parent_id)
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             numpy_image=image,
@@ -89,15 +80,7 @@ def _assembly_input_image(
             else:
                 base64_image = image
                 image = attempt_loading_image_from_string(image)[0]
-            parent_metadata = ParentImageMetadata(
-                parent_id=parent_id,
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_x=0,
-                    left_top_y=0,
-                    origin_width=image.shape[1],
-                    origin_height=image.shape[0],
-                ),
-            )
+            parent_metadata = ParentImageMetadata(parent_id=parent_id)
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
                 numpy_image=image,

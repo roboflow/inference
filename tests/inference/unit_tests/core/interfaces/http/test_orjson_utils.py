@@ -9,7 +9,6 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_workflow_result,
 )
 from inference.core.workflows.entities.base import (
-    OriginCoordinatesSystem,
     ParentImageMetadata,
     WorkflowImageData,
 )
@@ -19,15 +18,7 @@ def test_serialise_image() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(
-            parent_id="some",
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=0,
-                left_top_y=0,
-                origin_width=192,
-                origin_height=168,
-            ),
-        ),
+        parent_metadata=ParentImageMetadata(parent_id="some"),
         numpy_image=np_image,
     )
 
@@ -53,15 +44,7 @@ def test_serialise_list() -> None:
         3,
         "some",
         WorkflowImageData(
-            parent_metadata=ParentImageMetadata(
-                parent_id="some",
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_x=0,
-                    left_top_y=0,
-                    origin_width=192,
-                    origin_height=168,
-                ),
-            ),
+            parent_metadata=ParentImageMetadata(parent_id="some"),
             numpy_image=np_image,
         ),
     ]
@@ -92,29 +75,13 @@ def test_serialise_workflow_result() -> None:
     workflow_result = {
         "some": [{"detection": 1}],
         "other": WorkflowImageData(
-            parent_metadata=ParentImageMetadata(
-                parent_id="some",
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_x=0,
-                    left_top_y=0,
-                    origin_width=192,
-                    origin_height=168,
-                ),
-            ),
+            parent_metadata=ParentImageMetadata(parent_id="some"),
             numpy_image=np_image,
         ),
         "third": [
             "some",
             WorkflowImageData(
-                parent_metadata=ParentImageMetadata(
-                    parent_id="some",
-                    origin_coordinates=OriginCoordinatesSystem(
-                        left_top_x=0,
-                        left_top_y=0,
-                        origin_width=192,
-                        origin_height=168,
-                    ),
-                ),
+                parent_metadata=ParentImageMetadata(parent_id="some"),
                 numpy_image=np_image,
             ),
         ],
@@ -122,15 +89,7 @@ def test_serialise_workflow_result() -> None:
         "fifth": {
             "some": "value",
             "my_image": WorkflowImageData(
-                parent_metadata=ParentImageMetadata(
-                    parent_id="some",
-                    origin_coordinates=OriginCoordinatesSystem(
-                        left_top_x=0,
-                        left_top_y=0,
-                        origin_width=192,
-                        origin_height=168,
-                    ),
-                ),
+                parent_metadata=ParentImageMetadata(parent_id="some"),
                 numpy_image=np_image,
             ),
         },
@@ -140,15 +99,7 @@ def test_serialise_workflow_result() -> None:
             [
                 2,
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(
-                        parent_id="some",
-                        origin_coordinates=OriginCoordinatesSystem(
-                            left_top_x=0,
-                            left_top_y=0,
-                            origin_width=192,
-                            origin_height=168,
-                        ),
-                    ),
+                    parent_metadata=ParentImageMetadata(parent_id="some"),
                     numpy_image=np_image,
                 ),
             ],

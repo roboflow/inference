@@ -16,10 +16,7 @@ from inference.core.workflows.constants import (
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_ID_KEY,
 )
-from inference.core.workflows.core_steps.common.utils import (
-    attach_prediction_type_info,
-    load_core_model,
-)
+from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,

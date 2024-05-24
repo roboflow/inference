@@ -15,10 +15,10 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
-    add_keypoints_to_detections,
-    attach_parents_coordinates_to_list_of_detections,
-    attach_prediction_type_info_to_sv_detections,
-    convert_to_sv_detections,
+    add_inference_keypoints_to_sv_detections,
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections,
 )
 from inference.core.workflows.entities.base import (
@@ -291,13 +291,13 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        detections = convert_to_sv_detections(predictions)
+        detections = convert_inference_detections_batch_to_sv_detections(predictions)
         for prediction, image_detections in zip(predictions, detections):
-            add_keypoints_to_detections(
-                prediction=prediction["predictions"],
+            add_inference_keypoints_to_sv_detections(
+                inference_prediction=prediction["predictions"],
                 detections=image_detections,
             )
-        detections = attach_prediction_type_info_to_sv_detections(
+        detections = attach_prediction_type_info_to_sv_detections_batch(
             predictions=detections,
             prediction_type="keypoint-detection",
         )
@@ -305,7 +305,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             predictions=detections,
             classes_to_accept=class_filter,
         )
-        detections = attach_parents_coordinates_to_list_of_detections(
+        detections = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
             predictions=detections,
         )

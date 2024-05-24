@@ -15,15 +15,7 @@ def test_take_absolute_static_crop() -> None:
     np_image = np.zeros((100, 100, 3), dtype=np.uint8)
     np_image[50:70, 45:55] = 30  # painted the crop into (30, 30, 30)
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(
-            parent_id="origin_image",
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=0,
-                left_top_y=0,
-                origin_width=100,
-                origin_height=100,
-            ),
-        ),
+        parent_metadata=ParentImageMetadata(parent_id="origin_image"),
         numpy_image=np_image,
     )
 

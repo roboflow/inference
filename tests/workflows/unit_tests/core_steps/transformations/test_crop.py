@@ -57,15 +57,7 @@ def test_crop_image() -> None:
     np_image[80:120, 80:120] = 49
     np_image[450:550, 450:550] = 59
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(
-            parent_id="origin_image",
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=0,
-                left_top_y=0,
-                origin_width=1000,
-                origin_height=1000,
-            ),
-        ),
+        parent_metadata=ParentImageMetadata(parent_id="origin_image"),
         numpy_image=np_image,
     )
     detections = sv.Detections(

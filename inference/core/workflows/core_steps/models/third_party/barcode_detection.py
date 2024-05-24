@@ -13,7 +13,7 @@ from inference.core.workflows.constants import (
     PREDICTION_TYPE_KEY,
 )
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_detections,
+    attach_parents_coordinates_to_sv_detections,
 )
 from inference.core.workflows.entities.base import (
     Batch,
@@ -117,7 +117,7 @@ def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
     detections["data"] = (
         np.array(extracted_data) if len(extracted_data) > 0 else np.empty(0)
     )
-    return attach_parents_coordinates_to_detections(
+    return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,
     )

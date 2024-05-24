@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.utils import (
-    detections_to_root_coordinates,
+    sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.execution_engine.compiler.utils import (
@@ -59,7 +59,9 @@ def construct_wildcard_output(
         element_result = {}
         for key, value in element.items():
             if isinstance(value, sv.Detections) and use_parents_coordinates:
-                element_result[key] = detections_to_root_coordinates(detections=value)
+                element_result[key] = sv_detections_to_root_coordinates(
+                    detections=value
+                )
             else:
                 element_result[key] = value
         result.append(element_result)
@@ -81,7 +83,7 @@ def construct_specific_property_output(
     ):
         return value
     return [
-        detections_to_root_coordinates(detections=v) if v is not None else None
+        sv_detections_to_root_coordinates(detections=v) if v is not None else None
         for v in value
     ]
 
