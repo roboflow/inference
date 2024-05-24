@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
-    sv_detections_to_root_coordinates,
+    sv_detections_to_root_coordinates, filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from inference.core.workflows.entities.base import (
     OriginCoordinatesSystem,
@@ -517,3 +517,97 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
     assert (
         result["root_parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
     ).all(), "Expected root size to be denoted"
+
+
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_no_classes_defined() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=None,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+        },
+    )
+    expected_result = deepcopy(detections)
+
+    # when
+    result = filter_out_unwanted_classes_from_sv_detections_batch(
+        predictions=[detections],
+        classes_to_accept=None,
+    )
+
+    # then
+    assert len(result) == 1, "Expected batch dimension not to change"
+    assert result[0] == expected_result, "We expect nothing to be filtered out"
+    assert result[0] is detections, "We expect operation to be in-place"
+
+
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_empty_class_list_defined() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=None,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+        },
+    )
+    expected_result = deepcopy(detections)
+
+    # when
+    result = filter_out_unwanted_classes_from_sv_detections_batch(
+        predictions=[detections],
+        classes_to_accept=[],
+    )
+
+    # then
+    assert len(result) == 1, "Expected batch dimension not to change"
+    assert result[0] == expected_result, "We expect nothing to be filtered out"
+    assert result[0] is detections, "We expect operation to be in-place"
+
+
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_filtering_should_be_applied() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=None,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+        },
+    )
+    expected_result = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150]]),
+        mask=None,
+        confidence=np.array([0.1]),
+        class_id=np.array([1]),
+        tracker_id=np.array([1]),
+        data={
+            "class_name": np.array(["dog"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["image"]),
+        },
+    )
+
+    # when
+    result = filter_out_unwanted_classes_from_sv_detections_batch(
+        predictions=[detections],
+        classes_to_accept=["dog"],
+    )
+
+    # then
+    assert len(result) == 1, "Expected batch dimension not to change"
+    assert result[0] == expected_result, "We expect result to be filtered"

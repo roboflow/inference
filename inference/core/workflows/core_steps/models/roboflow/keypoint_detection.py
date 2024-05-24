@@ -19,7 +19,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
-    filter_out_unwanted_classes_from_sv_detections,
+    filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from inference.core.workflows.entities.base import (
     Batch,
@@ -301,7 +301,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             predictions=detections,
             prediction_type="keypoint-detection",
         )
-        detections = filter_out_unwanted_classes_from_sv_detections(
+        detections = filter_out_unwanted_classes_from_sv_detections_batch(
             predictions=detections,
             classes_to_accept=class_filter,
         )

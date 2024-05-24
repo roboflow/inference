@@ -14,7 +14,6 @@ from inference.core.entities.requests.yolo_world import YOLOWorldInferenceReques
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
-    HEIGHT_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE,
@@ -23,8 +22,6 @@ from inference.core.workflows.constants import (
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
-    ORIGIN_COORDINATES_KEY,
-    ORIGIN_SIZE_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -32,7 +29,6 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
-    WIDTH_KEY,
     X_KEY,
     Y_KEY,
 )
@@ -279,7 +275,7 @@ def sv_detections_to_root_coordinates(
     )
 
 
-def filter_out_unwanted_classes_from_sv_detections(
+def filter_out_unwanted_classes_from_sv_detections_batch(
     predictions: List[sv.Detections],
     classes_to_accept: Optional[List[str]],
 ) -> List[sv.Detections]:
