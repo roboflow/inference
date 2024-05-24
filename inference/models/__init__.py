@@ -50,3 +50,4 @@ from inference.models.yolov8 import (
     YOLOv8ObjectDetection,
 )
 from inference.models.yolov9 import YOLOv9ObjectDetection
+from inference.models.yolov10 import YOLOv10ObjectDetection
