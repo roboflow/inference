@@ -112,7 +112,7 @@ def render_boxes(
         sequential_input_provided = True
     video_frame = wrap_in_list(element=video_frame)
     predictions = wrap_in_list(element=predictions)
-    if not isinstance(annotator, list) and not isinstance(annotator, BaseAnnotator):
+    if annotator is None:
         annotator = [
             DEFAULT_BBOX_ANNOTATOR,
             DEFAULT_LABEL_ANNOTATOR,
