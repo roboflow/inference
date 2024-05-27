@@ -16,7 +16,8 @@ from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
-DEFAULT_ANNOTATOR = sv.BoxAnnotator()
+DEFAULT_BBOX_ANNOTATOR = sv.BoundingBoxAnnotator()
+DEFAULT_LABEL_ANNOTATOR = sv.LabelAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
 ImageWithSourceID = Tuple[Optional[int], np.ndarray]
@@ -37,7 +38,8 @@ def display_image(image: Union[ImageWithSourceID, List[ImageWithSourceID]]) -> N
 def render_boxes(
     predictions: Union[dict, List[Optional[dict]]],
     video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
-    annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
+    bbox_annotator: sv.BoundingBoxAnnotator = DEFAULT_BBOX_ANNOTATOR,
+    label_annotator: sv.LabelAnnotator = DEFAULT_LABEL_ANNOTATOR,
     display_size: Optional[Tuple[int, int]] = (1280, 720),
     fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
     display_statistics: bool = False,
@@ -47,7 +49,7 @@ def render_boxes(
 ) -> None:
     """
     Helper tool to render object detection predictions on top of video frame. It is designed
-    to be used with `InferencePipeline`, as sink for predictions. By default, it uses standard `sv.BoxAnnotator()`
+    to be used with `InferencePipeline`, as sink for predictions. By default, it uses standard `sv.BoundingBoxAnnotator()`
     to draw bounding boxes and resizes prediction to 1280x720 (keeping aspect ratio and adding black padding).
     One may configure default behaviour, for instance to display latency and throughput statistics.
     In batch mode it will display tiles of frames and overlay predictions.
@@ -65,8 +67,10 @@ def render_boxes(
         video_frame (Union[VideoFrame, List[Optional[VideoFrame]]]): frame of video with its basic metadata emitted
             by `VideoSource` or list of frames from (it is possible for empty batch frames at corresponding positions
             to `predictions` list). Order is expected to match with `predictions`
-        annotator (sv.BoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
+        bbox_annotator (sv.BoundingBoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
             default is used.
+        label_annotator (sv.LabelAnnotator): Annotator used to display labels above bounding boxes,
+            default is used if custom object is not passed
         display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output
         fps_monitor (Optional[sv.FPSMonitor]): FPS monitor used to monitor throughput
         display_statistics (bool): Flag to decide if throughput and latency can be displayed in the result image,
@@ -122,7 +126,8 @@ def render_boxes(
         image = _handle_frame_rendering(
             frame=single_frame,
             prediction=frame_prediction,
-            annotator=annotator,
+            bbox_annotator=bbox_annotator,
+            label_annotator=label_annotator,
             display_size=display_size,
             display_statistics=display_statistics,
             fps_value=fps_value,
@@ -137,7 +142,8 @@ def render_boxes(
 def _handle_frame_rendering(
     frame: Optional[VideoFrame],
     prediction: dict,
-    annotator: sv.BoxAnnotator,
+    bbox_annotator: sv.BoundingBoxAnnotator,
+    label_annotator: sv.LabelAnnotator,
     display_size: Optional[Tuple[int, int]],
     display_statistics: bool,
     fps_value: Optional[float],
@@ -148,8 +154,12 @@ def _handle_frame_rendering(
         try:
             labels = [p["class"] for p in prediction["predictions"]]
             detections = sv.Detections.from_roboflow(prediction)
-            image = annotator.annotate(
+            image = bbox_annotator.annotate(
                 scene=frame.image.copy(),
+                detections=detections,
+            )
+            image = label_annotator.annotate(
+                scene=frame.image,
                 detections=detections,
                 labels=labels,
             )
@@ -384,7 +394,8 @@ class VideoFileSink:
     def init(
         cls,
         video_file_name: str,
-        annotator: sv.BoxAnnotator = DEFAULT_ANNOTATOR,
+        bbox_annotator: sv.BoundingBoxAnnotator = DEFAULT_BBOX_ANNOTATOR,
+        label_annotator: sv.LabelAnnotator = DEFAULT_LABEL_ANNOTATOR,
         display_size: Optional[Tuple[int, int]] = (1280, 720),
         fps_monitor: Optional[sv.FPSMonitor] = DEFAULT_FPS_MONITOR,
         display_statistics: bool = False,
@@ -399,7 +410,7 @@ class VideoFileSink:
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
         Args:
             video_file_name (str): name of the video file to save predictions
-            annotator (sv.BoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
+            annotator (sv.BoundingBoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
                 default is used.
             display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output. Should
                 be set to the same value as `display_size` for InferencePipeline with single video source, otherwise
@@ -439,7 +450,8 @@ class VideoFileSink:
         """
         return cls(
             video_file_name=video_file_name,
-            annotator=annotator,
+            bbox_annotator=bbox_annotator,
+            label_annotator=label_annotator,
             display_size=display_size,
             fps_monitor=fps_monitor,
             display_statistics=display_statistics,
@@ -451,7 +463,8 @@ class VideoFileSink:
     def __init__(
         self,
         video_file_name: str,
-        annotator: sv.BoxAnnotator,
+        bbox_annotator: sv.BoundingBoxAnnotator,
+        label_annotator: sv.LabelAnnotator,
         display_size: Optional[Tuple[int, int]],
         fps_monitor: Optional[sv.FPSMonitor],
         display_statistics: bool,
@@ -460,7 +473,8 @@ class VideoFileSink:
         video_frame_size: Tuple[int, int],
     ):
         self._video_file_name = video_file_name
-        self._annotator = annotator
+        self._bbox_annotator = bbox_annotator
+        self._label_annotator = label_annotator
         self._display_size = display_size
         self._fps_monitor = fps_monitor
         self._display_statistics = display_statistics
@@ -471,7 +485,8 @@ class VideoFileSink:
         self._video_writer: Optional[cv2.VideoWriter] = None
         self.on_prediction = partial(
             render_boxes,
-            annotator=self._annotator,
+            bbox_annotator=self._bbox_annotator,
+            label_annotator=self._label_annotator,
             display_size=self._display_size,
             fps_monitor=self._fps_monitor,
             display_statistics=self._display_statistics,
