@@ -135,6 +135,10 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
+from inference.core.workflows.core_steps.common.query_language.errors import (
+    InvalidInputTypeError,
+    OperationTypeNotRecognisedError,
+)
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
@@ -236,6 +240,8 @@ def with_route_exceptions(route):
             ReferenceTypeError,
             InvalidReferenceTargetError,
             RuntimeInputError,
+            InvalidInputTypeError,
+            OperationTypeNotRecognisedError,
         ) as error:
             resp = JSONResponse(
                 status_code=400,
