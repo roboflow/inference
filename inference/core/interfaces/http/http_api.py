@@ -949,7 +949,6 @@ class HttpInterface(BaseInterface):
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
                     "workflows_core.api_key": None,
-                    "workflows_core.active_learning_middleware": self.workflows_active_learning_middleware,
                     "workflows_core.background_tasks": None,
                 }
                 _ = ExecutionEngine.init(

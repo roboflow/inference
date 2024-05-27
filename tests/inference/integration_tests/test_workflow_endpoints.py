@@ -160,7 +160,7 @@ def test_workflow_run(
             }
         ],
         "outputs": [
-            {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
+            {"type": "JsonField", "name": "result", "selector": "$steps.detection.predictions"}
         ],
     }
 
