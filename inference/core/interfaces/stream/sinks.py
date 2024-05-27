@@ -49,7 +49,8 @@ def render_boxes(
 ) -> None:
     """
     Helper tool to render object detection predictions on top of video frame. It is designed
-    to be used with `InferencePipeline`, as sink for predictions. By default, it uses standard `sv.BoundingBoxAnnotator()`
+    to be used with `InferencePipeline`, as sink for predictions. By default it uses
+    standard `sv.BoundingBoxAnnotator()` chained with `sv.LabelAnnotator()`
     to draw bounding boxes and resizes prediction to 1280x720 (keeping aspect ratio and adding black padding).
     One may configure default behaviour, for instance to display latency and throughput statistics.
     In batch mode it will display tiles of frames and overlay predictions.
