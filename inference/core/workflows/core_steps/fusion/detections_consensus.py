@@ -271,7 +271,6 @@ def filter_predictions(
 ) -> List[sv.Detections]:
     if not classes_to_consider:
         return predictions
-    print(predictions[0][np.isin(predictions[0]["class_name"], classes_to_consider)])
     return [
         detections[np.isin(detections["class_name"], classes_to_consider)]
         for detections in predictions

@@ -73,7 +73,7 @@ class Batch(Generic[B]):
     def zip_nonempty(cls, batches: List["Batch"]) -> Iterator[tuple]:
         mask = cls.mask_common_empty_elements(batches=batches)
         for zipped in zip(
-            *(batch.iter_nonempty(mask=mask, return_index=False) for batch in batches)
+            *(batch.iter_selected(mask=mask, return_index=False) for batch in batches)
         ):
             yield zipped
 
@@ -100,6 +100,8 @@ class Batch(Generic[B]):
 
     @classmethod
     def mask_common_empty_elements(cls, batches: List["Batch"]) -> List[bool]:
+        if not batches:
+            return []
         try:
             all_masks = np.array([batch.mask_empty_elements() for batch in batches])
             return np.logical_and.reduce(all_masks).tolist()
@@ -121,7 +123,7 @@ class Batch(Generic[B]):
                 f"Mask provided to select batch element has length {len(index)} which does "
                 f"not match batch length: {len(self._content)}"
             )
-        return list(self.iter_nonempty(mask=index, return_index=False))
+        return list(self.iter_selected(mask=index, return_index=False))
 
     def __len__(self):
         return len(self._content)
@@ -131,11 +133,16 @@ class Batch(Generic[B]):
 
     def iter_nonempty(
         self,
+        return_index: bool = False,
+    ) -> Iterator[B]:
+        mask = self.mask_empty_elements()
+        yield from self.iter_selected(mask=mask, return_index=return_index)
+
+    def iter_selected(
+        self,
         mask: Optional[List[bool]] = None,
         return_index: bool = False,
     ) -> Iterator[B]:
-        if mask is None:
-            mask = self.mask_empty_elements()
         yield from (
             batch_element if not return_index else (idx, batch_element)
             for idx, (batch_element, mask_element) in enumerate(
