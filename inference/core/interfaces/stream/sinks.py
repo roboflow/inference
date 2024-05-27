@@ -411,7 +411,9 @@ class VideoFileSink:
         As an `inference` user, please use .init() method instead of constructor to instantiate objects.
         Args:
             video_file_name (str): name of the video file to save predictions
-            annotator (sv.BoundingBoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
+            bbox_annotator (sv.BoundingBoxAnnotator): Annotator used to draw Bounding Boxes - if custom object is not passed,
+                default is used.
+            label_annotator (sv.LabelAnnotator): Annotator used to add labels - if custom object is not passed,
                 default is used.
             display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output. Should
                 be set to the same value as `display_size` for InferencePipeline with single video source, otherwise
