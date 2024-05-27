@@ -88,7 +88,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         "height": None,
     }  # TODO: this breaks the contract of
     # standard inference, but to fix that problem, we would need sv.Detections to provide
-    # detection-level metadata!
+    # detection-level metadata.
     if image_dimensions is not None:
         image_metadata = {
             "width": image_dimensions[1].item(),

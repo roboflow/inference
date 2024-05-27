@@ -9,9 +9,9 @@ from inference.core.workflows.core_steps.fusion.detections_consensus import (
 )
 from inference.core.workflows.entities.base import (
     Batch,
+    ImageParentMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
-    ParentImageMetadata,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
@@ -72,7 +72,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_batch_of_images_which_i
             runtime_parameters={
                 "param": [
                     WorkflowImageData(
-                        parent_metadata=ParentImageMetadata(parent_id="some"),
+                        parent_metadata=ImageParentMetadata(parent_id="some"),
                         numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                     )
                 ]
@@ -92,7 +92,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         runtime_parameters={
             "param": [
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(parent_id="some"),
+                    parent_metadata=ImageParentMetadata(parent_id="some"),
                     numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                 )
             ],
@@ -114,7 +114,7 @@ def test_retrieve_value_from_runtime_input_when_value_is_image_and_batch_input_i
         runtime_parameters={
             "param": [
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(parent_id="some"),
+                    parent_metadata=ImageParentMetadata(parent_id="some"),
                     numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
                 )
             ],

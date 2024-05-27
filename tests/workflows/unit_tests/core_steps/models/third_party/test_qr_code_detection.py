@@ -8,7 +8,7 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 )
 from inference.core.workflows.entities.base import (
     Batch,
-    ParentImageMetadata,
+    ImageParentMetadata,
     WorkflowImageData,
 )
 
@@ -56,7 +56,7 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     images = Batch(
         [
             WorkflowImageData(
-                parent_metadata=ParentImageMetadata(parent_id="$inputs.image"),
+                parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=qr_codes_image,
             )
         ]

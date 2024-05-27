@@ -8,7 +8,7 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 )
 from inference.core.workflows.entities.base import (
     Batch,
-    ParentImageMetadata,
+    ImageParentMetadata,
     WorkflowImageData,
 )
 
@@ -56,7 +56,7 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     images = Batch(
         [
             WorkflowImageData(
-                parent_metadata=ParentImageMetadata(parent_id="$inputs.image"),
+                parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=barcode_image,
             )
         ]

@@ -4,8 +4,8 @@ from inference.core.workflows.core_steps.transformations.absolute_static_crop im
     take_static_crop,
 )
 from inference.core.workflows.entities.base import (
+    ImageParentMetadata,
     OriginCoordinatesSystem,
-    ParentImageMetadata,
     WorkflowImageData,
 )
 
@@ -15,7 +15,7 @@ def test_take_absolute_static_crop() -> None:
     np_image = np.zeros((100, 100, 3), dtype=np.uint8)
     np_image[50:70, 45:55] = 30  # painted the crop into (30, 30, 30)
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(parent_id="origin_image"),
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
         numpy_image=np_image,
     )
 

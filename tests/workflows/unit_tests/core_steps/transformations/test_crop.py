@@ -8,8 +8,8 @@ from inference.core.workflows.core_steps.transformations.crop import (
     crop_image,
 )
 from inference.core.workflows.entities.base import (
+    ImageParentMetadata,
     OriginCoordinatesSystem,
-    ParentImageMetadata,
     WorkflowImageData,
 )
 
@@ -57,7 +57,7 @@ def test_crop_image() -> None:
     np_image[80:120, 80:120] = 49
     np_image[450:550, 450:550] = 59
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(parent_id="origin_image"),
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
         numpy_image=np_image,
     )
     detections = sv.Detections(

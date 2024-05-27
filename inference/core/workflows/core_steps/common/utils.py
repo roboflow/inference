@@ -36,8 +36,8 @@ from inference.core.workflows.constants import (
 )
 from inference.core.workflows.entities.base import (
     Batch,
+    ImageParentMetadata,
     OriginCoordinatesSystem,
-    ParentImageMetadata,
     WorkflowImageData,
 )
 
@@ -183,7 +183,7 @@ def attach_parents_coordinates_to_sv_detections(
 
 def attach_parent_coordinates_to_detections(
     detections: sv.Detections,
-    parent_metadata: ParentImageMetadata,
+    parent_metadata: ImageParentMetadata,
     parent_id_key: str,
     coordinates_key: str,
     dimensions_key: str,
@@ -267,7 +267,7 @@ def sv_detections_to_root_coordinates(
                 original_mask
             )
         detections_copy.mask = new_anchored_masks
-    new_root_metadata = ParentImageMetadata(
+    new_root_metadata = ImageParentMetadata(
         parent_id=root_parent_id,
         origin_coordinates=OriginCoordinatesSystem(
             left_top_y=0,

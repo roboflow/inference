@@ -9,7 +9,7 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_workflow_result,
 )
 from inference.core.workflows.entities.base import (
-    ParentImageMetadata,
+    ImageParentMetadata,
     WorkflowImageData,
 )
 
@@ -18,7 +18,7 @@ def test_serialise_image() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(parent_id="some"),
+        parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np_image,
     )
 
@@ -44,7 +44,7 @@ def test_serialise_list() -> None:
         3,
         "some",
         WorkflowImageData(
-            parent_metadata=ParentImageMetadata(parent_id="some"),
+            parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np_image,
         ),
     ]
@@ -75,13 +75,13 @@ def test_serialise_workflow_result() -> None:
     workflow_result = {
         "some": [{"detection": 1}],
         "other": WorkflowImageData(
-            parent_metadata=ParentImageMetadata(parent_id="some"),
+            parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np_image,
         ),
         "third": [
             "some",
             WorkflowImageData(
-                parent_metadata=ParentImageMetadata(parent_id="some"),
+                parent_metadata=ImageParentMetadata(parent_id="some"),
                 numpy_image=np_image,
             ),
         ],
@@ -89,7 +89,7 @@ def test_serialise_workflow_result() -> None:
         "fifth": {
             "some": "value",
             "my_image": WorkflowImageData(
-                parent_metadata=ParentImageMetadata(parent_id="some"),
+                parent_metadata=ImageParentMetadata(parent_id="some"),
                 numpy_image=np_image,
             ),
         },
@@ -99,7 +99,7 @@ def test_serialise_workflow_result() -> None:
             [
                 2,
                 WorkflowImageData(
-                    parent_metadata=ParentImageMetadata(parent_id="some"),
+                    parent_metadata=ImageParentMetadata(parent_id="some"),
                     numpy_image=np_image,
                 ),
             ],

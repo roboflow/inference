@@ -203,7 +203,7 @@ class OriginCoordinatesSystem:
 
 
 @dataclass(frozen=True)
-class ParentImageMetadata:
+class ImageParentMetadata:
     parent_id: str
     origin_coordinates: Optional[OriginCoordinatesSystem] = None
 
@@ -212,8 +212,8 @@ class WorkflowImageData:
 
     def __init__(
         self,
-        parent_metadata: ParentImageMetadata,
-        workflow_root_ancestor_metadata: Optional[ParentImageMetadata] = None,
+        parent_metadata: ImageParentMetadata,
+        workflow_root_ancestor_metadata: Optional[ImageParentMetadata] = None,
         image_reference: Optional[str] = None,
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
@@ -231,7 +231,7 @@ class WorkflowImageData:
         self._numpy_image = numpy_image
 
     @property
-    def parent_metadata(self) -> ParentImageMetadata:
+    def parent_metadata(self) -> ImageParentMetadata:
         if self._parent_metadata.origin_coordinates is None:
             numpy_image = self.numpy_image
             origin_coordinates = OriginCoordinatesSystem(
@@ -246,7 +246,7 @@ class WorkflowImageData:
         return self._parent_metadata
 
     @property
-    def workflow_root_ancestor_metadata(self) -> ParentImageMetadata:
+    def workflow_root_ancestor_metadata(self) -> ImageParentMetadata:
         if self._workflow_root_ancestor_metadata.origin_coordinates is None:
             numpy_image = self.numpy_image
             origin_coordinates = OriginCoordinatesSystem(

@@ -18,8 +18,8 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.entities.base import (
     Batch,
+    ImageParentMetadata,
     OriginCoordinatesSystem,
-    ParentImageMetadata,
     WorkflowImageData,
 )
 
@@ -330,10 +330,10 @@ def test_attach_parents_coordinates_to_sv_detections() -> None:
         },
     )
     image = WorkflowImageData(
-        parent_metadata=ParentImageMetadata(
+        parent_metadata=ImageParentMetadata(
             parent_id="crop_1",
         ),
-        workflow_root_ancestor_metadata=ParentImageMetadata(
+        workflow_root_ancestor_metadata=ImageParentMetadata(
             parent_id="image",
             origin_coordinates=OriginCoordinatesSystem(
                 left_top_x=50,

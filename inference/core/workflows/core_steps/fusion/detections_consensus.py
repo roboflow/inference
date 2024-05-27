@@ -20,15 +20,23 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
+from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+)
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
@@ -168,7 +176,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class DetectionsConsensusBlock(WorkflowBlock):
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -176,7 +183,6 @@ class DetectionsConsensusBlock(WorkflowBlock):
     async def run_locally(
         self,
         predictions_batches: List[Batch[Optional[sv.Detections]]],
-        image_metadata: List[dict],
         required_votes: int,
         class_aware: bool,
         iou_threshold: float,
@@ -492,6 +498,33 @@ def merge_detections(
     x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
         detections
     )
+    data = {
+        "class_name": np.array([class_name]),
+        PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
+        DETECTION_ID_KEY: np.array([str(uuid4())]),
+        PREDICTION_TYPE_KEY: np.array(["object-detection"]),
+        PARENT_COORDINATES_KEY: np.array([detections[PARENT_COORDINATES_KEY][0]]),
+        PARENT_DIMENSIONS_KEY: np.array([detections[PARENT_DIMENSIONS_KEY][0]]),
+        ROOT_PARENT_ID_KEY: np.array([detections[ROOT_PARENT_ID_KEY][0]]),
+        ROOT_PARENT_COORDINATES_KEY: np.array(
+            [detections[ROOT_PARENT_COORDINATES_KEY][0]]
+        ),
+        ROOT_PARENT_DIMENSIONS_KEY: np.array(
+            [detections[ROOT_PARENT_DIMENSIONS_KEY][0]]
+        ),
+    }
+    if SCALING_RELATIVE_TO_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array([1.0])
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_ROOT_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array([1.0])
     return sv.Detections(
         xyxy=np.array([[x1, y1, x2, y2]], dtype=np.float64),
         class_id=np.array([class_id]),
@@ -505,11 +538,7 @@ def merge_detections(
             ],
             dtype=np.float64,
         ),
-        data={
-            "class_name": np.array([class_name]),
-            PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
-            DETECTION_ID_KEY: np.array([str(uuid4())]),
-        },
+        data=data,
     )
 
 
