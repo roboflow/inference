@@ -159,7 +159,7 @@ def _handle_frame_rendering(
                 detections=detections,
             )
             image = label_annotator.annotate(
-                scene=frame.image,
+                scene=image,
                 detections=detections,
                 labels=labels,
             )
