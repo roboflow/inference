@@ -302,6 +302,6 @@ class WorkflowImageData:
             ) or self._image_reference.startswith("https://"):
                 return {"type": "url", "value": self._image_reference}
             return {"type": "file", "value": self._image_reference}
-        if self._base64_image is None:
+        if self._base64_image:
             return {"type": "base64", "value": self.base64_image}
         return {"type": "numpy_object", "value": self.numpy_image}
