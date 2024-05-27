@@ -100,7 +100,7 @@ class DetectionsSamplerBlock(WorkflowBlock):
         sampling_function = build_eval_function(definition=sampling_statement)
         batch_parameters = grab_batch_parameters(
             operations_parameters=operations_parameters,
-            predictions=predictions,
+            main_batch_size=len(predictions),
         )
         non_batch_parameters = grab_non_batch_parameters(
             operations_parameters=operations_parameters,

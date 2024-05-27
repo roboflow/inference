@@ -101,7 +101,7 @@ class DetectionsTransformationBlock(WorkflowBlock):
         operations_chain = build_operations_chain(operations=operations)
         batch_parameters = grab_batch_parameters(
             operations_parameters=operations_parameters,
-            predictions=predictions,
+            main_batch_size=len(predictions),
         )
         non_batch_parameters = grab_non_batch_parameters(
             operations_parameters=operations_parameters,

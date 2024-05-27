@@ -29,6 +29,8 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
     X_KEY,
     Y_KEY,
 )
@@ -229,6 +231,18 @@ def sv_detections_to_root_coordinates(
             f"the following metadata registered: {list(detections_copy.data.keys())}"
         )
         return detections_copy
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
+        scale = detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY][0]
+        detections_copy = scale_sv_detections(
+            detections=detections,
+            scale=1 / scale,
+        )
+    detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+        [1.0] * len(detections_copy)
+    )
+    detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+        [1.0] * len(detections_copy)
+    )
     origin_height = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][0]
     origin_width = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][1]
     root_parent_id = detections_copy[ROOT_PARENT_ID_KEY][0]
@@ -240,16 +254,19 @@ def sv_detections_to_root_coordinates(
                 keypoints += [shift_x, shift_y]
     if detections_copy.mask is not None:
         origin_mask_base = np.full((origin_height, origin_width), False)
-        detections_copy.mask = np.array(
+        new_anchored_masks = np.array(
             [origin_mask_base.copy() for _ in detections_copy]
         )
-        for anchored_mask, original_mask in zip(detections_copy.mask, detections.mask):
+        for anchored_mask, original_mask in zip(
+            new_anchored_masks, detections_copy.mask
+        ):
             mask_h, mask_w = original_mask.shape
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
             anchored_mask[shift_y : shift_y + mask_h, shift_x : shift_x + mask_w] = (
                 original_mask
             )
+        detections_copy.mask = new_anchored_masks
     new_root_metadata = ParentImageMetadata(
         parent_id=root_parent_id,
         origin_coordinates=OriginCoordinatesSystem(
@@ -292,10 +309,10 @@ def filter_out_unwanted_classes_from_sv_detections_batch(
 
 def grab_batch_parameters(
     operations_parameters: Dict[str, Any],
-    predictions: Batch[Optional[sv.Detections]],
+    main_batch_size: int,
 ) -> Dict[str, Any]:
     return {
-        key: Batch(value.broadcast(n=len(predictions)))
+        key: Batch(value.broadcast(n=main_batch_size))
         for key, value in operations_parameters.items()
         if isinstance(value, Batch)
     }
@@ -345,20 +362,20 @@ def scale_sv_detections(
             scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
             scaled_masks.append(scaled_detection_mask)
         detections_copy.mask = np.array(scaled_masks)
-    if PARENT_DIMENSIONS_KEY in detections_copy.data:
-        detections_copy[PARENT_DIMENSIONS_KEY] = (
-            detections_copy[PARENT_DIMENSIONS_KEY] * scale
-        ).round()
-    if PARENT_COORDINATES_KEY in detections_copy.data:
-        detections_copy[PARENT_DIMENSIONS_KEY] = (
-            detections_copy[PARENT_DIMENSIONS_KEY] * scale
-        ).round()
-    if ROOT_PARENT_DIMENSIONS_KEY in detections_copy.data:
-        detections_copy[PARENT_DIMENSIONS_KEY] = (
-            detections_copy[PARENT_DIMENSIONS_KEY] * scale
-        ).round()
-    if ROOT_PARENT_COORDINATES_KEY in detections_copy.data:
-        detections_copy[PARENT_DIMENSIONS_KEY] = (
-            detections_copy[PARENT_DIMENSIONS_KEY] * scale
-        ).round()
+    if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
+        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
+            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
+        )
+    else:
+        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+            [scale] * len(detections_copy)
+        )
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
+        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
+        )
+    else:
+        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+            [scale] * len(detections_copy)
+        )
     return detections_copy

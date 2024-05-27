@@ -10,9 +10,14 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
-    sv_detections_to_root_coordinates, filter_out_unwanted_classes_from_sv_detections_batch,
+    filter_out_unwanted_classes_from_sv_detections_batch,
+    grab_batch_parameters,
+    grab_non_batch_parameters,
+    scale_sv_detections,
+    sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.entities.base import (
+    Batch,
     OriginCoordinatesSystem,
     ParentImageMetadata,
     WorkflowImageData,
@@ -517,9 +522,153 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
     assert (
         result["root_parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
     ).all(), "Expected root size to be denoted"
+    assert (
+        result["keypoints_class_name"][0] == np.array(["a", "b"])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_class_name"][1] == np.array([])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_confidence"][0] == np.array([0.3, 0.4])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_confidence"][1] == np.array([])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_xy"][0]
+        == np.array([[50 + 10, 100 + 20], [50 + 20, 100 + 30]])
+    ).all(), "Expected keypoints xy to be shifted"
+    assert (
+        result["keypoints_xy"][1] == np.array([])
+    ).all(), "Expected empty keypoints xy to be left as is"
 
 
-def test_filter_out_unwanted_classes_from_sv_detections_batch_when_no_classes_defined() -> None:
+def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> None:
+    # given
+    mask = np.zeros((2, 200, 100), dtype=np.bool_)
+    mask[0, 80:121, 30:71] = True
+    mask[1, 170:191, 70:91] = True
+    scaled_mask = np.zeros((2, 400, 200), dtype=np.bool_)
+    scaled_mask[0, 160:241, 60:141] = True
+    scaled_mask[1, 340:381, 140:181] = True
+    expected_mask = np.zeros((2, 1024, 512), dtype=np.bool_)
+    expected_mask[:, 100:500, 50:250] = scaled_mask
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=mask,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["crop_1", "crop_1"]),
+            "parent_coordinates": np.array([[10, 20], [10, 20]]),
+            "parent_dimensions": np.array([[200, 100], [200, 100]]),
+            "root_parent_id": np.array(["root", "root"]),
+            "root_parent_coordinates": np.array([[50, 100], [50, 100]]),
+            "root_parent_dimensions": np.array([[1024, 512], [1024, 512]]),
+            "scaling_relative_to_root_parent": np.array([0.5, 0.5]),
+            "keypoints_class_name": np.array(
+                [np.array(["a", "b"]), np.array([])], dtype="object"
+            ),
+            "keypoints_class_id": np.array(
+                [np.array([1, 0]), np.array([])], dtype="object"
+            ),
+            "keypoints_confidence": np.array(
+                [np.array([0.3, 0.4]), np.array([])], dtype="object"
+            ),
+            "keypoints_xy": np.array(
+                [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
+            ),
+        },
+    )
+
+    # when
+    result = sv_detections_to_root_coordinates(
+        detections=detections,
+    )
+
+    # then
+    assert np.allclose(
+        result.xyxy,
+        np.array(
+            [
+                [50 + 2 * 25, 100 + 2 * 50, 50 + 2 * 75, 100 + 2 * 150],
+                [50 + 2 * 50, 100 + 2 * 125, 50 + 2 * 100, 100 + 2 * 225],
+            ]
+        ),
+    ), "Expected coordinates to be first scaled 2x and then shifted into root coordinates (by [50, 100])"
+    assert np.allclose(
+        result.mask, expected_mask
+    ), "Expected mask to be properly shifted"
+    assert np.allclose(
+        result.confidence, np.array([0.1, 0.2])
+    ), "Expected confidence not to be touched"
+    assert np.allclose(
+        result.class_id, np.array([1, 0])
+    ), "Expected class_id not to be touched"
+    assert np.allclose(
+        result.tracker_id, np.array([1, 2])
+    ), "Expected tracker_id not to be touched"
+    assert (
+        result["class_name"] == np.array(["dog", "cat"])
+    ).all(), "Expected class_name not to be touched"
+    assert (
+        result["detection_id"] == np.array(["first", "second"])
+    ).all(), "Expected detection_id not to be touched"
+    assert (
+        result["parent_id"] == np.array(["root", "root"])
+    ).all(), "root becomes parent, hence we expect it to be marked with parent id"
+    assert (
+        result["parent_coordinates"] == np.array([[0, 0], [0, 0]])
+    ).all(), "root becomes parent, we shifted detection, hence parent coordinates starts in [0, 0]"
+    assert (
+        result["parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
+    ).all(), (
+        "root becomes parent, we shifted detection, hence dimensions are [1024, 512]"
+    )
+    assert (
+        result["scaling_relative_to_parent"] == np.array([1.0, 1.0])
+    ).all(), "Expected parent scaling to be set to 1.0"
+    assert (
+        result["root_parent_id"] == np.array(["root", "root"])
+    ).all(), (
+        "root stays root parent, hence we expect it to be marked with root_parent_id"
+    )
+    assert (
+        result["root_parent_coordinates"] == np.array([[0, 0], [0, 0]])
+    ).all(), "We shifted predictions"
+    assert (
+        result["root_parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
+    ).all(), "Expected root size to be denoted"
+    assert (
+        result["scaling_relative_to_root_parent"] == np.array([1.0, 1.0])
+    ).all(), "Expected root parent scaling to be set to 1.0"
+    assert (
+        result["keypoints_class_name"][0] == np.array(["a", "b"])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_class_name"][1] == np.array([])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_confidence"][0] == np.array([0.3, 0.4])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_confidence"][1] == np.array([])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_xy"][0]
+        == np.array([[50 + 2 * 10, 100 + 2 * 20], [50 + 2 * 20, 100 + 2 * 30]])
+    ).all(), "Expected keypoints xy to be scaled x2 and shifted"
+    assert (
+        result["keypoints_xy"][1] == np.array([])
+    ).all(), "Expected empty keypoints xy to be left as is"
+
+
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_no_classes_defined() -> (
+    None
+):
     # given
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
@@ -543,11 +692,14 @@ def test_filter_out_unwanted_classes_from_sv_detections_batch_when_no_classes_de
 
     # then
     assert len(result) == 1, "Expected batch dimension not to change"
+    assert len(result[0]) == 2, "Expected still to see 2 detections"
     assert result[0] == expected_result, "We expect nothing to be filtered out"
     assert result[0] is detections, "We expect operation to be in-place"
 
 
-def test_filter_out_unwanted_classes_from_sv_detections_batch_when_empty_class_list_defined() -> None:
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_empty_class_list_defined() -> (
+    None
+):
     # given
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
@@ -571,11 +723,14 @@ def test_filter_out_unwanted_classes_from_sv_detections_batch_when_empty_class_l
 
     # then
     assert len(result) == 1, "Expected batch dimension not to change"
+    assert len(result[0]) == 2, "Expected still to see 2 detections"
     assert result[0] == expected_result, "We expect nothing to be filtered out"
     assert result[0] is detections, "We expect operation to be in-place"
 
 
-def test_filter_out_unwanted_classes_from_sv_detections_batch_when_filtering_should_be_applied() -> None:
+def test_filter_out_unwanted_classes_from_sv_detections_batch_when_filtering_should_be_applied() -> (
+    None
+):
     # given
     detections = sv.Detections(
         xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
@@ -611,3 +766,384 @@ def test_filter_out_unwanted_classes_from_sv_detections_batch_when_filtering_sho
     # then
     assert len(result) == 1, "Expected batch dimension not to change"
     assert result[0] == expected_result, "We expect result to be filtered"
+
+
+def test_grab_batch_parameters() -> None:
+    # given
+    operations_parameters = {
+        "non_batch": [1, 2, 3, 4],
+        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
+        "batch_to_broadcast": Batch(content=["A"]),
+    }
+
+    # when
+    result = grab_batch_parameters(
+        operations_parameters=operations_parameters,
+        main_batch_size=4,
+    )
+
+    # then
+    assert set(result.keys()) == {
+        "batch_matching_dim",
+        "batch_to_broadcast",
+    }, "Only batch-parameters are supposed to be grabbed"
+    assert list(result["batch_matching_dim"]) == [
+        "a",
+        "b",
+        "c",
+        "d",
+    ], "Expected content of batch for `batch_matching_dim` not to be changed"
+    assert list(result["batch_to_broadcast"]) == [
+        "A",
+        "A",
+        "A",
+        "A",
+    ], "Expected elements of `batch_to_broadcast` to be broadcast"
+
+
+def test_grab_batch_parameters_when_batch_parameters_not_spotted() -> None:
+    # given
+    operations_parameters = {
+        "non_batch": [1, 2, 3, 4],
+    }
+
+    # when
+    result = grab_batch_parameters(
+        operations_parameters=operations_parameters,
+        main_batch_size=4,
+    )
+
+    # then
+    assert result == {}, "Expected nothing to be extracted"
+
+
+def test_grab_batch_parameters_when_non_broadcastable_parameter_spotted() -> None:
+    # given
+    operations_parameters = {
+        "non_batch": [1, 2, 3, 4],
+        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
+        "batch_to_broadcast": Batch(content=["A", "B", "C"]),  # cannot be broadcast
+    }
+
+    # when
+
+    with pytest.raises(ValueError):
+        _ = grab_batch_parameters(
+            operations_parameters=operations_parameters,
+            main_batch_size=4,
+        )
+
+
+def test_grab_batch_parameters_when_non_empty_parameters_given() -> None:
+    # given
+    operations_parameters = {}
+
+    # when
+    result = grab_batch_parameters(
+        operations_parameters=operations_parameters,
+        main_batch_size=4,
+    )
+
+    # then
+    assert result == {}, "Expected nothing to be found"
+
+
+def test_grab_non_batch_parameters_when_non_batch_parameters_to_be_found() -> None:
+    # given
+    operations_parameters = {
+        "non_batch": [1, 2, 3, 4],
+        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
+        "batch_to_broadcast": Batch(content=["A"]),
+    }
+
+    # when
+    result = grab_non_batch_parameters(operations_parameters=operations_parameters)
+
+    # then
+    assert set(result.keys()) == {
+        "non_batch"
+    }, "Only non-batch-parameters are supposed to be grabbed"
+    assert result["non_batch"] == [
+        1,
+        2,
+        3,
+        4,
+    ], "Content of `non_batch` parameter cannot be changed"
+
+
+def test_grab_non_batch_parameters_when_non_batch_parameters_not_to_be_found() -> None:
+    # given
+    operations_parameters = {
+        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
+        "batch_to_broadcast": Batch(content=["A"]),
+    }
+
+    # when
+    result = grab_non_batch_parameters(operations_parameters=operations_parameters)
+
+    # then
+    assert result == {}, "Expected nothing to be extracted"
+
+
+def test_grab_non_batch_parameters_when_empty_input_given() -> None:
+    # given
+    operations_parameters = {}
+
+    # when
+    result = grab_non_batch_parameters(operations_parameters=operations_parameters)
+
+    # then
+    assert result == {}, "Expected nothing to be extracted"
+
+
+def test_scale_sv_detections_when_empty_detections_given() -> None:
+    # given
+    detections = sv.Detections.empty()
+
+    # when
+    result = scale_sv_detections(
+        detections=detections,
+        scale=1.2,
+    )
+
+    # then
+    assert (
+        result == sv.Detections.empty()
+    ), "Expected still to see empty detections at the output"
+
+
+def test_scale_sv_detections_when_scale_makes_output_bigger() -> None:
+    # given
+    mask = np.zeros((2, 200, 100), dtype=np.bool_)
+    mask[0, 80:121, 30:71] = True
+    mask[1, 170:191, 70:91] = True
+    expected_mask = np.zeros((2, 400, 200), dtype=np.bool_)
+    expected_mask[0, 160:241, 60:141] = True
+    expected_mask[1, 340:381, 140:181] = True
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=mask,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["crop_1", "crop_1"]),
+            "parent_coordinates": np.array([[10, 20], [10, 20]]),
+            "parent_dimensions": np.array([[200, 100], [200, 100]]),
+            "root_parent_id": np.array(["root", "root"]),
+            "root_parent_coordinates": np.array([[50, 100], [50, 100]]),
+            "root_parent_dimensions": np.array([[1024, 512], [1024, 512]]),
+            "scaling_relative_to_root_parent": np.array([0.5, 0.5]),
+            "keypoints_class_name": np.array(
+                [np.array(["a", "b"]), np.array([])], dtype="object"
+            ),
+            "keypoints_class_id": np.array(
+                [np.array([1, 0]), np.array([])], dtype="object"
+            ),
+            "keypoints_confidence": np.array(
+                [np.array([0.3, 0.4]), np.array([])], dtype="object"
+            ),
+            "keypoints_xy": np.array(
+                [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
+            ),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(
+        detections=detections,
+        scale=2.0,
+    )
+
+    # then
+    assert np.allclose(
+        result.xyxy,
+        np.array(
+            [[2 * 25, 2 * 50, 2 * 75, 2 * 150], [2 * 50, 2 * 125, 2 * 100, 2 * 225]]
+        ),
+    ), "Expected coordinates to be scaled 2x"
+    assert np.allclose(
+        result.mask, expected_mask
+    ), "Expected mask to be properly scaled 2x"
+    assert np.allclose(
+        result.confidence, np.array([0.1, 0.2])
+    ), "Expected confidence not to be touched"
+    assert np.allclose(
+        result.class_id, np.array([1, 0])
+    ), "Expected class_id not to be touched"
+    assert np.allclose(
+        result.tracker_id, np.array([1, 2])
+    ), "Expected tracker_id not to be touched"
+    assert (
+        result["class_name"] == np.array(["dog", "cat"])
+    ).all(), "Expected class_name not to be touched"
+    assert (
+        result["detection_id"] == np.array(["first", "second"])
+    ).all(), "Expected detection_id not to be touched"
+    assert (
+        result["parent_id"] == np.array([["crop_1", "crop_1"]])
+    ).all(), "perant id should not be touched"
+    assert (
+        result["parent_coordinates"] == np.array([[10, 20], [10, 20]])
+    ).all(), "Parent coordinates should not be touched"
+    assert (
+        result["parent_dimensions"] == np.array([[200, 100], [200, 100]])
+    ).all(), "Parent dimensions should not be touched"
+    assert (
+        result["scaling_relative_to_parent"] == [2.0, 2.0]
+    ).all(), "Parent scale should be denoted"
+    assert (
+        result["root_parent_id"] == np.array(["root", "root"])
+    ).all(), "root stays root parent"
+    assert (
+        result["root_parent_coordinates"] == np.array([[50, 100], [50, 100]])
+    ).all(), "Root coordinates not to be touched"
+    assert (
+        result["root_parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
+    ).all(), "Root dimensions not to be touched"
+    assert (
+        result["scaling_relative_to_root_parent"] == np.array([1.0, 1.0])
+    ).all(), (
+        "Root parent scale should be adjusted to the previous content (0.5 * 2.0 = 1.0)"
+    )
+    assert (
+        result["keypoints_class_name"][0] == np.array(["a", "b"])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_class_name"][1] == np.array([])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_confidence"][0] == np.array([0.3, 0.4])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_confidence"][1] == np.array([])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_xy"][0]
+        == np.array([[2.0 * 10, 2.0 * 20], [2.0 * 20, 2.0 * 30]]).round()
+    ).all(), "Expected keypoints xy to be scaled"
+    assert (
+        result["keypoints_xy"][1] == np.array([])
+    ).all(), "Expected empty keypoints xy to be left as is"
+
+
+def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
+    # given
+    mask = np.zeros((2, 200, 100), dtype=np.bool_)
+    mask[0, 80:121, 30:71] = True
+    mask[1, 170:191, 70:91] = True
+    expected_mask = np.zeros((2, 100, 50), dtype=np.bool_)
+    expected_mask[0, 40:61, 15:36] = True
+    expected_mask[1, 85:96, 35:46] = True
+    detections = sv.Detections(
+        xyxy=np.array([[25, 50, 75, 150], [50, 125, 100, 225]]),
+        mask=mask,
+        confidence=np.array([0.1, 0.2]),
+        class_id=np.array([1, 0]),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["dog", "cat"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["crop_1", "crop_1"]),
+            "parent_coordinates": np.array([[10, 20], [10, 20]]),
+            "parent_dimensions": np.array([[200, 100], [200, 100]]),
+            "root_parent_id": np.array(["root", "root"]),
+            "root_parent_coordinates": np.array([[50, 100], [50, 100]]),
+            "root_parent_dimensions": np.array([[1024, 512], [1024, 512]]),
+            "scaling_relative_to_root_parent": np.array([0.5, 0.5]),
+            "keypoints_class_name": np.array(
+                [np.array(["a", "b"]), np.array([])], dtype="object"
+            ),
+            "keypoints_class_id": np.array(
+                [np.array([1, 0]), np.array([])], dtype="object"
+            ),
+            "keypoints_confidence": np.array(
+                [np.array([0.3, 0.4]), np.array([])], dtype="object"
+            ),
+            "keypoints_xy": np.array(
+                [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
+            ),
+        },
+    )
+
+    # when
+    result = scale_sv_detections(
+        detections=detections,
+        scale=0.5,
+    )
+
+    # then
+    assert np.allclose(
+        result.xyxy,
+        np.array(
+            [
+                [0.5 * 25, 0.5 * 50, 0.5 * 75, 0.5 * 150],
+                [0.5 * 50, 0.5 * 125, 0.5 * 100, 0.5 * 225],
+            ]
+        ).round(),
+    ), "Expected coordinates to be scaled 0.5x"
+    assert np.allclose(
+        result.mask, expected_mask
+    ), "Expected mask to be properly scaled 0.5x"
+    assert np.allclose(
+        result.confidence, np.array([0.1, 0.2])
+    ), "Expected confidence not to be touched"
+    assert np.allclose(
+        result.class_id, np.array([1, 0])
+    ), "Expected class_id not to be touched"
+    assert np.allclose(
+        result.tracker_id, np.array([1, 2])
+    ), "Expected tracker_id not to be touched"
+    assert (
+        result["class_name"] == np.array(["dog", "cat"])
+    ).all(), "Expected class_name not to be touched"
+    assert (
+        result["detection_id"] == np.array(["first", "second"])
+    ).all(), "Expected detection_id not to be touched"
+    assert (
+        result["parent_id"] == np.array([["crop_1", "crop_1"]])
+    ).all(), "perant id should not be touched"
+    assert (
+        result["parent_coordinates"] == np.array([[10, 20], [10, 20]])
+    ).all(), "Parent coordinates should not be touched"
+    assert (
+        result["parent_dimensions"] == np.array([[200, 100], [200, 100]])
+    ).all(), "Parent dimensions should not be touched"
+    assert (
+        result["scaling_relative_to_parent"] == [0.5, 0.5]
+    ).all(), "Parent scale should be denoted"
+    assert (
+        result["root_parent_id"] == np.array(["root", "root"])
+    ).all(), "root stays root parent"
+    assert (
+        result["root_parent_coordinates"] == np.array([[50, 100], [50, 100]])
+    ).all(), "Root coordinates not to be touched"
+    assert (
+        result["root_parent_dimensions"] == np.array([[1024, 512], [1024, 512]])
+    ).all(), "Root dimensions not to be touched"
+    assert (
+        result["scaling_relative_to_root_parent"] == np.array([0.25, 0.25])
+    ).all(), (
+        "Root parent scale should be adjusted to the previous content (0.5 * 2.0 = 1.0)"
+    )
+    assert (
+        result["keypoints_class_name"][0] == np.array(["a", "b"])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_class_name"][1] == np.array([])
+    ).all(), "Expected keypoints classes not to be touched"
+    assert (
+        result["keypoints_confidence"][0] == np.array([0.3, 0.4])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_confidence"][1] == np.array([])
+    ).all(), "Expected keypoints confidence not to be touched"
+    assert (
+        result["keypoints_xy"][0]
+        == np.array([[0.5 * 10, 0.5 * 20], [0.5 * 20, 0.5 * 30]]).round()
+    ).all(), "Expected keypoints xy to be scaled"
+    assert (
+        result["keypoints_xy"][1] == np.array([])
+    ).all(), "Expected empty keypoints xy to be left as is"
