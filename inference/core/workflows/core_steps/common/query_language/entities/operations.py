@@ -451,7 +451,7 @@ class Equals(BinaryOperator):
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["=="]
+    type: Literal["(Number) =="]
 
 
 class NotEquals(BinaryOperator):
@@ -478,7 +478,7 @@ class NotEquals(BinaryOperator):
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["!="]
+    type: Literal["(Number) !="]
 
 
 class NumerGreater(BinaryOperator):
@@ -598,7 +598,7 @@ class In(BinaryOperator):
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["in"]
+    type: Literal["in (Sequence)"]
 
 
 class UnaryOperator(BaseModel):

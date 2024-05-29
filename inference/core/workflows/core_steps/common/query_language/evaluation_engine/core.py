@@ -21,12 +21,12 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     RoboflowQueryLanguageError,
 )
 from inference.core.workflows.core_steps.common.query_language.evaluation_engine.detection.geometry import (
-    is_detection_in_zone,
+    is_point_in_zone,
 )
 
 BINARY_OPERATORS = {
-    "==": lambda a, b: a == b,
-    "!=": lambda a, b: a != b,
+    "(Number) ==": lambda a, b: a == b,
+    "(Number) !=": lambda a, b: a != b,
     "(Number) >": lambda a, b: a > b,
     "(Number) >=": lambda a, b: a >= b,
     "(Number) <": lambda a, b: a < b,
@@ -34,7 +34,7 @@ BINARY_OPERATORS = {
     "(String) startsWith": lambda a, b: a.startswith(b),
     "(String) endsWith": lambda a, b: a.endswith(b),
     "(String) contains": lambda a, b: b in a,
-    "in": lambda a, b: a in b,
+    "in (Sequence)": lambda a, b: a in b,
 }
 
 UNARY_OPERATORS = {
@@ -44,7 +44,7 @@ UNARY_OPERATORS = {
     "(Boolean) is False": lambda a: a is False,
     "(Sequence) is empty": lambda a: len(a) == 0,
     "(Sequence) is not empty": lambda a: len(a) > 0,
-    "(Detection) in zone": is_detection_in_zone,
+    "(Detection) in zone": is_point_in_zone,
 }
 
 
