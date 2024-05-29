@@ -37,6 +37,9 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 from inference.core.workflows.core_steps.sampling.detections_sampler import (
     DetectionsSamplerBlock,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.data_collector import (
+    RoboflowDataCollectorBlock,
+)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
@@ -74,4 +77,5 @@ def load_blocks() -> list:
         DetectionsTransformationBlock,
         DetectionsSamplerBlock,
         ConditionBlock,
+        RoboflowDataCollectorBlock,
     ]
