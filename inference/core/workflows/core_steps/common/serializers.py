@@ -9,6 +9,7 @@ from inference.core.workflows.constants import (
     CONFIDENCE_KEY,
     DETECTION_ID_KEY,
     HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
@@ -29,7 +30,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     image_dimensions = None
     for xyxy, mask, confidence, class_id, tracker_id, data in detections:
         detection_dict = {}
-        image_dimensions = data.get(PARENT_DIMENSIONS_KEY)
+        image_dimensions = data.get(IMAGE_DIMENSIONS_KEY)
         if isinstance(xyxy, np.ndarray):
             xyxy = xyxy.astype(float).tolist()
         x1, y1, x2, y2 = xyxy

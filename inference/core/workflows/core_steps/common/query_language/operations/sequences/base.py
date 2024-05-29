@@ -53,9 +53,15 @@ AGGREGATION_FUNCTIONS = {
 
 
 def aggregate_numeric_sequence(
-    value: Any, function: SequenceAggregationFunction, execution_context: str, **kwargs
+    value: Any,
+    function: SequenceAggregationFunction,
+    neutral_value: Any,
+    execution_context: str,
+    **kwargs,
 ) -> Any:
     try:
+        if len(value) == 0:
+            return neutral_value
         return AGGREGATION_FUNCTIONS[function](value)
     except (TypeError, ValueError) as e:
         raise InvalidInputTypeError(

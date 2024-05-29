@@ -26,3 +26,4 @@ zxing-cpp>=2.2.0
 boto3<=1.28.23
 typing_extensions>=4.8.0
 pydot>=2.0.0
+shapely>=2.0.0,<2.1.0

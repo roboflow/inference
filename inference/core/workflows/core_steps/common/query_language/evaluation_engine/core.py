@@ -1,10 +1,11 @@
 from functools import partial
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     StatementsGroupsOperator,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    TYPE_PARAMETER_NAME,
     BinaryStatement,
     DynamicOperand,
     StatementGroup,
@@ -17,6 +18,10 @@ from inference.core.workflows.core_steps.common.query_language.entities.types im
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
+    RoboflowQueryLanguageError,
+)
+from inference.core.workflows.core_steps.common.query_language.evaluation_engine.detection.geometry import (
+    is_detection_in_zone,
 )
 
 BINARY_OPERATORS = {
@@ -39,6 +44,7 @@ UNARY_OPERATORS = {
     "(Boolean) is False": lambda a: a is False,
     "(Sequence) is empty": lambda a: len(a) == 0,
     "(Sequence) is not empty": lambda a: len(a) > 0,
+    "(Detection) in zone": is_detection_in_zone,
 }
 
 
@@ -77,6 +83,12 @@ def build_binary_statement(
     execution_context: str,
 ) -> Callable[[Dict[str, T]], bool]:
     operator = BINARY_OPERATORS[definition.comparator.type]
+    operator_parameters_names = [
+        t for t in type(definition.operator).model_fields if t != TYPE_PARAMETER_NAME
+    ]
+    operator_parameters = {
+        a: getattr(definition.operator, a) for a in operator_parameters_names
+    }
     left_operand_builder = create_operand_builder(
         definition=definition.left_operand, execution_context=execution_context
     )
@@ -91,6 +103,7 @@ def build_binary_statement(
         negate=definition.negate,
         operation_type=definition.type,
         execution_context=execution_context,
+        operator_parameters=operator_parameters,
     )
 
 
@@ -166,20 +179,25 @@ def dynamic_operand_builder(
 def binary_eval(
     values: Dict[str, T],
     left_operand_builder: Callable[[Dict[str, T]], V],
-    operator: Callable[[V, V], bool],
+    operator: Callable[[V, V, Any], bool],
     right_operand_builder: Callable[[Dict[str, T]], V],
     negate: bool,
     operation_type: str,
     execution_context: str,
+    operator_parameters: Optional[Dict[str, Any]] = None,
 ) -> bool:
+    if operator_parameters is None:
+        operator_parameters = {}
     try:
         left_operand = left_operand_builder(values)
         right_operand = right_operand_builder(values)
-        result = operator(left_operand, right_operand)
+        result = operator(left_operand, right_operand, **operator_parameters)
         if negate:
             result = not result
         return result
-    except (TypeError, ValueError) as error:
+    except RoboflowQueryLanguageError as error:
+        raise error
+    except Exception as error:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of type: {operation_type} in context {execution_context}, "
             f"but encountered error: {error}",
@@ -192,6 +210,12 @@ def build_unary_statement(
     definition: UnaryStatement, execution_context: str
 ) -> Callable[[Dict[str, T]], bool]:
     operator = UNARY_OPERATORS[definition.operator.type]
+    operator_parameters_names = [
+        t for t in type(definition.operator).model_fields if t != TYPE_PARAMETER_NAME
+    ]
+    operator_parameters = {
+        a: getattr(definition.operator, a) for a in operator_parameters_names
+    }
     operand_builder = create_operand_builder(
         definition=definition.operand, execution_context=execution_context
     )
@@ -201,23 +225,29 @@ def build_unary_statement(
         operator=operator,
         negate=definition.negate,
         operation_type=definition.type,
+        operator_parameters=operator_parameters,
     )
 
 
 def unary_eval(
     values: Dict[str, T],
     operand_builder: Callable[[Dict[str, T]], V],
-    operator: Callable[[V], bool],
+    operator: Callable[[V, Any], bool],
     negate: bool,
     operation_type: str,
+    operator_parameters: Optional[Dict[str, Any]] = None,
 ) -> bool:
+    if operator_parameters is None:
+        operator_parameters = {}
     try:
         operand = operand_builder(values)
-        result = operator(operand)
+        result = operator(operand, **operator_parameters)
         if negate:
             result = not result
         return result
-    except (TypeError, ValueError) as error:
+    except RoboflowQueryLanguageError as error:
+        raise error
+    except Exception as error:
         raise EvaluationEngineError(
             public_message=f"Attempted to execute evaluation of type: {operation_type}, "
             f"but encountered error: {error}",

@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Union
+from typing import Any, List, Literal, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -26,6 +26,7 @@ from inference.core.workflows.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     WILDCARD_KIND,
+    ZONE_KIND,
 )
 
 TYPE_PARAMETER_NAME = "type"
@@ -131,6 +132,7 @@ class NumericSequenceAggregate(OperationDefinition):
     )
     type: Literal["NumericSequenceAggregate"]
     function: SequenceAggregationFunction
+    neutral_value: Any = Field(default=None)
 
 
 class SequenceAggregate(OperationDefinition):
@@ -699,6 +701,20 @@ class IsNotEmpty(UnaryOperator):
     type: Literal["(Sequence) is not empty"]
 
 
+class DetectionInZone(BinaryOperator):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Checks if detection is in zone",
+            "operands_number": 2,
+            "operands_kinds": [
+                [DETECTION_KIND, ZONE_KIND],
+            ],
+            "output_kind": [BOOLEAN_KIND],
+        },
+    )
+    type: Literal["(Detection) in zone"]
+
+
 class StaticOperand(BaseModel):
     type: Literal["StaticOperand"]
     value: Any
@@ -728,6 +744,7 @@ class BinaryStatement(BaseModel):
             NumerGreater,
             NotEquals,
             Equals,
+            DetectionInZone,
         ],
         Field(discriminator="type"),
     ]

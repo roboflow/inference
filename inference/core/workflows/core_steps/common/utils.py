@@ -14,6 +14,8 @@ from inference.core.entities.requests.yolo_world import YOLOWorldInferenceReques
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
+    HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE,
@@ -31,6 +33,7 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_ID_KEY,
     SCALING_RELATIVE_TO_PARENT_KEY,
     SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+    WIDTH_KEY,
     X_KEY,
     Y_KEY,
 )
@@ -83,9 +86,11 @@ def attach_prediction_type_info_to_sv_detections_batch(
 def convert_inference_detections_batch_to_sv_detections(
     predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
     predictions_key: str = "predictions",
+    image_key: str = "image",
 ) -> List[sv.Detections]:
     batch_of_detections: List[sv.Detections] = []
     for p in predictions:
+        width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         detections = sv.Detections.from_inference(p)
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
         detection_ids = [
@@ -93,6 +98,7 @@ def convert_inference_detections_batch_to_sv_detections(
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
+        detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
         batch_of_detections.append(detections)
     return batch_of_detections
 
@@ -245,6 +251,9 @@ def sv_detections_to_root_coordinates(
     )
     origin_height = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][0]
     origin_width = detections_copy[ROOT_PARENT_DIMENSIONS_KEY][0][1]
+    detections_copy[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[origin_height, origin_width]] * len(detections_copy)
+    )
     root_parent_id = detections_copy[ROOT_PARENT_ID_KEY][0]
     shift_x, shift_y = detections_copy[ROOT_PARENT_COORDINATES_KEY][0]
     detections_copy.xyxy += [shift_x, shift_y, shift_x, shift_y]
@@ -340,6 +349,9 @@ def scale_sv_detections(
             detections_copy[keypoints_key][i] = (
                 detections_copy[keypoints_key][i].astype(np.float32) * scale
             ).round()
+    detections_copy[IMAGE_DIMENSIONS_KEY] = (
+        detections_copy[IMAGE_DIMENSIONS_KEY] * scale
+    ).round()
     if detections_copy.mask is not None:
         scaled_masks = []
         original_mask_size_wh = (

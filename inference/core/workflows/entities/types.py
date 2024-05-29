@@ -311,6 +311,19 @@ DETECTION_KIND = Kind(
     docs=DETECTION_KIND_DOCS,
 )
 
+
+POINT_KIND = Kind(
+    name="point",
+    description="Single point in 2D",
+    docs=None,
+)
+
+ZONE_KIND = Kind(
+    name="zone",
+    description="Definition of polygon zone",
+    docs=None,
+)
+
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single object detection prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
