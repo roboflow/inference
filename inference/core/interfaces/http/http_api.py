@@ -825,9 +825,7 @@ class HttpInterface(BaseInterface):
                 )
                 return await process_workflow_inference_request(
                     workflow_request=workflow_request,
-                    workflow_specification=workflow_specification.get(
-                        "specification", {}
-                    ),
+                    workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
                 )
 
