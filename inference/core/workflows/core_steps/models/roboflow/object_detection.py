@@ -43,7 +43,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
+Run inference on a object-detection model hosted on or uploaded to Roboflow.
 
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
@@ -66,7 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["RoboflowObjectDetectionModel", "ObjectDetectionModel"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )

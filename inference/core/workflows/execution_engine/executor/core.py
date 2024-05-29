@@ -55,6 +55,7 @@ async def run_workflow(
     return construct_workflow_output(
         workflow_outputs=workflow.workflow_definition.outputs,
         execution_cache=execution_cache,
+        runtime_parameters=runtime_parameters,
     )
 
 

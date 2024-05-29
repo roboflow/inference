@@ -44,7 +44,7 @@ def test_render_boxes_completes_successfully() -> None:
             )
         ],
         image=InferenceResponseImage(width=1920, height=1080),
-    ).dict(
+    ).model_dump(
         by_alias=True,
         exclude_none=True,
     )
@@ -107,7 +107,7 @@ def test_render_boxes_completes_successfully_against_batch_input() -> None:
                 )
             ],
             image=InferenceResponseImage(width=1920, height=1080),
-        ).dict(
+        ).model_dump(
             by_alias=True,
             exclude_none=True,
         )

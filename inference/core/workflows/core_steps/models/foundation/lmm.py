@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["LMM"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
