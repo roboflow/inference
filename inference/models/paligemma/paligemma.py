@@ -18,7 +18,10 @@ import torch
 from PIL import Image
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.entities.responses.inference import LMMInferenceResponse
+from inference.core.entities.responses.inference import (
+    LMMInferenceResponse,
+    InferenceResponseImage,
+)
 from inference.core.env import API_KEY, MODEL_CACHE_DIR, PALIGEMMA_VERSION_ID
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowInferenceModel
@@ -40,7 +43,7 @@ class PaliGemma(RoboflowInferenceModel):
     def __init__(self, model_id, *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
         self.cache_model_artefacts()
-        
+
         self.api_key = API_KEY
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
@@ -56,16 +59,23 @@ class PaliGemma(RoboflowInferenceModel):
         self, image: Any, **kwargs
     ) -> Tuple[Image.Image, PreprocessReturnMetadata]:
         pil_image = Image.fromarray(load_image_rgb(image))
+        image_dims = pil_image.size
 
-        return pil_image, PreprocessReturnMetadata({})
+        return pil_image, PreprocessReturnMetadata({"image_dims": image_dims})
 
     def postprocess(
         self,
         predictions: Tuple[str],
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
-    ) -> Any:
-        return predictions[0]
+    ) -> LMMInferenceResponse:
+        text = predictions[0]
+        image_dims = preprocess_return_metadata["image_dims"]
+        response = LMMInferenceResponse(
+            response=text,
+            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
+        )
+        return response
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(
@@ -81,15 +91,6 @@ class PaliGemma(RoboflowInferenceModel):
             decoded = self.processor.decode(generation, skip_special_tokens=True)
 
         return (decoded,)
-
-    def infer_from_request(
-        self, request: LMMInferenceRequest
-    ) -> LMMInferenceResponse:
-        t1 = perf_counter()
-        text = self.infer(**request.dict())
-        response = LMMInferenceResponse(response=text)
-        response.time = perf_counter() - t1
-        return response
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.
