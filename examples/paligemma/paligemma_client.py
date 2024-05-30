@@ -25,7 +25,7 @@ def do_gemma_request():
         "model_id": "paligemma-3b-mix-224",
     }
     response = requests.post(
-        f'http://localhost:{PORT}/infer/lmm/',
+        f'http://localhost:{PORT}/infer/lmm',
         json=infer_payload,
     )
     resp = response.json()
