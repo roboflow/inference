@@ -213,13 +213,6 @@ except:
     pass
 
 try:
-    from inference.models.paligemma.paligemma import PaliGemma
-
-    ROBOFLOW_MODEL_TYPES[("llm", "paligemma")] = PaliGemma
-except:
-    pass
-
-try:
     from inference.models import YOLOWorld
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld

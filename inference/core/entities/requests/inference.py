@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, ClassVar
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -230,6 +230,7 @@ class ClassificationInferenceRequest(CVInferenceRequest):
 
 
 class LMMInferenceRequest(CVInferenceRequest):
+    visualize_predictions: ClassVar = False
     prompt: Optional[str] = Field(
         default=None,
         examples=["caption"],
