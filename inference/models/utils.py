@@ -21,6 +21,7 @@ from inference.models import (
     YOLOv8ObjectDetection,
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
+    PaliGemma
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
@@ -58,6 +59,9 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov10m"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10l"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10x"): YOLOv10ObjectDetection,
+    ("object-detection", "paligemma-3b-pt-224"): PaliGemma,
+    ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
+    ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
