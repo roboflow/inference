@@ -21,7 +21,7 @@ from inference.models import (
     YOLOv8ObjectDetection,
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
-    PaliGemma
+    PaliGemma,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
@@ -59,12 +59,6 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov10m"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10l"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10x"): YOLOv10ObjectDetection,
-    ("object-detection", "paligemma-3b-pt-224"): PaliGemma, # TODO: change when we have a new project type
-    ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
-    ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
-    ("instance-segmentation", "paligemma-3b-pt-224"): PaliGemma, # TODO: change when we have a new project type
-    ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
-    ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
@@ -154,6 +148,27 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
 }
+
+try:
+    from inference.models import PaliGemma
+
+    paligemma_models = {
+        (
+            "object-detection",
+            "paligemma-3b-pt-224",
+        ): PaliGemma,  # TODO: change when we have a new project type
+        ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
+        ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
+        (
+            "instance-segmentation",
+            "paligemma-3b-pt-224",
+        ): PaliGemma,  # TODO: change when we have a new project type
+        ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
+        ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+    }
+    ROBOFLOW_MODEL_TYPES.update(paligemma_models)
+except:
+    pass
 
 try:
     from inference.models import SegmentAnything

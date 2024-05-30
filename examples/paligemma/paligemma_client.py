@@ -26,7 +26,7 @@ def do_gemma_request():
         "prompt": prompt
     }
     response = requests.post(
-        f'http://localhost:{PORT}/llm/paligemma',
+        f'http://localhost:{PORT}/lmm/paligemma-3b-mix-224',
         json=infer_payload,
     )
     resp = response.json()

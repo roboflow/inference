@@ -86,13 +86,13 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
-    CORE_MODEL_PALIGEMMA_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
+    LMM_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
     NOTEBOOK_ENABLED,
@@ -796,33 +796,34 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
-            @app.post(
-                "/infer/lmm",
-                response_model=Union[
-                    LMMInferenceResponse,
-                    List[LMMInferenceResponse],
-                    StubResponse,
-                ],
-                summary="Large multi-modal model infer",
-                description="Run inference with the specified large multi-modal model",
-                response_model_exclude_none=True,
-            )
-            @with_route_exceptions
-            async def infer_object_detection(
-                inference_request: LMMInferenceRequest,
-                background_tasks: BackgroundTasks,
-            ):
-                """Run inference with the specified object detection model.
+            if LMM_ENABLED:
+                @app.post(
+                    "/infer/lmm",
+                    response_model=Union[
+                        LMMInferenceResponse,
+                        List[LMMInferenceResponse],
+                        StubResponse,
+                    ],
+                    summary="Large multi-modal model infer",
+                    description="Run inference with the specified large multi-modal model",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                async def infer_object_detection(
+                    inference_request: LMMInferenceRequest,
+                    background_tasks: BackgroundTasks,
+                ):
+                    """Run inference with the specified object detection model.
 
-                Args:
-                    inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
-                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+                    Args:
+                        inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
+                        background_tasks: (BackgroundTasks) pool of fastapi background tasks
 
-                Returns:
-                    Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
-                """
-                logger.debug(f"Reached /infer/lmm")
-                return await process_inference_request(inference_request)
+                    Returns:
+                        Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
+                    """
+                    logger.debug(f"Reached /infer/lmm")
+                    return await process_inference_request(inference_request)
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
