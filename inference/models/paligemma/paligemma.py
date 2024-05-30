@@ -40,11 +40,8 @@ class PaliGemma(RoboflowInferenceModel):
     def __init__(self, model_id, *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
         self.cache_model_artefacts()
-        self.model_id = model_id
-        self.endpoint = model_id
         
         self.api_key = API_KEY
-        self.dataset_id, self.version_id = model_id.split("/")
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
             self.cache_dir,

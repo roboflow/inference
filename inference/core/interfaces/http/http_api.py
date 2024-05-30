@@ -809,9 +809,8 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
-                async def infer_object_detection(
+                async def infer_lmm(
                     inference_request: LMMInferenceRequest,
-                    background_tasks: BackgroundTasks,
                 ):
                     """Run inference with the specified object detection model.
 
