@@ -75,7 +75,7 @@ class PaliGemma(RoboflowInferenceModel):
             response=text,
             image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
         )
-        return response
+        return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(
