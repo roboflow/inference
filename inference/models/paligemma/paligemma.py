@@ -31,7 +31,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class PaliGemma(RoboflowInferenceModel):
@@ -46,7 +46,6 @@ class PaliGemma(RoboflowInferenceModel):
         self.api_key = API_KEY
         self.dataset_id, self.version_id = model_id.split("/")
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        print(self.cache_dir)
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
             self.cache_dir,
             device_map=DEVICE,
