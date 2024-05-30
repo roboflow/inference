@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union, ClassVar
+from typing import Any, ClassVar, List, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
