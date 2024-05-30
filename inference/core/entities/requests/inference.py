@@ -228,6 +228,12 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
     )
 
+class LMMInferenceRequest(CVInferenceRequest):
+    prompt: Optional[str] = Field(
+        default=None,
+        examples=["caption"],
+        description="If set, use this prompt to guide the LMM"
+    )
 
 def request_from_type(model_type, request_dict):
     """Uses original request id"""

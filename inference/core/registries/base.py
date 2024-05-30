@@ -30,6 +30,7 @@ class ModelRegistry:
         Raises:
             ModelNotRecognisedError: If the model_type is not found in the registry_dict.
         """
+        print(model_type)
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(
                 f"Could not find model of type: {model_type} in configured registry."

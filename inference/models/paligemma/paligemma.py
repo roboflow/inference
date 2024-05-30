@@ -17,8 +17,8 @@ from typing import Any, List, Tuple, Union
 import torch
 from PIL import Image
 
-from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
-from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
+from inference.core.entities.requests.inference import LMMInferenceRequest
+from inference.core.entities.responses.inference import LMMInferenceResponse
 from inference.core.env import API_KEY, MODEL_CACHE_DIR, PALIGEMMA_VERSION_ID
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowInferenceModel
@@ -86,11 +86,11 @@ class PaliGemma(RoboflowInferenceModel):
         return (decoded,)
 
     def infer_from_request(
-        self, request: PaliGemmaInferenceRequest
-    ) -> PaliGemmaInferenceResponse:
+        self, request: LMMInferenceRequest
+    ) -> LMMInferenceResponse:
         t1 = perf_counter()
         text = self.infer(**request.dict())
-        response = PaliGemmaInferenceResponse(response=text)
+        response = LMMInferenceResponse(response=text)
         response.time = perf_counter() - t1
         return response
 
