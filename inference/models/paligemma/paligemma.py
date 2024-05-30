@@ -1,32 +1,32 @@
-from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
-import numpy as np
 import os
 import re
 
+import numpy as np
 from PIL import Image
+from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
 from inference.core.env import MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
 import os
 import time
-from inference.core.logger import logger
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import torch
 from PIL import Image
 
+from inference.core.cache.model_artifacts import save_bytes_in_cache
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.entities.responses.inference import (
-    LMMInferenceResponse,
     InferenceResponseImage,
+    LMMInferenceResponse,
 )
 from inference.core.env import API_KEY, MODEL_CACHE_DIR, PALIGEMMA_VERSION_ID
+from inference.core.exceptions import ModelArtefactError
+from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowInferenceModel
-from inference.core.cache.model_artifacts import save_bytes_in_cache
-from inference.core.exceptions import ModelArtefactError
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,

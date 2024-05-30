@@ -11,6 +11,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
+    PaliGemma,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
@@ -21,7 +22,6 @@ from inference.models import (
     YOLOv8ObjectDetection,
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
-    PaliGemma,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 

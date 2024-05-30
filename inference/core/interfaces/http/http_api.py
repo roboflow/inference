@@ -30,8 +30,8 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
+    LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
-    LMMInferenceRequest
 )
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
@@ -58,9 +58,9 @@ from inference.core.entities.responses.inference import (
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
+    LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
-    LMMInferenceResponse,
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
@@ -797,6 +797,7 @@ class HttpInterface(BaseInterface):
                 return await process_inference_request(inference_request)
 
             if LMM_ENABLED:
+
                 @app.post(
                     "/infer/lmm",
                     response_model=Union[

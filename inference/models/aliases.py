@@ -32,7 +32,7 @@ REGISTERED_ALIASES = {
     "yolov8l-pose-640": "coco-pose-detection/4",
     "yolov8x-pose-640": "coco-pose-detection/5",
     "yolov8x-pose-1280": "coco-pose-detection/6",
-    "paligemma-3b-mix-224": "paligemma-pretrains/1"
+    "paligemma-3b-mix-224": "paligemma-pretrains/1",
 }
 
 
