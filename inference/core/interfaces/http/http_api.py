@@ -465,6 +465,7 @@ class HttpInterface(BaseInterface):
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
+                "workflows_core.cache": cache,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
