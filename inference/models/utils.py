@@ -221,8 +221,6 @@ except:
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)
-    print(task)
-    print(model)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
 
 
