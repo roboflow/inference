@@ -49,7 +49,7 @@ FILTERING_WORKFLOW = {
                                         }
                                     ],
                                 },
-                                "comparator": {"type": "in"},
+                                "comparator": {"type": "in (Sequence)"},
                                 "right_operand": {
                                     "type": "DynamicOperand",
                                     "operand_name": "classes",

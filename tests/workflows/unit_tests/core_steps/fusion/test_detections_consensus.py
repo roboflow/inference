@@ -579,6 +579,7 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
             "root_parent_id": np.array(["root_x", "root_x"]),
             "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
             "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
         },
     )
 
@@ -606,6 +607,7 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
             "prediction_type": np.array(["object-detection"]),
             "scaling_relative_to_parent": np.array([1.0]),
             "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
         },
     )
 
@@ -1247,6 +1249,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
             "prediction_type": np.array(["object-detection"]),
             "scaling_relative_to_parent": np.array([1.0]),
             "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
         },
     )
     detections_from_sources = [
@@ -1290,6 +1293,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
                 "prediction_type": np.array(["object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
             },
         )
     ]
@@ -1366,6 +1370,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
             "prediction_type": np.array(["object-detection"]),
             "scaling_relative_to_parent": np.array([1.0]),
             "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
         },
     )
     detections_from_sources = [
@@ -1386,6 +1391,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
                 "prediction_type": np.array(["object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
             },
         ),
     ]
@@ -1427,6 +1433,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
                 "prediction_type": np.array(["object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
             },
         )
     ]
@@ -1529,6 +1536,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
             "prediction_type": np.array(["object-detection"]),
             "scaling_relative_to_parent": np.array([1.0]),
             "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
         },
     )
     detections_from_sources = [
@@ -1549,6 +1557,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
                 "prediction_type": np.array(["object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
             },
         ),
     ]
@@ -1598,6 +1607,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
             "prediction_type": np.array(["object-detection"]),
             "scaling_relative_to_parent": np.array([1.0]),
             "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
         },
     )
     detections_from_sources = [
@@ -1618,6 +1628,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
                 "prediction_type": np.array(["object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
             },
         ),
     ]
@@ -1923,6 +1934,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
                 "prediction_type": np.array(["object-detection", "object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0, 1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
             },
         )
     ]
@@ -1958,6 +1970,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
             "prediction_type": np.array(["object-detection", "object-detection"]),
             "scaling_relative_to_parent": np.array([1.0, 1.0]),
             "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
         },
     )
 
@@ -1987,6 +2000,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
                 "prediction_type": np.array(["object-detection", "object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0, 1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
             },
         ),
         sv.Detections(
@@ -2005,6 +2019,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
                 "prediction_type": np.array(["object-detection", "object-detection"]),
                 "scaling_relative_to_parent": np.array([1.0, 1.0]),
                 "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
             },
         ),
     ]
@@ -2040,6 +2055,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
             "prediction_type": np.array(["object-detection", "object-detection"]),
             "scaling_relative_to_parent": np.array([1.0, 1.0]),
             "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
         },
     )
 

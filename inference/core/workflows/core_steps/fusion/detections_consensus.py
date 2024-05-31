@@ -22,6 +22,7 @@ from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -511,6 +512,7 @@ def merge_detections(
         ROOT_PARENT_DIMENSIONS_KEY: np.array(
             [detections[ROOT_PARENT_DIMENSIONS_KEY][0]]
         ),
+        IMAGE_DIMENSIONS_KEY: np.array([detections[IMAGE_DIMENSIONS_KEY][0]]),
     }
     if SCALING_RELATIVE_TO_PARENT_KEY in detections.data:
         data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
