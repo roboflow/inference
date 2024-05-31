@@ -122,8 +122,10 @@ class PaliGemma(RoboflowInferenceModel):
             )
         for weights_url in api_data["ort"]["weights"].values():
             t1 = perf_counter()
-            model_weights_response = get_from_url(weights_url, json_response=False)
             filename = weights_url.split("?")[0].split("/")[-1]
+            if filename.endswith(".npz"):
+                continue
+            model_weights_response = get_from_url(weights_url, json_response=False)
             save_bytes_in_cache(
                 content=model_weights_response.content,
                 file=filename,
