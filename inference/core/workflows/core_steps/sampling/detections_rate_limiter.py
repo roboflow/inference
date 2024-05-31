@@ -30,10 +30,16 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-LONG_DESCRIPTION = """
-"""
+SHORT_DESCRIPTION = (
+    "Exclude detections from further processing based on configurable conditions"
+)
 
-SHORT_DESCRIPTION = ""
+LONG_DESCRIPTION = """
+Block let user to define wide range of rules dictating which predictions should be passed to further
+processing and which should be rejected.
+
+Using this block in workflow may be beneficial in pair with sinks to avoid extensive data transfers. 
+"""
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -45,7 +51,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "sampling",
         }
     )
-    type: Literal["DetectionsSampler"]
+    type: Literal["DetectionsRateLimiter"]
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -80,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class DetectionsSamplerBlock(WorkflowBlock):
+class DetectionsRateLimiterBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

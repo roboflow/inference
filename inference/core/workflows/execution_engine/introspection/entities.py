@@ -35,6 +35,7 @@ class ParsedSelector:
     step_name: str
     value: str
     index: Optional[int]
+    key: Optional[str]
 
 
 @dataclass(frozen=True)

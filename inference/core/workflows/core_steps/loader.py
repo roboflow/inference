@@ -34,11 +34,11 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
-from inference.core.workflows.core_steps.sampling.detections_sampler import (
-    DetectionsSamplerBlock,
+from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
+    DetectionsRateLimiterBlock,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.data_collector import (
-    RoboflowDataCollectorBlock,
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_sink import (
+    RoboflowDatasetSinkBlock,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
@@ -46,6 +46,9 @@ from inference.core.workflows.core_steps.transformations.absolute_static_crop im
 from inference.core.workflows.core_steps.transformations.crop import CropBlock
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     DetectionOffsetBlock,
+)
+from inference.core.workflows.core_steps.transformations.detections_filter import (
+    DetectionsFilterBlock,
 )
 from inference.core.workflows.core_steps.transformations.detections_transformation import (
     DetectionsTransformationBlock,
@@ -75,7 +78,8 @@ def load_blocks() -> list:
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
-        DetectionsSamplerBlock,
+        DetectionsRateLimiterBlock,
         ConditionBlock,
-        RoboflowDataCollectorBlock,
+        RoboflowDatasetSinkBlock,
+        DetectionsFilterBlock,
     ]

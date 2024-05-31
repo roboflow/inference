@@ -16,6 +16,9 @@ from inference.core.workflows.core_steps.common.utils import (
     grab_batch_parameters,
     grab_non_batch_parameters,
 )
+from inference.core.workflows.core_steps.transformations.detections_transformation import (
+    execute_transformation,
+)
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -31,25 +34,19 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-LONG_DESCRIPTION = """
-Block changes detected Bounding Boxes in a way specified in configuration.
-
-It supports such operations as changing the size of Bounding Boxes. 
-"""
-
-SHORT_DESCRIPTION = "Transforms detections manipulating detected Bounding Boxes"
+SHORT_DESCRIPTION = "Filters out unwanted Bounding Boxes based on conditions specified"
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "short_description": SHORT_DESCRIPTION,
-            "long_description": LONG_DESCRIPTION,
+            "long_description": SHORT_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
         }
     )
-    type: Literal["DetectionsTransformation"]
+    type: Literal["DetectionsFilter"]
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -84,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class DetectionsTransformationBlock(WorkflowBlock):
+class DetectionsFilterBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -101,49 +98,3 @@ class DetectionsTransformationBlock(WorkflowBlock):
             operations=operations,
             operations_parameters=operations_parameters,
         )
-
-
-def execute_transformation(
-    predictions: Batch[Optional[sv.Detections]],
-    operations: List[OperationDefinition],
-    operations_parameters: Dict[str, Any],
-) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-    if DEFAULT_OPERAND_NAME in operations_parameters:
-        raise ValueError(
-            f"Detected reserved parameter name: {DEFAULT_OPERAND_NAME} declared in `operations_parameters` "
-            f"of `DetectionsTransformation` block."
-        )
-    operations_chain = build_operations_chain(operations=operations)
-    batch_parameters = grab_batch_parameters(
-        operations_parameters=operations_parameters,
-        main_batch_size=len(predictions),
-    )
-    non_batch_parameters = grab_non_batch_parameters(
-        operations_parameters=operations_parameters,
-    )
-    batch_parameters_keys = list(batch_parameters.keys())
-    batches_to_align = [predictions] + [
-        batch_parameters[k] for k in batch_parameters_keys
-    ]
-    results = []
-    for payload in Batch.zip_nonempty(batches=batches_to_align):
-        detections = payload[0]
-        single_evaluation_parameters = copy(non_batch_parameters)
-        for key, value in zip(batch_parameters_keys, payload[1:]):
-            single_evaluation_parameters[key] = value
-        transformed_detections = operations_chain(
-            detections,
-            global_parameters=single_evaluation_parameters,
-        )
-        if not isinstance(transformed_detections, sv.Detections):
-            raise ValueError(
-                "Definition of operation chain provided to `DetectionsTransformation` block "
-                f"transforms sv.Detections into different type: {type(transformed_detections)} "
-                "which is not allowed."
-            )
-        results.append({"predictions": transformed_detections})
-    return Batch.align_batches_results(
-        batches=batches_to_align,
-        results=results,
-        null_element={"predictions": None},
-    )

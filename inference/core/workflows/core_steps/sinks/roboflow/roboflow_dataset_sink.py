@@ -58,9 +58,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "TODO"
+SHORT_DESCRIPTION = "Save images and predictions in your Roboflow Dataset"
 
 LONG_DESCRIPTION = """
+Block let users save their images and predictions into Roboflow Dataset. Persisting data from
+production environments helps iteratively building more robust models. 
+
+Block provides configuration options to decide how data should be stored and what are the limits 
+to be applied. We advice using this block in combination with rate limiter blocks to effectively 
+collect data that the model struggle with.
 """
 
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
@@ -78,23 +84,20 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "sink",
         }
     )
-    type: Literal["RoboflowDataCollector"]
+    type: Literal["RoboflowDatasetSink"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    predictions: Optional[
-        StepOutputSelector(
-            kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-            ]
-        )
-    ] = Field(
-        default=None,
+    predictions: StepOutputSelector(
+        kind=[
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+        ]
+    ) = Field(
         description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
@@ -108,6 +111,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Unique name for Roboflow project pointed by `target_project` parameter, that identifies "
         "usage quota applied for this block.",
         examples=["quota-for-data-sampling-1"],
+    )
+    persist_predictions: bool = Field(
+        default=True,
+        description="Boolean flag to decide if predictions should be registered along with images",
+        examples=[True, False],
     )
     minutely_usage_limit: int = Field(
         default=10,
@@ -182,7 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class RoboflowDataCollectorBlock(WorkflowBlock):
+class RoboflowDatasetSinkBlock(WorkflowBlock):
 
     def __init__(
         self,
@@ -205,10 +213,11 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
     async def run_locally(
         self,
         images: Batch[Optional[WorkflowImageData]],
-        predictions: Optional[Batch[Optional[Union[sv.Detections, dict]]]],
+        predictions: Batch[Optional[Union[sv.Detections, dict]]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
+        persist_predictions: bool,
         hourly_usage_limit: int,
         daily_usage_limit: int,
         max_image_size: Tuple[int, int],
@@ -234,15 +243,15 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
-        if predictions is None:
-            predictions = [None] * len(images)
+        batches_to_iterate = [images, predictions]
         result = []
-        for image, prediction in zip(images, predictions):
+        for image, prediction in Batch.zip_nonempty(batches=batches_to_iterate):
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
                 target_project=target_project,
                 usage_quota_name=usage_quota_name,
+                persist_predictions=persist_predictions,
                 minutely_usage_limit=minutely_usage_limit,
                 hourly_usage_limit=hourly_usage_limit,
                 daily_usage_limit=daily_usage_limit,
@@ -257,14 +266,19 @@ class RoboflowDataCollectorBlock(WorkflowBlock):
                 api_key=self._api_key,
             )
             result.append({"error_status": error_status, "message": message})
-        return result
+        return Batch.align_batches_results(
+            batches=batches_to_iterate,
+            results=result,
+            null_element={"error_status": False, "message": "Batch element skipped"},
+        )
 
 
 def register_datapoint_at_roboflow(
-    image: Optional[WorkflowImageData],
-    prediction: Optional[Union[sv.Detections, dict]],
+    image: WorkflowImageData,
+    prediction: Union[sv.Detections, dict],
     target_project: str,
     usage_quota_name: str,
+    persist_predictions: bool,
     minutely_usage_limit: int,
     hourly_usage_limit: int,
     daily_usage_limit: int,
@@ -278,14 +292,13 @@ def register_datapoint_at_roboflow(
     background_tasks: Optional[BackgroundTasks],
     api_key: str,
 ) -> Tuple[bool, str]:
-    if image is None:
-        return False, "Batch element skipped"
     registration_task = partial(
         execute_registration,
         image=image,
         prediction=prediction,
         target_project=target_project,
         usage_quota_name=usage_quota_name,
+        persist_predictions=persist_predictions,
         minutely_usage_limit=minutely_usage_limit,
         hourly_usage_limit=hourly_usage_limit,
         daily_usage_limit=daily_usage_limit,
@@ -307,6 +320,7 @@ def execute_registration(
     image: WorkflowImageData,
     prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
+    persist_predictions: bool,
     usage_quota_name: str,
     minutely_usage_limit: int,
     hourly_usage_limit: int,
@@ -365,7 +379,7 @@ def execute_registration(
             target_project=target_project,
             encoded_image=encoded_image,
             local_image_id=local_image_id,
-            prediction=prediction,
+            prediction=prediction if persist_predictions else None,
             api_key=api_key,
             batch_name=batch_name,
             tags=registration_tags,

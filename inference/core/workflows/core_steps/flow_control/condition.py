@@ -21,9 +21,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-LONG_DESCRIPTION = """"""
+LONG_DESCRIPTION = """
+Based on provided configuration, block decides which execution path to take given
+data fed into condition logic.
+"""
 
-SHORT_DESCRIPTION = ""
+SHORT_DESCRIPTION = "Creates alternative execution branches for data"
 
 
 class BlockManifest(WorkflowBlockManifest):

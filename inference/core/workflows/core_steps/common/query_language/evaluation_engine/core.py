@@ -35,6 +35,7 @@ BINARY_OPERATORS = {
     "(String) endsWith": lambda a, b: a.endswith(b),
     "(String) contains": lambda a, b: b in a,
     "in (Sequence)": lambda a, b: a in b,
+    "(Detection) in zone": is_point_in_zone,
 }
 
 UNARY_OPERATORS = {
@@ -44,7 +45,6 @@ UNARY_OPERATORS = {
     "(Boolean) is False": lambda a: a is False,
     "(Sequence) is empty": lambda a: len(a) == 0,
     "(Sequence) is not empty": lambda a: len(a) > 0,
-    "(Detection) in zone": is_point_in_zone,
 }
 
 
@@ -84,10 +84,10 @@ def build_binary_statement(
 ) -> Callable[[Dict[str, T]], bool]:
     operator = BINARY_OPERATORS[definition.comparator.type]
     operator_parameters_names = [
-        t for t in type(definition.operator).model_fields if t != TYPE_PARAMETER_NAME
+        t for t in type(definition.comparator).model_fields if t != TYPE_PARAMETER_NAME
     ]
     operator_parameters = {
-        a: getattr(definition.operator, a) for a in operator_parameters_names
+        a: getattr(definition.comparator, a) for a in operator_parameters_names
     }
     left_operand_builder = create_operand_builder(
         definition=definition.left_operand, execution_context=execution_context

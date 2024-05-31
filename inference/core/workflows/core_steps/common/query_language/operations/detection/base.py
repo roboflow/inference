@@ -24,9 +24,9 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.SIZE: lambda x: (
         (x[0][3] - x[0][1]) * (x[0][2] - x[0][0])
     ).item(),
-    DetectionsProperty.CENTER: lambda xyxy: (
-        xyxy[0] + (xyxy[2] - xyxy[0]) / 2,
-        xyxy[1] + (xyxy[3] - xyxy[1]) / 2,
+    DetectionsProperty.CENTER: lambda x: (
+        x[0][0] + (x[0][2] - x[0][0]) / 2,
+        x[0][1] + (x[0][3] - x[0][1]) / 2,
     ),
     DetectionsProperty.TOP_LEFT: lambda xyxy: (xyxy[0], xyxy[1]),
     DetectionsProperty.TOP_RIGHT: lambda xyxy: (xyxy[2], xyxy[1]),
