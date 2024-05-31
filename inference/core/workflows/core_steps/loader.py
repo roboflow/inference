@@ -37,8 +37,8 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
     DetectionsRateLimiterBlock,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_sink import (
-    RoboflowDatasetSinkBlock,
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
+    RoboflowDatasetUploadBlock,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
@@ -80,6 +80,6 @@ def load_blocks() -> list:
         DetectionsTransformationBlock,
         DetectionsRateLimiterBlock,
         ConditionBlock,
-        RoboflowDatasetSinkBlock,
+        RoboflowDatasetUploadBlock,
         DetectionsFilterBlock,
     ]

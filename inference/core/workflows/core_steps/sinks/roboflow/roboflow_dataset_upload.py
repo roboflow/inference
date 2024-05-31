@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "sink",
         }
     )
-    type: Literal["RoboflowDatasetSink"]
+    type: Literal["RoboflowDatasetUpload"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference at image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -190,7 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class RoboflowDatasetSinkBlock(WorkflowBlock):
+class RoboflowDatasetUploadBlock(WorkflowBlock):
 
     def __init__(
         self,

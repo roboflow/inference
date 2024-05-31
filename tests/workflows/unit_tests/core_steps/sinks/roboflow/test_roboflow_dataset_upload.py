@@ -10,10 +10,10 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow import roboflow_dataset_sink
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_sink import (
+from inference.core.workflows.core_steps.sinks.roboflow import roboflow_dataset_upload
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     BatchCreationFrequency,
-    RoboflowDatasetSinkBlock,
+    RoboflowDatasetUploadBlock,
     encode_prediction,
     execute_registration,
     generate_batch_name,
@@ -545,7 +545,7 @@ def test_execute_registration_when_registration_should_be_successful(
 @pytest.mark.asyncio
 async def test_run_sink_when_api_key_is_not_specified() -> None:
     # given
-    data_collector_block = RoboflowDatasetSinkBlock(
+    data_collector_block = RoboflowDatasetUploadBlock(
         cache=MemoryCache(),
         background_tasks=None,
         api_key=None,
@@ -574,7 +574,7 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
 @pytest.mark.asyncio
 async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     # given
-    data_collector_block = RoboflowDatasetSinkBlock(
+    data_collector_block = RoboflowDatasetUploadBlock(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",
@@ -625,7 +625,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
 @pytest.mark.asyncio
 async def test_run_sink_when_images_filtered_out() -> None:
     # given
-    data_collector_block = RoboflowDatasetSinkBlock(
+    data_collector_block = RoboflowDatasetUploadBlock(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",
@@ -674,7 +674,7 @@ async def test_run_sink_when_images_filtered_out() -> None:
 async def test_run_sink_when_registration_should_happen_in_background() -> None:
     # given
     background_tasks = BackgroundTasks()
-    data_collector_block = RoboflowDatasetSinkBlock(
+    data_collector_block = RoboflowDatasetUploadBlock(
         cache=MemoryCache(),
         background_tasks=background_tasks,
         api_key="my_api_key",
@@ -731,7 +731,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
-    data_collector_block = RoboflowDatasetSinkBlock(
+    data_collector_block = RoboflowDatasetUploadBlock(
         cache=cache,
         background_tasks=background_tasks,
         api_key="my_api_key",
