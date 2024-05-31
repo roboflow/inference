@@ -16,12 +16,13 @@ from PIL import Image
 
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import API_KEY, MODEL_CACHE_DIR # TODO: Add version ID to env
+from inference.core.env import API_KEY, MODEL_CACHE_DIR  # TODO: Add version ID to env
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 
 logging.set_verbosity_error()
+
 
 class TrOCR(RoboflowCoreModel):
     def __init__(self, *args, model_id=f"microsoft/trocr-large-printed", **kwargs):
@@ -29,15 +30,11 @@ class TrOCR(RoboflowCoreModel):
         self.model_id = model_id
         self.endpoint = model_id
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        self.cache_dir = model_id # TODO: Remove (temp)
+        self.cache_dir = model_id  # TODO: Remove (temp)
 
-        self.model = VisionEncoderDecoderModel.from_pretrained(
-            self.cache_dir
-        ).eval()
+        self.model = VisionEncoderDecoderModel.from_pretrained(self.cache_dir).eval()
 
-        self.processor = TrOCRProcessor.from_pretrained(
-            self.cache_dir
-        )
+        self.processor = TrOCRProcessor.from_pretrained(self.cache_dir)
         self.task_type = "ocr"
 
     def preprocess(
@@ -56,15 +53,16 @@ class TrOCR(RoboflowCoreModel):
         return predictions[0]
 
     def predict(self, image_in: Image.Image, **kwargs):
-        model_inputs = self.processor(
-            image_in, return_tensors="pt"
-        ).to(self.model.device).pixel_values
+        model_inputs = (
+            self.processor(image_in, return_tensors="pt")
+            .to(self.model.device)
+            .pixel_values
+        )
 
         with torch.inference_mode():
             generated_ids = self.model.generate(model_inputs)
             decoded = self.processor.batch_decode(
-                generated_ids,
-                skip_special_tokens=True
+                generated_ids, skip_special_tokens=True
             )
 
         return (decoded,)
@@ -86,12 +84,12 @@ class TrOCR(RoboflowCoreModel):
         """
         # TODO: Add model files to bucket
         # TODO: Add list of model files here
-        return [
-        ]
+        return []
 
 
 if __name__ == "__main__":
     import cv2
+
     path = input("Image path:")
     image = cv2.imread(path)
     trocr = TrOCR()
