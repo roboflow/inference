@@ -401,7 +401,8 @@ class RoboflowInferenceModel(Model):
             )
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
-                preprocessed_image, (self.img_size_w, self.img_size_h)
+                preprocessed_image, (self.img_size_w, self.img_size_h),
+                color=(114, 114, 114)
             )
         elif self.resize_method == "Fit (white edges) in":
             resized = letterbox_image(
