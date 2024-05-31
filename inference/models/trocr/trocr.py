@@ -21,8 +21,6 @@ from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-
 
 class TrOCR(RoboflowCoreModel):
     def __init__(self, *args, model_id=f"trocr/trocr-large-printed", **kwargs):
@@ -63,7 +61,10 @@ class TrOCR(RoboflowCoreModel):
 
         with torch.inference_mode():
             generated_ids = self.model.generate(model_inputs)
-            decoded = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
+            decoded = self.processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=True
+            )
 
         return (decoded,)
 
@@ -89,5 +90,8 @@ class TrOCR(RoboflowCoreModel):
 
 
 if __name__ == "__main__":
+    import cv2
+    path = input("Image path:")
+    image = cv2.imread(path)
     trocr = TrOCR()
     print(trocr.infer(image))
