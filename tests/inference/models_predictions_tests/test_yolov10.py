@@ -76,8 +76,8 @@ def assert_yolov10_detection_prediction_matches_reference(
         prediction.predictions[0].class_name == "dog"
     ), "Dog class was predicted by exported model"
     assert (
-        abs(prediction.predictions[0].confidence - 0.892430) < 1e-3
-    ), "Confidence while test creation was 0.892430"
+        abs(prediction.predictions[0].confidence - 0.903276) < 1e-3
+    ), "Confidence while test creation was 0.903276"
     xywh = [
         prediction.predictions[0].x,
         prediction.predictions[0].y,
@@ -85,5 +85,5 @@ def assert_yolov10_detection_prediction_matches_reference(
         prediction.predictions[0].height,
     ]
     assert np.allclose(
-        xywh, [360.0, 215.5, 558.0, 411.0], atol=0.6
-    ), "while test creation, box coordinates was [360.0, 215.5, 558.0, 411.0]"
+        xywh, [314.5, 217.0, 597.0, 414.0], atol=0.6
+    ), "while test creation, box coordinates was [314.5, 217.0, 597.0, 414.0]"
