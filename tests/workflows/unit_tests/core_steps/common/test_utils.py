@@ -195,6 +195,7 @@ def test_convert_inference_detections_batch_to_sv_detections() -> None:
             "class_name": np.array(["dog", "cat"]),
             "detection_id": np.array(["first", "second"]),
             "parent_id": np.array(["image", "image"]),
+            "image_dimensions": np.array([[200, 100], [200, 100]]),
         },
     )
 
@@ -581,6 +582,7 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
             "keypoints_xy": np.array(
                 [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
             ),
+            "image_dimensions": np.array([[200, 100], [200, 100]]),
         },
     )
 
@@ -664,6 +666,9 @@ def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> N
     assert (
         result["keypoints_xy"][1] == np.array([])
     ).all(), "Expected empty keypoints xy to be left as is"
+    assert np.allclose(
+        result["image_dimensions"], np.array([[1024, 512], [1024, 512]])
+    ), "Expected image dimensions to be root dimensions"
 
 
 def test_filter_out_unwanted_classes_from_sv_detections_batch_when_no_classes_defined() -> (
@@ -948,6 +953,7 @@ def test_scale_sv_detections_when_scale_makes_output_bigger() -> None:
             "keypoints_xy": np.array(
                 [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
             ),
+            "image_dimensions": np.array([[200, 100], [200, 100]]),
         },
     )
 
@@ -1027,6 +1033,9 @@ def test_scale_sv_detections_when_scale_makes_output_bigger() -> None:
     assert (
         result["keypoints_xy"][1] == np.array([])
     ).all(), "Expected empty keypoints xy to be left as is"
+    assert np.allclose(
+        result["image_dimensions"], np.array([[400, 200], [400, 200]])
+    ), "Expected image dimensions to increase 2x"
 
 
 def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
@@ -1065,6 +1074,7 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
             "keypoints_xy": np.array(
                 [np.array([[10, 20], [20, 30]]), np.array([])], dtype="object"
             ),
+            "image_dimensions": np.array([[200, 100], [200, 100]]),
         },
     )
 
@@ -1147,3 +1157,6 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     assert (
         result["keypoints_xy"][1] == np.array([])
     ).all(), "Expected empty keypoints xy to be left as is"
+    assert np.allclose(
+        result["image_dimensions"], np.array([[100, 50], [100, 50]])
+    ), "Expected image dimensions to decrease 2x"

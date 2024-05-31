@@ -686,7 +686,9 @@ def test_workflow_image_data_to_inference_format_when_numpy_preferred() -> None:
     assert np.allclose(result["value"], np.zeros((192, 168, 3), dtype=np.uint8))
 
 
-def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_available_on_the_spot() -> None:
+def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_available_on_the_spot() -> (
+    None
+):
     # given
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -701,11 +703,13 @@ def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_av
     assert np.allclose(result["value"], np.zeros((192, 168, 3), dtype=np.uint8))
 
 
-def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_url_available_on_the_spot() -> None:
+def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_url_available_on_the_spot() -> (
+    None
+):
     # given
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
-        image_reference="http://some.com/image.jpg"
+        image_reference="http://some.com/image.jpg",
     )
 
     # when
@@ -716,11 +720,13 @@ def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_ur
     assert result["value"] == "http://some.com/image.jpg"
 
 
-def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_file_path_available_on_the_spot() -> None:
+def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_file_path_available_on_the_spot() -> (
+    None
+):
     # given
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
-        image_reference="./some/file.jpeg"
+        image_reference="./some/file.jpeg",
     )
 
     # when
@@ -731,11 +737,13 @@ def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_fi
     assert result["value"] == "./some/file.jpeg"
 
 
-def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_base64_available_on_the_spot() -> None:
+def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_base64_available_on_the_spot() -> (
+    None
+):
     # given
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
-        base64_image="base64_value"
+        base64_image="base64_value",
     )
 
     # when

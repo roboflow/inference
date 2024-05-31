@@ -61,6 +61,12 @@ def test_encode_prediction_when_sv_detections_provided() -> None:
                     [192, 168],
                 ]
             ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
         },
     )
 
@@ -166,7 +172,7 @@ def test_is_prediction_registration_forbidden_when_non_empty_sv_detection_provid
     assert result is False
 
 
-@mock.patch.object(data_collector, "register_image_at_roboflow")
+@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
 def test_register_datapoint_when_duplicate_found(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -196,7 +202,7 @@ def test_register_datapoint_when_duplicate_found(
     assert result == "Duplicated image", "Duplicate status is expected to be reported"
 
 
-@mock.patch.object(data_collector, "register_image_at_roboflow")
+@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
 def test_register_datapoint_when_registration_should_be_forbidden(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -221,8 +227,8 @@ def test_register_datapoint_when_registration_should_be_forbidden(
     ), "Status reporting success on image registration is expected"
 
 
-@mock.patch.object(data_collector, "annotate_image_at_roboflow")
-@mock.patch.object(data_collector, "register_image_at_roboflow")
+@mock.patch.object(roboflow_dataset_upload, "annotate_image_at_roboflow")
+@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
 def test_register_datapoint_when_registration_should_be_successful(
     register_image_at_roboflow_mock: MagicMock,
     annotate_image_at_roboflow_mock: MagicMock,
@@ -238,6 +244,12 @@ def test_register_datapoint_when_registration_should_be_successful(
             "detection_id": np.array(["first", "second"]),
             "parent_id": np.array(["image", "image"]),
             "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "image_dimensions": np.array(
                 [
                     [192, 168],
                     [192, 168],
@@ -313,7 +325,7 @@ def test_register_datapoint_when_registration_should_be_successful(
         ("my_batch", "monthly", "my_batch_2024_05_01"),
     ],
 )
-@mock.patch.object(data_collector, "datetime")
+@mock.patch.object(roboflow_dataset_upload, "datetime")
 def test_generate_batch_name(
     datetime_mock: MagicMock,
     labeling_batch_prefix: str,
@@ -350,7 +362,7 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch.object(data_collector, "get_roboflow_workspace")
+@mock.patch.object(roboflow_dataset_upload, "get_roboflow_workspace")
 def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock: MagicMock,
 ) -> None:
@@ -373,7 +385,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     ), "Expected retrieved workspace to be saved in cache"
 
 
-@mock.patch.object(data_collector, "use_credit_of_matching_strategy")
+@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
 def test_execute_registration_when_quota_limit_exceeded(
     use_credit_of_matching_strategy_mock: MagicMock,
 ) -> None:
@@ -402,6 +414,7 @@ def test_execute_registration_when_quota_limit_exceeded(
         prediction=prediction,
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -421,9 +434,9 @@ def test_execute_registration_when_quota_limit_exceeded(
     ), "Expected quota hut to be marked"
 
 
-@mock.patch.object(data_collector, "return_strategy_credit")
-@mock.patch.object(data_collector, "register_datapoint")
-@mock.patch.object(data_collector, "use_credit_of_matching_strategy")
+@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
+@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
+@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
 def test_execute_registration_when_error_in_registration_happened(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -455,6 +468,7 @@ def test_execute_registration_when_error_in_registration_happened(
         prediction=prediction,
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -477,9 +491,9 @@ def test_execute_registration_when_error_in_registration_happened(
     )
 
 
-@mock.patch.object(data_collector, "return_strategy_credit")
-@mock.patch.object(data_collector, "register_datapoint")
-@mock.patch.object(data_collector, "use_credit_of_matching_strategy")
+@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
+@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
+@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
 def test_execute_registration_when_registration_should_be_successful(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -510,6 +524,12 @@ def test_execute_registration_when_registration_should_be_successful(
                     [128, 128],
                 ]
             ),
+            "image_dimensions": np.array(
+                [
+                    [128, 128],
+                    [128, 128],
+                ]
+            ),
         },
     )
     register_datapoint_mock.return_value = "STATUS OK"
@@ -520,6 +540,7 @@ def test_execute_registration_when_registration_should_be_successful(
         prediction=detections,
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -558,6 +579,7 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
             predictions=Batch(content=[]),
             target_project="my_project",
             usage_quota_name="my_quota",
+            persist_predictions=True,
             minutely_usage_limit=10,
             hourly_usage_limit=100,
             daily_usage_limit=1000,
@@ -597,6 +619,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -644,6 +667,7 @@ async def test_run_sink_when_images_filtered_out() -> None:
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -670,7 +694,7 @@ async def test_run_sink_when_images_filtered_out() -> None:
 
 
 @pytest.mark.asyncio
-@mock.patch.object(data_collector, "execute_registration", MagicMock())
+@mock.patch.object(roboflow_dataset_upload, "execute_registration", MagicMock())
 async def test_run_sink_when_registration_should_happen_in_background() -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -697,6 +721,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -724,7 +749,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
 
 
 @pytest.mark.asyncio
-@mock.patch.object(data_collector, "execute_registration")
+@mock.patch.object(roboflow_dataset_upload, "execute_registration")
 async def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
     execute_registration_mock: MagicMock,
 ) -> None:
@@ -755,6 +780,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
         usage_quota_name="my_quota",
+        persist_predictions=True,
         minutely_usage_limit=10,
         hourly_usage_limit=100,
         daily_usage_limit=1000,
@@ -785,6 +811,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
                 prediction=prediction,
                 target_project="my_project",
                 usage_quota_name="my_quota",
+                persist_predictions=True,
                 minutely_usage_limit=10,
                 hourly_usage_limit=100,
                 daily_usage_limit=1000,

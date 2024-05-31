@@ -88,6 +88,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
             step_name="my_step",
             value="$inputs.image",
             index=None,
+            key=None,
         ),
         ParsedSelector(
             definition=SelectorDefinition(
@@ -105,6 +106,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
             step_name="my_step",
             value="$inputs.param",
             index=None,
+            key=None,
         ),
     ]
 

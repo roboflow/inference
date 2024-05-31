@@ -66,6 +66,12 @@ def test_serialise_sv_detections() -> None:
                     [192, 168],
                 ]
             ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
         },
     )
 
