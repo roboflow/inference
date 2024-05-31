@@ -2,7 +2,7 @@ import os
 
 import torch
 from PIL import Image
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel, logging
 
 from inference.core.env import MODEL_CACHE_DIR
 
@@ -21,14 +21,15 @@ from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 
+logging.set_verbosity_error()
 
 class TrOCR(RoboflowCoreModel):
-    def __init__(self, *args, model_id=f"trocr/trocr-large-printed", **kwargs):
+    def __init__(self, *args, model_id=f"microsoft/trocr-large-printed", **kwargs):
         # super().__init__(*args, model_id=model_id, **kwargs) TODO: Add model cache
         self.model_id = model_id
         self.endpoint = model_id
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        self.cache_dir = "microsoft/trocr-large-printed" # TODO: Remove (temp)
+        self.cache_dir = model_id # TODO: Remove (temp)
 
         self.model = VisionEncoderDecoderModel.from_pretrained(
             self.cache_dir
