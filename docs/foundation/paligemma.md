@@ -6,7 +6,7 @@ You can use PaliGemma to:
 2. Identify the location of objects in an image (object detection)
 3. Identify the precise location of objects in an imageh (image segmentation)
 
-You can deploy PaliGemma object detection models with Inference, and use PaliGemma for objcet detection.
+You can deploy PaliGemma object detection models with Inference, and use PaliGemma for object detection.
 
 ### How to Use PaliGemma (VQA)
 
