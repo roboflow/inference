@@ -1,4 +1,4 @@
-<a href="https://github.com/IDEA-Research/GroundingDINO" target="_blank">PaliGemma</a> is a large multimodal model developed by Google Research.
+<a href="https://blog.roboflow.com/paligemma-multimodal-vision/" target="_blank">PaliGemma</a> is a large multimodal model developed by Google Research.
 
 You can use PaliGemma to:
 
