@@ -6,7 +6,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.constants import KEYPOINTS_XY_KEY
+from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -262,12 +262,12 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                         )
                     ]
                 )
-                if KEYPOINTS_XY_KEY in detection.data:
+                if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detection.data:
                     corrected_key_points = cv.perspectiveTransform(
-                        src=detection.data[KEYPOINTS_XY_KEY][0],
+                        src=detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0],
                         m=perspective_transformer,
                     ).reshape(-1, 2)
-                    detection[KEYPOINTS_XY_KEY] = np.array(
+                    detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
                         [corrected_key_points], dtype="object"
                     )
                 corrected_detections.append(detection)
