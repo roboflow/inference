@@ -1,10 +1,7 @@
 from typing import Any
 
-import supervision as sv
-
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
-    SequenceUnwrapMethod,
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
@@ -38,15 +35,9 @@ DETECTION_PROPERTY_EXTRACTION = {
 def extract_detection_property(
     value: Any,
     property_name: DetectionsProperty,
-    unwrap_method: SequenceUnwrapMethod,
     execution_context: str,
     **kwargs,
 ) -> Any:
-    if isinstance(value, sv.Detections):
-        if unwrap_method is SequenceUnwrapMethod.FIRST:
-            value = next(iter(value))
-        else:
-            value = next(iter(value))[-1]
     if not isinstance(value, tuple) or len(value) != 6:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(

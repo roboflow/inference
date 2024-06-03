@@ -9,7 +9,6 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     NumberCastingMode,
     SequenceAggregationFunction,
     SequenceAggregationMode,
-    SequenceUnwrapMethod,
     StatementsGroupsOperator,
 )
 from inference.core.workflows.entities.types import (
@@ -215,7 +214,6 @@ class ExtractDetectionProperty(OperationDefinition):
     )
     type: Literal["ExtractDetectionProperty"]
     property_name: DetectionsProperty
-    unwrap_method: SequenceUnwrapMethod = SequenceUnwrapMethod.FIRST
 
 
 class DetectionsFilter(OperationDefinition):

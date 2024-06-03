@@ -34,11 +34,6 @@ class DetectionsProperty(Enum):
     BOTTOM_RIGHT = "bottom_right"
 
 
-class SequenceUnwrapMethod(Enum):
-    FIRST = "first"
-    LAST = "last"
-
-
 class StatementsGroupsOperator(Enum):
     AND = "and"
     OR = "or"
