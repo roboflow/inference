@@ -180,6 +180,41 @@ def extend_perspective_polygon(
     )
 
 
+def generate_transformation_matrix(
+    src_polygon: np.ndarray,
+    detections: sv.Detections,
+    transformed_rect_width: int,
+    transformed_rect_height: int,
+    detections_anchor: Optional[sv.Position] = None,
+) -> np.ndarray:
+    polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
+        polygon=src_polygon
+    )
+    src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
+        polygon=polygon_with_vertices_clockwise
+    )
+    if detections_anchor:
+        src_polygon = extend_perspective_polygon(
+            polygon=src_polygon,
+            detections=detections,
+            bbox_position=sv.Position(detections_anchor),
+        )
+    src_polygon = src_polygon.astype(np.float32)
+    dst_polygon = np.array(
+        [
+            [0, transformed_rect_height - 1],
+            [0, 0],
+            [transformed_rect_width - 1, 0],
+            [transformed_rect_width - 1, transformed_rect_height - 1],
+        ]
+    ).astype(dtype=np.float32)
+    # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#ga20f62aa3235d869c9956436c870893ae
+    return cv.getPerspectiveTransform(
+        src=src_polygon,
+        dst=dst_polygon,
+    )
+
+
 def correct_detections(
     detections: sv.Detections, perspective_transformer: np.array
 ) -> sv.Detections:
@@ -237,36 +272,16 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 perspective_polygons
             )
             for polygon, detections in zip(largest_perspective_polygons, predictions):
-                polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
-                    polygon=polygon
-                )
-                src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
-                    polygon=polygon_with_vertices_clockwise
-                )
-                if extend_perspective_polygon_by_detections_anchor:
-                    src_polygon = extend_perspective_polygon(
-                        polygon=src_polygon,
-                        detections=detections,
-                        bbox_position=sv.Position(
-                            extend_perspective_polygon_by_detections_anchor
-                        ),
-                    )
-                src_polygon = src_polygon.astype(np.float32)
-                dst_polygon = np.array(
-                    [
-                        [0, transformed_rect_height - 1],
-                        [0, 0],
-                        [transformed_rect_width - 1, 0],
-                        [transformed_rect_width - 1, transformed_rect_height - 1],
-                    ]
-                ).astype(dtype=np.float32)
-                # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#ga20f62aa3235d869c9956436c870893ae
                 self.perspective_transformers.append(
-                    cv.getPerspectiveTransform(
-                        src=src_polygon,
-                        dst=dst_polygon,
+                    generate_transformation_matrix(
+                        src_polygon=polygon,
+                        detections=detections,
+                        transformed_rect_width=transformed_rect_width,
+                        transformed_rect_height=transformed_rect_height,
+                        detections_anchor=extend_perspective_polygon_by_detections_anchor,
                     )
                 )
+
         result = []
         for detections, perspective_transformer in zip(
             predictions, self.perspective_transformers
