@@ -48,7 +48,9 @@ def test_construct_response_when_coordinates_system_does_not_matter_for_specific
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -96,7 +98,9 @@ def test_construct_response_when_coordinates_system_does_not_matter_for_wildcard
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -167,7 +171,9 @@ def test_construct_response_when_detections_to_be_returned_in_own_coordinates() 
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -231,7 +237,9 @@ def test_construct_response_when_detections_to_be_returned_in_own_coordinates_us
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -358,7 +366,9 @@ def test_construct_response_when_detections_to_be_returned_in_parent_coordinates
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -520,7 +530,9 @@ def test_construct_response_when_detections_to_be_returned_in_parent_coordinates
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
     # then
     assert len(result) == 1, "Oly single output is expected"
@@ -581,7 +593,9 @@ def test_construct_response_when_step_output_is_missing_due_to_conditional_execu
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
@@ -602,8 +616,29 @@ def test_construct_response_when_expected_step_property_is_missing() -> None:
 
     # when
     result = construct_workflow_output(
-        workflow_outputs=workflow_outputs, execution_cache=execution_cache
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters={},
     )
 
     # then
     assert result == {"some": []}
+
+
+def test_construct_response_when_expected_to_provide_back_input() -> None:
+    # given
+    execution_cache = ExecutionCache.init()
+    runtime_parameters = {"some": "value"}
+    workflow_outputs = [
+        JsonField(type="JsonField", name="some", selector="$inputs.some"),
+    ]
+
+    # when
+    result = construct_workflow_output(
+        workflow_outputs=workflow_outputs,
+        execution_cache=execution_cache,
+        runtime_parameters=runtime_parameters,
+    )
+
+    # then
+    assert result == {"some": "value"}
