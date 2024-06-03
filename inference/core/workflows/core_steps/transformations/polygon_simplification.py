@@ -3,6 +3,8 @@ from typing import Any, List, Literal, Tuple, Type, Union
 import cv2 as cv
 import numpy as np
 import supervision as sv
+from pydantic import ConfigDict, Field
+
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -17,7 +19,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from pydantic import ConfigDict, Field
 
 OUTPUT_KEY: str = "simplified_polygons"
 TYPE: str = "PolygonSimplification"
@@ -62,16 +63,12 @@ class PolygonSimplificationManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]
-            ),
+            OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
         ]
 
 
 def calculate_simplified_polygon(
-    mask: np.ndarray,
-    required_number_of_vertices: int,
-    max_steps: int = 1000
+    mask: np.ndarray, required_number_of_vertices: int, max_steps: int = 1000
 ) -> np.array:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)

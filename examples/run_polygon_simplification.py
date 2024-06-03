@@ -9,15 +9,15 @@ import supervision as sv
 # should be handled by upper layer
 os.environ["WORKFLOWS_PLUGINS"] = "workflows_enterprise_blocks"
 
-from inference.core.managers.base import ModelManager
-from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
 from workflows_enterprise_blocks.contour_reducer import (
     CONTOUR_REDUCER_OUTPUT_KEY,
     CONTOUR_REDUCER_TYPE,
 )
+
+from inference.core.managers.base import ModelManager
+from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 YOUR_WORKFLOW = {
     "version": "1.0",
