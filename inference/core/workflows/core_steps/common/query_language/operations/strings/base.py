@@ -32,13 +32,6 @@ def string_to_upper(value: Any, execution_context: str, **kwargs) -> str:
 def to_string(value: Any, execution_context: str, **kwargs) -> str:
     try:
         return str(value)
-    except (TypeError, ValueError) as e:
-        raise InvalidInputTypeError(
-            public_message=f"Using operation to_string(...) in context {execution_context} which requires "
-            f"value possible to be converted into string, got: {type(value)}",
-            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
-            inner_error=e,
-        )
     except (RuntimeError, RuntimeError) as e:
         raise InvalidInputTypeError(
             public_message=f"Using operation to_string(...) in context {execution_context} caused the following "
