@@ -3,7 +3,6 @@ import requests
 import os
 
 PORT = 9001
-API_KEY = os.environ["API_KEY"]
 IMAGE_PATH = "../cogvlm/image.jpg"
 
 def encode_bas64(image_path):
@@ -14,7 +13,7 @@ def encode_bas64(image_path):
     return image_string.decode("ascii")
 
 def do_gemma_request():
-    prompt = "Describe this image"
+    prompt = "Caption"
 
     print(f"Starting")
     infer_payload = {
@@ -22,11 +21,11 @@ def do_gemma_request():
             "type": "base64",
             "value": encode_bas64(IMAGE_PATH),
         },
-        "api_key": API_KEY,
-        "prompt": prompt
+        "prompt": prompt,
+        "model_id": "paligemma-3b-mix-224",
     }
     response = requests.post(
-        f'http://localhost:{PORT}/llm/paligemma',
+        f'http://localhost:{PORT}/infer/lmm',
         json=infer_payload,
     )
     resp = response.json()
