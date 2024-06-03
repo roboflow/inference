@@ -58,6 +58,12 @@ from inference.core.workflows.core_steps.transformations.detections_transformati
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.core_steps.transformations.perspective_correction import (
+    PerspectiveCorrectionBlock,
+)
+from inference.core.workflows.core_steps.transformations.polygon_simplification import (
+    PolygonSimplificationBlock,
+)
 
 
 def load_blocks() -> list:
@@ -83,5 +89,8 @@ def load_blocks() -> list:
         DetectionsTransformationBlock,
         DetectionsRateLimiterBlock,
         ConditionBlock,
-        RoboflowDatasetUploadBlock
+        RoboflowDatasetUploadBlock,
+        DetectionsFilterBlock,
+        PerspectiveCorrectionBlock,
+        PolygonSimplificationBlock,
     ]
