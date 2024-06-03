@@ -472,6 +472,7 @@ class HttpInterface(BaseInterface):
                 init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 step_execution_mode=step_execution_mode,
+                prevent_local_images_loading=True,
             )
             result = await execution_engine.run_async(
                 runtime_parameters=workflow_request.inputs
@@ -955,6 +956,7 @@ class HttpInterface(BaseInterface):
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     step_execution_mode=step_execution_mode,
+                    prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
 

@@ -20,12 +20,14 @@ from inference.core.workflows.errors import RuntimeInputError
 def assembly_runtime_parameters(
     runtime_parameters: Dict[str, Any],
     defined_inputs: List[InputType],
+    prevent_local_images_loading: bool = False,
 ) -> Dict[str, Any]:
     for defined_input in defined_inputs:
         if isinstance(defined_input, WorkflowImage):
             runtime_parameters[defined_input.name] = assembly_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),
+                prevent_local_images_loading=prevent_local_images_loading,
             )
         else:
             runtime_parameters[defined_input.name] = assembly_inference_parameter(
@@ -36,7 +38,11 @@ def assembly_runtime_parameters(
     return runtime_parameters
 
 
-def assembly_input_image(parameter: str, image: Any) -> List[WorkflowImageData]:
+def assembly_input_image(
+    parameter: str,
+    image: Any,
+    prevent_local_images_loading: bool = False,
+) -> List[WorkflowImageData]:
     if image is None:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` defined as "
@@ -44,15 +50,29 @@ def assembly_input_image(parameter: str, image: Any) -> List[WorkflowImageData]:
             context="workflow_execution | runtime_input_validation",
         )
     if not isinstance(image, list):
-        return [_assembly_input_image(parameter=parameter, image=image)]
+        return [
+            _assembly_input_image(
+                parameter=parameter,
+                image=image,
+                prevent_local_images_loading=prevent_local_images_loading,
+            )
+        ]
     return [
-        _assembly_input_image(parameter=parameter, image=element, identifier=idx)
+        _assembly_input_image(
+            parameter=parameter,
+            image=element,
+            identifier=idx,
+            prevent_local_images_loading=prevent_local_images_loading,
+        )
         for idx, element in enumerate(image)
     ]
 
 
 def _assembly_input_image(
-    parameter: str, image: Any, identifier: Optional[int] = None
+    parameter: str,
+    image: Any,
+    identifier: Optional[int] = None,
+    prevent_local_images_loading: bool = False,
 ) -> WorkflowImageData:
     parent_id = parameter
     if identifier is not None:
@@ -74,7 +94,7 @@ def _assembly_input_image(
             if image.startswith("http://") or image.startswith("https://"):
                 image_reference = image
                 image = load_image_from_url(value=image)
-            elif os.path.exists(image):
+            elif not prevent_local_images_loading and os.path.exists(image):
                 image_reference = image
                 image = cv2.imread(image)
             else:

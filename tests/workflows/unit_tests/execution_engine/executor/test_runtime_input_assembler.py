@@ -57,6 +57,57 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
     ), "Expected parent id to be given after input param name"
 
 
+def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_allowed(
+    example_image_file: str,
+) -> None:
+    # given
+    runtime_parameters = {
+        "image1": {
+            "type": "file",
+            "value": example_image_file,
+        }
+    }
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
+
+    # when
+    result = assembly_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert (
+        len(result["image1"]) == 1
+    ), "Single image to be transformed into 1-element batch"
+    assert np.allclose(
+        result["image1"][0].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    ), "Expected image to be placed correctly"
+    assert (
+        result["image1"][0].parent_metadata.parent_id == "image1"
+    ), "Expected parent id to be given after input param name"
+
+
+def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_not_allowed(
+    example_image_file: str,
+) -> None:
+    # given
+    runtime_parameters = {
+        "image1": {
+            "type": "file",
+            "value": example_image_file,
+        }
+    }
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assembly_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            prevent_local_images_loading=True,
+        )
+
+
 def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_np_array() -> (
     None
 ):
