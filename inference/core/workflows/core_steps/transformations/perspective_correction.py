@@ -180,6 +180,42 @@ def extend_perspective_polygon(
     )
 
 
+def correct_detections(
+    detections: sv.Detections, perspective_transformer: np.array
+) -> sv.Detections:
+    corrected_detections: List[sv.Detections] = []
+    for i in range(len(detections)):
+        # copy
+        detection = detections[i]
+        polygon = np.array(sv.mask_to_polygons(detection.mask[0]), dtype=np.float32)
+        # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
+        corrected_polygon: np.ndarray = cv.perspectiveTransform(
+            src=polygon, m=perspective_transformer
+        ).reshape(-1, 2)
+        h, w, *_ = detection.mask[0].shape
+        detection.mask = np.array(
+            [
+                sv.polygon_to_mask(
+                    polygon=np.around(corrected_polygon).astype(np.int32),
+                    resolution_wh=(w, h),
+                ).astype(bool)
+            ]
+        )
+        detection.xyxy = np.array(
+            [np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(np.int32)]
+        )
+        if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detection.data:
+            corrected_key_points = cv.perspectiveTransform(
+                src=detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0],
+                m=perspective_transformer,
+            ).reshape(-1, 2)
+            detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
+                [corrected_key_points], dtype="object"
+            )
+        corrected_detections.append(detection)
+    return sv.Detections.merge(corrected_detections)
+
+
 class PerspectiveCorrectionBlock(WorkflowBlock):
     def __init__(self):
         self.perspective_transformers: List[np.array] = []
@@ -235,41 +271,9 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         for detections, perspective_transformer in zip(
             predictions, self.perspective_transformers
         ):
-            corrected_detections: List[sv.Detections] = []
-            for i in range(len(detections)):
-                # copy
-                detection = detections[i]
-                polygon = np.array(
-                    sv.mask_to_polygons(detection.mask[0]), dtype=np.float32
-                )
-                # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
-                corrected_polygon: np.ndarray = cv.perspectiveTransform(
-                    src=polygon, m=perspective_transformer
-                ).reshape(-1, 2)
-                h, w, *_ = detection.mask[0].shape
-                detection.mask = np.array(
-                    [
-                        sv.polygon_to_mask(
-                            polygon=np.around(corrected_polygon).astype(np.int32),
-                            resolution_wh=(w, h),
-                        ).astype(bool)
-                    ]
-                )
-                detection.xyxy = np.array(
-                    [
-                        np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
-                            np.int32
-                        )
-                    ]
-                )
-                if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detection.data:
-                    corrected_key_points = cv.perspectiveTransform(
-                        src=detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0],
-                        m=perspective_transformer,
-                    ).reshape(-1, 2)
-                    detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
-                        [corrected_key_points], dtype="object"
-                    )
-                corrected_detections.append(detection)
-            result.append({OUTPUT_KEY: sv.Detections.merge(corrected_detections)})
+            corrected_detections = correct_detections(
+                detections=detections,
+                perspective_transformer=perspective_transformer,
+            )
+            result.append({OUTPUT_KEY: corrected_detections})
         return result, FlowControl(mode="pass")
