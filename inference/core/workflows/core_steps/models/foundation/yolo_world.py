@@ -75,12 +75,12 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
     version: Union[
-        Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
+        Literal["v2-s", "v2-m", "v2-l", "v2-x", "s", "m", "l", "x", ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
-        default="l",
+        default="v2-s",
         description="Variant of YoloWorld model",
-        examples=["l", "$inputs.variant"],
+        examples=["v2-s", "$inputs.variant"],
     )
     confidence: Union[
         Optional[FloatZeroToOne],
@@ -88,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=0.005,
         description="Confidence threshold for detections",
-        examples=[0.3, "$inputs.confidence"],
+        examples=[0.005, "$inputs.confidence"],
     )
 
     @classmethod
