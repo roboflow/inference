@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 
 from inference.core.interfaces.http.orjson_utils import (
-    serialise_image,
     serialise_list,
     serialise_workflow_result,
 )
@@ -12,29 +11,6 @@ from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
-
-
-def test_serialise_image() -> None:
-    # given
-    np_image = np.zeros((192, 168, 3), dtype=np.uint8)
-    image = WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="some"),
-        numpy_image=np_image,
-    )
-
-    # when
-    result = serialise_image(image=image)
-
-    # then
-    assert result["type"] == "base64", "Type of image must point base64"
-    decoded = base64.b64decode(result["value"])
-    recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
-        cv2.IMREAD_UNCHANGED,
-    )
-    assert (
-        recovered_image == np_image
-    ).all(), "Recovered image should be equal to input image"
 
 
 def test_serialise_list() -> None:

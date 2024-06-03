@@ -31,40 +31,40 @@ PROPERTIES_EXTRACTORS = {
 
 
 def extract_detections_property(
-    value: Any,
+    detections: Any,
     property_name: DetectionsProperty,
     execution_context: str,
     **kwargs,
 ) -> List[Any]:
-    if not isinstance(value, sv.Detections):
-        value_as_str = safe_stringify(value=value)
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
         raise InvalidInputTypeError(
             public_message=f"Executing extract_detections_property(...) in context {execution_context}, "
-            f"expected sv.Detections object as value, got {value_as_str} of type {type(value)}",
+            f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
-    return PROPERTIES_EXTRACTORS[property_name](value)
+    return PROPERTIES_EXTRACTORS[property_name](detections)
 
 
 def filter_detections(
-    value: Any,
+    detections: Any,
     filtering_fun: Callable[[Dict[str, Any]], bool],
     global_parameters: Dict[str, Any],
 ) -> sv.Detections:
-    if not isinstance(value, sv.Detections):
-        value_as_str = safe_stringify(value=value)
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
         raise InvalidInputTypeError(
             public_message=f"Executing filter_detections(...), expected sv.Detections object as value, "
-            f"got {value_as_str} of type {type(value)}",
+            f"got {value_as_str} of type {type(detections)}",
             context="step_execution | roboflow_query_language_evaluation",
         )
     local_parameters = copy(global_parameters)
     result = []
-    for detection in value:
+    for detection in detections:
         local_parameters[DEFAULT_OPERAND_NAME] = detection
         should_stay = filtering_fun(local_parameters)
         result.append(should_stay)
-    return value[result]
+    return detections[result]
 
 
 def offset_detections(
@@ -77,13 +77,8 @@ def offset_detections(
             f"got {value_as_str} of type {type(value)}",
             context="step_execution | roboflow_query_language_evaluation",
         )
-    width_change = offset_x / 2
-    height_change = offset_y / 2
     detections_copy = deepcopy(value)
-    detections_copy.xyxy[:, 0] -= width_change
-    detections_copy.xyxy[:, 2] += width_change
-    detections_copy.xyxy[:, 1] -= height_change
-    detections_copy.xyxy[:, 3] += height_change
+    detections_copy.xyxy += [-offset_x / 2, -offset_y / 2, offset_x / 2, offset_y / 2]
     return detections_copy
 
 
@@ -96,8 +91,5 @@ def shift_detections(value: Any, shift_x: int, shift_y: int, **kwargs) -> sv.Det
             context="step_execution | roboflow_query_language_evaluation",
         )
     detections_copy = deepcopy(value)
-    detections_copy.xyxy[:, 0] += shift_x
-    detections_copy.xyxy[:, 2] += shift_x
-    detections_copy.xyxy[:, 1] += shift_y
-    detections_copy.xyxy[:, 3] += shift_y
+    detections_copy.xyxy += [shift_x, shift_y, shift_x, shift_y]
     return detections_copy

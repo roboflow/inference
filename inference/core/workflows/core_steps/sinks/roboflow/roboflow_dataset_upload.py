@@ -151,7 +151,7 @@ class BlockManifest(WorkflowBlockManifest):
     registration_tags: List[
         Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]
     ] = Field(
-        default_factory=lambda: [],
+        default_factory=list,
         description="Tags to be attached to registered datapoints",
         examples=[["location-florida", "factory-name", "$inputs.dynamic_tag"]],
     )

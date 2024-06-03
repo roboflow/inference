@@ -44,9 +44,9 @@ def extract_detection_property(
 ) -> Any:
     if isinstance(value, sv.Detections):
         if unwrap_method is SequenceUnwrapMethod.FIRST:
-            value = next(value.__iter__())
+            value = next(iter(value))
         else:
-            value = list(value.__iter__())[-1]
+            value = next(iter(value))[-1]
     if not isinstance(value, tuple) or len(value) != 6:
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(

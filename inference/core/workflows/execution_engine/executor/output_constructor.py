@@ -19,9 +19,8 @@ def construct_workflow_output(
     workflow_outputs: List[JsonField],
     execution_cache: ExecutionCache,
 ) -> Dict[str, List[Any]]:
-    # TODO: figure out if we needed generic "to-root coordinates" transformation?
-    # Maybe output constructor should never touch this? Maybe it's better to
-    # have steps transforming to specific coordinates systems?
+    # Maybe we should make blocks to change coordinates systems:
+    # https://github.com/roboflow/inference/issues/440
     result = {}
     for node in workflow_outputs:
         step_selector = get_step_selector_from_its_output(

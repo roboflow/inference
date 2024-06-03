@@ -23,6 +23,7 @@ from inference.core.workflows.constants import (
     X_KEY,
     Y_KEY,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:
@@ -96,3 +97,10 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             "height": image_dimensions[0].item(),
         }
     return {"image": image_metadata, "predictions": serialized_detections}
+
+
+def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
+    return {
+        "type": "base64",
+        "value": image.base64_image,
+    }

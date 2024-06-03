@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.utils.image_utils import ImageType
 from inference.core.workflows.core_steps.common.serializers import (
+    serialise_image,
     serialise_sv_detections,
 )
 from inference.core.workflows.entities.base import WorkflowImageData
@@ -100,10 +101,3 @@ def contains_image(element: Any) -> bool:
         isinstance(element, dict)
         and element.get("type") == ImageType.NUMPY_OBJECT.value
     )
-
-
-def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
-    return {
-        "type": "base64",
-        "value": image.base64_image,
-    }

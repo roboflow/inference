@@ -39,6 +39,13 @@ def to_string(value: Any, execution_context: str, **kwargs) -> str:
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,
         )
+    except (RuntimeError, RuntimeError) as e:
+        raise InvalidInputTypeError(
+            public_message=f"Using operation to_string(...) in context {execution_context} caused the following "
+            f"error: {e} of type {type(value)}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=e,
+        )
 
 
 def string_sub_sequence(

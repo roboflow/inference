@@ -111,12 +111,8 @@ def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
         data={CLASS_NAME_DATA_FIELD: class_name},
     )
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
-    detections[PREDICTION_TYPE_KEY] = np.array(
-        ["barcode-detection" for _ in range(len(detections))]
-    )
-    detections["data"] = (
-        np.array(extracted_data) if len(extracted_data) > 0 else np.empty(0)
-    )
+    detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection"] * len(detections))
+    detections["data"] = np.array(extracted_data)
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,

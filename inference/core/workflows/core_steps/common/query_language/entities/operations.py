@@ -481,7 +481,7 @@ class NotEquals(BinaryOperator):
     type: Literal["(Number) !="]
 
 
-class NumerGreater(BinaryOperator):
+class NumberGreater(BinaryOperator):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Checks if first value (number) is greater than the second value (number)",
@@ -496,7 +496,7 @@ class NumerGreater(BinaryOperator):
     type: Literal["(Number) >"]
 
 
-class NumerGreaterEqual(BinaryOperator):
+class NumberGreaterEqual(BinaryOperator):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Checks if first value (number) is greater or equal than the second value (number)",
@@ -511,7 +511,7 @@ class NumerGreaterEqual(BinaryOperator):
     type: Literal["(Number) >="]
 
 
-class NumerLower(BinaryOperator):
+class NumberLower(BinaryOperator):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Checks if first value (number) is lower than the second value (number)",
@@ -526,7 +526,7 @@ class NumerLower(BinaryOperator):
     type: Literal["(Number) <"]
 
 
-class NumerLowerEqual(BinaryOperator):
+class NumberLowerEqual(BinaryOperator):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Checks if first value (number) is lower or equal than the second value (number)",
@@ -718,12 +718,12 @@ class DetectionInZone(BinaryOperator):
 class StaticOperand(BaseModel):
     type: Literal["StaticOperand"]
     value: Any
-    operations: List["AllOperationsType"] = Field(default_factory=lambda: [])
+    operations: List["AllOperationsType"] = Field(default_factory=list)
 
 
 class DynamicOperand(BaseModel):
     type: Literal["DynamicOperand"]
-    operations: List["AllOperationsType"] = Field(default_factory=lambda: [])
+    operations: List["AllOperationsType"] = Field(default_factory=list)
     operand_name: str = DEFAULT_OPERAND_NAME
 
 
@@ -738,10 +738,10 @@ class BinaryStatement(BaseModel):
             StringContains,
             StringEndsWith,
             StringStartsWith,
-            NumerLowerEqual,
-            NumerLower,
-            NumerGreaterEqual,
-            NumerGreater,
+            NumberLowerEqual,
+            NumberLower,
+            NumberGreaterEqual,
+            NumberGreater,
             NotEquals,
             Equals,
             DetectionInZone,
