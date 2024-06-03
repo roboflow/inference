@@ -1,21 +1,17 @@
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
-from typing_extensions import Annotated
 
 from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     INTEGER_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -71,13 +67,6 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
-    image_metadata: Annotated[
-        StepOutputSelector(kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-        Field(
-            description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.image"],
-        ),
-    ]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -90,8 +79,6 @@ class BlockManifest(WorkflowBlockManifest):
                     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
 
 
@@ -105,37 +92,23 @@ class DetectionOffsetBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[sv.Detections],
+        predictions: Batch[Optional[sv.Detections]],
         offset_width: int,
         offset_height: int,
-        image_metadata: List[dict],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        offset_predictions = []
-        for detections in predictions:
-            offset_detections = deepcopy(detections)
-            offset_detections.xyxy = np.array(
-                [
-                    (
-                        x1 - offset_width // 2,
-                        y1 - offset_height // 2,
-                        x2 + offset_width // 2,
-                        y2 + offset_height // 2,
-                    )
-                    for (x1, y1, x2, y2) in offset_detections.xyxy
-                ]
-            )
-            # parent ID remains unchanged
-            offset_predictions.append(offset_detections)
-        return [
+    ) -> List[Dict[str, Optional[sv.Detections]]]:
+        results = [
             {
-                "predictions": offset_prediction,
-                PARENT_ID_KEY: prediction[PARENT_ID_KEY],
-                "image": image,
+                "predictions": offset_detections(
+                    detections=detections,
+                    offset_width=offset_width,
+                    offset_height=offset_height,
+                )
             }
-            for offset_prediction, image, prediction in zip(
-                offset_predictions, image_metadata, predictions
-            )
+            for detections in predictions.iter_nonempty()
         ]
+        return predictions.align_batch_results(
+            results=results, null_element={"predictions": None}
+        )
 
 
 def offset_detections(
@@ -146,15 +119,17 @@ def offset_detections(
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> sv.Detections:
     _detections = deepcopy(detections)
-    _detections.xyxy = [
-        (
-            x1 - offset_width // 2,
-            y1 - offset_height // 2,
-            x2 + offset_width // 2,
-            y2 + offset_height // 2,
-        )
-        for (x1, y1, x2, y2) in _detections.xyxy
-    ]
+    _detections.xyxy = np.array(
+        [
+            (
+                x1 - offset_width // 2,
+                y1 - offset_height // 2,
+                x2 + offset_width // 2,
+                y2 + offset_height // 2,
+            )
+            for (x1, y1, x2, y2) in _detections.xyxy
+        ]
+    )
     _detections[parent_id_key] = detections[detection_id_key].copy()
     _detections[detection_id_key] = [str(uuid.uuid4()) for _ in detections]
     return _detections

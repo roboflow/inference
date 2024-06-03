@@ -1,32 +1,18 @@
 import base64
 from typing import Any, Dict, List, Optional, Union
 
-import numpy as np
 import orjson
 import supervision as sv
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.utils.image_utils import ImageType, encode_image_to_jpeg_bytes
-from inference.core.workflows.constants import (
-    CLASS_ID_KEY,
-    CLASS_NAME_KEY,
-    CONFIDENCE_KEY,
-    DETECTION_ID_KEY,
-    HEIGHT_KEY,
-    KEYPOINTS_CLASS_ID_KEY,
-    KEYPOINTS_CLASS_NAME_KEY,
-    KEYPOINTS_CONFIDENCE_KEY,
-    KEYPOINTS_KEY,
-    KEYPOINTS_XY_KEY,
-    PARENT_ID_KEY,
-    POLYGON_KEY,
-    TRACKER_ID_KEY,
-    WIDTH_KEY,
-    X_KEY,
-    Y_KEY,
+from inference.core.utils.image_utils import ImageType
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_image,
+    serialise_sv_detections,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 
 
 class ORJSONResponseBytes(ORJSONResponse):
@@ -68,7 +54,7 @@ def serialise_workflow_result(
     for key, value in result.items():
         if key in excluded_fields:
             continue
-        if contains_image(element=value):
+        if isinstance(value, WorkflowImageData):
             value = serialise_image(image=value)
         elif isinstance(value, dict):
             value = serialise_dict(elements=value)
@@ -83,7 +69,7 @@ def serialise_workflow_result(
 def serialise_list(elements: List[Any]) -> List[Any]:
     result = []
     for element in elements:
-        if contains_image(element=element):
+        if isinstance(element, WorkflowImageData):
             element = serialise_image(image=element)
         elif isinstance(element, dict):
             element = serialise_dict(elements=element)
@@ -98,7 +84,7 @@ def serialise_list(elements: List[Any]) -> List[Any]:
 def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
     serialised_result = {}
     for key, value in elements.items():
-        if contains_image(element=value):
+        if isinstance(value, WorkflowImageData):
             value = serialise_image(image=value)
         elif isinstance(value, dict):
             value = serialise_dict(elements=value)
@@ -115,72 +101,3 @@ def contains_image(element: Any) -> bool:
         isinstance(element, dict)
         and element.get("type") == ImageType.NUMPY_OBJECT.value
     )
-
-
-def serialise_image(image: Dict[str, Any]) -> Dict[str, Any]:
-    image["type"] = "base64"
-    image["value"] = base64.b64encode(
-        encode_image_to_jpeg_bytes(image["value"])
-    ).decode("ascii")
-    return image
-
-
-def serialise_sv_detections(detections: sv.Detections) -> List[Dict[str, Any]]:
-    serialized_detections = []
-    for xyxy, mask, confidence, class_id, tracker_id, data in detections:
-        detection_dict = {}
-
-        if isinstance(xyxy, np.ndarray):
-            xyxy = xyxy.astype(float).tolist()
-        x1, y1, x2, y2 = xyxy
-        detection_dict[WIDTH_KEY] = abs(x2 - x1)
-        detection_dict[HEIGHT_KEY] = abs(y2 - y1)
-        detection_dict[X_KEY] = x1 + detection_dict[WIDTH_KEY] / 2
-        detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
-
-        detection_dict[CONFIDENCE_KEY] = float(confidence)
-        detection_dict[CLASS_ID_KEY] = int(class_id)
-        if mask is not None:
-            polygon = sv.mask_to_polygons(mask=mask)
-            detection_dict[POLYGON_KEY] = []
-            for x, y in polygon[0]:
-                detection_dict[POLYGON_KEY].append(
-                    {
-                        X_KEY: float(x),
-                        Y_KEY: float(y),
-                    }
-                )
-        if tracker_id is not None:
-            detection_dict[TRACKER_ID_KEY] = int(tracker_id)
-        detection_dict[CLASS_NAME_KEY] = str(data["class_name"])
-        detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
-        if PARENT_ID_KEY in data:
-            detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
-        if (
-            KEYPOINTS_CLASS_ID_KEY in data
-            and KEYPOINTS_CLASS_NAME_KEY in data
-            and KEYPOINTS_CONFIDENCE_KEY in data
-            and KEYPOINTS_XY_KEY in data
-        ):
-            kp_class_id = data[KEYPOINTS_CLASS_ID_KEY]
-            kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY]
-            kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY]
-            kp_xy = data[KEYPOINTS_XY_KEY]
-            detection_dict[KEYPOINTS_KEY] = []
-            for (
-                keypoint_class_id,
-                keypoint_class_name,
-                keypoint_confidence,
-                (x, y),
-            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
-                detection_dict[KEYPOINTS_KEY].append(
-                    {
-                        KEYPOINTS_CLASS_ID_KEY: int(keypoint_class_id),
-                        KEYPOINTS_CLASS_NAME_KEY: str(keypoint_class_name),
-                        KEYPOINTS_CONFIDENCE_KEY: float(keypoint_confidence),
-                        X_KEY: float(x),
-                        Y_KEY: float(y),
-                    }
-                )
-        serialized_detections.append(detection_dict)
-    return serialized_detections

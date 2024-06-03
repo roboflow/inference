@@ -73,10 +73,6 @@ class InvalidReferenceTargetError(WorkflowCompilerError):
     pass
 
 
-class DanglingExecutionBranchError(ExecutionGraphStructureError):
-    pass
-
-
 class ConditionalBranchesCollapseError(ExecutionGraphStructureError):
     pass
 

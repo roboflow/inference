@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from pydantic import ValidationError
 import supervision as sv
+from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.fusion import detections_consensus
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
@@ -353,9 +353,7 @@ def test_aggregate_field_values_when_max_mode_is_chosen() -> None:
     # given
     detections = sv.Detections(
         xyxy=np.array([[1, 1, 2, 2], [1, 1, 2, 2], [1, 1, 2, 2]], dtype=np.float64),
-        data={
-            "a": np.array([0.3, 0.4, 0.7])
-        }
+        data={"a": np.array([0.3, 0.4, 0.7])},
     )
 
     # when
@@ -373,9 +371,7 @@ def test_aggregate_field_values_when_min_mode_is_chosen() -> None:
     # given
     detections = sv.Detections(
         xyxy=np.array([[1, 1, 2, 2], [1, 1, 2, 2], [1, 1, 2, 2]], dtype=np.float64),
-        data={
-            "a": np.array([0.3, 0.4, 0.7])
-        }
+        data={"a": np.array([0.3, 0.4, 0.7])},
     )
 
     # when
@@ -393,9 +389,7 @@ def test_aggregate_field_values_when_average_mode_is_chosen() -> None:
     # given
     detections = sv.Detections(
         xyxy=np.array([[1, 1, 2, 2], [1, 1, 2, 2], [1, 1, 2, 2]], dtype=np.float64),
-        data={
-            "a": np.array([0.3, 0.4, 0.5])
-        }
+        data={"a": np.array([0.3, 0.4, 0.5])},
     )
 
     # when
@@ -430,10 +424,7 @@ def test_get_largest_bounding_box_when_single_element_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215]]),
         confidence=np.array([0.5]),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["a"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["a"], "class_name": ["a"]},
     )
 
     # when
@@ -449,10 +440,7 @@ def test_get_largest_bounding_box_when_multiple_elements_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230]]),
         confidence=np.array([0.5, 0.5]),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "a"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
     )
 
     # when
@@ -468,10 +456,7 @@ def test_get_smallest_bounding_box_when_single_element_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215]]),
         confidence=np.array([0.5]),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["a"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["a"], "class_name": ["a"]},
     )
 
     # when
@@ -487,10 +472,7 @@ def test_get_smallest_bounding_box_when_multiple_elements_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230]]),
         confidence=np.array([0.5, 0.5]),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "a"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
     )
 
     # when
@@ -506,10 +488,7 @@ def test_get_average_bounding_box_when_single_element_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215]]),
         confidence=np.array([0.5]),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["a"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["a"], "class_name": ["a"]},
     )
 
     # when
@@ -525,10 +504,7 @@ def test_get_average_bounding_box_when_multiple_elements_provided() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230]]),
         confidence=np.array([0.5, 0.5]),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "a"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
     )
 
     # when
@@ -544,10 +520,7 @@ def test_get_majority_class() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230], [1, 1, 2, 2]]),
         confidence=np.array([0.5, 0.5, 0.5]),
         class_id=np.array([0, 1, 0]),
-        data={
-            "detection_id": ["a", "b", "c"],
-            "class_name": ["a", "b", "a"]
-        }
+        data={"detection_id": ["a", "b", "c"], "class_name": ["a", "b", "a"]},
     )
 
     # when
@@ -563,10 +536,7 @@ def test_get_class_of_most_confident_detection() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230], [1, 1, 2, 2]]),
         confidence=np.array([0.1, 0.3, 0.2]),
         class_id=np.array([0, 1, 0]),
-        data={
-            "detection_id": ["a", "b", "c"],
-            "class_name": ["a", "b", "a"]
-        }
+        data={"detection_id": ["a", "b", "c"], "class_name": ["a", "b", "a"]},
     )
 
     # when
@@ -582,10 +552,7 @@ def test_get_class_of_least_confident_detection() -> None:
         xyxy=np.array([[80, 185, 120, 215], [85, 190, 135, 230], [1, 1, 2, 2]]),
         confidence=np.array([0.1, 0.3, 0.2]),
         class_id=np.array([0, 1, 0]),
-        data={
-            "detection_id": ["a", "b", "c"],
-            "class_name": ["a", "b", "a"]
-        }
+        data={"detection_id": ["a", "b", "c"], "class_name": ["a", "b", "a"]},
     )
 
     # when
@@ -606,8 +573,14 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
         data={
             "detection_id": np.array(["a", "b"]),
             "class_name": np.array(["a", "b"]),
-            "parent_id": np.array(["x", "x"])
-        }
+            "parent_id": np.array(["x", "x"]),
+            "parent_coordinates": np.array([[50, 60], [50, 60]]),
+            "parent_dimensions": np.array([[192, 168], [192, 168]]),
+            "root_parent_id": np.array(["root_x", "root_x"]),
+            "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+        },
     )
 
     # when
@@ -625,20 +598,29 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
         data={
             "detection_id": np.array(["some_uuid"]),
             "class_name": np.array(["a"]),
-            "parent_id": np.array(["x"])
-        }
+            "parent_id": np.array(["x"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
     )
 
 
 def test_calculate_iou_when_detections_are_zero_size() -> None:
     # given
     detections = sv.Detections(
-        xyxy=np.array([[99.5, 200, 100.5, 200], [100, 219.5, 100, 221.5]], dtype=np.float64),
+        xyxy=np.array(
+            [[99.5, 200, 100.5, 200], [100, 219.5, 100, 221.5]], dtype=np.float64
+        ),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
 
     detection_a = detections[0]
@@ -660,9 +642,7 @@ def test_calculate_iou_when_detections_do_not_overlap() -> None:
         xyxy=np.array([[80, 190, 120, 210], [80, 210, 120, 230]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
     detection_a = detections[0]
     detection_b = detections[1]
@@ -683,9 +663,7 @@ def test_calculate_iou_when_detections_do_overlap_fully() -> None:
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "class_name": np.array(["a"])
-        }
+        data={"class_name": np.array(["a"])},
     )
 
     # when
@@ -704,9 +682,7 @@ def test_calculate_iou_when_detections_do_overlap_partially() -> None:
         xyxy=np.array([[80, 190, 120, 210], [100, 200, 140, 220]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
     detection_a = detections[0]
     detection_b = detections[1]
@@ -739,34 +715,35 @@ def test_enumerate_detections_when_source_with_no_predictions_given() -> None:
         xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "class_name": np.array(["a"])
-        }
+        data={"class_name": np.array(["a"])},
     )[[]]
     source_b = sv.Detections(
         xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
 
     # when
-    result = list(enumerate_detections(detections_from_sources=[empty_detections, source_b]))
+    result = list(
+        enumerate_detections(detections_from_sources=[empty_detections, source_b])
+    )
 
     # then
     assert result == [
         (
             1,
             sv.Detections(
-                xyxy=np.array([[1, 1, 2, 2],], dtype=np.float64),
+                xyxy=np.array(
+                    [
+                        [1, 1, 2, 2],
+                    ],
+                    dtype=np.float64,
+                ),
                 confidence=np.array([0.5], dtype=np.float64),
                 class_id=np.array([1]),
-                data={
-                    "class_name": np.array(["a"])
-                }
-            )
+                data={"class_name": np.array(["a"])},
+            ),
         ),
         (
             1,
@@ -774,11 +751,9 @@ def test_enumerate_detections_when_source_with_no_predictions_given() -> None:
                 xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
                 confidence=np.array([0.6], dtype=np.float64),
                 class_id=np.array([2]),
-                data={
-                    "class_name": np.array(["b"])
-                }
-            )
-        )
+                data={"class_name": np.array(["b"])},
+            ),
+        ),
     ]
 
 
@@ -788,17 +763,13 @@ def test_enumerate_detections_when_sources_with_predictions_given() -> None:
         xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
     source_b = sv.Detections(
         xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
         confidence=np.array([0.7, 0.8], dtype=np.float64),
         class_id=np.array([3, 4]),
-        data={
-            "class_name": np.array(["c", "d"])
-        }
+        data={"class_name": np.array(["c", "d"])},
     )
 
     # when
@@ -812,10 +783,8 @@ def test_enumerate_detections_when_sources_with_predictions_given() -> None:
                 xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
                 confidence=np.array([0.5], dtype=np.float64),
                 class_id=np.array([1]),
-                data={
-                    "class_name": np.array(["a"])
-                }
-            )
+                data={"class_name": np.array(["a"])},
+            ),
         ),
         (
             0,
@@ -823,10 +792,8 @@ def test_enumerate_detections_when_sources_with_predictions_given() -> None:
                 xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
                 confidence=np.array([0.6], dtype=np.float64),
                 class_id=np.array([2]),
-                data={
-                    "class_name": np.array(["b"])
-                }
-            )
+                data={"class_name": np.array(["b"])},
+            ),
         ),
         (
             1,
@@ -834,10 +801,8 @@ def test_enumerate_detections_when_sources_with_predictions_given() -> None:
                 xyxy=np.array([[5, 5, 6, 6]], dtype=np.float64),
                 confidence=np.array([0.7], dtype=np.float64),
                 class_id=np.array([3]),
-                data={
-                    "class_name": np.array(["c"])
-                }
-            )
+                data={"class_name": np.array(["c"])},
+            ),
         ),
         (
             1,
@@ -845,11 +810,9 @@ def test_enumerate_detections_when_sources_with_predictions_given() -> None:
                 xyxy=np.array([[7, 7, 8, 8]], dtype=np.float64),
                 confidence=np.array([0.8], dtype=np.float64),
                 class_id=np.array([4]),
-                data={
-                    "class_name": np.array(["d"])
-                }
-            )
-        )
+                data={"class_name": np.array(["d"])},
+            ),
+        ),
     ]
 
 
@@ -861,17 +824,13 @@ def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_
         xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"])},
     )
     source_b = sv.Detections(
         xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
         confidence=np.array([0.7, 0.8], dtype=np.float64),
         class_id=np.array([3, 4]),
-        data={
-            "class_name": np.array(["c", "d"])
-        }
+        data={"class_name": np.array(["c", "d"])},
     )
 
     # when
@@ -890,10 +849,8 @@ def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_
                 xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
                 confidence=np.array([0.5], dtype=np.float64),
                 class_id=np.array([1]),
-                data={
-                    "class_name": np.array(["a"])
-                }
-            )
+                data={"class_name": np.array(["a"])},
+            ),
         ),
         (
             0,
@@ -901,10 +858,8 @@ def test_enumerate_detections_when_sources_with_predictions_given_and_source_to_
                 xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
                 confidence=np.array([0.6], dtype=np.float64),
                 class_id=np.array([2]),
-                data={
-                    "class_name": np.array(["b"])
-                }
-            )
+                data={"class_name": np.array(["b"])},
+            ),
         ),
     ]
 
@@ -917,19 +872,13 @@ def test_get_detections_from_different_sources_with_max_overlap_when_candidate_a
         xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
         confidence=np.array([0.5, 0.6], dtype=np.float64),
         class_id=np.array([1, 2]),
-        data={
-            "class_name": np.array(["a", "b"]),
-            "detection_id": np.array(["a", "b"])
-        }
+        data={"class_name": np.array(["a", "b"]), "detection_id": np.array(["a", "b"])},
     )
     source_b = sv.Detections(
         xyxy=np.array([[7, 7, 8, 8]], dtype=np.float64),
         confidence=np.array([0.8], dtype=np.float64),
         class_id=np.array([4]),
-        data={
-            "class_name": np.array(["d"]),
-            "detection_id": np.array(["d"])
-        }
+        data={"class_name": np.array(["d"]), "detection_id": np.array(["d"])},
     )
     detections_from_sources = [source_a, source_b]
 
@@ -955,19 +904,13 @@ def test_get_detections_from_different_sources_with_max_overlap_when_candidate_o
         xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "c"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "c"], "class_name": ["a", "a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["b"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["b"], "class_name": ["a"]},
     )
 
     # when
@@ -992,28 +935,19 @@ def test_get_detections_from_different_sources_with_max_overlap_when_class_does_
         xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "b"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "b"], "class_name": ["a", "a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["c"],
-            "class_name": ["b"]
-        }
+        data={"detection_id": ["c"], "class_name": ["b"]},
     )
     source_c = sv.Detections(
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["d"],
-            "class_name": ["b"]
-        }
+        data={"detection_id": ["d"], "class_name": ["b"]},
     )
 
     # when
@@ -1038,28 +972,19 @@ def test_get_detections_from_different_sources_with_max_overlap_when_class_does_
         xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "b"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "b"], "class_name": ["a", "a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["c"],
-            "class_name": ["b"]
-        }
+        data={"detection_id": ["c"], "class_name": ["b"]},
     )
     source_c = sv.Detections(
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["d"],
-            "class_name": ["b"]
-        }
+        data={"detection_id": ["d"], "class_name": ["b"]},
     )
 
     # when
@@ -1093,28 +1018,19 @@ def test_get_detections_from_different_sources_with_max_overlap_when_multiple_ca
         xyxy=np.array([[80, 190, 120, 210], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["a", "b"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["a", "b"], "class_name": ["a", "a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["too_small", "c"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["too_small", "c"], "class_name": ["a", "a"]},
     )
     source_c = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["too_small", "d"],
-            "class_name": ["a", "a"]
-        }
+        data={"detection_id": ["too_small", "d"], "class_name": ["a", "a"]},
     )
 
     # when
@@ -1146,32 +1062,25 @@ def test_filter_predictions_when_no_classes_to_consider_given() -> None:
         xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["a"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["a"], "class_name": ["a"]},
     )
     empty_detections = sv.Detections(
         xyxy=np.array([[3, 3, 4, 4]], dtype=np.float64),
         confidence=np.array([0.6], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["b"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["b"], "class_name": ["a"]},
     )[[]]
     source_c = sv.Detections(
         xyxy=np.array([[5, 5, 6, 6], [7, 7, 8, 8]], dtype=np.float64),
         confidence=np.array([0.7, 0.8], dtype=np.float64),
         class_id=np.array([2, 1]),
-        data={
-            "detection_id": ["c", "d"],
-            "class_name": ["b", "a"]
-        }
+        data={"detection_id": ["c", "d"], "class_name": ["b", "a"]},
     )
 
     # when
-    result = filter_predictions(predictions=[source_a, empty_detections, source_c], classes_to_consider=None)
+    result = filter_predictions(
+        predictions=[source_a, empty_detections, source_c], classes_to_consider=None
+    )
 
     # then
     assert result == [source_a, empty_detections, source_c]
@@ -1183,29 +1092,22 @@ def test_filter_predictions_when_classes_to_consider_given() -> None:
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["d"],
-            "class_name": ["a"]
-        }
+        data={"detection_id": ["d"], "class_name": ["a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5, 0.5], dtype=np.float64),
         class_id=np.array([1, 1]),
-        data={
-            "detection_id": ["e", "f"],
-            "class_name": ["a", "b"]
-        }
+        data={"detection_id": ["e", "f"], "class_name": ["a", "b"]},
     )
 
     # when
-    result = filter_predictions(predictions=[source_a, source_b], classes_to_consider=["a", "c"])
+    result = filter_predictions(
+        predictions=[source_a, source_b], classes_to_consider=["a", "c"]
+    )
 
     # then
-    assert result == [
-        source_a,
-        source_b[0]
-    ]
+    assert result == [source_a, source_b[0]]
 
 
 def test_get_parent_id_of_detections_from_sources_when_parent_id_matches() -> None:
@@ -1214,11 +1116,7 @@ def test_get_parent_id_of_detections_from_sources_when_parent_id_matches() -> No
         xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
         confidence=np.array([0.5], dtype=np.float64),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["d"],
-            "class_name": ["a"],
-            "parent_id": ["a"]
-        }
+        data={"detection_id": ["d"], "class_name": ["a"], "parent_id": ["a"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]], dtype=np.float64),
@@ -1227,8 +1125,8 @@ def test_get_parent_id_of_detections_from_sources_when_parent_id_matches() -> No
         data={
             "detection_id": ["e", "f"],
             "class_name": ["a", "b"],
-            "parent_id": ["a", "a"]
-        }
+            "parent_id": ["a", "a"],
+        },
     )
 
     # when
@@ -1246,11 +1144,7 @@ def test_get_parent_id_of_detections_from_sources_parent_id_does_not_match() -> 
         xyxy=np.array([[80, 190, 120, 210]]),
         confidence=np.array([0.5]),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["d"],
-            "class_name": ["a"],
-            "parent_id": ["b"]
-        }
+        data={"detection_id": ["d"], "class_name": ["a"], "parent_id": ["b"]},
     )
     source_b = sv.Detections(
         xyxy=np.array([[100, 200, 140, 220], [80, 190, 120, 210]]),
@@ -1259,8 +1153,8 @@ def test_get_parent_id_of_detections_from_sources_parent_id_does_not_match() -> 
         data={
             "detection_id": ["e", "f"],
             "class_name": ["a", "b"],
-            "parent_id": ["a", "a"]
-        }
+            "parent_id": ["a", "a"],
+        },
     )
 
     # when
@@ -1269,6 +1163,7 @@ def test_get_parent_id_of_detections_from_sources_parent_id_does_not_match() -> 
             detections_from_sources=[source_a, source_b],
         )
 
+
 def test_does_not_detect_objects_in_any_source_when_all_sources_give_empty_prediction() -> (
     None
 ):
@@ -1276,7 +1171,7 @@ def test_does_not_detect_objects_in_any_source_when_all_sources_give_empty_predi
         xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
         confidence=np.array([0.9], dtype=np.float64),
         class_id=np.array([1]),
-        data={}
+        data={},
     )[[]]
     # given
     detections_from_sources = [
@@ -1314,17 +1209,13 @@ def test_does_not_detect_objects_in_any_source_when_not_all_sources_give_empty_p
         xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
         confidence=np.array([0.9], dtype=np.float64),
         class_id=np.array([1]),
-        data={}
+        data={},
     )[[]]
     source_a = sv.Detections(
         xyxy=np.array([[3, 3, 4, 4]]),
         confidence=np.array([0.5]),
         class_id=np.array([1]),
-        data={
-            "detection_id": ["b"],
-            "class_name": ["b"],
-            "parent_id": ["b"]
-        }
+        data={"detection_id": ["b"], "class_name": ["b"], "parent_id": ["b"]},
     )
 
     # when
@@ -1349,11 +1240,20 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
     )
     detections_from_sources = [
-        [detections],
+        detections,
     ]
     detections_already_considered = set()
 
@@ -1376,16 +1276,27 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
 
     # then
     assert detections_already_considered == {"c"}
-    assert consensus_detections == [sv.Detections(
-        xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
-        confidence=np.array([0.9], dtype=np.float64),
-        class_id=np.array([0]),
-        data={
-            "detection_id": np.array(["xxx"]),
-            "class_name": np.array(["a"]),
-            "parent_id": np.array(["some_parent"])
-        }
-    )]
+    assert consensus_detections == [
+        sv.Detections(
+            xyxy=np.array([[80, 190, 120, 210]], dtype=np.float64),
+            confidence=np.array([0.9], dtype=np.float64),
+            class_id=np.array([0]),
+            data={
+                "detection_id": np.array(["xxx"]),
+                "class_name": np.array(["a"]),
+                "parent_id": np.array(["some_parent"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
+            },
+        )
+    ]
 
 
 def test_get_consensus_for_single_detection_when_only_single_source_and_single_source_is_not_enough() -> (
@@ -1399,8 +1310,16 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+        },
     )
     detections_from_sources = [
         detections,
@@ -1442,8 +1361,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
     )
     detections_from_sources = [
         detections,
@@ -1454,9 +1382,18 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["d"]),
-                "class_name": np.array(["a"])
-            }
-        )
+                "class_name": np.array(["a"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
+            },
+        ),
     ]
     detections_already_considered = set()
 
@@ -1487,8 +1424,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["xxx"]),
-                "class_name": np.array(["a"])
-            }
+                "class_name": np.array(["a"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
+            },
         )
     ]
 
@@ -1504,14 +1450,22 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+        },
     )
     empty_detections = sv.Detections(
         xyxy=np.array([[1, 1, 2, 2]]),
         confidence=np.array([0.9]),
         class_id=np.array([1]),
-        data={}
+        data={},
     )[[]]
     detections_from_sources = [
         detections,
@@ -1522,8 +1476,16 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["d"]),
-                "class_name": np.array(["a"])
-            }
+                "class_name": np.array(["a"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+            },
         ),
         empty_detections,
     ]
@@ -1565,8 +1527,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
     )
     detections_from_sources = [
         detections,
@@ -1577,8 +1548,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["d"]),
-                "class_name": np.array(["a"])
-            }
+                "class_name": np.array(["a"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
+            },
         ),
     ]
     detections_already_considered = set()
@@ -1618,8 +1598,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["c"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
     )
     detections_from_sources = [
         detections,
@@ -1630,8 +1619,17 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["d"]),
-                "class_name": np.array(["b"])
-            }
+                "class_name": np.array(["b"]),
+                "parent_coordinates": np.array([[50, 60]]),
+                "parent_dimensions": np.array([[192, 168]]),
+                "root_parent_id": np.array(["root_x"]),
+                "root_parent_coordinates": np.array([[150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168]]),
+                "prediction_type": np.array(["object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0]),
+                "image_dimensions": np.array([[192, 168]]),
+            },
         ),
     ]
     detections_already_considered = set()
@@ -1666,7 +1664,7 @@ def test_check_objects_presence_in_consensus_detections_when_no_detections_provi
         xyxy=np.array([[1, 1, 2, 2]]),
         confidence=np.array([0.9]),
         class_id=np.array([1]),
-        data={}
+        data={},
     )[[]]
     # when
     result = check_objects_presence_in_consensus_detections(
@@ -1691,8 +1689,8 @@ def test_check_objects_presence_in_consensus_detections_when_no_detection_is_req
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["xxx"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+        },
     )
 
     # when
@@ -1718,8 +1716,8 @@ def test_check_objects_presence_in_consensus_detections_when_one_detection_is_re
         data={
             "parent_id": np.array(["some_parent"]),
             "detection_id": np.array(["xxx"]),
-            "class_name": np.array(["a"])
-        }
+            "class_name": np.array(["a"]),
+        },
     )
 
     # when
@@ -1739,14 +1737,16 @@ def test_check_objects_presence_in_consensus_detections_when_specific_detection_
 ):
     # given
     consensus_detections = sv.Detections(
-        xyxy=np.array([[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64),
+        xyxy=np.array(
+            [[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64
+        ),
         class_id=np.array([0, 2]),
         confidence=np.array([0.9, 0.9], dtype=np.float64),
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "yyy"]),
-            "class_name": np.array(["a", "c"])
-        }
+            "class_name": np.array(["a", "c"]),
+        },
     )
 
     # when
@@ -1766,14 +1766,16 @@ def test_check_objects_presence_in_consensus_detections_when_specific_detection_
 ):
     # given
     consensus_detections = sv.Detections(
-        xyxy=np.array([[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64),
+        xyxy=np.array(
+            [[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64
+        ),
         class_id=np.array([0, 2]),
         confidence=np.array([0.8, 1], dtype=np.float64),
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "yyy"]),
-            "class_name": np.array(["a", "c"])
-        }
+            "class_name": np.array(["a", "c"]),
+        },
     )
 
     # when
@@ -1793,14 +1795,16 @@ def test_check_objects_presence_in_consensus_detections_when_specific_detection_
 ):
     # given
     consensus_detections = sv.Detections(
-        xyxy=np.array([[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64),
+        xyxy=np.array(
+            [[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64
+        ),
         class_id=np.array([0, 2]),
         confidence=np.array([0.9, 0.9], dtype=np.float64),
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "yyy"]),
-            "class_name": np.array(["a", "c"])
-        }
+            "class_name": np.array(["a", "c"]),
+        },
     )
 
     # when
@@ -1820,14 +1824,16 @@ def test_check_objects_presence_in_consensus_detections_when_specific_detection_
 ):
     # given
     consensus_detections = sv.Detections(
-        xyxy=np.array([[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64),
+        xyxy=np.array(
+            [[80, 187.5, 120, 212.5], [80, 187.5, 120, 212.5]], dtype=np.float64
+        ),
         class_id=np.array([0, 2]),
         confidence=np.array([0.9, 0.9], dtype=np.float64),
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "yyy"]),
-            "class_name": np.array(["a", "a"])
-        }
+            "class_name": np.array(["a", "a"]),
+        },
     )
 
     # when
@@ -1871,7 +1877,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_m
         xyxy=np.array([[1, 1, 2, 2]]),
         confidence=np.array([0.9]),
         class_id=np.array([1]),
-        data={}
+        data={},
     )[[]]
     detections_from_sources = [
         sv.Detections(
@@ -1881,8 +1887,8 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_m
             data={
                 "parent_id": np.array(["some_parent"]),
                 "detection_id": np.array(["d"]),
-                "class_name": np.array(["b"])
-            }
+                "class_name": np.array(["b"]),
+            },
         ),
         empty_detections,
     ]
@@ -1911,16 +1917,27 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
 ) -> None:
     # given
     uuid_mock.return_value = "xxx"
-    detections_from_sources = [sv.Detections(
-        xyxy=np.array([[80, 185, 120, 215], [90, 185, 130, 215]], dtype=np.float64),
-        class_id=np.array([0, 0]),
-        confidence=np.array([0.7, 0.9], dtype=np.float64),
-        data={
-            "parent_id": np.array(["some_parent", "some_parent"]),
-            "detection_id": np.array(["a", "b"]),
-            "class_name": np.array(["b", "b"])
-        }
-    )]
+    detections_from_sources = [
+        sv.Detections(
+            xyxy=np.array([[80, 185, 120, 215], [90, 185, 130, 215]], dtype=np.float64),
+            class_id=np.array([0, 0]),
+            confidence=np.array([0.7, 0.9], dtype=np.float64),
+            data={
+                "parent_id": np.array(["some_parent", "some_parent"]),
+                "detection_id": np.array(["a", "b"]),
+                "class_name": np.array(["b", "b"]),
+                "parent_coordinates": np.array([[50, 60], [50, 60]]),
+                "parent_dimensions": np.array([[192, 168], [192, 168]]),
+                "root_parent_id": np.array(["root_x", "root_x"]),
+                "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+                "prediction_type": np.array(["object-detection", "object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0, 1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
+            },
+        )
+    ]
 
     # when
     result = agree_on_consensus_for_all_detections_sources(
@@ -1944,8 +1961,17 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "xxx"]),
-            "class_name": np.array(["b", "b"])
-        }
+            "class_name": np.array(["b", "b"]),
+            "parent_coordinates": np.array([[50, 60], [50, 60]]),
+            "parent_dimensions": np.array([[192, 168], [192, 168]]),
+            "root_parent_id": np.array(["root_x", "root_x"]),
+            "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+            "prediction_type": np.array(["object-detection", "object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0, 1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+        },
     )
 
     assert result == ("some_parent", True, {"b": 0.9}, expected_consensus_detections)
@@ -1965,8 +1991,17 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
             data={
                 "parent_id": np.array(["some_parent", "some_parent"]),
                 "detection_id": np.array(["a", "b"]),
-                "class_name": np.array(["b", "b"])
-            }
+                "class_name": np.array(["b", "b"]),
+                "parent_coordinates": np.array([[50, 60], [50, 60]]),
+                "parent_dimensions": np.array([[192, 168], [192, 168]]),
+                "root_parent_id": np.array(["root_x", "root_x"]),
+                "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+                "prediction_type": np.array(["object-detection", "object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0, 1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
+            },
         ),
         sv.Detections(
             xyxy=np.array([[80, 183, 120, 217], [90, 182, 130, 218]], dtype=np.float64),
@@ -1975,9 +2010,18 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
             data={
                 "parent_id": np.array(["some_parent", "some_parent"]),
                 "detection_id": np.array(["c", "d"]),
-                "class_name": np.array(["b", "b"])
-            }
-        )
+                "class_name": np.array(["b", "b"]),
+                "parent_coordinates": np.array([[50, 60], [50, 60]]),
+                "parent_dimensions": np.array([[192, 168], [192, 168]]),
+                "root_parent_id": np.array(["root_x", "root_x"]),
+                "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+                "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+                "prediction_type": np.array(["object-detection", "object-detection"]),
+                "scaling_relative_to_parent": np.array([1.0, 1.0]),
+                "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+                "image_dimensions": np.array([[192, 168], [192, 168]]),
+            },
+        ),
     ]
 
     # when
@@ -2002,8 +2046,17 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
         data={
             "parent_id": np.array(["some_parent", "some_parent"]),
             "detection_id": np.array(["xxx", "xxx"]),
-            "class_name": np.array(["b", "b"])
-        }
+            "class_name": np.array(["b", "b"]),
+            "parent_coordinates": np.array([[50, 60], [50, 60]]),
+            "parent_dimensions": np.array([[192, 168], [192, 168]]),
+            "root_parent_id": np.array(["root_x", "root_x"]),
+            "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+            "prediction_type": np.array(["object-detection", "object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0, 1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0, 1.0]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+        },
     )
 
     assert result == ("some_parent", True, {"b": 0.95}, expected_consensus)

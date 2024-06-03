@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+from inference.core.workflows.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.errors import (
     ExecutionEngineNotImplementedError,
     ExecutionEngineRuntimeError,
@@ -37,6 +38,17 @@ def assembly_step_parameters(
                 )
                 for v in value
             ]
+        elif isinstance(value, dict):
+            value = {
+                k: retrieve_value(
+                    value=v,
+                    step_name=step_manifest.name,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                    accepts_batch_input=accepts_batch_input,
+                )
+                for k, v in value.items()
+            }
         else:
             value = retrieve_value(
                 value=value,
@@ -89,11 +101,12 @@ def retrieve_step_output(
     step_name: str,
 ) -> Any:
     value = execution_cache.get_output(selector=selector)
+    value = Batch(content=value)
     if not execution_cache.output_represent_batch(selector=selector):
         value = value[0]
     if accepts_batch_input:
         return value
-    if isinstance(value, list):
+    if isinstance(value, Batch):
         if len(value) > 1:
             raise ExecutionEngineNotImplementedError(
                 public_message=f"Step `{step_name}` defines input pointing to {selector} which "
@@ -116,7 +129,10 @@ def retrieve_value_from_runtime_input(
     try:
         parameter_name = get_last_chunk_of_selector(selector=selector)
         value = runtime_parameters[parameter_name]
-        if not _retrieved_inference_image(value=value) or accepts_batch_input:
+        if not _retrieved_inference_image(value=value):
+            return value
+        value = Batch(content=value)
+        if accepts_batch_input:
             return value
         if len(value) > 1:
             raise ExecutionEngineNotImplementedError(
@@ -146,8 +162,6 @@ def _retrieved_inference_image(value: Any) -> bool:
         return False
     if len(value) < 1:
         return False
-    if not isinstance(value[0], dict):
+    if not isinstance(value[0], WorkflowImageData):
         return False
-    if "type" in value[0] and "value" in value[0]:
-        return True
-    return False
+    return True

@@ -47,6 +47,7 @@ DESCRIPTION_KEY = "description"
 ALL_OF_KEY = "allOf"
 ANY_OF_KEY = "anyOf"
 ONE_OF_KEY = "oneOf"
+OBJECT_TYPE = "object"
 
 
 def parse_block_manifest(
@@ -215,6 +216,16 @@ def retrieve_selectors_from_schema(schema: dict) -> Dict[str, SelectorDefinition
                 property_definition=property_definition[ITEMS_KEY],
                 is_list_element=True,
             )
+        elif (
+            property_definition.get(TYPE_KEY) == OBJECT_TYPE
+            and ADDITIONAL_PROPERTIES_KEY in property_definition
+        ):
+            selector = retrieve_selectors_from_simple_property(
+                property_name=property_name,
+                property_description=property_description,
+                property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+                is_dict_element=True,
+            )
         else:
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
@@ -231,6 +242,7 @@ def retrieve_selectors_from_simple_property(
     property_description: str,
     property_definition: dict,
     is_list_element: bool = False,
+    is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
     if REFERENCE_KEY in property_definition:
         allowed_references = [
@@ -247,9 +259,10 @@ def retrieve_selectors_from_simple_property(
             property_description=property_description,
             allowed_references=allowed_references,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
         )
     if ITEMS_KEY in property_definition:
-        if is_list_element:
+        if is_list_element or is_dict_element:
             # ignoring nested references above first level of depth
             return None
         return retrieve_selectors_from_simple_property(
@@ -264,6 +277,7 @@ def retrieve_selectors_from_simple_property(
             property_description=property_description,
             union_definition=property_definition,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
         )
     return None
 
@@ -281,6 +295,7 @@ def retrieve_selectors_from_union_definition(
     property_description: str,
     union_definition: dict,
     is_list_element: bool,
+    is_dict_element: bool,
 ) -> Optional[SelectorDefinition]:
     union_types = (
         union_definition.get(ANY_OF_KEY, [])
@@ -324,4 +339,5 @@ def retrieve_selectors_from_union_definition(
         property_description=property_description,
         allowed_references=merged_references,
         is_list_element=is_list_element,
+        is_dict_element=is_dict_element,
     )

@@ -15,19 +15,19 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.utils import (
-    add_keypoints_to_detections,
-    anchor_prediction_detections_in_parent_coordinates,
-    attach_parent_info,
-    attach_prediction_type_info,
-    convert_to_sv_detections,
-    filter_out_unwanted_classes_from_predictions_detections,
+    add_inference_keypoints_to_sv_detections,
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
+    filter_out_unwanted_classes_from_sv_detections_batch,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
@@ -134,7 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
     disable_active_learning: Union[
         bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
-        default=False,
+        default=True,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
@@ -153,8 +153,6 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND]
             ),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
         ]
 
 
@@ -178,7 +176,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -190,10 +188,14 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
         request = KeypointsDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
-            image=images,
+            image=non_empty_inference_images,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
             class_agnostic_nms=class_agnostic_nms,
@@ -217,15 +219,18 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         predictions = [
             e.model_dump(by_alias=True, exclude_none=True) for e in predictions
         ]
-        return self._post_process_result(
-            images=images,
+        results = self._post_process_result(
+            images=non_empty_images,
             predictions=predictions,
             class_filter=class_filter,
+        )
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
         )
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -263,42 +268,45 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_input = [i["value"] for i in images]
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
         predictions = await client.infer_async(
-            inference_input=inference_input,
+            inference_input=non_empty_inference_images,
             model_id=model_id,
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        return self._post_process_result(
-            images=images,
+        results = self._post_process_result(
+            images=non_empty_images,
             predictions=predictions,
             class_filter=class_filter,
+        )
+        return images.align_batch_results(
+            results=results, null_element={"predictions": None}
         )
 
     def _post_process_result(
         self,
-        images: List[dict],
+        images: List[WorkflowImageData],
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        detections = convert_to_sv_detections(predictions)
-        for p, d in zip(predictions, detections):
-            add_keypoints_to_detections(
-                predictions=p,
-                detections=d,
+        detections = convert_inference_detections_batch_to_sv_detections(predictions)
+        for prediction, image_detections in zip(predictions, detections):
+            add_inference_keypoints_to_sv_detections(
+                inference_prediction=prediction["predictions"],
+                detections=image_detections,
             )
-            p["predictions"] = d
-        predictions = attach_prediction_type_info(
-            predictions=predictions,
+        detections = attach_prediction_type_info_to_sv_detections_batch(
+            predictions=detections,
             prediction_type="keypoint-detection",
         )
-        predictions = filter_out_unwanted_classes_from_predictions_detections(
-            predictions=predictions,
+        detections = filter_out_unwanted_classes_from_sv_detections_batch(
+            predictions=detections,
             classes_to_accept=class_filter,
         )
-        predictions = attach_parent_info(images=images, predictions=predictions)
-        return anchor_prediction_detections_in_parent_coordinates(
-            image=images,
-            predictions=predictions,
+        detections = attach_parents_coordinates_to_batch_of_sv_detections(
+            images=images,
+            predictions=detections,
         )
+        return [{"predictions": image_detections} for image_detections in detections]

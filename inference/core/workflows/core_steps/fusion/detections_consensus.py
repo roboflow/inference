@@ -20,15 +20,24 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.constants import (
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+)
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
@@ -90,10 +99,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like model predictions made against single image to agree on model consensus",
         examples=[["$steps.a.predictions", "$steps.b.predictions"]],
         validation_alias=AliasChoices("predictions_batches", "predictions"),
-    )
-    image_metadata: StepOutputSelector(kind=[BATCH_OF_IMAGE_METADATA_KIND]) = Field(
-        description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
-        examples=["$steps.detection.image"],
     )
     required_votes: Union[
         PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
@@ -157,12 +162,10 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions",
                 kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(
                 name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
             ),
@@ -174,15 +177,13 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class DetectionsConsensusBlock(WorkflowBlock):
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
     async def run_locally(
         self,
-        predictions_batches: List[List[sv.Detections]],
-        image_metadata: List[dict],
+        predictions_batches: List[Batch[Optional[sv.Detections]]],
         required_votes: int,
         class_aware: bool,
         iou_threshold: float,
@@ -200,20 +201,15 @@ class DetectionsConsensusBlock(WorkflowBlock):
             raise ValueError(
                 f"Consensus step requires at least one source of predictions."
             )
-        batch_sizes = get_and_validate_batch_sizes(
-            all_predictions=predictions_batches,
-        )
-        batch_size = batch_sizes[0]
         results = []
-        for batch_index in range(batch_size):
-            detections_from_sources = [e[batch_index] for e in predictions_batches]
+        for detections_from_sources in Batch.zip_nonempty(batches=predictions_batches):
             (
                 parent_id,
                 object_present,
                 presence_confidence,
                 consensus_detections,
             ) = agree_on_consensus_for_all_detections_sources(
-                detections_from_sources=detections_from_sources,
+                detections_from_sources=list(detections_from_sources),
                 required_votes=required_votes,
                 class_aware=class_aware,
                 iou_threshold=iou_threshold,
@@ -227,22 +223,19 @@ class DetectionsConsensusBlock(WorkflowBlock):
             results.append(
                 {
                     "predictions": consensus_detections,
-                    "parent_id": parent_id,
                     "object_present": object_present,
                     "presence_confidence": presence_confidence,
-                    "image": image_metadata[batch_index],
                 }
             )
-        return results
-
-
-def get_and_validate_batch_sizes(
-    all_predictions: List[sv.Detections],
-) -> List[int]:
-    batch_sizes = [len(detections) for detections in all_predictions]
-    if len(set(batch_sizes)) > 1:
-        raise ValueError(f"Detected missmatch of input dimensions.")
-    return batch_sizes
+        return Batch.align_batches_results(
+            batches=predictions_batches,
+            results=results,
+            null_element={
+                "predictions": None,
+                "object_present": None,
+                "presence_confidence": None,
+            },
+        )
 
 
 def does_not_detect_objects_in_any_source(
@@ -505,6 +498,34 @@ def merge_detections(
     x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
         detections
     )
+    data = {
+        "class_name": np.array([class_name]),
+        PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
+        DETECTION_ID_KEY: np.array([str(uuid4())]),
+        PREDICTION_TYPE_KEY: np.array(["object-detection"]),
+        PARENT_COORDINATES_KEY: np.array([detections[PARENT_COORDINATES_KEY][0]]),
+        PARENT_DIMENSIONS_KEY: np.array([detections[PARENT_DIMENSIONS_KEY][0]]),
+        ROOT_PARENT_ID_KEY: np.array([detections[ROOT_PARENT_ID_KEY][0]]),
+        ROOT_PARENT_COORDINATES_KEY: np.array(
+            [detections[ROOT_PARENT_COORDINATES_KEY][0]]
+        ),
+        ROOT_PARENT_DIMENSIONS_KEY: np.array(
+            [detections[ROOT_PARENT_DIMENSIONS_KEY][0]]
+        ),
+        IMAGE_DIMENSIONS_KEY: np.array([detections[IMAGE_DIMENSIONS_KEY][0]]),
+    }
+    if SCALING_RELATIVE_TO_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array([1.0])
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_ROOT_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array([1.0])
     return sv.Detections(
         xyxy=np.array([[x1, y1, x2, y2]], dtype=np.float64),
         class_id=np.array([class_id]),
@@ -518,11 +539,7 @@ def merge_detections(
             ],
             dtype=np.float64,
         ),
-        data={
-            "class_name": np.array([class_name]),
-            PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
-            DETECTION_ID_KEY: np.array([str(uuid4())]),
-        },
+        data=data,
     )
 
 
