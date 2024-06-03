@@ -110,6 +110,7 @@ def detect_barcodes(image: WorkflowImageData) -> sv.Detections:
         class_id=class_id,
         data={CLASS_NAME_DATA_FIELD: class_name},
     )
+
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
     detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection"] * len(detections))
     detections["data"] = np.array(extracted_data)
