@@ -95,6 +95,9 @@ def _assembly_input_image(
                 image_reference = image
                 image = load_image_from_url(value=image)
             elif not prevent_local_images_loading and os.path.exists(image):
+                # prevent_local_images_loading is introduced to eliminate
+                # server vulnerability - namely it prevents local server
+                # file system from being exploited.
                 image_reference = image
                 image = cv2.imread(image)
             else:
