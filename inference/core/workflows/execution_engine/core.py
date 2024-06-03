@@ -70,7 +70,7 @@ class ExecutionEngine:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
-            prevent_local_images_loading=prevent_local_images_loading,
+            prevent_local_images_loading=self._prevent_local_images_loading,
         )
         validate_runtime_input(
             runtime_parameters=runtime_parameters,
