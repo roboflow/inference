@@ -43,8 +43,8 @@ from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload 
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
-from inference.core.workflows.core_steps.transformations.detection_filter import (
-    DetectionFilterBlock,
+from inference.core.workflows.core_steps.transformations.detections_filter import (
+    DetectionsFilterBlock,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     DetectionOffsetBlock,
@@ -80,7 +80,7 @@ def load_blocks() -> list:
         QRCodeDetectorBlock,
         AbsoluteStaticCropBlock,
         DynamicCropBlock,
-        DetectionFilterBlock,
+        DetectionsFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
