@@ -11,6 +11,17 @@ from inference.core.workflows.prototypes.block import (
 
 
 @dataclass(frozen=True)
+class BatchDimensionIdentifier:
+    identifier: int
+
+    def __str__(self):
+        return f"BatchSize<{self.identifier}>"
+
+    def generate_next(self) -> "BatchDimensionIdentifier":
+        return BatchDimensionIdentifier(identifier=self.identifier + 1)
+
+
+@dataclass(frozen=True)
 class BlockSpecification:
     block_source: str
     identifier: str

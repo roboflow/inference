@@ -22,7 +22,7 @@ from inference.core.workflows.errors import (
     InvalidReferenceTargetError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
-    ParsedWorkflowDefinition,
+    ParsedWorkflowDefinition, BatchDimensionIdentifier,
 )
 from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_kinds,
@@ -88,8 +88,11 @@ def construct_graph(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
     )
-    return add_edges_for_outputs(
+    execution_graph = add_edges_for_outputs(
         workflow_definition=workflow_definition,
+        execution_graph=execution_graph,
+    )
+    return denote_batch_size_identifiers_for_steps(
         execution_graph=execution_graph,
     )
 
@@ -100,10 +103,17 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
+        batch_oriented = False
+        batch_dimension_identifier = None
+        if input_spec.is_batch_oriented():
+            batch_oriented = True
+            batch_dimension_identifier = BatchDimensionIdentifier(identifier=1)
         execution_graph.add_node(
             input_selector,
             kind=INPUT_NODE_KIND,
             definition=input_spec,
+            batch_oriented=batch_oriented,
+            batch_dimension_identifier=batch_dimension_identifier,
         )
     return execution_graph
 
@@ -310,6 +320,12 @@ def add_edges_for_outputs(
             )
         execution_graph.add_edge(node_selector, output_name)
     return execution_graph
+
+
+def denote_batch_size_identifiers_for_steps(
+    execution_graph: DiGraph
+) -> DiGraph:
+    pass
 
 
 def verify_edge_is_created_between_existing_nodes(

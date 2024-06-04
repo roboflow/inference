@@ -1,4 +1,5 @@
 import base64
+from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
@@ -45,13 +46,24 @@ class JsonField(BaseModel):
         return self.type
 
 
-class WorkflowImage(BaseModel):
+class WorkflowInput(BaseModel):
+
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return False
+
+
+class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
     kind: List[Kind] = Field(default=[BATCH_OF_IMAGES_KIND])
 
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return True
 
-class WorkflowParameter(BaseModel):
+
+class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
     kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])

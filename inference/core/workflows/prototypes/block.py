@@ -58,6 +58,10 @@ class WorkflowBlock(ABC):
     def produces_batch_output(cls) -> bool:
         return True
 
+    @classmethod
+    def changes_input_batch_dimension(cls) -> bool:
+        return False
+
     @abstractmethod
     async def run_locally(
         self,
