@@ -50,7 +50,6 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["DetectionOffset"]
-    name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
