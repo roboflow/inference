@@ -178,4 +178,4 @@ Now that we have our specification, we can run our workflow using the Inference 
 
 Now that you have created and run your first workflow, you can explore our other supported blocks and create a more complex workflow.
 
-Refer to our [Supported Blocks](/workflows/supported_blocks/) documentation to learn more about what blocks are supported.
+Refer to our [Supported Blocks](/workflows/blocks/) documentation to learn more about what blocks are supported.
