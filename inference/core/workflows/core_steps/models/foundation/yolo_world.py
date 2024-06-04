@@ -63,7 +63,6 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["YoloWorldModel", "YoloWorld"]
-    name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -76,7 +75,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
     version: Union[
-        Literal["v2-s", "v2-m", "v2-l", "v2-x", "s", "m", "l", "x", ],
+        Literal[
+            "v2-s",
+            "v2-m",
+            "v2-l",
+            "v2-x",
+            "s",
+            "m",
+            "l",
+            "x",
+        ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
         default="v2-s",

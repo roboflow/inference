@@ -19,7 +19,7 @@ class WorkflowBlockManifest(BaseModel, ABC):
     )
 
     type: str
-    name: str = Field(description="Unique name of step in workflows")
+    name: str = Field(title="Step Name", description="The unique name of this step.")
 
     @classmethod
     @abstractmethod
