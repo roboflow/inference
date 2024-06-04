@@ -26,6 +26,7 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_STRING_KIND,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -60,11 +61,8 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["OCRModel"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    name: str = Field(description="Unique name of step in workflows")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

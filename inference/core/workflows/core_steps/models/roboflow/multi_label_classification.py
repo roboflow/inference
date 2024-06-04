@@ -26,6 +26,8 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     FloatZeroToOne,
     FlowControl,
+    ImageInputField,
+    RoboflowModelField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -61,16 +63,9 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(
-            description="Roboflow model identifier",
-            examples=["my_project/3", "$inputs.model"],
-        )
+        RoboflowModelField
     )
     confidence: Union[
         FloatZeroToOne,
