@@ -62,7 +62,8 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run an instance segmentation model.",
+            "name": "Instance Segmentation Model",
+            "short_description": "Predict the shape and size of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

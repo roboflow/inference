@@ -16,6 +16,18 @@ def test_get_full_type_name() -> None:
     )
 
 
+def test_build_human_friendly_block_name_when_overridden_in_schema() -> None:
+    # when
+    result = build_human_friendly_block_name(
+        fully_qualified_name="inference.core.workflows.core_steps.transformations.crop.MyCropBlock",
+        block_schema={
+            "name": "Foo Bar"
+        }
+    )
+
+    # then
+    assert result == "Foo Bar"
+
 def test_build_human_friendly_block_name_when_block_suffix_present() -> None:
     # when
     result = build_human_friendly_block_name(

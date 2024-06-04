@@ -57,6 +57,7 @@ guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
+            "name": "YOLO-World Model",
             "short_description": "Run a zero-shot object detection model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

@@ -53,7 +53,8 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run a multi-label classification model.",
+            "name": "Multi-Label Classification Model",
+            "short_description": "Apply multiple tags to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

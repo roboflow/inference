@@ -247,7 +247,7 @@ BATCH_OF_DICTIONARY_KIND = Kind(
     docs=BATCH_OF_DICTIONARY_KIND_DOCS,
 )
 BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS = f"""
-This kind represent predictions from Roboflow classification model.
+This kind represent predictions from Classification Models.
 
 Examples:
 ```
@@ -288,7 +288,7 @@ Examples:
 """
 BATCH_OF_CLASSIFICATION_PREDICTION_KIND = Kind(
     name="Batch[classification_prediction]",
-    description="`'predictions'` key from Roboflow classifier output",
+    description="`'predictions'` key from Classification Model outputs",
     docs=BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS,
 )
 
@@ -352,7 +352,7 @@ OBJECT_DETECTION_PREDICTION_KIND = Kind(
 )
 
 BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow object detection model.
+This kind represents batch of predictions from an Object Detection Model.
 
 Example:
 ```
@@ -373,7 +373,7 @@ Example:
 """
 BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[object_detection_prediction]",
-    description="`'predictions'` key from Roboflow object detection model output",
+    description="`'predictions'` key from Object Detection Model output",
     docs=BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS,
 )
 
@@ -408,7 +408,7 @@ INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 )
 
 BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow instance segmentation model.
+This kind represents batch of predictions from Instance Segmentation Models.
 
 Example:
 ```
@@ -430,7 +430,7 @@ providing object contour,
 """
 BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="Batch[instance_segmentation_prediction]",
-    description="`'predictions'` key from Roboflow instance segmentation model output",
+    description="`'predictions'` key from Instance Segmentation Model outputs",
     docs=BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
 )
 
@@ -460,7 +460,7 @@ KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
 )
 
 BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow keypoint detection model.
+This kind represents batch of predictions from Keypoint Detection Models.
 
 Example:
 ```
@@ -482,7 +482,7 @@ object skeleton.
 """
 BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[keypoint_detection_prediction]",
-    description="`'predictions'` key from Roboflow keypoint detection model output",
+    description="`'predictions'` key from Keypoint Detection Model output",
     docs=BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
 )
 BATCH_OF_QR_CODE_DETECTION_KIND_DOCS = f"""
@@ -506,7 +506,7 @@ Example:
 """
 BATCH_OF_QR_CODE_DETECTION_KIND = Kind(
     name="Batch[qr_code_detection]",
-    description="Roboflow prediction with QR code detection",
+    description="Prediction with QR code detection",
     docs=BATCH_OF_QR_CODE_DETECTION_KIND_DOCS,
 )
 BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS = f"""
@@ -530,7 +530,7 @@ Example:
 """
 BATCH_OF_BAR_CODE_DETECTION_KIND = Kind(
     name="Batch[bar_code_detection]",
-    description="Roboflow prediction with barcode detection",
+    description="Prediction with barcode detection",
     docs=BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS,
 )
 BATCH_OF_PREDICTION_TYPE_KIND_DOCS = f"""

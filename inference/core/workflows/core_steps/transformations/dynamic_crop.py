@@ -49,7 +49,12 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["DynamicCrop", "Crop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        title="Image to Crop",
+        description="The input image for this step.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
+    )
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -57,8 +62,8 @@ class BlockManifest(WorkflowBlockManifest):
             BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference to predictions of detection-like model, that can be based of cropping "
-        "(detection must define RoI - eg: bounding box)",
+        title="Regions of Interest",
+        description="The output of a detection model describing the bounding boxes that will be used to crop the image.",
         examples=["$steps.my_object_detection_model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
