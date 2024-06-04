@@ -7,7 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import OutputDefinition, Batch
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -93,12 +93,15 @@ def pick_largest_perspective_polygons(
         List[List[List[List[int]]]],
     ]
 ) -> List[np.ndarray]:
-    if not isinstance(perspective_polygons_batch, list):
+    if not isinstance(perspective_polygons_batch, (list, Batch)):
         raise ValueError("Unexpected type of input")
     if not perspective_polygons_batch:
         raise ValueError("Unexpected empty batch")
     largest_perspective_polygons: List[np.ndarray] = []
     for polygons in perspective_polygons_batch:
+        if polygons is None:
+            largest_perspective_polygons.append(None)
+            continue
         if not isinstance(polygons, list) and not isinstance(polygons, np.ndarray):
             raise ValueError("Unexpected type of batch element")
         if len(polygons) == 0:
@@ -255,8 +258,8 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        predictions: List[sv.Detections],
-        perspective_polygons: List[List[np.ndarray]],
+        predictions: Batch[sv.Detections],
+        perspective_polygons: Batch[List[np.ndarray]],
         transformed_rect_width: int,
         transformed_rect_height: int,
         extend_perspective_polygon_by_detections_anchor: Optional[str],
@@ -266,6 +269,9 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 perspective_polygons
             )
             for polygon, detections in zip(largest_perspective_polygons, predictions):
+                if largest_perspective_polygons is None:
+                    self.perspective_transformers.append(None)
+                    continue
                 self.perspective_transformers.append(
                     generate_transformation_matrix(
                         src_polygon=polygon,
@@ -280,6 +286,9 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         for detections, perspective_transformer in zip(
             predictions, self.perspective_transformers
         ):
+            if detections is None:
+                result.append({OUTPUT_KEY: None})
+                continue
             corrected_detections = correct_detections(
                 detections=detections,
                 perspective_transformer=perspective_transformer,
