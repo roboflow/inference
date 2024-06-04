@@ -101,7 +101,7 @@ def calculate_simplified_polygon(
         )
     while len(simplified_polygon.shape) > 2:
         simplified_polygon = np.concatenate(simplified_polygon)
-    return simplified_polygon.tolist()
+    return simplified_polygon
 
 
 class PolygonSimplificationBlock(WorkflowBlock):

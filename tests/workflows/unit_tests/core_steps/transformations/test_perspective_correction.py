@@ -11,12 +11,6 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
     roll_polygon_vertices_to_start_from_leftmost_bottom,
     extend_perspective_polygon,
     generate_transformation_matrix,
-    correct_detections,
-)
-from inference.core.workflows.entities.base import (
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
-    WorkflowImageData,
 )
 
 
