@@ -52,9 +52,6 @@ from inference.core.workflows.core_steps.transformations.detection_offset import
 from inference.core.workflows.core_steps.transformations.dynamic_crop import (
     DynamicCropBlock,
 )
-from inference.core.workflows.core_steps.transformations.detections_filter import (
-    DetectionsFilterBlock,
-)
 from inference.core.workflows.core_steps.transformations.detections_transformation import (
     DetectionsTransformationBlock,
 )
@@ -86,6 +83,5 @@ def load_blocks() -> list:
         DetectionsTransformationBlock,
         DetectionsRateLimiterBlock,
         ConditionBlock,
-        RoboflowDatasetUploadBlock,
-        DetectionsFilterBlock,
+        RoboflowDatasetUploadBlock
     ]
