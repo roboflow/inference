@@ -13,7 +13,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 )
 from inference.core.workflows.core_steps.flow_control import condition
 from inference.core.workflows.core_steps.models.roboflow import object_detection
-from inference.core.workflows.core_steps.transformations import crop
+from inference.core.workflows.core_steps.transformations import dynamic_crop
 from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
@@ -73,7 +73,7 @@ def test_get_nodes_of_specific_kind() -> None:
     graph.add_node(
         "two",
         kind=STEP_NODE_KIND,
-        definition=crop.BlockManifest(
+        definition=dynamic_crop.BlockManifest(
             type="Crop",
             name="two",
             image="$inputs.image",
@@ -182,7 +182,7 @@ def test_get_output_names() -> None:
 def test_get_steps_selectors() -> None:
     # given
     steps = [
-        crop.BlockManifest(
+        dynamic_crop.BlockManifest(
             type="Crop",
             name="my_crop",
             image="$inputs.image",

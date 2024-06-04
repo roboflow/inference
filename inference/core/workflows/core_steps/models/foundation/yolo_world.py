@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
@@ -64,7 +64,6 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["YoloWorldModel", "YoloWorld"]
-    name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     class_names: Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
