@@ -23,6 +23,7 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -66,11 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["ActiveLearningDataCollector"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

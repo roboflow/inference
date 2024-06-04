@@ -15,6 +15,8 @@ from inference.core.workflows.entities.types import (
     StepSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
+    ImageInputField,
+    RoboflowModelField
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -27,16 +29,8 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["ExampleModel"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-    )
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(
-            description="Roboflow model identifier",
-            examples=["my_project/3", "$inputs.model"],
-        )
-    )
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     string_value: Optional[str] = Field(default=None)
 
     @classmethod
@@ -88,10 +82,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
 
 class ExampleTransformationBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleTransformation"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-    )
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     predictions: StepOutputSelector(
         kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
     ) = Field(
@@ -125,10 +116,7 @@ class ExampleTransformationBlock(WorkflowBlock):
 
 class ExampleSinkBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleSink"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-    )
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     predictions: StepOutputSelector(
         kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
     ) = Field(

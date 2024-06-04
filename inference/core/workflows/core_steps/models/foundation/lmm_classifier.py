@@ -25,6 +25,7 @@ from inference.core.workflows.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -59,11 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMMForClassification"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     lmm_type: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(

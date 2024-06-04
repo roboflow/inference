@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from typing_extensions import Annotated, Literal
 
 
@@ -481,6 +481,19 @@ StepSelector = Annotated[
         }
     ),
 ]
+
+ImageInputField = Field(
+    title="Image",
+    description="The image to infer on",
+    examples=["$inputs.image", "$steps.cropping.crops"],
+    validation_alias=AliasChoices("images", "image"),
+)
+
+RoboflowModelField = Field(
+    title="Model",
+    description="Roboflow model identifier",
+    examples=["my_project/3", "$inputs.model"],
+)
 
 
 def StepOutputSelector(kind: Optional[List[Kind]] = None):
