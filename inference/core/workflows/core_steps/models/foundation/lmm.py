@@ -32,6 +32,7 @@ from inference.core.workflows.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -87,11 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMM"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],

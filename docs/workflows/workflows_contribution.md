@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["Crop"]
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="The image to infer on",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     predictions: StepOutputSelector(

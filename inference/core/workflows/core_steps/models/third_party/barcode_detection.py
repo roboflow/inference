@@ -4,14 +4,10 @@ from uuid import uuid4
 import numpy as np
 import supervision as sv
 import zxingcpp
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.workflows.constants import (
-    DETECTION_ID_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-)
+from inference.core.workflows.constants import DETECTION_ID_KEY, PREDICTION_TYPE_KEY
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -22,6 +18,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -49,11 +46,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BarcodeDetector", "BarcodeDetection"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

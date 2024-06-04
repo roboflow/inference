@@ -15,6 +15,7 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     INTEGER_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -44,11 +45,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["AbsoluteStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     x_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
             description="Center X of static crop (absolute coordinate)",

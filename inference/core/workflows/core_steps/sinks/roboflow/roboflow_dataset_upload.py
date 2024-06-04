@@ -27,7 +27,6 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     register_image_at_roboflow,
 )
-from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
@@ -48,6 +47,7 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -85,11 +85,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["RoboflowDatasetUpload"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

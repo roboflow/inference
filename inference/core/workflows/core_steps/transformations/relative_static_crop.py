@@ -16,6 +16,7 @@ from inference.core.workflows.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     FloatZeroToOne,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -45,11 +46,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["RelativeStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     x_center: Union[
         FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
