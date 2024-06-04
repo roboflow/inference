@@ -51,13 +51,13 @@ each of the individual cropped regions.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Create dynamic crops from a detections model.",
+            "short_description": "Use model predictions to dynamically crop.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
         }
     )
-    type: Literal["Crop"]
+    type: Literal["DynamicCrop", "Crop"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],

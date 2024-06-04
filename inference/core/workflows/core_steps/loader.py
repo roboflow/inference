@@ -40,7 +40,7 @@ from inference.core.workflows.core_steps.sinks.active_learning.data_collector im
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
-from inference.core.workflows.core_steps.transformations.crop import CropBlock
+from inference.core.workflows.core_steps.transformations.dynamic_crop import CropBlock
 from inference.core.workflows.core_steps.transformations.detection_filter import (
     DetectionFilterBlock,
 )

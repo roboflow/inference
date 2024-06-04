@@ -1,4 +1,4 @@
-from inference.core.workflows.core_steps.transformations.crop import CropBlock
+from inference.core.workflows.core_steps.transformations.dynamic_crop import CropBlock
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
