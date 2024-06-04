@@ -34,7 +34,7 @@ DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
         {
             "type": "JsonField",
             "name": "predictions",
-            "selector": "$steps.breds_classification.top",
+            "selector": "$steps.breds_classification.predictions",
         }
     ],
 }
@@ -69,7 +69,7 @@ async def test_detection_plus_classification_workflow_when_minimal_valid_input_p
     assert set(result.keys()) == {
         "predictions",
     }, "Expected all declared outputs to be delivered"
-    assert result["predictions"] == [
+    assert [result["predictions"][0]["top"], result["predictions"][1]["top"]] == [
         "116.Parson_russell_terrier",
         "131.Wirehaired_pointing_griffon",
     ], "Expected predictions to be as measured in reference run"

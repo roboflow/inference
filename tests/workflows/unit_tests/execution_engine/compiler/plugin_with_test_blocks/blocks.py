@@ -10,13 +10,13 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     FlowControl,
+    ImageInputField,
+    RoboflowModelField,
     StepOutputImageSelector,
     StepOutputSelector,
     StepSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-    ImageInputField,
-    RoboflowModelField
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,

@@ -18,7 +18,6 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
     ConditionalBranchesCollapseError,
-    DanglingExecutionBranchError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
 )
@@ -65,9 +64,6 @@ def prepare_execution_graph(
             f"never end if executed.",
             context="workflow_compilation | execution_graph_construction",
         )
-    verify_each_node_reach_at_least_one_output(
-        execution_graph=execution_graph,
-    )
     verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     return execution_graph
 
@@ -347,48 +343,6 @@ def verify_output_selector_points_to_valid_output(
             f"that is not defined in workflow block used to create step.",
             context="workflow_compilation | execution_graph_construction",
         )
-
-
-def verify_each_node_reach_at_least_one_output(
-    execution_graph: DiGraph,
-) -> None:
-    all_nodes = set(execution_graph.nodes())
-    output_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=OUTPUT_NODE_KIND
-    )
-    nodes_without_outputs = get_nodes_that_do_not_produce_outputs(
-        execution_graph=execution_graph,
-    )
-    nodes_that_must_be_reached = output_nodes.union(nodes_without_outputs)
-    nodes_reaching_output = (
-        get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
-            execution_graph=execution_graph,
-            pointed_nodes=nodes_that_must_be_reached,
-        )
-    )
-    nodes_not_reaching_output = all_nodes.difference(nodes_reaching_output)
-    if nodes_not_reaching_output:
-        raise DanglingExecutionBranchError(
-            public_message=f"Detected {len(nodes_not_reaching_output)} nodes not reaching any of output node:"
-            f"{nodes_not_reaching_output}.",
-            context="workflow_compilation | execution_graph_construction",
-        )
-
-
-def get_nodes_that_do_not_produce_outputs(
-    execution_graph: DiGraph,
-) -> Set[str]:
-    # assumption is that nodes without outputs will produce some side effect and shall be
-    # treated as output nodes while checking if there is no dangling steps in graph
-    step_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=STEP_NODE_KIND
-    )
-    result = set()
-    for step_node in step_nodes:
-        step_manifest = execution_graph.nodes[step_node][NODE_DEFINITION_KEY]
-        if not step_manifest.get_actual_outputs():
-            result.add(step_node)
-    return result
 
 
 def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(

@@ -1,3 +1,4 @@
+import math
 import statistics
 from collections import Counter, defaultdict
 from enum import Enum
@@ -15,23 +16,28 @@ from typing import (
 )
 from uuid import uuid4
 
+import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
-    HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
-    WIDTH_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
-from inference.core.workflows.core_steps.common.utils import detection_to_xyxy
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     BOOLEAN_KIND,
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
@@ -93,10 +99,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like model predictions made against single image to agree on model consensus",
         examples=[["$steps.a.predictions", "$steps.b.predictions"]],
         validation_alias=AliasChoices("predictions_batches", "predictions"),
-    )
-    image_metadata: StepOutputSelector(kind=[BATCH_OF_IMAGE_METADATA_KIND]) = Field(
-        description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
-        examples=["$steps.detection.image"],
     )
     required_votes: Union[
         PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
@@ -160,12 +162,10 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
                 name="predictions",
                 kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(
                 name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
             ),
@@ -173,22 +173,17 @@ class BlockManifest(WorkflowBlockManifest):
                 name="presence_confidence",
                 kind=[FLOAT_ZERO_TO_ONE_KIND, DICTIONARY_KIND],
             ),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
 class DetectionsConsensusBlock(WorkflowBlock):
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
     async def run_locally(
         self,
-        predictions_batches: List[List[List[dict]]],
-        image_metadata: List[dict],
+        predictions_batches: List[Batch[Optional[sv.Detections]]],
         required_votes: int,
         class_aware: bool,
         iou_threshold: float,
@@ -198,25 +193,23 @@ class DetectionsConsensusBlock(WorkflowBlock):
         presence_confidence_aggregation: AggregationMode,
         detections_merge_confidence_aggregation: AggregationMode,
         detections_merge_coordinates_aggregation: AggregationMode,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> Union[
+        List[Dict[str, Union[sv.Detections, Any]]],
+        Tuple[List[Dict[str, Union[sv.Detections, Any]]], FlowControl],
+    ]:
         if len(predictions_batches) < 1:
             raise ValueError(
                 f"Consensus step requires at least one source of predictions."
             )
-        batch_sizes = get_and_validate_batch_sizes(
-            all_predictions=predictions_batches,
-        )
-        batch_size = batch_sizes[0]
         results = []
-        for batch_index in range(batch_size):
-            detections_from_sources = [e[batch_index] for e in predictions_batches]
+        for detections_from_sources in Batch.zip_nonempty(batches=predictions_batches):
             (
                 parent_id,
                 object_present,
                 presence_confidence,
                 consensus_detections,
             ) = agree_on_consensus_for_all_detections_sources(
-                detections_from_sources=detections_from_sources,
+                detections_from_sources=list(detections_from_sources),
                 required_votes=required_votes,
                 class_aware=class_aware,
                 iou_threshold=iou_threshold,
@@ -230,39 +223,39 @@ class DetectionsConsensusBlock(WorkflowBlock):
             results.append(
                 {
                     "predictions": consensus_detections,
-                    "parent_id": parent_id,
                     "object_present": object_present,
                     "presence_confidence": presence_confidence,
-                    "image": image_metadata[batch_index],
-                    "prediction_type": "object-detection",
                 }
             )
-        return results
+        return Batch.align_batches_results(
+            batches=predictions_batches,
+            results=results,
+            null_element={
+                "predictions": None,
+                "object_present": None,
+                "presence_confidence": None,
+            },
+        )
 
 
-def get_and_validate_batch_sizes(
-    all_predictions: List[List[List[dict]]],
-) -> List[int]:
-    batch_sizes = [len(predictions) for predictions in all_predictions]
-    if len(set(batch_sizes)) > 1:
-        raise ValueError(f"Detected missmatch of input dimensions.")
-    return batch_sizes
-
-
-def does_not_detected_objects_in_any_source(
-    detections_from_sources: List[List[dict]],
+def does_not_detect_objects_in_any_source(
+    detections_from_sources: List[sv.Detections],
 ) -> bool:
     return all(len(p) == 0 for p in detections_from_sources)
 
 
 def get_parent_id_of_detections_from_sources(
-    detections_from_sources: List[List[dict]],
+    detections_from_sources: List[sv.Detections],
 ) -> str:
-    encountered_parent_ids = {
-        p[PARENT_ID_KEY]
-        for prediction_source in detections_from_sources
-        for p in prediction_source
-    }
+    encountered_parent_ids = set(
+        np.concatenate(
+            [
+                detections[PARENT_ID_KEY]
+                for detections in detections_from_sources
+                if PARENT_ID_KEY in detections.data
+            ]
+        ).tolist()
+    )
     if len(encountered_parent_ids) != 1:
         raise ValueError(
             "Missmatch in predictions - while executing consensus step, "
@@ -274,38 +267,37 @@ def get_parent_id_of_detections_from_sources(
 
 
 def filter_predictions(
-    predictions: List[List[dict]],
+    predictions: List[sv.Detections],
     classes_to_consider: Optional[List[str]],
-) -> List[List[dict]]:
-    if classes_to_consider is None:
+) -> List[sv.Detections]:
+    if not classes_to_consider:
         return predictions
-    classes_to_consider = set(classes_to_consider)
     return [
-        [
-            detection
-            for detection in detections
-            if detection["class"] in classes_to_consider
-        ]
+        detections[np.isin(detections["class_name"], classes_to_consider)]
         for detections in predictions
+        if "class_name" in detections.data
     ]
 
 
 def get_detections_from_different_sources_with_max_overlap(
-    detection: dict,
+    detection: sv.Detections,
     source: int,
-    detections_from_sources: List[List[dict]],
+    detections_from_sources: List[sv.Detections],
     iou_threshold: float,
     class_aware: bool,
     detections_already_considered: Set[str],
-) -> Dict[int, Tuple[dict, float]]:
+) -> Dict[int, Tuple[sv.Detections, float]]:
     current_max_overlap = {}
     for other_source, other_detection in enumerate_detections(
         detections_from_sources=detections_from_sources,
         excluded_source_id=source,
     ):
-        if other_detection[DETECTION_ID_KEY] in detections_already_considered:
+        if other_detection[DETECTION_ID_KEY][0] in detections_already_considered:
             continue
-        if class_aware and detection["class"] != other_detection["class"]:
+        if (
+            class_aware
+            and detection["class_name"][0] != other_detection["class_name"][0]
+        ):
             continue
         iou_value = calculate_iou(
             detection_a=detection,
@@ -321,34 +313,25 @@ def get_detections_from_different_sources_with_max_overlap(
 
 
 def enumerate_detections(
-    detections_from_sources: List[List[dict]],
+    detections_from_sources: List[sv.Detections],
     excluded_source_id: Optional[int] = None,
-) -> Generator[Tuple[int, dict], None, None]:
+) -> Generator[Tuple[int, sv.Detections], None, None]:
     for source_id, detections in enumerate(detections_from_sources):
         if excluded_source_id == source_id:
             continue
-        for detection in detections:
-            yield source_id, detection
+        for i in range(len(detections)):
+            yield source_id, detections[i]
 
 
-def calculate_iou(detection_a: dict, detection_b: dict) -> float:
-    box_a = detection_to_xyxy(detection=detection_a)
-    box_b = detection_to_xyxy(detection=detection_b)
-    x_a = max(box_a[0], box_b[0])  # most right-hand side of left corners at OX
-    y_a = max(box_a[1], box_b[1])  # most "bottom" of top corners at OY
-    x_b = min(box_a[2], box_b[2])  # most left-hand side of right corners at OX
-    y_b = min(box_a[3], box_b[3])  # most "up" of bottom corners at OY
-    intersection = max(0, x_b - x_a) * max(0, y_b - y_a)
-    bbox_a_area = detection_a[HEIGHT_KEY] * detection_a[WIDTH_KEY]
-    bbox_b_area = detection_b[HEIGHT_KEY] * detection_b[WIDTH_KEY]
-    union = float(bbox_a_area + bbox_b_area - intersection)
-    if union == 0.0:
-        return 0.0
-    return intersection / union
+def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
+    iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
+    if math.isnan(iou):
+        iou = 0
+    return iou
 
 
 def agree_on_consensus_for_all_detections_sources(
-    detections_from_sources: List[List[dict]],
+    detections_from_sources: List[sv.Detections],
     required_votes: int,
     class_aware: bool,
     iou_threshold: float,
@@ -358,8 +341,8 @@ def agree_on_consensus_for_all_detections_sources(
     presence_confidence_aggregation: AggregationMode,
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
-) -> Tuple[str, bool, Dict[str, float], List[dict]]:
-    if does_not_detected_objects_in_any_source(
+) -> Tuple[str, bool, Dict[str, float], sv.Detections]:
+    if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
     ):
         return "undefined", False, {}, []
@@ -391,6 +374,7 @@ def agree_on_consensus_for_all_detections_sources(
             detections_already_considered=detections_already_considered,
         )
         consensus_detections += consensus_detections_update
+    consensus_detections = sv.Detections.merge(consensus_detections)
     (
         object_present,
         presence_confidence,
@@ -409,9 +393,9 @@ def agree_on_consensus_for_all_detections_sources(
 
 
 def get_consensus_for_single_detection(
-    detection: dict,
+    detection: sv.Detections,
     source_id: int,
-    detections_from_sources: List[List[dict]],
+    detections_from_sources: List[sv.Detections],
     iou_threshold: float,
     class_aware: bool,
     required_votes: int,
@@ -419,8 +403,8 @@ def get_consensus_for_single_detection(
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_already_considered: Set[str],
-) -> Tuple[List[dict], Set[str]]:
-    if detection["detection_id"] in detections_already_considered:
+) -> Tuple[List[sv.Detections], Set[str]]:
+    if detection and detection["detection_id"][0] in detections_already_considered:
         return [], detections_already_considered
     consensus_detections = []
     detections_with_max_overlap = (
@@ -433,32 +417,36 @@ def get_consensus_for_single_detection(
             detections_already_considered=detections_already_considered,
         )
     )
+
     if len(detections_with_max_overlap) < (required_votes - 1):
+        # Returning empty sv.Detections
         return consensus_detections, detections_already_considered
-    detections_to_merge = [detection] + [
-        matched_value[0] for matched_value in detections_with_max_overlap.values()
-    ]
+    detections_to_merge = sv.Detections.merge(
+        [detection]
+        + [matched_value[0] for matched_value in detections_with_max_overlap.values()]
+    )
     merged_detection = merge_detections(
         detections=detections_to_merge,
         confidence_aggregation_mode=detections_merge_confidence_aggregation,
         boxes_aggregation_mode=detections_merge_coordinates_aggregation,
     )
-    if merged_detection["confidence"] < confidence:
+    if merged_detection.confidence[0] < confidence:
+        # Returning empty sv.Detections
         return consensus_detections, detections_already_considered
     consensus_detections.append(merged_detection)
-    detections_already_considered.add(detection[DETECTION_ID_KEY])
+    detections_already_considered.add(detection[DETECTION_ID_KEY][0])
     for matched_value in detections_with_max_overlap.values():
-        detections_already_considered.add(matched_value[0][DETECTION_ID_KEY])
+        detections_already_considered.add(matched_value[0][DETECTION_ID_KEY][0])
     return consensus_detections, detections_already_considered
 
 
 def check_objects_presence_in_consensus_detections(
-    consensus_detections: List[dict],
+    consensus_detections: sv.Detections,
     class_aware: bool,
     aggregation_mode: AggregationMode,
     required_objects: Optional[Union[int, Dict[str, int]]],
 ) -> Tuple[bool, Dict[str, float]]:
-    if len(consensus_detections) == 0:
+    if not consensus_detections:
         return False, {}
     if required_objects is None:
         required_objects = 0
@@ -476,12 +464,17 @@ def check_objects_presence_in_consensus_detections(
             aggregation_mode=aggregation_mode,
         )
         return True, {"any_object": aggregated_confidence}
-    class2detections = defaultdict(list)
-    for detection in consensus_detections:
-        class2detections[detection["class"]].append(detection)
+    class2detections = {}
+    for class_name in set(consensus_detections["class_name"]):
+        class2detections[class_name] = consensus_detections[
+            consensus_detections["class_name"] == class_name
+        ]
     if isinstance(required_objects, dict):
         for requested_class, required_objects_count in required_objects.items():
-            if len(class2detections[requested_class]) < required_objects_count:
+            if (
+                requested_class not in class2detections
+                or len(class2detections[requested_class]) < required_objects_count
+            ):
                 return False, {}
     class2confidence = {
         class_name: aggregate_field_values(
@@ -495,50 +488,93 @@ def check_objects_presence_in_consensus_detections(
 
 
 def merge_detections(
-    detections: List[dict],
+    detections: sv.Detections,
     confidence_aggregation_mode: AggregationMode,
     boxes_aggregation_mode: AggregationMode,
-) -> dict:
+) -> sv.Detections:
     class_name, class_id = AGGREGATION_MODE2CLASS_SELECTOR[confidence_aggregation_mode](
         detections
     )
-    x, y, width, height = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
+    x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
         detections
     )
-    return {
-        PARENT_ID_KEY: detections[0][PARENT_ID_KEY],
-        DETECTION_ID_KEY: f"{uuid4()}",
-        "class": class_name,
-        "class_id": class_id,
-        "confidence": aggregate_field_values(
-            detections=detections,
-            field="confidence",
-            aggregation_mode=confidence_aggregation_mode,
+    data = {
+        "class_name": np.array([class_name]),
+        PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
+        DETECTION_ID_KEY: np.array([str(uuid4())]),
+        PREDICTION_TYPE_KEY: np.array(["object-detection"]),
+        PARENT_COORDINATES_KEY: np.array([detections[PARENT_COORDINATES_KEY][0]]),
+        PARENT_DIMENSIONS_KEY: np.array([detections[PARENT_DIMENSIONS_KEY][0]]),
+        ROOT_PARENT_ID_KEY: np.array([detections[ROOT_PARENT_ID_KEY][0]]),
+        ROOT_PARENT_COORDINATES_KEY: np.array(
+            [detections[ROOT_PARENT_COORDINATES_KEY][0]]
         ),
-        "x": x,
-        "y": y,
-        "width": width,
-        "height": height,
+        ROOT_PARENT_DIMENSIONS_KEY: np.array(
+            [detections[ROOT_PARENT_DIMENSIONS_KEY][0]]
+        ),
+        IMAGE_DIMENSIONS_KEY: np.array([detections[IMAGE_DIMENSIONS_KEY][0]]),
     }
+    if SCALING_RELATIVE_TO_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_PARENT_KEY] = np.array([1.0])
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections.data:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
+            [detections[SCALING_RELATIVE_TO_ROOT_PARENT_KEY][0]]
+        )
+    else:
+        data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array([1.0])
+    return sv.Detections(
+        xyxy=np.array([[x1, y1, x2, y2]], dtype=np.float64),
+        class_id=np.array([class_id]),
+        confidence=np.array(
+            [
+                aggregate_field_values(
+                    detections=detections,
+                    field="confidence",
+                    aggregation_mode=confidence_aggregation_mode,
+                )
+            ],
+            dtype=np.float64,
+        ),
+        data=data,
+    )
 
 
-def get_majority_class(detections: List[dict]) -> Tuple[str, int]:
-    class_counts = Counter(d["class"] for d in detections)
-    most_common_class_name = class_counts.most_common(1)[0][0]
-    class_id = [
-        d["class_id"] for d in detections if d["class"] == most_common_class_name
-    ][0]
-    return most_common_class_name, class_id
+def get_majority_class(detections: sv.Detections) -> Tuple[str, int]:
+    class_counts = Counter(
+        [
+            (str(class_name), int(class_id))
+            for class_name, class_id in zip(
+                detections["class_name"], detections.class_id
+            )
+        ]
+    )
+    return class_counts.most_common(1)[0][0]
 
 
-def get_class_of_most_confident_detection(detections: List[dict]) -> Tuple[str, int]:
-    most_confident_prediction = max(detections, key=lambda x: x["confidence"])
-    return most_confident_prediction["class"], most_confident_prediction["class_id"]
+def get_class_of_most_confident_detection(detections: sv.Detections) -> Tuple[str, int]:
+    confidences: List[float] = detections.confidence.astype(float).tolist()
+    max_confidence_index = confidences.index(max(confidences))
+    max_confidence_detection = detections[max_confidence_index]
+    return (
+        max_confidence_detection["class_name"][0],
+        max_confidence_detection.class_id[0],
+    )
 
 
-def get_class_of_least_confident_detection(detections: List[dict]) -> Tuple[str, int]:
-    least_confident_prediction = min(detections, key=lambda x: x["confidence"])
-    return least_confident_prediction["class"], least_confident_prediction["class_id"]
+def get_class_of_least_confident_detection(
+    detections: sv.Detections,
+) -> Tuple[str, int]:
+    confidences: List[float] = detections.confidence.astype(float).tolist()
+    min_confidence_index = confidences.index(min(confidences))
+    min_confidence_detection = detections[min_confidence_index]
+    return (
+        min_confidence_detection["class_name"][0],
+        min_confidence_detection.class_id[0],
+    )
 
 
 AGGREGATION_MODE2CLASS_SELECTOR = {
@@ -548,34 +584,23 @@ AGGREGATION_MODE2CLASS_SELECTOR = {
 }
 
 
-def get_average_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    x = round(aggregate_field_values(detections=detections, field="x"))
-    y = round(aggregate_field_values(detections=detections, field="y"))
-    width = round(aggregate_field_values(detections=detections, field="width"))
-    height = round(aggregate_field_values(detections=detections, field="height"))
-    return x, y, width, height
+def get_average_bounding_box(detections: sv.Detections) -> Tuple[int, int, int, int]:
+    avg_xyxy: np.ndarray = sum(detections.xyxy) / len(detections)
+    return tuple(avg_xyxy.astype(float))
 
 
-def get_smallest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    sizes_and_detections = [(d[HEIGHT_KEY] * d[WIDTH_KEY], d) for d in detections]
-    smallest_detection = min(sizes_and_detections, key=lambda x: x[0])[1]
-    return (
-        smallest_detection["x"],
-        smallest_detection["y"],
-        smallest_detection["width"],
-        smallest_detection["height"],
-    )
+def get_smallest_bounding_box(detections: sv.Detections) -> Tuple[int, int, int, int]:
+    areas: List[float] = detections.area.astype(float).tolist()
+    min_area = min(areas)
+    min_area_index = areas.index(min_area)
+    return tuple(detections[min_area_index].xyxy[0])
 
 
-def get_largest_bounding_box(detections: List[dict]) -> Tuple[int, int, int, int]:
-    sizes_and_detections = [(d[HEIGHT_KEY] * d[WIDTH_KEY], d) for d in detections]
-    largest_detection = max(sizes_and_detections, key=lambda x: x[0])[1]
-    return (
-        largest_detection["x"],
-        largest_detection["y"],
-        largest_detection[WIDTH_KEY],
-        largest_detection[HEIGHT_KEY],
-    )
+def get_largest_bounding_box(detections: sv.Detections) -> Tuple[int, int, int, int]:
+    areas: List[float] = detections.area.astype(float).tolist()
+    max_area = max(areas)
+    max_area_index = areas.index(max_area)
+    return tuple(detections[max_area_index].xyxy[0])
 
 
 AGGREGATION_MODE2BOXES_AGGREGATOR = {
@@ -592,9 +617,17 @@ AGGREGATION_MODE2FIELD_AGGREGATOR = {
 
 
 def aggregate_field_values(
-    detections: List[dict],
+    detections: sv.Detections,
     field: str,
     aggregation_mode: AggregationMode = AggregationMode.AVERAGE,
 ) -> float:
-    values = [d[field] for d in detections]
+    values = []
+    if hasattr(detections, field):
+        values = getattr(detections, field)
+        if isinstance(values, np.ndarray):
+            values = values.astype(float).tolist()
+    elif hasattr(detections, "data") and field in detections.data:
+        values = detections[field]
+        if isinstance(values, np.ndarray):
+            values = values.astype(float).tolist()
     return AGGREGATION_MODE2FIELD_AGGREGATOR[aggregation_mode](values)

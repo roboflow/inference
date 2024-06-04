@@ -1,8 +1,6 @@
 import numpy as np
 
-from inference.core.models.utils.batching import (
-    create_batches,
-)
+from inference.core.models.utils.batching import create_batches
 
 
 def test_create_batches_when_empty_sequence_given() -> None:

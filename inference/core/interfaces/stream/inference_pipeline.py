@@ -515,9 +515,6 @@ class InferencePipeline:
                 WorkflowRunner,
             )
             from inference.core.roboflow_api import get_workflow_specification
-            from inference.core.workflows.core_steps.sinks.active_learning.middleware import (
-                WorkflowsActiveLearningMiddleware,
-            )
             from inference.core.workflows.execution_engine.core import ExecutionEngine
 
             if workflow_specification is None:
@@ -533,9 +530,6 @@ class InferencePipeline:
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                 )
-            workflows_active_learning_middleware = WorkflowsActiveLearningMiddleware(
-                cache=cache,
-            )
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
             model_manager = BackgroundTaskActiveLearningManager(
                 model_registry=model_registry, cache=cache
@@ -551,14 +545,12 @@ class InferencePipeline:
                 workflow_init_parameters = {}
             workflow_init_parameters["workflows_core.model_manager"] = model_manager
             workflow_init_parameters["workflows_core.api_key"] = api_key
-            workflow_init_parameters["workflows_core.active_learning_middleware"] = (
-                workflows_active_learning_middleware
-            )
             workflow_init_parameters["workflows_core.background_tasks"] = (
                 background_tasks
             )
+            workflow_init_parameters["workflows_core.cache"] = cache
             execution_engine = ExecutionEngine.init(
-                workflow_definition=workflow_specification["specification"],
+                workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
             )
             workflow_runner = WorkflowRunner()

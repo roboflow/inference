@@ -1,5 +1,6 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -11,17 +12,20 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    attach_prediction_type_info,
-    load_core_model,
+from inference.core.workflows.constants import (
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
-    FlowControl,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -65,13 +69,11 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
 class OCRModelBlock(WorkflowBlock):
+    # TODO: we need data model for OCR predictions
 
     def __init__(
         self,
@@ -91,12 +93,13 @@ class OCRModelBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        serialised_result = []
-        for single_image in images:
+        images: Batch[Optional[WorkflowImageData]],
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        predictions = []
+        non_empty_images = [i for i in images.iter_nonempty()]
+        for single_image in non_empty_images:
             inference_request = DoctrOCRInferenceRequest(
-                image=single_image,
+                image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
             )
             doctr_model_id = load_core_model(
@@ -107,16 +110,24 @@ class OCRModelBlock(WorkflowBlock):
             result = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            serialised_result.append(result.dict())
-        return self._post_process_result(
-            predictions=serialised_result,
-            image=images,
+            predictions.append(result.model_dump())
+        results = self._post_process_result(
+            predictions=predictions,
+            images=non_empty_images,
+        )
+        return images.align_batch_results(
+            results=results,
+            null_element={
+                PARENT_ID_KEY: None,
+                ROOT_PARENT_ID_KEY: None,
+                "result": None,
+            },
         )
 
     async def run_remotely(
         self,
-        images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        images: Batch[Optional[WorkflowImageData]],
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -133,24 +144,35 @@ class OCRModelBlock(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
         predictions = await client.ocr_image_async(
-            inference_input=[i["value"] for i in images],
+            inference_input=non_empty_inference_images,
         )
         if len(images) == 1:
             predictions = [predictions]
-        return self._post_process_result(image=images, predictions=predictions)
+        results = self._post_process_result(
+            predictions=predictions,
+            images=non_empty_images,
+        )
+        return images.align_batch_results(
+            results=results,
+            null_element={
+                PARENT_ID_KEY: None,
+                ROOT_PARENT_ID_KEY: None,
+                "result": None,
+            },
+        )
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: List[WorkflowImageData],
         predictions: List[dict],
-    ) -> List[dict]:
-        predictions = attach_parent_info(
-            images=image,
-            predictions=predictions,
-            nested_key=None,
-        )
-        return attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="ocr",
-        )
+    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        for prediction, image in zip(predictions, images):
+            prediction[PREDICTION_TYPE_KEY] = "ocr"
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+        return predictions

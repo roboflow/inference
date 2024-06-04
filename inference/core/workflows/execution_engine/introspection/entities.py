@@ -26,6 +26,7 @@ class SelectorDefinition:
     property_description: str
     allowed_references: List[ReferenceDefinition]
     is_list_element: bool
+    is_dict_element: bool
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class ParsedSelector:
     step_name: str
     value: str
     index: Optional[int]
+    key: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class BlockPropertySelectorDefinition:
     property_description: str
     compatible_element: str
     is_list_element: bool
+    is_dict_element: bool
 
 
 @dataclass(frozen=True)
