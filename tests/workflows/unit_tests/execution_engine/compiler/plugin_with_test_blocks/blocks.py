@@ -29,7 +29,7 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["ExampleModel"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     string_value: Optional[str] = Field(default=None)
 
@@ -82,7 +82,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
 
 class ExampleTransformationBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleTransformation"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     predictions: StepOutputSelector(
         kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
     ) = Field(
