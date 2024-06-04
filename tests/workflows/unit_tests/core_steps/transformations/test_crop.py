@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.transformations.crop import (
+from inference.core.workflows.core_steps.transformations.dynamic_crop import (
     BlockManifest,
     crop_image,
 )
