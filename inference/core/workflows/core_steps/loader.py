@@ -34,8 +34,11 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
-from inference.core.workflows.core_steps.sinks.active_learning.data_collector import (
-    ActiveLearningDataCollectorBlock,
+from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
+    DetectionsRateLimiterBlock,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
+    RoboflowDatasetUploadBlock,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
@@ -49,6 +52,12 @@ from inference.core.workflows.core_steps.transformations.detection_offset import
 from inference.core.workflows.core_steps.transformations.dynamic_crop import (
     DynamicCropBlock,
 )
+from inference.core.workflows.core_steps.transformations.detections_filter import (
+    DetectionsFilterBlock,
+)
+from inference.core.workflows.core_steps.transformations.detections_transformation import (
+    DetectionsTransformationBlock,
+)
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
@@ -56,7 +65,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop im
 
 def load_blocks() -> list:
     return [
-        ConditionBlock,
         DetectionsConsensusBlock,
         ClipComparisonBlock,
         LMMBlock,
@@ -70,10 +78,14 @@ def load_blocks() -> list:
         RoboflowObjectDetectionModelBlock,
         BarcodeDetectorBlock,
         QRCodeDetectorBlock,
-        ActiveLearningDataCollectorBlock,
         AbsoluteStaticCropBlock,
         DynamicCropBlock,
         DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
+        DetectionsTransformationBlock,
+        DetectionsRateLimiterBlock,
+        ConditionBlock,
+        RoboflowDatasetUploadBlock,
+        DetectionsFilterBlock,
     ]

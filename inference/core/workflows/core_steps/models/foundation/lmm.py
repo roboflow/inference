@@ -15,15 +15,18 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    load_core_model,
+from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
+from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
 )
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
     DICTIONARY_KIND,
     STRING_KIND,
@@ -158,7 +161,7 @@ class LMMBlock(WorkflowBlock):
 
     async def run_locally(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         prompt: str,
         lmm_type: str,
         lmm_config: LMMConfig,
@@ -170,16 +173,20 @@ class LMMBlock(WorkflowBlock):
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [
+            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        ]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 model_manager=self._model_manager,
                 api_key=self._api_key,
@@ -197,15 +204,25 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
+        for prediction, image in zip(predictions, images):
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+        return images.align_batch_results(
+            results=predictions,
+            null_element={
+                "raw_output": None,
+                PARENT_ID_KEY: None,
+                ROOT_PARENT_ID_KEY: None,
+                "image": None,
+                "structured_output": None,
+            },
         )
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[Optional[WorkflowImageData]],
         prompt: str,
         lmm_type: str,
         lmm_config: LMMConfig,
@@ -217,16 +234,18 @@ class LMMBlock(WorkflowBlock):
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
+        non_empty_images = [i for i in images.iter_nonempty()]
+        non_empty_inference_images = [i.to_inference_format() for i in non_empty_images]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
-                image=images,
+                image=non_empty_inference_images,
                 prompt=prompt,
                 api_key=self._api_key,
             )
@@ -243,10 +262,20 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
+        for prediction, image in zip(predictions, images):
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+        return images.align_batch_results(
+            results=predictions,
+            null_element={
+                "raw_output": None,
+                PARENT_ID_KEY: None,
+                ROOT_PARENT_ID_KEY: None,
+                "image": None,
+                "structured_output": None,
+            },
         )
 
 

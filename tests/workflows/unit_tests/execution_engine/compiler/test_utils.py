@@ -5,6 +5,12 @@ import pytest
 
 from inference.core.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
 from inference.core.workflows.core_steps.common.operators import Operator
+from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    IsTrue,
+    StatementGroup,
+    StaticOperand,
+    UnaryStatement,
+)
 from inference.core.workflows.core_steps.flow_control import condition
 from inference.core.workflows.core_steps.models.roboflow import object_detection
 from inference.core.workflows.core_steps.transformations import dynamic_crop
@@ -46,9 +52,20 @@ def test_get_nodes_of_specific_kind() -> None:
         definition=condition.BlockManifest(
             type="Condition",
             name="one",
-            left=3,
-            operator=Operator.EQUAL,
-            right=3,
+            condition_statement=StatementGroup(
+                type="StatementGroup",
+                statements=[
+                    UnaryStatement(
+                        type="UnaryStatement",
+                        operand=StaticOperand(
+                            type="StaticOperand",
+                            value=True,
+                        ),
+                        operator=IsTrue(type="(Boolean) is True"),
+                    )
+                ],
+            ),
+            evaluation_parameters={},
             step_if_true="$steps.a",
             step_if_false="$steps.b",
         ),

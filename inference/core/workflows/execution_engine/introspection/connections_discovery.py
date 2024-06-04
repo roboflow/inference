@@ -134,6 +134,7 @@ def get_all_inputs_kind_major(
                     property_description=selector.property_description,
                     compatible_element=allowed_reference.selected_element,
                     is_list_element=selector.is_list_element,
+                    is_dict_element=selector.is_dict_element,
                 )
             )
         kind_major_step_inputs[WILDCARD_KIND.name].add(
@@ -144,6 +145,7 @@ def get_all_inputs_kind_major(
                 property_description=selector.property_description,
                 compatible_element=allowed_reference.selected_element,
                 is_list_element=selector.is_list_element,
+                is_dict_element=selector.is_dict_element,
             )
         )
     return kind_major_step_inputs

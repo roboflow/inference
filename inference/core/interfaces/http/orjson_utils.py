@@ -2,11 +2,17 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 
 import orjson
+import supervision as sv
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.utils.image_utils import ImageType, encode_image_to_jpeg_bytes
+from inference.core.utils.image_utils import ImageType
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_image,
+    serialise_sv_detections,
+)
+from inference.core.workflows.entities.base import WorkflowImageData
 
 
 class ORJSONResponseBytes(ORJSONResponse):
@@ -31,9 +37,9 @@ def orjson_response(
     response: Union[List[InferenceResponse], InferenceResponse, BaseModel]
 ) -> ORJSONResponseBytes:
     if isinstance(response, list):
-        content = [r.dict(by_alias=True, exclude_none=True) for r in response]
+        content = [r.model_dump(by_alias=True, exclude_none=True) for r in response]
     else:
-        content = response.dict(by_alias=True, exclude_none=True)
+        content = response.model_dump(by_alias=True, exclude_none=True)
     return ORJSONResponseBytes(content=content)
 
 
@@ -48,12 +54,14 @@ def serialise_workflow_result(
     for key, value in result.items():
         if key in excluded_fields:
             continue
-        if contains_image(element=value):
+        if isinstance(value, WorkflowImageData):
             value = serialise_image(image=value)
-        elif issubclass(type(value), dict):
+        elif isinstance(value, dict):
             value = serialise_dict(elements=value)
-        elif issubclass(type(value), list):
+        elif isinstance(value, list):
             value = serialise_list(elements=value)
+        elif isinstance(value, sv.Detections):
+            value = serialise_sv_detections(detections=value)
         serialised_result[key] = value
     return serialised_result
 
@@ -61,12 +69,14 @@ def serialise_workflow_result(
 def serialise_list(elements: List[Any]) -> List[Any]:
     result = []
     for element in elements:
-        if contains_image(element=element):
+        if isinstance(element, WorkflowImageData):
             element = serialise_image(image=element)
-        elif issubclass(type(element), dict):
+        elif isinstance(element, dict):
             element = serialise_dict(elements=element)
-        elif issubclass(type(element), list):
+        elif isinstance(element, list):
             element = serialise_list(elements=element)
+        elif isinstance(element, sv.Detections):
+            element = serialise_sv_detections(detections=element)
         result.append(element)
     return result
 
@@ -74,26 +84,20 @@ def serialise_list(elements: List[Any]) -> List[Any]:
 def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
     serialised_result = {}
     for key, value in elements.items():
-        if contains_image(element=value):
+        if isinstance(value, WorkflowImageData):
             value = serialise_image(image=value)
-        elif issubclass(type(value), dict):
+        elif isinstance(value, dict):
             value = serialise_dict(elements=value)
-        elif issubclass(type(value), list):
+        elif isinstance(value, list):
             value = serialise_list(elements=value)
+        elif isinstance(value, sv.Detections):
+            value = serialise_sv_detections(detections=value)
         serialised_result[key] = value
     return serialised_result
 
 
 def contains_image(element: Any) -> bool:
     return (
-        issubclass(type(element), dict)
+        isinstance(element, dict)
         and element.get("type") == ImageType.NUMPY_OBJECT.value
     )
-
-
-def serialise_image(image: Dict[str, Any]) -> Dict[str, Any]:
-    image["type"] = "base64"
-    image["value"] = base64.b64encode(
-        encode_image_to_jpeg_bytes(image["value"])
-    ).decode("ascii")
-    return image

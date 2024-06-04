@@ -228,7 +228,7 @@ def register_image_at_roboflow(
     image_bytes: bytes,
     batch_name: str,
     tags: Optional[List[str]] = None,
-    inference_id=None,
+    inference_id: Optional[str] = None,
 ) -> dict:
     url = f"{API_BASE_URL}/dataset/{dataset_id}/upload"
     params = [
@@ -335,10 +335,15 @@ def get_workflow_specification(
     response = _get_from_url(url=api_url)
     if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
-            f"Could not found workflow specification in API response"
+            f"Could not find workflow specification in API response"
         )
     try:
-        return json.loads(response["workflow"]["config"])
+        workflow_config = json.loads(response["workflow"]["config"])
+        return workflow_config["specification"]
+    except KeyError as error:
+        raise MalformedWorkflowResponseError(
+            "Workflow specification not found in Roboflow API response"
+        ) from error
     except (ValueError, TypeError) as error:
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
