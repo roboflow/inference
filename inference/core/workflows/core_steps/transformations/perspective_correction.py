@@ -86,47 +86,39 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
 
 
 def pick_largest_perspective_polygons(
-    perspective_polygons: Union[
+    perspective_polygons_batch: Union[
         List[np.ndarray],
         List[List[np.ndarray]],
         List[List[List[int]]],
         List[List[List[List[int]]]],
     ]
 ) -> List[np.ndarray]:
+    if not isinstance(perspective_polygons_batch, list):
+        raise ValueError("Unexpected type of input")
+    if not perspective_polygons_batch:
+        raise ValueError("Unexpected empty batch")
     largest_perspective_polygons: List[np.ndarray] = []
-    for polygons in perspective_polygons:
+    for polygons in perspective_polygons_batch:
+        if not isinstance(polygons, list) and not isinstance(polygons, np.ndarray):
+            raise ValueError("Unexpected type of batch element")
+        if len(polygons) == 0:
+            raise ValueError("Unexpected empty batch element")
         if isinstance(polygons, np.ndarray):
-            if len(polygons) != 4:
-                raise ValueError(
-                    "At least one polygon from batched perspective_polygons "
-                    "must have 4 vertices"
-                )
+            if polygons.shape != (4, 2):
+                raise ValueError("Unexpected shape of batch element")
             largest_perspective_polygons.append(polygons)
             continue
-        if not isinstance(polygons, list):
-            raise ValueError(
-                "Each element of batched perspective_polygons "
-                "must be a list of polygons"
-            )
         if len(polygons) == 4 and all(
             isinstance(p, list) and len(p) == 2 for p in polygons
         ):
             largest_perspective_polygons.append(np.array(polygons))
             continue
-        polygons = [p for p in polygons if len(p) == 4]
-        if not polygons:
-            raise ValueError(
-                "At least one polygon from batched perspective_polygons "
-                "must have 4 vertices"
-            )
         polygons = [p if isinstance(p, np.ndarray) else np.array(p) for p in polygons]
-        max_area = cv.contourArea(np.around(polygons[0]).astype(np.int32))
-        largest_polygon = polygons[0]
-        for polygon in polygons:
-            area = cv.contourArea(np.around(polygon).astype(np.int32))
-            if area > max_area:
-                max_area = area
-                largest_polygon = polygon
+        polygons = [p for p in polygons if p.shape == (4, 2)]
+        if not polygons:
+            raise ValueError("No batch element consists of 4 vertices")
+        polygons = [np.around(p).astype(np.int32) for p in polygons]
+        largest_polygon = max(polygons, key=lambda p: cv.contourArea(p))
         largest_perspective_polygons.append(largest_polygon)
     return largest_perspective_polygons
 
@@ -158,18 +150,20 @@ def extend_perspective_polygon(
     detections: sv.Detections,
     bbox_position: Optional[sv.Position],
 ) -> np.ndarray:
+    if not bbox_position:
+        return polygon
     points = detections.get_anchors_coordinates(anchor=bbox_position)
     bottom_left, top_left, top_right, bottom_right = polygon
     for x, y in points:
-        bottom_left[0] = min(x, bottom_left[0])
-        top_left[0] = min(x, top_left[0])
-        top_right[0] = max(x, top_right[0])
-        bottom_right[0] = max(x, bottom_right[0])
+        bottom_left = min(x, bottom_left[0]), bottom_left[1]
+        top_left = min(x, top_left[0]), top_left[1]
+        top_right = max(x, top_right[0]), top_right[1]
+        bottom_right = max(x, bottom_right[0]), bottom_right[1]
 
-        bottom_left[1] = max(y, bottom_left[1])
-        bottom_right[1] = max(y, bottom_right[1])
-        top_right[1] = min(y, top_right[1])
-        top_left[1] = min(y, top_left[1])
+        bottom_left = bottom_left[0], max(y, bottom_left[1])
+        bottom_right = bottom_right[0], max(y, bottom_right[1])
+        top_right = top_right[0], min(y, top_right[1])
+        top_left = top_left[0], min(y, top_left[1])
     return np.array(
         [
             bottom_left,
