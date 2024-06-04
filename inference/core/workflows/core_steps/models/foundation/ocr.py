@@ -39,7 +39,7 @@ This block returns the text within an image.
 You may want to use this block in combination with a detections-based block (i.e. 
 ObjectDetectionBlock). An object detection model could isolate specific regions from an 
 image (i.e. a shipping container ID in a logistics use case) for further processing. 
-You can then use a CropBlock to crop the region of interest before running OCR.
+You can then use a DynamicCropBlock to crop the region of interest before running OCR.
 
 Using a detections model then cropping detections allows you to isolate your analysis 
 on particular regions of an image.

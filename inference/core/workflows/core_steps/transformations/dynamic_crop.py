@@ -43,7 +43,7 @@ Create dynamic crops from an image based on detections from detections-based mod
 
 This is useful when placed after an ObjectDetection block as part of a multi-stage 
 workflow. For example, you could use an ObjectDetection block to detect objects, then 
-the CropBlock block to crop objects, then an OCR block to run character recognition on 
+the DynamicCropBlock block to crop objects, then an OCR block to run character recognition on 
 each of the individual cropped regions.
 """
 
@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class CropBlock(WorkflowBlock):
+class DynamicCropBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

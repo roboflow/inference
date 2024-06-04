@@ -46,7 +46,7 @@ from inference.core.workflows.core_steps.transformations.detection_filter import
 from inference.core.workflows.core_steps.transformations.detection_offset import (
     DetectionOffsetBlock,
 )
-from inference.core.workflows.core_steps.transformations.dynamic_crop import CropBlock
+from inference.core.workflows.core_steps.transformations.dynamic_crop import DynamicCropBlock
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
@@ -70,7 +70,7 @@ def load_blocks() -> list:
         QRCodeDetectorBlock,
         ActiveLearningDataCollectorBlock,
         AbsoluteStaticCropBlock,
-        CropBlock,
+        DynamicCropBlock,
         DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,

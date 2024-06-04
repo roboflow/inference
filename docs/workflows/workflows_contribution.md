@@ -111,7 +111,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-class CropBlock(WorkflowBlock):
+class DynamicCropBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -131,7 +131,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-class CropBlock(WorkflowBlock):
+class DynamicCropBlock(WorkflowBlock):
 
     async def run_locally(
             self,
