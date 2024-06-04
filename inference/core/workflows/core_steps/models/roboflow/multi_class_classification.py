@@ -51,7 +51,7 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "title": "Single-Label Classification Model",
+            "name": "Single-Label Classification Model",
             "short_description": "Apply a single tag to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

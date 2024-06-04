@@ -60,7 +60,7 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "title": "Keypoint Detection Model",
+            "name": "Keypoint Detection Model",
             "short_description": "Predict skeletons on objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",

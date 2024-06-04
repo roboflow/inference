@@ -57,7 +57,7 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "title": "Object Detection Model",
+            "name": "Object Detection Model",
             "short_description": "Localize objects with bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
