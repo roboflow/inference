@@ -30,9 +30,9 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
+    LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
-from inference.core.entities.requests.paligemma import PaliGemmaInferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -58,12 +58,12 @@ from inference.core.entities.responses.inference import (
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
+    LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
-from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -87,13 +87,13 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
-    CORE_MODEL_PALIGEMMA_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
+    LMM_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
     NOTEBOOK_ENABLED,
@@ -802,6 +802,35 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return await process_inference_request(inference_request)
 
+            if LMM_ENABLED:
+
+                @app.post(
+                    "/infer/lmm",
+                    response_model=Union[
+                        LMMInferenceResponse,
+                        List[LMMInferenceResponse],
+                        StubResponse,
+                    ],
+                    summary="Large multi-modal model infer",
+                    description="Run inference with the specified large multi-modal model",
+                    response_model_exclude_none=True,
+                )
+                @with_route_exceptions
+                async def infer_lmm(
+                    inference_request: LMMInferenceRequest,
+                ):
+                    """Run inference with the specified object detection model.
+
+                    Args:
+                        inference_request (ObjectDetectionInferenceRequest): The request containing the necessary details for object detection.
+                        background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                    Returns:
+                        Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
+                    """
+                    logger.debug(f"Reached /infer/lmm")
+                    return await process_inference_request(inference_request)
+
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
@@ -1373,48 +1402,6 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(cog_model_id, actor)
-                    return response
-
-            if CORE_MODEL_PALIGEMMA_ENABLED:
-
-                @app.post(
-                    "/llm/paligemma",
-                    response_model=PaliGemmaInferenceResponse,
-                    summary="PaliGemma",
-                    description="Run the PaliGemma model to describe an image.",
-                )
-                @with_route_exceptions
-                async def paligemma(
-                    inference_request: PaliGemmaInferenceRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                ):
-                    """
-                    Describe image using PaliGemmaInferenceRequest
-
-                    Args:
-                        inference_request (M.PaliGemmaInferenceRequest): The request containing the prompt and image to be described.
-                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                        request (Request, default Body()): The HTTP request.
-
-                    Returns:
-                        M.PaliGemmaResponse: The model's text response
-                    """
-                    logger.debug(f"Reached /llm/paligemma")
-                    paligemma_model_id = load_paligemma_model(
-                        inference_request, api_key=api_key
-                    )
-                    response = await self.model_manager.infer_from_request(
-                        paligemma_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(paligemma_model_id, actor)
                     return response
 
         if LEGACY_ROUTE_ENABLED:

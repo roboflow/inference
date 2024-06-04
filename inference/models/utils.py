@@ -149,6 +149,27 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
+    from inference.models import PaliGemma
+
+    paligemma_models = {
+        (
+            "object-detection",
+            "paligemma-3b-pt-224",
+        ): PaliGemma,  # TODO: change when we have a new project type
+        ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
+        ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
+        (
+            "instance-segmentation",
+            "paligemma-3b-pt-224",
+        ): PaliGemma,  # TODO: change when we have a new project type
+        ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
+        ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+    }
+    ROBOFLOW_MODEL_TYPES.update(paligemma_models)
+except:
+    pass
+
+try:
     from inference.models import SegmentAnything
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
@@ -187,13 +208,6 @@ try:
     from inference.models import CogVLM
 
     ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM
-except:
-    pass
-
-try:
-    from inference.models.paligemma.paligemma import PaliGemma
-
-    ROBOFLOW_MODEL_TYPES[("llm", "paligemma")] = PaliGemma
 except:
     pass
 

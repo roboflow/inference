@@ -102,7 +102,7 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 # Flag to enable CogVLM core model, default is True
 CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
 
-CORE_MODEL_PALIGEMMA_ENABLED = str2bool(os.getenv("CORE_MODEL_PALIGEMMA_ENABLED", True))
+LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
