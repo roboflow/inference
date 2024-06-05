@@ -10,7 +10,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    STRING_KIND,
     FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -35,7 +34,7 @@ Input detections should be filtered and contain only desired classes of interest
 """
 
 
-class DynamicZoneManifest(WorkflowBlockManifest):
+class DynamicZonesManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "short_description": SHORT_DESCRIPTION,
@@ -101,10 +100,10 @@ def calculate_simplified_polygon(
     return simplified_polygon
 
 
-class DynamicZoneBlock(WorkflowBlock):
+class DynamicZonesBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return DynamicZoneManifest
+        return DynamicZonesManifest
 
     async def run_locally(
         self,

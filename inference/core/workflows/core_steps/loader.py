@@ -58,8 +58,8 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop import (
 from inference.core.workflows.core_steps.transformations.perspective_correction import (
     PerspectiveCorrectionBlock,
 )
-from inference.core.workflows.core_steps.transformations.polygon_simplification import (
-    PolygonSimplificationBlock,
+from inference.core.workflows.core_steps.transformations.dynamic_zones import (
+    DynamicZonesBlock,
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
@@ -91,5 +91,5 @@ def load_blocks() -> list:
         ConditionBlock,
         RoboflowDatasetUploadBlock,
         PerspectiveCorrectionBlock,
-        PolygonSimplificationBlock,
+        DynamicZonesBlock,
     ]
