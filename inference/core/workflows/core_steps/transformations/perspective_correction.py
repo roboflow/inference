@@ -7,7 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.entities.base import OutputDefinition, Batch
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
