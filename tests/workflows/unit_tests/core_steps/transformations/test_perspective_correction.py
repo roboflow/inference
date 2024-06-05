@@ -1,4 +1,3 @@
-from contextlib import nullcontext as does_not_raise
 from typing import Any
 
 import numpy as np
@@ -36,7 +35,7 @@ def test_pick_largest_perspective_polygons_raises_on_empty_batch(empty_batch):
 PERSPECTIVE_POLYGON_LIST = [[1, 1], [10, 1], [10, 10], [1, 10]]
 PERSPECTIVE_POLYGON_NP_ARRAY = np.array(PERSPECTIVE_POLYGON_LIST)
 
-
+ 
 @pytest.mark.parametrize(
     "empty_batch_elements",
     [
