@@ -1,3 +1,4 @@
+import pickle
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from pydantic import ConfigDict, Field, PositiveInt
 import numpy as np
@@ -148,7 +149,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class RoboflowInferenceSlicerBlock(WorkflowBlock):
+class RoboflowDetectionSlicerBlock(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -179,20 +180,21 @@ class RoboflowInferenceSlicerBlock(WorkflowBlock):
         overlap_ratio_height: Optional[float],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [
-            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
-        ]
+        # non_empty_inference_images = [
+        #     i.to_inference_format(numpy_preferred=True) for i in non_empty_images
+        # ]
+        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
 
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
         )
-        model = self._model_manager.models[model_id]
+        model = self._model_manager.models()[model_id]
 
         def slicer_callback(image_slice: np.ndarray):
             inference_image = {
                 "type": "numpy",
-                "value": image_slice
+                "value": pickle.dumps(image_slice)
             }
 
             request = ObjectDetectionInferenceRequest(
@@ -231,7 +233,7 @@ class RoboflowInferenceSlicerBlock(WorkflowBlock):
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
                         "confidence": detections.confidence[i],
-                        "class": detections["class_names"][i],
+                        "class": detections["class_name"][i],
                         "class_id": int(detections.class_id[i]),
                     }
                 )
