@@ -1,12 +1,12 @@
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.core_steps.transformations.polygon_simplification import (
+from inference.core.workflows.core_steps.transformations.dynamic_zones import (
     calculate_simplified_polygon,
 )
 
 
-def test_calculate_simplified_polygon_no_simplification_required():
+def test_dynamic_zones_no_simplification_required():
     # given
     polygon = np.array([[10, 1], [10, 10], [20, 10], [20, 1]])
     mask = sv.polygon_to_mask(
@@ -27,7 +27,7 @@ def test_calculate_simplified_polygon_no_simplification_required():
     ), "Polygon should not be modified if it already contains required number of vertices"
 
 
-def test_calculate_simplified_polygon_resulting_in_convex_polygon():
+def test_dynamic_zones_resulting_in_convex_polygon():
     # given
     polygon = np.array([[10, 10], [10, 1], [15, 1], [15, 9], [16, 1], [20, 1], [20, 10], [18, 10], [17, 2], [16, 10]])
     mask = sv.polygon_to_mask(
@@ -50,7 +50,7 @@ def test_calculate_simplified_polygon_resulting_in_convex_polygon():
         "should be dropped and shape of the polygon should remain unchanged"
 
 
-def test_calculate_simplified_polygon_drop_intermediate_points():
+def test_dynamic_zones_drop_intermediate_points():
     # given
     polygon = np.array(np.array([[10, 10], [10, 5], [10, 1], [15, 1], [20, 1], [20, 5], [20, 10]]))
     mask = sv.polygon_to_mask(

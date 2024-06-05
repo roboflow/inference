@@ -20,22 +20,22 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "simplified_polygons"
-TYPE: str = "PolygonSimplification"
+OUTPUT_KEY: str = "zones"
+TYPE: str = "DynamicZone"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
     "and simplify them to contain only requested amount of vertices"
 )
 LONG_DESCRIPTION = """
-The `PolygonSimplificationBlock` is a transformer block designed to simplify polygon
+The `DynamicZoneBlock` is a transformer block designed to simplify polygon
 so it's geometrically convex and then reduce number of vertices to requested amount.
-This block is best suited when shape of underlying object needs to be detected
-and there are other objects on top of that shape (i.e. basketball field during the game
-or chess board with pieces)
+This block is best suited when Zone needs to be created based on shape of detected object
+(i.e. basketball field, road segment, zebra crossing etc.)
+Input detections should be filtered and contain only desired classes of interest.
 """
 
 
-class PolygonSimplificationManifest(WorkflowBlockManifest):
+class DynamicZoneManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "short_description": SHORT_DESCRIPTION,
@@ -51,13 +51,10 @@ class PolygonSimplificationManifest(WorkflowBlockManifest):
         ]
     ) = Field(  # type: ignore
         description="",
-        examples=[],
-    )
-    simplify_class_name: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description="Simplify polygons for all objects of given class name",
+        examples=["$segmentation.predictions"],
     )
     required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Keep reducing contour until number of vertices matches this number",
+        description="Keep simplifying polygon until number of vertices matches this number",
     )
 
     @classmethod
@@ -104,24 +101,20 @@ def calculate_simplified_polygon(
     return simplified_polygon
 
 
-class PolygonSimplificationBlock(WorkflowBlock):
+class DynamicZoneBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return PolygonSimplificationManifest
+        return DynamicZoneManifest
 
     async def run_locally(
         self,
         predictions: List[sv.Detections],
         required_number_of_vertices: int,
-        simplify_class_name: str,
     ) -> Tuple[List[Any], FlowControl]:
         result = []
         for detections in predictions:
-            filtered_detections = detections[
-                detections["class_name"] == simplify_class_name
-            ]
             simplified_polygons = []
-            for mask in filtered_detections.mask:
+            for mask in detections.mask:
                 simplified_polygon = calculate_simplified_polygon(
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
