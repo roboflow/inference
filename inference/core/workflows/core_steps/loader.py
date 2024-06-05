@@ -55,11 +55,11 @@ from inference.core.workflows.core_steps.transformations.detections_transformati
 from inference.core.workflows.core_steps.transformations.dynamic_crop import (
     DynamicCropBlock,
 )
-from inference.core.workflows.core_steps.transformations.perspective_correction import (
-    PerspectiveCorrectionBlock,
-)
 from inference.core.workflows.core_steps.transformations.dynamic_zones import (
     DynamicZonesBlock,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction import (
+    PerspectiveCorrectionBlock,
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
