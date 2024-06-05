@@ -1392,6 +1392,20 @@ class HttpInterface(BaseInterface):
 
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatability
+            @app.get(
+                "/{dataset_id}/{version_id}",
+                # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
+                response_model=Union[
+                    InstanceSegmentationInferenceResponse,
+                    KeypointsDetectionInferenceResponse,
+                    ObjectDetectionInferenceResponse,
+                    ClassificationInferenceResponse,
+                    MultiLabelClassificationInferenceResponse,
+                    StubResponse,
+                    Any,
+                ],
+                response_model_exclude_none=True,
+            )
             @app.post(
                 "/{dataset_id}/{version_id}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
