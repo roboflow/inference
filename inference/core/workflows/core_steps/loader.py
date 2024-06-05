@@ -90,7 +90,6 @@ def load_blocks() -> list:
         DetectionsRateLimiterBlock,
         ConditionBlock,
         RoboflowDatasetUploadBlock,
-        DetectionsFilterBlock,
         PerspectiveCorrectionBlock,
         PolygonSimplificationBlock,
     ]
