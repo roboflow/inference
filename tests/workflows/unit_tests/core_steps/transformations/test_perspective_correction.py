@@ -1,10 +1,13 @@
 from typing import Any
 
+import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
 
+from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 from inference.core.workflows.core_steps.transformations.perspective_correction import (
+    correct_detections,
     pick_largest_perspective_polygons,
     sort_polygon_vertices_clockwise,
     roll_polygon_vertices_to_start_from_leftmost_bottom,
@@ -168,3 +171,70 @@ def test_generate_transformation_matrix():
         transformation_matrix,
         expected_transformation_matrix
     ), "Transformation matrix must match"
+
+
+
+def test_correct_detections_with_segmentation():
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([
+            [10, 10, 20, 20]
+        ]),
+        mask=np.array([
+            sv.polygon_to_mask(polygon=np.array([[10, 15], [15, 10], [20, 15], [15, 20]]), resolution_wh=(200, 200))
+        ])
+    )
+    src_polygon = np.array([[5, 5], [25, 5], [25, 25], [5, 25]]).astype(dtype=np.float32)
+    dst_polygon = np.array([[0, 0], [100, 0], [100, 100], [0, 100]]).astype(dtype=np.float32)
+    transformer = cv.getPerspectiveTransform(
+        src=src_polygon,
+        dst=dst_polygon,
+    )
+
+    # when
+    corrected_detections = correct_detections(
+        detections=detections,
+        perspective_transformer=transformer,
+    )
+
+    # then
+    expected_detections = sv.Detections(
+        xyxy=np.array([
+            [25, 25, 75, 75]
+        ]),
+        mask=np.array([
+            sv.polygon_to_mask(polygon=np.array([[50, 25], [25, 50], [50, 75], [75, 50]]), resolution_wh=(200, 200))
+        ])
+    )
+    assert corrected_detections == expected_detections
+
+
+def test_correct_detections_with_keypoints():
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([
+            [10, 10, 20, 20]
+        ]),
+    )
+    detections[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array([np.array([[10, 10], [15, 15], [10, 20], [20, 10]])], dtype="object")
+    src_polygon = np.array([[5, 5], [25, 5], [25, 25], [5, 25]]).astype(dtype=np.float32)
+    dst_polygon = np.array([[0, 0], [100, 0], [100, 100], [0, 100]]).astype(dtype=np.float32)
+    transformer = cv.getPerspectiveTransform(
+        src=src_polygon,
+        dst=dst_polygon,
+    )
+
+    # when
+    corrected_detections = correct_detections(
+        detections=detections,
+        perspective_transformer=transformer,
+    )
+
+    # then
+    expected_detections = sv.Detections(
+        xyxy=np.array([
+            [25, 25, 75, 75]
+        ]),
+    )
+    expected_detections[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array([np.array([[25, 25], [50, 50], [25, 75], [75, 25]], dtype=np.int32)], dtype="object")
+    assert corrected_detections == expected_detections
