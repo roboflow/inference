@@ -56,8 +56,7 @@ def describe_available_blocks() -> BlocksDescription:
                 block_source=block.block_source,
                 fully_qualified_block_class_name=block.identifier,
                 human_friendly_block_name=build_human_friendly_block_name(
-                    fully_qualified_name=block.identifier,
-                    block_schema=block_schema
+                    fully_qualified_name=block.identifier, block_schema=block_schema
                 ),
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],

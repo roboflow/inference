@@ -220,7 +220,11 @@ def correct_detections(
         # copy
         detection = detections[i]
         mask = np.array(detections.mask)
-        if not np.array_equal(mask, np.array(None)) and len(mask) > 0 and isinstance(mask[0], np.ndarray):
+        if (
+            not np.array_equal(mask, np.array(None))
+            and len(mask) > 0
+            and isinstance(mask[0], np.ndarray)
+        ):
             polygon = np.array(sv.mask_to_polygons(mask[0]), dtype=np.float32)
             # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
             corrected_polygon: np.ndarray = cv.perspectiveTransform(
@@ -236,26 +240,35 @@ def correct_detections(
                 ]
             )
             detection.xyxy = np.array(
-                [np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(np.int32)]
+                [
+                    np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
+                        np.int32
+                    )
+                ]
             )
         else:
             xmin, ymin, xmax, ymax = np.around(detection[i].xyxy[0]).tolist()
-            polygon = np.array([[
-                [xmin, ymin],
-                [xmax, ymin],
-                [xmax, ymax],
-                [xmin, ymax]
-            ]], dtype=np.float32)
+            polygon = np.array(
+                [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]]],
+                dtype=np.float32,
+            )
             # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
             corrected_polygon: np.ndarray = cv.perspectiveTransform(
                 src=polygon, m=perspective_transformer
             ).reshape(-1, 2)
             detection.xyxy = np.array(
-                [np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(np.int32)]
+                [
+                    np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
+                        np.int32
+                    )
+                ]
             )
         if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detection.data:
             corrected_key_points = cv.perspectiveTransform(
-                src=np.array([detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0]], dtype=np.float32),
+                src=np.array(
+                    [detection.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][0]],
+                    dtype=np.float32,
+                ),
                 m=perspective_transformer,
             ).reshape(-1, 2)
             detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = np.array(
