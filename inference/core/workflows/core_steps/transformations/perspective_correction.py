@@ -100,7 +100,6 @@ def pick_largest_perspective_polygons(
     largest_perspective_polygons: List[np.ndarray] = []
     for polygons in perspective_polygons_batch:
         if polygons is None:
-            largest_perspective_polygons.append(None)
             continue
         if not isinstance(polygons, list) and not isinstance(polygons, np.ndarray):
             raise ValueError("Unexpected type of batch element")
@@ -299,7 +298,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 perspective_polygons
             )
             for polygon, detections in zip(largest_perspective_polygons, predictions):
-                if largest_perspective_polygons is None:
+                if not largest_perspective_polygons:
                     self.perspective_transformers.append(None)
                     continue
                 self.perspective_transformers.append(
