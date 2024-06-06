@@ -11,8 +11,8 @@ from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image

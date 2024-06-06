@@ -51,7 +51,6 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -63,6 +62,7 @@ from inference.core.entities.responses.inference import (
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
