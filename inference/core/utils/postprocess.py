@@ -390,7 +390,11 @@ def post_process_polygons(
             x_scale=width_ratio,
             y_scale=height_ratio,
         )
-    elif resize_method in {"Fit (black edges) in", "Fit (white edges) in", "Fit (grey edges) in"}:
+    elif resize_method in {
+        "Fit (black edges) in",
+        "Fit (white edges) in",
+        "Fit (grey edges) in",
+    }:
         new_polys = undo_image_padding_for_predicted_polygons(
             polygons=polys,
             infer_shape=infer_shape,

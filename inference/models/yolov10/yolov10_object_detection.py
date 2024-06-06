@@ -1,19 +1,13 @@
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
+from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.models.defaults import (
-    DEFAULT_CONFIDENCE,
-    DEFAUlT_MAX_DETECTIONS,
-)
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.entities.responses.inference import (
-    ObjectDetectionInferenceResponse,
-)
-from typing import List, Tuple
 from inference.core.utils.postprocess import post_process_bboxes
 
 
@@ -78,7 +72,9 @@ class YOLOv10ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         predictions[..., 5] = predictions[..., 4]
 
         mask = predictions[..., 4] > confidence
-        predictions = [p[mask[idx]][:max_detections] for idx, p in enumerate(predictions)]
+        predictions = [
+            p[mask[idx]][:max_detections] for idx, p in enumerate(predictions)
+        ]
 
         infer_shape = (self.img_size_h, self.img_size_w)
         img_dims = preproc_return_metadata["img_dims"]
