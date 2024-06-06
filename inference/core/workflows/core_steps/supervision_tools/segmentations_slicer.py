@@ -75,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["RoboflowDetectionsInferenceSlicer", "DetectionsInferenceSlicer"]
+    type: Literal["RoboflowSegmentationsInferenceSlicer", "SegmentationsInferenceSlicer"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
