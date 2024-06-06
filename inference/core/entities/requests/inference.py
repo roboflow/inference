@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Union
+from typing import Any, ClassVar, List, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -226,6 +226,15 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         default=None,
         examples=["my_dataset"],
         description="Parameter to be used when Active Learning data registration should happen against different dataset than the one pointed by model_id",
+    )
+
+
+class LMMInferenceRequest(CVInferenceRequest):
+    visualize_predictions: ClassVar = False
+    prompt: Optional[str] = Field(
+        default=None,
+        examples=["caption"],
+        description="If set, use this prompt to guide the LMM",
     )
 
 
