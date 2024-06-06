@@ -219,7 +219,7 @@ def correct_detections(
     for i in range(len(detections)):
         # copy
         detection = detections[i]
-        mask = np.array(detections.mask)
+        mask = np.array(detection.mask)
         if (
             not np.array_equal(mask, np.array(None))
             and len(mask) > 0
@@ -316,7 +316,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         for detections, perspective_transformer in zip(
             predictions, self.perspective_transformers
         ):
-            if detections is None:
+            if detections is None or perspective_transformer is None:
                 result.append({OUTPUT_KEY: None})
                 continue
             corrected_detections = correct_detections(

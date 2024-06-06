@@ -8,90 +8,20 @@ import supervision as sv
 
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
+from inference.core.workflows.core_steps.transformations.dynamic_zones import (
+    OUTPUT_KEY as DYNAMIC_ZONES_OUTPUT_KEY,
+)
+from inference.core.workflows.core_steps.transformations.dynamic_zones import (
+    TYPE as DYNAMIC_ZONES_TYPE,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction import (
     OUTPUT_KEY as PERSPECTIVE_CORRECTION_OUTPUT_KEY,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction import (
     TYPE as PERSPECTIVE_CORRECTION_TYPE,
 )
-from inference.core.workflows.core_steps.transformations.polygon_simplification import (
-    OUTPUT_KEY as POLYGON_SIMPLIFICATION_OUTPUT_KEY,
-    TYPE as POLYGON_SIMPLIFICATION_TYPE,
-)
-
-YOUR_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [
-        {"type": "InferenceImage", "name": "image"},
-        {"type": "InferenceParameter", "name": "simplify_class_name"},
-        {"type": "InferenceParameter", "name": "required_number_of_vertices"},
-        {"type": "InferenceParameter", "name": "model_id"},
-        {"type": "InferenceParameter", "name": "confidence"},
-        {"type": "InferenceParameter", "name": "iou_threshold"},
-        {"type": "InferenceParameter", "name": "transformed_rect_width"},
-        {"type": "InferenceParameter", "name": "transformed_rect_height"},
-        {
-            "type": "InferenceParameter",
-            "name": "extend_perspective_polygon_by_detections_anchor",
-        },
-    ],
-    "steps": [
-        {
-            "type": "InstanceSegmentationModel",
-            "name": "instance_segmentation",
-            "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
-            "iou_threshold": "$inputs.iou_threshold",
-        },
-        {
-            "type": POLYGON_SIMPLIFICATION_TYPE,
-            "name": "contour_reducer",
-            "predictions": "$steps.instance_segmentation.predictions",
-            "simplify_class_name": "$inputs.simplify_class_name",
-            "required_number_of_vertices": "$inputs.required_number_of_vertices",
-        },
-        {
-            "type": PERSPECTIVE_CORRECTION_TYPE,
-            "name": "coordinates_transformer",
-            "predictions": "$steps.instance_segmentation.predictions",
-            "perspective_polygons": f"$steps.contour_reducer.{POLYGON_SIMPLIFICATION_OUTPUT_KEY}",
-            "transformed_rect_width": "$inputs.transformed_rect_width",
-            "transformed_rect_height": "$inputs.transformed_rect_height",
-            "extend_perspective_polygon_by_detections_anchor": "$inputs.extend_perspective_polygon_by_detections_anchor",
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": POLYGON_SIMPLIFICATION_OUTPUT_KEY,
-            "selector": f"$steps.contour_reducer.{POLYGON_SIMPLIFICATION_OUTPUT_KEY}",
-        },
-        {
-            "type": "JsonField",
-            "name": "predictions",
-            "selector": "$steps.instance_segmentation.predictions",
-        },
-        {
-            "type": "JsonField",
-            "name": PERSPECTIVE_CORRECTION_OUTPUT_KEY,
-            "selector": f"$steps.coordinates_transformer.{PERSPECTIVE_CORRECTION_OUTPUT_KEY}",
-        },
-    ],
-}
-
-
-model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-model_manager = ModelManager(model_registry=model_registry)
-
-execution_engine = ExecutionEngine.init(
-    workflow_definition=YOUR_WORKFLOW,
-    init_parameters={
-        "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": os.getenv("ROBOFLOW_API_KEY"),
-    },
-)
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 class FileMustExist(argparse.Action):
@@ -115,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Contour Reducer demo")
     parser.add_argument("--source-path", required=True, type=str, action=FileMustExist)
     parser.add_argument(
-        "--simplify-class-name", required=False, type=str, default="person"
+        "--zones-from-class-name", required=False, type=str, default="person"
     )
     parser.add_argument(
         "--required-number-of-vertices", required=False, type=int, default=4
@@ -144,13 +74,158 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
 
+    WORKFLOW_DEFINITION = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"},
+            {"type": "InferenceParameter", "name": "zones_from_class_name"},
+            {"type": "InferenceParameter", "name": "required_number_of_vertices"},
+            {"type": "InferenceParameter", "name": "model_id"},
+            {"type": "InferenceParameter", "name": "confidence"},
+            {"type": "InferenceParameter", "name": "iou_threshold"},
+            {"type": "InferenceParameter", "name": "transformed_rect_width"},
+            {"type": "InferenceParameter", "name": "transformed_rect_height"},
+            {
+                "type": "InferenceParameter",
+                "name": "extend_perspective_polygon_by_detections_anchor",
+            },
+        ],
+        "steps": [
+            {
+                "type": "InstanceSegmentationModel",
+                "name": "instance_segmentation",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.confidence",
+                "iou_threshold": "$inputs.iou_threshold",
+            },
+            {
+                "type": "DetectionsFilter",
+                "name": "zone_class_filter",
+                "predictions": "$steps.instance_segmentation.predictions",
+                "operations": [
+                    {
+                        "type": "DetectionsFilter",
+                        "filter_operation": {
+                            "type": "StatementGroup",
+                            "operator": "and",
+                            "statements": [
+                                {
+                                    "type": "BinaryStatement",
+                                    "negate": False,
+                                    "left_operand": {
+                                        "type": "DynamicOperand",
+                                        "operand_name": "_",
+                                        "operations": [
+                                            {
+                                                "type": "ExtractDetectionProperty",
+                                                "property_name": "class_name",
+                                            }
+                                        ],
+                                    },
+                                    "comparator": {"type": "in (Sequence)"},
+                                    "right_operand": {
+                                        "type": "StaticOperand",
+                                        "value": [
+                                            args.zones_from_class_name  # in order to pass this as input selector we need to refactor block to pass-through the inputs
+                                        ],
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+            {
+                "type": DYNAMIC_ZONES_TYPE,
+                "name": "dynamic_zones",
+                "predictions": "$steps.zone_class_filter.predictions",
+                "required_number_of_vertices": "$inputs.required_number_of_vertices",
+            },
+            {
+                "type": "DetectionsFilter",
+                "name": "not_zone_class_filter",
+                "predictions": "$steps.instance_segmentation.predictions",
+                "operations": [
+                    {
+                        "type": "DetectionsFilter",
+                        "filter_operation": {
+                            "type": "StatementGroup",
+                            "operator": "and",
+                            "statements": [
+                                {
+                                    "type": "BinaryStatement",
+                                    "negate": True,
+                                    "left_operand": {
+                                        "type": "DynamicOperand",
+                                        "operand_name": "_",
+                                        "operations": [
+                                            {
+                                                "type": "ExtractDetectionProperty",
+                                                "property_name": "class_name",
+                                            }
+                                        ],
+                                    },
+                                    "comparator": {"type": "in (Sequence)"},
+                                    "right_operand": {
+                                        "type": "StaticOperand",
+                                        "value": [
+                                            args.zones_from_class_name  # in order to pass this as input selector we need to refactor block to pass-through the inputs
+                                        ],
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+            {
+                "type": PERSPECTIVE_CORRECTION_TYPE,
+                "name": "coordinates_transformer",
+                "predictions": "$steps.not_zone_class_filter.predictions",
+                "perspective_polygons": f"$steps.dynamic_zones.{DYNAMIC_ZONES_OUTPUT_KEY}",
+                "transformed_rect_width": "$inputs.transformed_rect_width",
+                "transformed_rect_height": "$inputs.transformed_rect_height",
+                "extend_perspective_polygon_by_detections_anchor": "$inputs.extend_perspective_polygon_by_detections_anchor",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": DYNAMIC_ZONES_OUTPUT_KEY,
+                "selector": f"$steps.dynamic_zones.{DYNAMIC_ZONES_OUTPUT_KEY}",
+            },
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.instance_segmentation.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": PERSPECTIVE_CORRECTION_OUTPUT_KEY,
+                "selector": f"$steps.coordinates_transformer.{PERSPECTIVE_CORRECTION_OUTPUT_KEY}",
+            },
+        ],
+    }
+
+    model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+    model_manager = ModelManager(model_registry=model_registry)
+
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_DEFINITION,
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": os.getenv("ROBOFLOW_API_KEY"),
+        },
+    )
+
     result = execution_engine.run(
         runtime_parameters={
             "image": {
                 "type": "file",
                 "value": args.source_path,
             },
-            "simplify_class_name": args.simplify_class_name,
+            "zones_from_class_name": args.zones_from_class_name,
             "required_number_of_vertices": args.required_number_of_vertices,
             "model_id": args.model_id,
             "confidence": args.confidence,
@@ -161,7 +236,7 @@ if __name__ == "__main__":
         }
     )
 
-    if not result.get(POLYGON_SIMPLIFICATION_OUTPUT_KEY):
+    if not result.get(DYNAMIC_ZONES_OUTPUT_KEY):
         print("Nothing detected, script terminated.")
         exit(0)
 
@@ -171,13 +246,13 @@ if __name__ == "__main__":
     detections = result.get("predictions")[0]
     original_polygons = polygon_annotator.annotate(
         scene=img.copy(),
-        detections=detections[detections["class_name"] != args.simplify_class_name],
+        detections=detections[detections["class_name"] != args.zones_from_class_name],
     )
     cv.drawContours(
         original_polygons,
-        [np.array(result.get(POLYGON_SIMPLIFICATION_OUTPUT_KEY)[0][0], dtype=int)],
+        [np.array(result.get(DYNAMIC_ZONES_OUTPUT_KEY)[0][0], dtype=int)],
         -1,
-        (0, 255, 0),
+        (0, 0, 255),
         10,
     )
     cv.imshow("Scene before perspective correction", original_polygons)
@@ -190,7 +265,9 @@ if __name__ == "__main__":
     corrected_detections = result.get(PERSPECTIVE_CORRECTION_OUTPUT_KEY)[0]
     annotated_frame = polygon_annotator.annotate(
         blank_image,
-        detections=corrected_detections[corrected_detections["class_name"] != args.simplify_class_name],
+        detections=corrected_detections[
+            corrected_detections["class_name"] != args.zones_from_class_name
+        ],
     )
     cv.imshow("Scene after perspective correction", annotated_frame)
     cv.waitKey(0)
