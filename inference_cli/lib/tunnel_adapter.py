@@ -6,6 +6,8 @@ from docker.models.containers import Container
 
 from inference_cli.lib import container_adapter
 
+docker_image = "us-central1-docker.pkg.dev/roboflow-proxy-425409/inference/tunnel"
+
 
 def start_tunnel(api_key: str, inference_port: int = 9001) -> str:
     container = find_running_tunnel_container()
@@ -16,16 +18,15 @@ def start_tunnel(api_key: str, inference_port: int = 9001) -> str:
 
 
 def start_tunnel_container(api_key, inference_port: int = 9001) -> Container:
-    docker_image = "us-central1-docker.pkg.dev/roboflow-proxy-425409/inference/tunnel"
     container_adapter.pull_image(docker_image)
 
     # Any host value, it is mapped only inside the docker container
     upstream = "host.docker.internal"
 
     environment = {
-        "TUNNELMOLE_UPSTREAM": upstream,
-        "TUNNELMOLE_PORT": inference_port,
-        "TUNNELMOLE_API_KEY": api_key,
+        "TUNNEL_UPSTREAM": upstream,
+        "TUNNEL_PORT": inference_port,
+        "TUNNEL_API_KEY": api_key,
     }
 
     docker_client = docker.from_env()

@@ -63,7 +63,8 @@ def start(
         bool,
         typer.Option(
             "--tunnel",
-            help="Start a tunnel to expose inference to external requests"
+            help="Start a tunnel to expose inference to external requests on a TLS-enabled "
+            "https://<subdomain>.roboflow.run domain",
         )
     ] = False,
 ) -> None:
