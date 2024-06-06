@@ -6,6 +6,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
@@ -294,11 +295,16 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         extend_perspective_polygon_by_detections_anchor: Optional[str],
     ) -> Tuple[List[Any], FlowControl]:
         if not self.perspective_transformers:
-            largest_perspective_polygons = pick_largest_perspective_polygons(
-                perspective_polygons
-            )
+            try:
+                largest_perspective_polygons = pick_largest_perspective_polygons(
+                    perspective_polygons
+                )
+            except ValueError as exc:
+                logger.error(exc)
+                largest_perspective_polygons = [None for _ in perspective_polygons]
+
             for polygon, detections in zip(largest_perspective_polygons, predictions):
-                if not largest_perspective_polygons:
+                if not polygon:
                     self.perspective_transformers.append(None)
                     continue
                 self.perspective_transformers.append(
