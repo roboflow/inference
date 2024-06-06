@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Type
+from typing import Dict, List, Optional, Type
 
 import networkx as nx
 
@@ -12,13 +12,21 @@ from inference.core.workflows.prototypes.block import (
 
 @dataclass(frozen=True)
 class BatchDimensionIdentifier:
-    identifier: int
+    static: bool
+    size: Optional[int] = None
+    identifier: Optional[int] = None
 
     def __str__(self):
-        return f"BatchSize<{self.identifier}>"
+        if self.static:
+            return f"BatchSize[{self.size}]"
+        return f"BatchSize[?id={self.identifier}]>"
 
-    def generate_next(self) -> "BatchDimensionIdentifier":
-        return BatchDimensionIdentifier(identifier=self.identifier + 1)
+    def generate_next_dynamic_identifier(self) -> "BatchDimensionIdentifier":
+        if self.static:
+            raise ValueError("Attempted to generate dynamic from static one")
+        return BatchDimensionIdentifier(
+            static=self.static, identifier=self.identifier + 1
+        )
 
 
 @dataclass(frozen=True)

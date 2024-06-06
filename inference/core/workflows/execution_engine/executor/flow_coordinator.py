@@ -9,6 +9,10 @@ from networkx import DiGraph
 from inference.core.workflows.constants import STEP_NODE_KIND
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import InvalidBlockBehaviourError
+from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+    assign_max_distances_from_start,
+    group_nodes_by_sorted_key_value,
+)
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_nodes_of_specific_kind,
 )
@@ -66,69 +70,50 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
 def establish_execution_order(
     execution_graph: nx.DiGraph,
 ) -> List[List[str]]:
-    steps_flow_graph = construct_steps_flow_graph(execution_graph=execution_graph)
-    steps_flow_graph = assign_max_distances_from_start(
-        steps_flow_graph=steps_flow_graph
+    start_node, end_node = "start", "end"
+    steps_flow_graph = construct_steps_flow_graph(
+        execution_graph=execution_graph,
+        start_node=start_node,
+        end_node=end_node,
     )
-    return get_groups_execution_order(steps_flow_graph=steps_flow_graph)
+    distance_key = "distance"
+    steps_flow_graph = assign_max_distances_from_start(
+        graph=steps_flow_graph,
+        start_node="start",
+        distance_key=distance_key,
+    )
+    return group_nodes_by_sorted_key_value(
+        graph=steps_flow_graph, excluded_nodes={start_node, end_node}
+    )
 
 
-def construct_steps_flow_graph(execution_graph: nx.DiGraph) -> nx.DiGraph:
+def construct_steps_flow_graph(
+    execution_graph: nx.DiGraph,
+    start_node: str,
+    end_node: str,
+) -> nx.DiGraph:
     steps_flow_graph = nx.DiGraph()
-    steps_flow_graph.add_node("start")
-    steps_flow_graph.add_node("end")
+    steps_flow_graph.add_node(start_node)
+    steps_flow_graph.add_node(end_node)
     step_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=STEP_NODE_KIND
     )
     for step_node in step_nodes:
         has_predecessors = False
         for predecessor in execution_graph.predecessors(step_node):
-            start_node = predecessor if predecessor in step_nodes else "start"
+            start_node = predecessor if predecessor in step_nodes else step_node
             steps_flow_graph.add_edge(start_node, step_node)
             has_predecessors = True
         if not has_predecessors:
-            steps_flow_graph.add_edge("start", step_node)
+            steps_flow_graph.add_edge(start_node, step_node)
         has_successors = False
         for successor in execution_graph.successors(step_node):
-            end_node = successor if successor in step_nodes else "end"
+            end_node = successor if successor in step_nodes else end_node
             steps_flow_graph.add_edge(step_node, end_node)
             has_successors = True
         if not has_successors:
-            steps_flow_graph.add_edge(step_node, "end")
+            steps_flow_graph.add_edge(step_node, end_node)
     return steps_flow_graph
-
-
-def assign_max_distances_from_start(steps_flow_graph: nx.DiGraph) -> nx.DiGraph:
-    nodes_to_consider = Queue()
-    nodes_to_consider.put("start")
-    while nodes_to_consider.qsize() > 0:
-        node_to_consider = nodes_to_consider.get()
-        predecessors = list(steps_flow_graph.predecessors(node_to_consider))
-        if not all(
-            steps_flow_graph.nodes[p].get("distance") is not None for p in predecessors
-        ):
-            # we can proceed to establish distance, only if all parents have distances established
-            continue
-        if len(predecessors) == 0:
-            distance_from_start = 0
-        else:
-            distance_from_start = (
-                max(steps_flow_graph.nodes[p]["distance"] for p in predecessors) + 1
-            )
-        steps_flow_graph.nodes[node_to_consider]["distance"] = distance_from_start
-        for neighbour in steps_flow_graph.successors(node_to_consider):
-            nodes_to_consider.put(neighbour)
-    return steps_flow_graph
-
-
-def get_groups_execution_order(steps_flow_graph: nx.DiGraph) -> List[List[str]]:
-    distance2steps = defaultdict(list)
-    for node_name, node_data in steps_flow_graph.nodes(data=True):
-        if node_name in {"start", "end"}:
-            continue
-        distance2steps[node_data["distance"]].append(node_name)
-    sorted_distances = sorted(list(distance2steps.keys()))
-    return [distance2steps[d] for d in sorted_distances]
 
 
 def get_next_steps_to_execute(

@@ -1,11 +1,14 @@
 import itertools
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from copy import copy
+from queue import Queue
+from typing import Dict, Generator, Iterable, List, Optional, Set, Tuple
 
 import networkx as nx
 from networkx import DiGraph
 
 from inference.core.workflows.constants import (
+    EXECUTION_BRANCHES_STACK_PROPERTY,
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
@@ -22,7 +25,7 @@ from inference.core.workflows.errors import (
     InvalidReferenceTargetError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
-    ParsedWorkflowDefinition, BatchDimensionIdentifier,
+    ParsedWorkflowDefinition,
 )
 from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_kinds,
@@ -92,9 +95,7 @@ def construct_graph(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
     )
-    return denote_batch_size_identifiers_for_steps(
-        execution_graph=execution_graph,
-    )
+    return denote_execution_branches(execution_graph=execution_graph)
 
 
 def add_input_nodes_for_graph(
@@ -103,17 +104,11 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
-        batch_oriented = False
-        batch_dimension_identifier = None
-        if input_spec.is_batch_oriented():
-            batch_oriented = True
-            batch_dimension_identifier = BatchDimensionIdentifier(identifier=1)
         execution_graph.add_node(
             input_selector,
             kind=INPUT_NODE_KIND,
             definition=input_spec,
-            batch_oriented=batch_oriented,
-            batch_dimension_identifier=batch_dimension_identifier,
+            batch_oriented=input_spec.is_batch_oriented(),
         )
     return execution_graph
 
@@ -322,10 +317,193 @@ def add_edges_for_outputs(
     return execution_graph
 
 
-def denote_batch_size_identifiers_for_steps(
-    execution_graph: DiGraph
+def denote_execution_branches(execution_graph: DiGraph) -> DiGraph:
+    super_input_node = "<super-input>"
+    input_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph, kind=INPUT_NODE_KIND
+    )
+    execution_graph.add_node(super_input_node, kind="SUPER_INPUT")
+    execution_graph = denote_execution_branches_for_node(
+        node_name=super_input_node,
+        branches=["Branch[root]"],
+        execution_graph=execution_graph,
+    )
+    for node in input_nodes:
+        execution_graph.add_edge(super_input_node, node)
+    for node in traverse_graph_ensuring_parents_are_reached_first(
+        graph=execution_graph,
+        start_node=super_input_node,
+    ):
+        if is_flow_control_step(execution_graph=execution_graph, node=node):
+            execution_graph = start_execution_branches_for_node_successors(
+                execution_graph=execution_graph,
+                node=node,
+            )
+        elif node_merges_execution_paths(execution_graph=execution_graph, node=node):
+            execution_graph = denote_common_execution_branch_for_merged_branches(
+                execution_graph=execution_graph,
+                node=node,
+            )
+        else:
+            execution_graph = denote_execution_branches_for_nodes(
+                node_names=execution_graph.successors(node),
+                branches=execution_graph.nodes[node][EXECUTION_BRANCHES_STACK_PROPERTY],
+                execution_graph=execution_graph,
+            )
+    execution_graph.remove_node(super_input_node)
+    ensure_all_nodes_have_execution_branch_associated(execution_graph=execution_graph)
+    return execution_graph
+
+
+def traverse_graph_ensuring_parents_are_reached_first(
+    graph: DiGraph,
+    start_node: str,
+) -> List[str]:
+    graph_copy = graph.copy()
+    distance_key = "distance"
+    graph_copy = assign_max_distances_from_start(
+        graph=graph_copy,
+        start_node=start_node,
+        distance_key=distance_key,
+    )
+    nodes_groups = group_nodes_by_sorted_key_value(graph=graph_copy, key=distance_key)
+    return [node for node_group in nodes_groups for node in node_group]
+
+
+def assign_max_distances_from_start(
+    graph: nx.DiGraph, start_node: str, distance_key: str = "distance"
+) -> nx.DiGraph:
+    nodes_to_consider = Queue()
+    nodes_to_consider.put(start_node)
+    while nodes_to_consider.qsize() > 0:
+        node_to_consider = nodes_to_consider.get()
+        predecessors = list(graph.predecessors(node_to_consider))
+        if not all(graph.nodes[p].get(distance_key) is not None for p in predecessors):
+            # we can proceed to establish distance, only if all parents have distances established
+            continue
+        if len(predecessors) == 0:
+            distance_from_start = 0
+        else:
+            distance_from_start = (
+                max(graph.nodes[p][distance_key] for p in predecessors) + 1
+            )
+        graph.nodes[node_to_consider][distance_key] = distance_from_start
+        for neighbour in graph.successors(node_to_consider):
+            nodes_to_consider.put(neighbour)
+    return graph
+
+
+def group_nodes_by_sorted_key_value(
+    graph: nx.DiGraph,
+    key: str,
+    excluded_nodes: Optional[Set[str]] = None,
+) -> List[List[str]]:
+    if excluded_nodes is None:
+        excluded_nodes = set()
+    key2nodes = defaultdict(list)
+    for node_name, node_data in graph.nodes(data=True):
+        if node_name in excluded_nodes:
+            continue
+        key2nodes[node_data[key]].append(node_name)
+    sorted_key_values = sorted(list(key2nodes.keys()))
+    return [key2nodes[d] for d in sorted_key_values]
+
+
+def start_execution_branches_for_node_successors(
+    execution_graph: DiGraph, node: str
 ) -> DiGraph:
-    pass
+    node_execution_branches_stack = execution_graph.nodes[node][
+        EXECUTION_BRANCHES_STACK_PROPERTY
+    ]
+    for successor in execution_graph.successors(node):
+        successor_stack = copy(node_execution_branches_stack)
+        successor_stack.append(f"Branch[{node} -> {successor}]")
+        execution_graph = denote_execution_branches_for_node(
+            node_name=successor,
+            branches=successor_stack,
+            execution_graph=execution_graph,
+        )
+    return execution_graph
+
+
+def node_merges_execution_paths(execution_graph: DiGraph, node: str) -> bool:
+    node_predecessors = list(execution_graph.predecessors(node))
+    if len(node_predecessors) < 2:
+        return False
+    reference_execution_branches_stack = execution_graph.nodes[node_predecessors[0]][
+        EXECUTION_BRANCHES_STACK_PROPERTY
+    ]
+    for predecessor in node_predecessors[1:]:
+        predecessor_execution_branches_stack = execution_graph.nodes[predecessor][
+            EXECUTION_BRANCHES_STACK_PROPERTY
+        ]
+        if reference_execution_branches_stack != predecessor_execution_branches_stack:
+            return True
+    return False
+
+
+def denote_common_execution_branch_for_merged_branches(
+    execution_graph: DiGraph, node: str
+) -> DiGraph:
+    node_predecessors = list(execution_graph.predecessors(node))
+    execution_branches_stacks_to_merge = [
+        execution_graph.nodes[node_predecessor][EXECUTION_BRANCHES_STACK_PROPERTY]
+        for node_predecessor in node_predecessors
+    ]
+    merged_stack = find_longest_common_array_elements_prefix(
+        arrays=execution_branches_stacks_to_merge,
+    )
+    if len(merged_stack) == 0:
+        raise ValueError(f"Could not merge execution branches defined in step: {node}")
+    execution_graph = denote_execution_branches_for_node(
+        node_name=node, branches=merged_stack, execution_graph=execution_graph
+    )
+    return denote_execution_branches_for_nodes(
+        node_names=execution_graph.successors(node),
+        branches=merged_stack,
+        execution_graph=execution_graph,
+    )
+
+
+def find_longest_common_array_elements_prefix(arrays: List[List[str]]) -> List[str]:
+    if len(arrays) == 0:
+        return []
+    if len(arrays) == 1:
+        return copy(arrays[0])
+    longest_common_prefix = []
+    shortest_array = min(len(array) for array in arrays)
+    for i in range(shortest_array):
+        reference_element = arrays[0][i]
+        for j in range(1, len(arrays)):
+            if arrays[j][i] != reference_element:
+                return longest_common_prefix
+        longest_common_prefix.append(reference_element)
+    return longest_common_prefix
+
+
+def denote_execution_branches_for_nodes(
+    node_names: Iterable[str], branches: List[str], execution_graph: DiGraph
+) -> DiGraph:
+    for node_name in node_names:
+        execution_graph = denote_execution_branches_for_node(
+            node_name=node_name,
+            branches=branches,
+            execution_graph=execution_graph,
+        )
+    return execution_graph
+
+
+def denote_execution_branches_for_node(
+    node_name: str, branches: List[str], execution_graph: DiGraph
+) -> DiGraph:
+    execution_graph.nodes[node_name][EXECUTION_BRANCHES_STACK_PROPERTY] = branches
+    return execution_graph
+
+
+def ensure_all_nodes_have_execution_branch_associated(execution_graph: DiGraph) -> None:
+    for node in execution_graph.nodes:
+        if EXECUTION_BRANCHES_STACK_PROPERTY not in execution_graph.nodes[node]:
+            raise ValueError(f"Could not associate execution branch for {node}")
 
 
 def verify_edge_is_created_between_existing_nodes(
