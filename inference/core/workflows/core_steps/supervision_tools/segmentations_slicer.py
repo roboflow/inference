@@ -67,7 +67,7 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Detections Inference Slicer",
+            "name": "Segmentations Inference Slicer",
             "short_description": "Run inference on small segments of an image",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
