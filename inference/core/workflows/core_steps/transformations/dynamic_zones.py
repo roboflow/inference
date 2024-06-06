@@ -112,12 +112,12 @@ class DynamicZonesBlock(WorkflowBlock):
     ) -> Tuple[List[Any], FlowControl]:
         result = []
         for detections in predictions:
-            if not detections:
+            if detections is None:
                 result.append({OUTPUT_KEY: None})
                 continue
             simplified_polygons = []
             if detections.mask is None:
-                result.append({OUTPUT_KEY: None})
+                result.append({OUTPUT_KEY: []})
                 continue
             for mask in detections.mask:
                 simplified_polygon = calculate_simplified_polygon(
