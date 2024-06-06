@@ -5,9 +5,9 @@ import numpy as np
 import supervision as sv
 
 from inference.core.entities.requests.inference import (
-    ObjectDetectionInferenceRequest,
+    InstanceSegmentationInferenceRequest,
 )
-from inference.core.entities.responses.inference import InferenceResponseImage, ObjectDetectionInferenceResponse, ObjectDetectionPrediction
+from inference.core.entities.responses.inference import InferenceResponseImage, InstanceSegmentationInferenceResponse, InstanceSegmentationPrediction, Point
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -35,6 +35,7 @@ from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
+    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -102,6 +103,22 @@ class BlockManifest(WorkflowBlockManifest):
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
+    mask_decode_mode: Union[
+        Literal["accurate", "tradeoff", "fast"],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field(
+        default="accurate",
+        description="Parameter of mask decoding in prediction post-processing.",
+        examples=["accurate", "$inputs.mask_decode_mode"],
+    )
+    tradeoff_factor: Union[
+        FloatZeroToOne,
+        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.0,
+        description="Post-processing parameter to dictate tradeoff between fast and accurate",
+        examples=[0.3, "$inputs.tradeoff_factor"],
+    )
     iou_threshold: Union[
         FloatZeroToOne,
         WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
@@ -149,7 +166,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class RoboflowDetectionSlicerBlock(WorkflowBlock):
+class RoboflowSegmentationSlicerBlock(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -173,6 +190,8 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
         confidence: Optional[float],
+        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
+        tradeoff_factor: Optional[float],
         iou_threshold: Optional[float],
         slice_width: Optional[int],
         slice_height: Optional[int],
@@ -194,7 +213,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
                 "value": pickle.dumps(image_slice)
             }
 
-            request = ObjectDetectionInferenceRequest(
+            request = InstanceSegmentationInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_id,
                 image=[inference_image],
@@ -202,6 +221,8 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
                 class_filter=class_filter,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
+                mask_decode_mode=mask_decode_mode,
+                tradeoff_factor=tradeoff_factor,
                 source="workflow-execution",
             )
 
@@ -222,12 +243,13 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             detections = slicer(image)
             xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
             predictions = [
-                ObjectDetectionPrediction(
+                InstanceSegmentationPrediction(
                     **{
                         "x": xywh_bboxes[i][0],
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
+                        "points": [Point(x=point[0], y=point[1]) for point in sv.mask_to_polygons(detections.mask[i])[0]],
                         "confidence": detections.confidence[i],
                         "class": detections["class_name"][i],
                         "class_id": int(detections.class_id[i]),
@@ -236,7 +258,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
                 for i in range(len(detections)) if not class_filter
             ]
 
-            response = ObjectDetectionInferenceResponse(
+            response = InstanceSegmentationInferenceResponse(
                 predictions=predictions,
                 image=InferenceResponseImage(
                     width=image.shape[1],
@@ -263,6 +285,8 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
         confidence: Optional[float],
+        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
+        tradeoff_factor: Optional[float],
         iou_threshold: Optional[float],
         slice_width: Optional[int],
         slice_height: Optional[int],
@@ -284,6 +308,8 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             class_agnostic_nms=class_agnostic_nms,
             class_filter=class_filter,
             confidence_threshold=confidence,
+            mask_decode_mode=mask_decode_mode,
+            tradeoff_factor=tradeoff_factor,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
@@ -315,12 +341,13 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             detections = slicer(image)
             xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
             predictions = [
-                ObjectDetectionPrediction(
+                InstanceSegmentationPrediction(
                     **{
                         "x": xywh_bboxes[i][0],
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
+                        "points": [Point(x=point[0], y=point[1]) for point in detections.mask],
                         "confidence": detections.confidence[i],
                         "class": detections["class_names"][i],
                         "class_id": int(detections.class_id[i]),
@@ -329,7 +356,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
                 for i in range(len(detections)) if not class_filter
             ]
 
-            response = ObjectDetectionInferenceResponse(
+            response = InstanceSegmentationInferenceResponse(
                 predictions=predictions,
                 image=InferenceResponseImage(
                     width=image.shape[1],
@@ -357,7 +384,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
-            prediction_type="object-detection",
+            prediction_type="instance-segmentation",
         )
         predictions = filter_out_unwanted_classes_from_sv_detections_batch(
             predictions=predictions,
