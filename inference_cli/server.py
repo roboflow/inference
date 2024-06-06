@@ -8,6 +8,7 @@ from inference_cli.lib.container_adapter import (
     ensure_docker_is_running,
     stop_inference_containers,
 )
+from inference_cli.lib.tunnel_adapter import start_tunnel
 
 server_app = typer.Typer(
     help="""Commands for running the inference server locally. \n 
@@ -58,6 +59,13 @@ def start(
             help="Roboflow API key (default is None).",
         ),
     ] = None,
+    tunnel: Annotated[
+        bool,
+        typer.Option(
+            "--tunnel",
+            help="Start a tunnel to expose inference to external requests"
+        )
+    ] = False,
 ) -> None:
 
     try:
@@ -77,6 +85,17 @@ def start(
     except Exception as container_error:
         typer.echo(container_error)
         raise typer.Exit(code=1) from container_error
+
+    if tunnel:
+        if api_key is None:
+            typer.echo("Roboflow API Key is required to start the tunnel")
+            raise typer.Exit(code=1)
+
+        tunnel_url = start_tunnel(
+            api_key=api_key,
+            inference_port=port,
+        )
+        typer.echo(f"Tunnel to local inference running on {tunnel_url}")
 
 
 @server_app.command()
