@@ -347,9 +347,9 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
-                        "points": [Point(x=point[0], y=point[1]) for point in detections.mask],
+                        "points": [Point(x=point[0], y=point[1]) for point in sv.mask_to_polygons(detections.mask[i])[0]],
                         "confidence": detections.confidence[i],
-                        "class": detections["class_names"][i],
+                        "class": detections["class_name"][i],
                         "class_id": int(detections.class_id[i]),
                     }
                 )
