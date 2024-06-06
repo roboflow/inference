@@ -25,7 +25,7 @@ logging.set_verbosity_error()
 
 
 class TrOCR(RoboflowCoreModel):
-    def __init__(self, *args, model_id=f"microsoft/trocr-large-printed", **kwargs):
+    def __init__(self, *args, model_id=f"microsoft/trocr-base-printed", **kwargs):
         # super().__init__(*args, model_id=model_id, **kwargs) TODO: Add model cache
         self.model_id = model_id
         self.endpoint = model_id
@@ -53,14 +53,12 @@ class TrOCR(RoboflowCoreModel):
         return predictions[0]
 
     def predict(self, image_in: Image.Image, **kwargs):
-        model_inputs = (
-            self.processor(image_in, return_tensors="pt")
-            .to(self.model.device)
-            .pixel_values
+        model_inputs = self.processor(image_in, return_tensors="pt").to(
+            self.model.device
         )
 
         with torch.inference_mode():
-            generated_ids = self.model.generate(model_inputs)
+            generated_ids = self.model.generate(**model_inputs)
             decoded = self.processor.batch_decode(
                 generated_ids, skip_special_tokens=True
             )
