@@ -36,6 +36,7 @@ REGISTERED_ALIASES = {
     "yolov10b-640": "coco/22",
     "yolov10l-640": "coco/23",
     "yolov10x-640": "coco/24",
+    "paligemma-3b-mix-224": "paligemma-pretrains/1",
 }
 
 
