@@ -30,7 +30,9 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["ExampleModel"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        RoboflowModelField
+    )
     string_value: Optional[str] = Field(default=None)
 
     @classmethod

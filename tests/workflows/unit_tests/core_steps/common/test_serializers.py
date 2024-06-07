@@ -80,6 +80,7 @@ def test_serialise_sv_detections() -> None:
                     [192, 168],
                 ]
             ),
+            "data": np.array(["some", "other"]),
         },
     )
 
@@ -94,6 +95,7 @@ def test_serialise_sv_detections() -> None:
         },
         "predictions": [
             {
+                "data": "some",
                 "width": 1.0,
                 "height": 1.0,
                 "x": 1.5,
@@ -135,6 +137,7 @@ def test_serialise_sv_detections() -> None:
                 ],
             },
             {
+                "data": "other",
                 "width": 1.0,
                 "height": 1.0,
                 "x": 3.5,
