@@ -346,6 +346,7 @@ class RoboflowInferenceModel(Model):
                 "Stretch to",
                 "Fit (black edges) in",
                 "Fit (white edges) in",
+                "Fit (grey edges) in",
             ]:
                 self.resize_method = "Stretch to"
         else:
@@ -408,6 +409,12 @@ class RoboflowInferenceModel(Model):
                 preprocessed_image,
                 (self.img_size_w, self.img_size_h),
                 color=(255, 255, 255),
+            )
+        elif self.resize_method == "Fit (grey edges) in":
+            resized = letterbox_image(
+                preprocessed_image,
+                (self.img_size_w, self.img_size_h),
+                color=(114, 114, 114),
             )
 
         if is_bgr:
