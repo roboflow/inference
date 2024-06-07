@@ -81,6 +81,12 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
         confidence,
         data,
         prediction_type,
+        image_dimensions,
+        root_parent_id,
+        root_parent_coordinates,
+        root_parent_dimensions,
+        parent_coordinates,
+        parent_dimensions,
     ) in zip(
         preds.class_id,
         preds.xyxy,
@@ -90,6 +96,12 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
         preds.confidence,
         preds.data["data"],
         preds.data["prediction_type"],
+        preds.data["image_dimensions"],
+        preds.data["root_parent_id"],
+        preds.data["root_parent_coordinates"],
+        preds.data["root_parent_dimensions"],
+        preds.data["parent_coordinates"],
+        preds.data["parent_dimensions"],
     ):
         assert class_name == "barcode"
         assert class_id == 0
@@ -102,3 +114,9 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
         assert data in values
         assert parent_id == "$inputs.image"
         assert prediction_type == "barcode-detection"
+        assert np.allclose(image_dimensions, np.array(barcode_image.shape[:2]))
+        assert root_parent_id == "$inputs.image"
+        assert np.allclose(root_parent_coordinates, np.array([0, 0]))
+        assert np.allclose(root_parent_dimensions, np.array(barcode_image.shape[:2]))
+        assert np.allclose(parent_coordinates, np.array([0, 0]))
+        assert np.allclose(parent_dimensions, np.array(barcode_image.shape[:2]))
