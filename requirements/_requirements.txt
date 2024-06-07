@@ -23,5 +23,6 @@ pydantic~=2.6
 openai>=1.12.0
 structlog>=24.1.0
 zxing-cpp>=2.2.0
+boto3<2
 typing_extensions>=4.8.0
 pydot>=2.0.0
