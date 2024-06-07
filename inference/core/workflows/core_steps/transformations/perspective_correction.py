@@ -136,16 +136,31 @@ def sort_polygon_vertices_clockwise(polygon: np.ndarray) -> np.ndarray:
 def roll_polygon_vertices_to_start_from_leftmost_bottom(
     polygon: np.ndarray,
 ) -> np.ndarray:
-    x_center = min(polygon[:, 0]) / 2 + max(polygon[:, 0]) / 2
-    y_center = min(polygon[:, 1]) / 2 + max(polygon[:, 1]) / 2
+    x_min = min(polygon[:, 0])
+    x_max = max(polygon[:, 0])
+    y_min = min(polygon[:, 1])
+    y_max = max(polygon[:, 1])
+    leftmost_bottom_rect = [
+        [x_min, y_max],
+        [x_min, y_min],
+        [x_max, y_min],
+        [x_max, y_max],
+    ]
+    min_dist = sum(
+        ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+        for (x1, y1), (x2, y2) in zip(leftmost_bottom_rect, polygon)
+    )
+    closest = polygon
     for shift in range(4):
         rolled = np.roll(polygon, shift=(0, shift), axis=(0, 0))
-        x1, y1 = rolled[0]
-        y2 = rolled[1][1]
-        x4 = rolled[3][0]
-        if x1 <= x_center and y1 >= y_center and y2 <= y1 and x4 >= x1:
-            return rolled
-    raise ValueError("Failed to find bottom left corner of polygon.")
+        dist = sum(
+            ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+            for (x1, y1), (x2, y2) in zip(leftmost_bottom_rect, rolled)
+        )
+        if dist < min_dist or (dist == min_dist and rolled[0][0] < closest[0][0]):
+            min_dist = dist
+            closest = rolled
+    return closest
 
 
 def extend_perspective_polygon(
@@ -304,7 +319,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 largest_perspective_polygons = [None for _ in perspective_polygons]
 
             for polygon, detections in zip(largest_perspective_polygons, predictions):
-                if not polygon:
+                if polygon is None:
                     self.perspective_transformers.append(None)
                     continue
                 self.perspective_transformers.append(
