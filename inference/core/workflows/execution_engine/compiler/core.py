@@ -7,6 +7,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     ParsedWorkflowDefinition,
 )
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+    denote_workflow_dimensionality,
     prepare_execution_graph,
 )
 from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
@@ -41,6 +42,10 @@ def compile_workflow(
     validate_workflow_specification(workflow_definition=parsed_workflow_definition)
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
+    )
+    execution_graph = denote_workflow_dimensionality(
+        execution_graph=execution_graph,
+        available_bocks=available_blocks,
     )
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,

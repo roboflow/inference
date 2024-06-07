@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from openai import BaseModel
 from pydantic import ConfigDict, Field
@@ -59,8 +59,20 @@ class WorkflowBlock(ABC):
         return True
 
     @classmethod
-    def changes_input_batch_dimension(cls) -> bool:
-        return False
+    def get_impact_on_data_dimensionality(
+        cls,
+    ) -> Literal["reduces", "keeps_the_same", "increases"]:
+        if not cls.produces_batch_output():
+            raise BlockInterfaceError(
+                public_message="Class method `get_impact_on_data_dimensionality()` is only relevant "
+                "for blocks producing batch output.",
+                context="getting_batch_dimensionality",
+            )
+        return "keeps_the_same"
+
+    @classmethod
+    def get_data_dimensionality_property(cls) -> Optional[str]:
+        return None
 
     @abstractmethod
     async def run_locally(

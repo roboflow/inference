@@ -2,6 +2,11 @@ from typing import Any, List, Set
 
 from networkx import DiGraph
 
+from inference.core.workflows.constants import (
+    INPUT_NODE_KIND,
+    OUTPUT_NODE_KIND,
+    STEP_NODE_KIND,
+)
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
@@ -73,6 +78,18 @@ def get_nodes_of_specific_kind(execution_graph: DiGraph, kind: str) -> Set[str]:
 
 def get_last_chunk_of_selector(selector: str) -> str:
     return selector.split(".")[-1]
+
+
+def is_input_node(execution_graph: DiGraph, node: str) -> bool:
+    return execution_graph.nodes[node].get("kind") == INPUT_NODE_KIND
+
+
+def is_step_node(execution_graph: DiGraph, node: str) -> bool:
+    return execution_graph.nodes[node].get("kind") == STEP_NODE_KIND
+
+
+def is_output_node(execution_graph: DiGraph, node: str) -> bool:
+    return execution_graph.nodes[node].get("kind") == OUTPUT_NODE_KIND
 
 
 def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:

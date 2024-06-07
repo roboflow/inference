@@ -2,15 +2,17 @@ import itertools
 from collections import defaultdict
 from copy import copy
 from queue import Queue
-from typing import Dict, Generator, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Type
 
 import networkx as nx
 from networkx import DiGraph
 
 from inference.core.workflows.constants import (
+    DIMENSIONALITY_PROPERTY,
     EXECUTION_BRANCHES_STACK_PROPERTY,
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
+    STEP_INPUT_PROPERTY,
     STEP_NODE_KIND,
 )
 from inference.core.workflows.entities.base import (
@@ -25,6 +27,7 @@ from inference.core.workflows.errors import (
     InvalidReferenceTargetError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
+    BlockSpecification,
     ParsedWorkflowDefinition,
 )
 from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
@@ -39,7 +42,10 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     get_nodes_of_specific_kind,
     get_step_selector_from_its_output,
     is_flow_control_step,
+    is_input_node,
     is_input_selector,
+    is_output_node,
+    is_step_node,
     is_step_output_selector,
     is_step_selector,
 )
@@ -49,7 +55,10 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.selectors_parser import (
     get_step_selectors,
 )
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 NODE_DEFINITION_KEY = "definition"
 
@@ -67,7 +76,6 @@ def prepare_execution_graph(
             f"never end if executed.",
             context="workflow_compilation | execution_graph_construction",
         )
-    verify_each_node_step_has_parent_in_the_same_branch(execution_graph=execution_graph)
     return execution_graph
 
 
@@ -216,7 +224,11 @@ def add_edge_for_step(
         actual=actual_input_kind,
         error_message=error_message,
     )
-    execution_graph.add_edge(other_step_selector, step_selector)
+    execution_graph.add_edge(
+        other_step_selector,
+        step_selector,
+        **{STEP_INPUT_PROPERTY: parsed_selector.definition.property_name},
+    )
     return execution_graph
 
 
@@ -319,17 +331,15 @@ def add_edges_for_outputs(
 
 def denote_execution_branches(execution_graph: DiGraph) -> DiGraph:
     super_input_node = "<super-input>"
-    input_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=INPUT_NODE_KIND
+    execution_graph = add_super_input_node_in_execution_graph(
+        execution_graph=execution_graph,
+        super_input_node=super_input_node,
     )
-    execution_graph.add_node(super_input_node, kind="SUPER_INPUT")
     execution_graph = denote_execution_branches_for_node(
         node_name=super_input_node,
         branches=["Branch[root]"],
         execution_graph=execution_graph,
     )
-    for node in input_nodes:
-        execution_graph.add_edge(super_input_node, node)
     for node in traverse_graph_ensuring_parents_are_reached_first(
         graph=execution_graph,
         start_node=super_input_node,
@@ -353,60 +363,6 @@ def denote_execution_branches(execution_graph: DiGraph) -> DiGraph:
     execution_graph.remove_node(super_input_node)
     ensure_all_nodes_have_execution_branch_associated(execution_graph=execution_graph)
     return execution_graph
-
-
-def traverse_graph_ensuring_parents_are_reached_first(
-    graph: DiGraph,
-    start_node: str,
-) -> List[str]:
-    graph_copy = graph.copy()
-    distance_key = "distance"
-    graph_copy = assign_max_distances_from_start(
-        graph=graph_copy,
-        start_node=start_node,
-        distance_key=distance_key,
-    )
-    nodes_groups = group_nodes_by_sorted_key_value(graph=graph_copy, key=distance_key)
-    return [node for node_group in nodes_groups for node in node_group]
-
-
-def assign_max_distances_from_start(
-    graph: nx.DiGraph, start_node: str, distance_key: str = "distance"
-) -> nx.DiGraph:
-    nodes_to_consider = Queue()
-    nodes_to_consider.put(start_node)
-    while nodes_to_consider.qsize() > 0:
-        node_to_consider = nodes_to_consider.get()
-        predecessors = list(graph.predecessors(node_to_consider))
-        if not all(graph.nodes[p].get(distance_key) is not None for p in predecessors):
-            # we can proceed to establish distance, only if all parents have distances established
-            continue
-        if len(predecessors) == 0:
-            distance_from_start = 0
-        else:
-            distance_from_start = (
-                max(graph.nodes[p][distance_key] for p in predecessors) + 1
-            )
-        graph.nodes[node_to_consider][distance_key] = distance_from_start
-        for neighbour in graph.successors(node_to_consider):
-            nodes_to_consider.put(neighbour)
-    return graph
-
-
-def group_nodes_by_sorted_key_value(
-    graph: nx.DiGraph,
-    key: str,
-    excluded_nodes: Optional[Set[str]] = None,
-) -> List[List[str]]:
-    if excluded_nodes is None:
-        excluded_nodes = set()
-    key2nodes = defaultdict(list)
-    for node_name, node_data in graph.nodes(data=True):
-        if node_name in excluded_nodes:
-            continue
-        key2nodes[node_data[key]].append(node_name)
-    sorted_key_values = sorted(list(key2nodes.keys()))
-    return [key2nodes[d] for d in sorted_key_values]
 
 
 def start_execution_branches_for_node_successors(
@@ -553,159 +509,227 @@ def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
     return result
 
 
-def verify_each_node_step_has_parent_in_the_same_branch(
+def denote_workflow_dimensionality(
     execution_graph: DiGraph,
-) -> None:
-    """
-    Conditional branching creates a bit of mess, in terms of determining which
-    steps to execute.
-    Let's imagine graph:
-              / -> B -> C -> D
-    A -> IF <             \
-              \ -> E -> F -> G -> H
-    where node G requires node C even though IF branched the execution. In other
-    words - the problem (1) emerges if a node of kind STEP has a parent (node from which
-    it can be achieved) of kind STEP and this parent is in a different branch (point out that
-    we allow for a single step to have multiple steps as input, but they must be at the same
-    execution path - for instance if D requires an output from C and B - this is allowed).
-    Additionally, we must prevent situation when outcomes of branches started by two or more
-    condition steps merge with each other, as condition eval may result in contradictory
-    execution (2).
-
-
-    We need to detect that situations upfront, such that we can raise error of ambiguous execution path
-    rather than run time-consuming computations that will end up in error.
-
-    To detect problem (1), first we detect steps with more than one parent step.
-    From those steps we trace what sequence of steps would lead to execution engine reaching them.
-    We analyse paths from those parent nodes in reversed topological order (from those nodes towards entry
-    nodes of execution graph). While our analysis, on each path we denote control flow steps and
-    result of evaluation that must have been observed in runtime (which next step in normal flow must be
-    chosen to form the path). If we detect that for any control flow step we would need to output multiple
-    values at time (more than one registered next step of control flow step) - we raise error.
-
-    To detect problem (2) - we only let number of all different condition steps spotted in our traversal of
-    execution graph (while checking (1)) to be the max number condition steps in a single path from graph start node
-    to parent of problematic step with >= 2 parents.
-
-    Beware that the latter part of algorithm has quite bad time complexity in general case.
-    Worst part of algorithm runs at O(V^4) - at least taking coarse, worst-case estimations.
-    In fact, for reasonable workflows we can expect this is not so bad:
-    * The number of step nodes with multiple parents that we loop over in main loop, reduces the number of
-    steps we iterate through in inner loops, as we are dealing with DAG (with quite limited amount of edges)
-    and for each multi-parent node takes at least two other nodes (to construct a suspicious group) -
-    so expected number of iterations in main loop is low - let's say 1-3 for a real graph.
-    * for any reasonable execution graph, the complexity should be acceptable.
-    """
-    steps_with_more_than_one_parent = detect_steps_with_more_than_one_parent_step(
-        execution_graph=execution_graph
-    )  # O(V+E)
-    if not steps_with_more_than_one_parent:
-        return None
-    reversed_steps_graph = construct_reversed_graph_with_steps_only(
-        execution_graph=execution_graph
-    )  # O(V+E)
-    reversed_topological_order = list(
-        nx.topological_sort(reversed_steps_graph)
-    )  # O(V+E)
-    for step in steps_with_more_than_one_parent:  # O(V)
-        verify_multi_parent_step_execution_paths(
-            reversed_steps_graph=reversed_steps_graph,
-            reversed_topological_order=reversed_topological_order,
-            step=step,
-        )
-
-
-def detect_steps_with_more_than_one_parent_step(execution_graph: DiGraph) -> Set[str]:
-    steps_nodes = get_nodes_of_specific_kind(
+    available_bocks: List[BlockSpecification],
+) -> nx.DiGraph:
+    block_class_by_step_name = {
+        block.manifest_class.name: block.block_class for block in available_bocks
+    }
+    super_input_node = "<super-input>"
+    execution_graph = add_super_input_node_in_execution_graph(
         execution_graph=execution_graph,
-        kind=STEP_NODE_KIND,
+        super_input_node=super_input_node,
     )
-    edges_of_steps_nodes = [edge for edge in execution_graph.edges()]
-    steps_parents = defaultdict(set)
-    for edge in edges_of_steps_nodes:
-        parent, child = edge
-        if parent not in steps_nodes or child not in steps_nodes:
+    execution_graph.nodes[super_input_node][DIMENSIONALITY_PROPERTY] = 0
+    for node in traverse_graph_ensuring_parents_are_reached_first(
+        graph=execution_graph,
+        start_node=super_input_node,
+    ):
+        if is_input_node(execution_graph=execution_graph, node=node):
+            dimensionality = (
+                1
+                if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
+                else 0
+            )
+            execution_graph = set_dimensionality_for_node(
+                execution_graph=execution_graph,
+                node=node,
+                dimensionality=dimensionality,
+            )
+        elif is_step_node(execution_graph=execution_graph, node=node):
+            execution_graph = set_dimensionality_for_step(
+                execution_graph=execution_graph,
+                node=node,
+                block_class_by_step_name=block_class_by_step_name,
+            )
+        elif is_output_node(execution_graph=execution_graph, node=node):
+            # output is allowed to have exactly one predecessors
+            predecessor_node = list(execution_graph.predecessors(node))[0]
+            execution_graph = set_dimensionality_for_node(
+                execution_graph=execution_graph,
+                node=node,
+                dimensionality=execution_graph.nodes[predecessor_node][
+                    DIMENSIONALITY_PROPERTY
+                ],
+            )
+    execution_graph.remove_node(super_input_node)
+    ensure_all_nodes_have_dimensionality_associated(execution_graph=execution_graph)
+    return execution_graph
+
+
+DIMENSIONALITY_DELTAS_BY_MODE = {
+    "reduces": -1,
+    "keeps_the_same": 0,
+    "increases": 1,
+}
+
+
+def set_dimensionality_for_step(
+    execution_graph: DiGraph,
+    node: str,
+    block_class_by_step_name: Dict[str, Type[WorkflowBlock]],
+) -> DiGraph:
+    step_name = get_last_chunk_of_selector(selector=node)
+    if not block_class_by_step_name[step_name].produces_batch_output():
+        print(f"Step {node} does not produce batches")
+        return set_dimensionality_for_node(
+            execution_graph=execution_graph,
+            node=node,
+            dimensionality=0,
+        )
+    predecessors_dimensionalities = defaultdict(list)
+    all_encountered_batch_dimensionalities = set()
+    for predecessor in execution_graph.predecessors(node):
+        predecessor_dimensionality = execution_graph.nodes[predecessor][
+            DIMENSIONALITY_PROPERTY
+        ]
+        print(f"Predecessor: {predecessor} - dim: {predecessor_dimensionality}")
+        edge_properties = execution_graph.edges[(predecessor, node)]
+        input_property = edge_properties.get(STEP_INPUT_PROPERTY)
+        predecessors_dimensionalities[input_property].append(predecessor_dimensionality)
+        if predecessor_dimensionality == 0:
             continue
-        steps_parents[child].add(parent)
-    return {key for key, value in steps_parents.items() if len(value) > 1}
-
-
-def construct_reversed_graph_with_steps_only(execution_graph: DiGraph) -> DiGraph:
-    reversed_steps_graph = execution_graph.reverse()
-    for node, node_data in list(reversed_steps_graph.nodes(data=True)):
-        if node_data.get("kind") != STEP_NODE_KIND:
-            reversed_steps_graph.remove_node(node)
-    return reversed_steps_graph
-
-
-def verify_multi_parent_step_execution_paths(
-    reversed_steps_graph: nx.DiGraph,
-    reversed_topological_order: List[str],
-    step: str,
-) -> None:
-    control_flow_steps_successors = defaultdict(set)
-    max_conditions_steps_in_execution_branch = 0
-    for parent_of_investigated_step in reversed_steps_graph.successors(step):  # O(V)
-        reversed_flow_path = (
-            construct_path_to_step_through_selected_parent(  # O(E) -> O(V^2)
-                graph=reversed_steps_graph,
-                topological_order=reversed_topological_order,
-                parent_step=parent_of_investigated_step,
-                step=step,
+        all_encountered_batch_dimensionalities.add(predecessor_dimensionality)
+    print(
+        f"all_encountered_batch_dimensionalities for {node}: {all_encountered_batch_dimensionalities}"
+    )
+    if len(all_encountered_batch_dimensionalities) == 0:
+        # no inputs found, step will produce singular output
+        print(f"No batch inputs found for {node}")
+        return set_dimensionality_for_node(
+            execution_graph=execution_graph,
+            node=node,
+            dimensionality=0,
+        )
+    dimensionality_change = DIMENSIONALITY_DELTAS_BY_MODE[
+        block_class_by_step_name[step_name].get_impact_on_data_dimensionality()
+    ]
+    dimensionality_reference_property = block_class_by_step_name[
+        step_name
+    ].get_data_dimensionality_property()
+    if dimensionality_reference_property is None:
+        if len(all_encountered_batch_dimensionalities) > 1:
+            dimensionality_summary = ""
+            for prop, dims in predecessors_dimensionalities.items():
+                dims_stringified = [str(e) for e in dims]
+                dimensionality_summary = f"{dimensionality_summary}\t{prop}: [{', '.join(dims_stringified)}]\n"
+            raise RuntimeError(
+                f"While verifying of workflow definition encountered step {node} that "
+                f"requires all batch inputs to be of the same dimensionality, but got: \n"
+                f"{dimensionality_summary}"
             )
+        inputs_dim = next(iter(all_encountered_batch_dimensionalities))
+        return set_dimensionality_for_node(
+            execution_graph=execution_graph,
+            node=node,
+            dimensionality=inputs_dim + dimensionality_change,
         )
-        (
-            control_flow_steps_successors,
-            condition_steps,
-        ) = denote_flow_control_steps_successors_in_normal_flow(  # O(V)
-            reversed_steps_graph=reversed_steps_graph,
-            reversed_flow_path=reversed_flow_path,
-            control_flow_steps_successors=control_flow_steps_successors,
+    if dimensionality_reference_property not in predecessors_dimensionalities:
+        raise RuntimeError(
+            f"Block implementing step {step_name} declared reference dimensionality property to be "
+            f"{dimensionality_reference_property}, but no such property fed with data according to "
+            f"workflow manifest."
         )
-        max_conditions_steps_in_execution_branch = max(
-            condition_steps, max_conditions_steps_in_execution_branch
+    dimensionalities_for_reference_property = set(
+        predecessors_dimensionalities[dimensionality_reference_property]
+    )
+    allowed_different_dimensions = 1
+    if 0 in dimensionalities_for_reference_property:
+        allowed_different_dimensions += 1
+    if len(dimensionalities_for_reference_property) > allowed_different_dimensions:
+        raise ValueError(
+            f"For step {node}, property: {dimensionality_reference_property} fed with data that declare the"
+            f" following different dimensions: {dimensionalities_for_reference_property}, whereas it is allowed to "
+            f"combine non-batch inputs and batches with the same number of dimensions."
         )
-    if len(control_flow_steps_successors) > max_conditions_steps_in_execution_branch:
-        raise ConditionalBranchesCollapseError(
-            public_message=f"In execution graph, detected collision of branches that originate "
-            f"in different flow-control steps. When using flow control step you create "
-            f"a sub-workflow, which cannot reach any step from the outside.",
-            context="workflow_compilation | execution_graph_construction",
-        )
-    for condition_step, potential_next_steps in control_flow_steps_successors.items():
-        if len(potential_next_steps) > 1:
-            raise ConditionalBranchesCollapseError(
-                public_message=f"In execution graph, in flow-control step: {condition_step} there are originated "
-                f"workflow branches that clashes together.",
-                context="workflow_compilation | execution_graph_construction",
-            )
+    return set_dimensionality_for_node(
+        execution_graph=execution_graph,
+        node=node,
+        dimensionality=max(dimensionalities_for_reference_property)
+        + dimensionality_change,
+    )
 
 
-def construct_path_to_step_through_selected_parent(
-    graph: nx.DiGraph,
-    topological_order: List[str],
-    parent_step: str,
-    step: str,
+def set_dimensionality_for_node(
+    execution_graph: DiGraph, node: str, dimensionality: int
+) -> DiGraph:
+    if dimensionality < 0:
+        raise ValueError(
+            f"Attempted to set dimensionality {dimensionality} for step: {node}"
+        )
+    execution_graph.nodes[node][DIMENSIONALITY_PROPERTY] = dimensionality
+    return execution_graph
+
+
+def add_super_input_node_in_execution_graph(
+    execution_graph: DiGraph,
+    super_input_node: str,
+) -> DiGraph:
+    input_nodes = get_nodes_of_specific_kind(
+        execution_graph=execution_graph, kind=INPUT_NODE_KIND
+    )
+    execution_graph.add_node(super_input_node, kind="SUPER_INPUT")
+    for node in input_nodes:
+        execution_graph.add_edge(super_input_node, node)
+    return execution_graph
+
+
+def traverse_graph_ensuring_parents_are_reached_first(
+    graph: DiGraph,
+    start_node: str,
 ) -> List[str]:
-    normal_flow_path_nodes = nx.descendants(graph, parent_step)
-    normal_flow_path_nodes.add(parent_step)
-    normal_flow_path_nodes.add(step)
-    return [n for n in topological_order if n in normal_flow_path_nodes]
+    graph_copy = graph.copy()
+    distance_key = "distance"
+    graph_copy = assign_max_distances_from_start(
+        graph=graph_copy,
+        start_node=start_node,
+        distance_key=distance_key,
+    )
+    nodes_groups = group_nodes_by_sorted_key_value(graph=graph_copy, key=distance_key)
+    return [node for node_group in nodes_groups for node in node_group]
 
 
-def denote_flow_control_steps_successors_in_normal_flow(
-    reversed_steps_graph: nx.DiGraph,
-    reversed_flow_path: List[str],
-    control_flow_steps_successors: Dict[str, Set[str]],
-) -> Tuple[Dict[str, Set[str]], int]:
-    conditions_steps = 0
-    if not reversed_flow_path:
-        return control_flow_steps_successors, conditions_steps
-    previous_node = reversed_flow_path[0]
-    for node in reversed_flow_path[1:]:
-        if is_flow_control_step(execution_graph=reversed_steps_graph, node=node):
-            control_flow_steps_successors[node].add(previous_node)
-            conditions_steps += 1
-        previous_node = node
-    return control_flow_steps_successors, conditions_steps
+def assign_max_distances_from_start(
+    graph: nx.DiGraph, start_node: str, distance_key: str = "distance"
+) -> nx.DiGraph:
+    nodes_to_consider = Queue()
+    nodes_to_consider.put(start_node)
+    while nodes_to_consider.qsize() > 0:
+        node_to_consider = nodes_to_consider.get()
+        predecessors = list(graph.predecessors(node_to_consider))
+        if not all(graph.nodes[p].get(distance_key) is not None for p in predecessors):
+            # we can proceed to establish distance, only if all parents have distances established
+            continue
+        if len(predecessors) == 0:
+            distance_from_start = 0
+        else:
+            distance_from_start = (
+                max(graph.nodes[p][distance_key] for p in predecessors) + 1
+            )
+        graph.nodes[node_to_consider][distance_key] = distance_from_start
+        for neighbour in graph.successors(node_to_consider):
+            nodes_to_consider.put(neighbour)
+    return graph
+
+
+def group_nodes_by_sorted_key_value(
+    graph: nx.DiGraph,
+    key: str,
+    excluded_nodes: Optional[Set[str]] = None,
+) -> List[List[str]]:
+    if excluded_nodes is None:
+        excluded_nodes = set()
+    key2nodes = defaultdict(list)
+    for node_name, node_data in graph.nodes(data=True):
+        if node_name in excluded_nodes:
+            continue
+        key2nodes[node_data[key]].append(node_name)
+    sorted_key_values = sorted(list(key2nodes.keys()))
+    return [key2nodes[d] for d in sorted_key_values]
+
+
+def ensure_all_nodes_have_dimensionality_associated(execution_graph: DiGraph) -> None:
+    for node in execution_graph.nodes:
+        if DIMENSIONALITY_PROPERTY not in execution_graph.nodes[node]:
+            raise ValueError(f"Could not associate dimensionality for {node}")
