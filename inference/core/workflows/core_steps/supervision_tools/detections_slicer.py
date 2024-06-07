@@ -125,14 +125,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Height of each slice, in pixels",
         examples=[320, "$inputs.slice_height"],
     )
-    overlap_ration_width: Union[
+    overlap_ratio_width: Union[
         FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the width dimension",
         examples=[0.2, "$inputs.overlap_ratio_width"],
     )
-    overlap_ration_height: Union[
+    overlap_ratio_height: Union[
         FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
     ] = Field(
         default=0.2,
