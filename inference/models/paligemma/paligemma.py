@@ -158,8 +158,8 @@ class PaliGemma(RoboflowInferenceModel):
 
 class LoRAPaliGemma(PaliGemma):
     def __init__(self, model_id, *args, huggingface_token=HUGGINGFACE_TOKEN, **kwargs):
-        super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
+        super().__init__(model_id, *args, **kwargs)
 
     def initialize_model(self):
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
