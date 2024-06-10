@@ -122,7 +122,10 @@ def render_boxes(
         ticks = sum(f is not None for f in video_frame)
         for _ in range(ticks):
             fps_monitor.tick()
-        fps_value = fps_monitor()
+        if hasattr(fps_monitor, "fps"):
+            fps_value = fps_monitor.fps
+        else:
+            fps_value = fps_monitor()
     images: List[ImageWithSourceID] = []
     annotators = annotator if isinstance(annotator, list) else [annotator]
     for idx, (single_frame, frame_prediction) in enumerate(

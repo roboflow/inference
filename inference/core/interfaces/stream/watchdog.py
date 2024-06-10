@@ -244,9 +244,13 @@ class BasePipelineWatchDog(PipelineWatchDog):
         latency_reports = [
             monitor.summarise_reports() for monitor in self._latency_monitors.values()
         ]
+        if hasattr(self._inference_throughput_monitor(), "fps"):
+            _inference_throughput_fps = self._inference_throughput_monitor.fps
+        else:
+            _inference_throughput_fps = self._inference_throughput_monitor()
         return PipelineStateReport(
             video_source_status_updates=list(self._stream_updates),
             latency_reports=latency_reports,
-            inference_throughput=self._inference_throughput_monitor(),
+            inference_throughput=_inference_throughput_fps,
             sources_metadata=sources_metadata,
         )
