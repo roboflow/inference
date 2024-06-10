@@ -6,7 +6,7 @@ from peft import LoraConfig, get_peft_model
 from PIL import Image
 from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
-from inference.core.env import MODEL_CACHE_DIR, HUGGINGFACE_TOKEN
+from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
 import os
