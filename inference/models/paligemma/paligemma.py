@@ -2,6 +2,7 @@ import os
 import re
 
 import numpy as np
+from peft import LoraConfig, get_peft_model
 from PIL import Image
 from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
@@ -38,6 +39,8 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class PaliGemma(RoboflowInferenceModel):
+    """By using you agree to the terms listed at https://ai.google.dev/gemma/terms"""
+
     task_type = "lmm"
 
     def __init__(self, model_id, *args, **kwargs):
@@ -46,6 +49,9 @@ class PaliGemma(RoboflowInferenceModel):
 
         self.api_key = API_KEY
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+        self.initialize_model()
+
+    def initialize_model(self):
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
             self.cache_dir,
             device_map=DEVICE,
@@ -148,6 +154,29 @@ class PaliGemma(RoboflowInferenceModel):
 
     def download_model_artefacts_from_s3(self) -> None:
         raise NotImplementedError()
+
+
+class LoRAPaliGemma(PaliGemma):
+    def initialize_model(self):
+        lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
+        model_id = lora_config.base_model_name_or_path
+        revision = lora_config.revision
+        base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
+        dtype = None
+        if revision is not None:
+            dtype = getattr(torch, revision)
+        self.base_model = PaliGemmaForConditionalGeneration.from_pretrained(
+            model_id,
+            revision=revision,
+            device_map=DEVICE,
+            cache_dir=base_cache_dir,
+            torch_dtype=dtype,
+        )
+        self.model = get_peft_model(self.base_model, lora_config).eval()
+        if dtype is not None:
+            self.model = self.model.type(dtype)
+
+        self.processor = AutoProcessor.from_pretrained(self.cache_dir)
 
 
 if __name__ == "__main__":
