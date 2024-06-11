@@ -56,7 +56,7 @@ class PaliGemma(RoboflowInferenceModel):
         self.model = PaliGemmaForConditionalGeneration.from_pretrained(
             self.cache_dir,
             device_map=DEVICE,
-        ).eval().type(self.dtype)
+        ).eval().to(self.dtype)
 
         self.processor = AutoProcessor.from_pretrained(
             self.cache_dir,
@@ -87,7 +87,7 @@ class PaliGemma(RoboflowInferenceModel):
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(
             text=prompt, images=image_in, return_tensors="pt"
-        ).to(self.model.device).to(self.dtype)
+        ).to(self.model.device)
         input_len = model_inputs["input_ids"].shape[-1]
 
         with torch.inference_mode():
@@ -166,10 +166,10 @@ class LoRAPaliGemma(PaliGemma):
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision
-        base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
         self.dtype = torch.float16
         if revision is not None:
             self.dtype = getattr(torch, revision)
+        base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
         if self.huggingface_token is None:
             raise RuntimeError(
                 "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
@@ -180,11 +180,9 @@ class LoRAPaliGemma(PaliGemma):
             revision=revision,
             device_map=DEVICE,
             cache_dir=base_cache_dir,
-            torch_dtype=self.dtype,
-            token=HUGGINGFACE_TOKEN,
-        )
-        self.model = get_peft_model(self.base_model, lora_config).eval()
-        self.model = self.model.type(self.dtype)
+            token=self.huggingface_token,
+        ).to(self.dtype)
+        self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
         self.processor = AutoProcessor.from_pretrained(self.cache_dir)
 
