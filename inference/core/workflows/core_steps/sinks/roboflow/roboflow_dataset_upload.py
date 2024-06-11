@@ -210,7 +210,7 @@ class RoboflowDatasetUploadBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         images: Batch[Optional[WorkflowImageData]],
         predictions: Batch[Optional[Union[sv.Detections, dict]]],

@@ -89,7 +89,7 @@ class RelativeStaticCropBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[BaseModel]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         images: Batch[Optional[WorkflowImageData]],
         x_center: float,

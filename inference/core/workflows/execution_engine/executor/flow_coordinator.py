@@ -70,51 +70,44 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
 def establish_execution_order(
     execution_graph: nx.DiGraph,
 ) -> List[List[str]]:
-    start_node, end_node = "start", "end"
+    super_start_node = "<start>"
     steps_flow_graph = construct_steps_flow_graph(
         execution_graph=execution_graph,
-        start_node=start_node,
-        end_node=end_node,
+        super_start_node=super_start_node,
     )
     distance_key = "distance"
     steps_flow_graph = assign_max_distances_from_start(
         graph=steps_flow_graph,
-        start_node="start",
+        start_node=super_start_node,
         distance_key=distance_key,
     )
     return group_nodes_by_sorted_key_value(
         graph=steps_flow_graph,
-        excluded_nodes={start_node, end_node},
+        excluded_nodes={super_start_node},
         key=distance_key,
     )
 
 
 def construct_steps_flow_graph(
     execution_graph: nx.DiGraph,
-    start_node: str,
-    end_node: str,
+    super_start_node: str,
 ) -> nx.DiGraph:
     steps_flow_graph = nx.DiGraph()
-    steps_flow_graph.add_node(start_node)
-    steps_flow_graph.add_node(end_node)
+    steps_flow_graph.add_node(super_start_node)
     step_nodes = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=STEP_NODE_KIND
     )
     for step_node in step_nodes:
         has_predecessors = False
         for predecessor in execution_graph.predecessors(step_node):
-            start_node = predecessor if predecessor in step_nodes else step_node
+            start_node = predecessor if predecessor in step_nodes else super_start_node
             steps_flow_graph.add_edge(start_node, step_node)
             has_predecessors = True
         if not has_predecessors:
-            steps_flow_graph.add_edge(start_node, step_node)
-        has_successors = False
+            steps_flow_graph.add_edge(super_start_node, step_node)
         for successor in execution_graph.successors(step_node):
-            end_node = successor if successor in step_nodes else end_node
-            steps_flow_graph.add_edge(step_node, end_node)
-            has_successors = True
-        if not has_successors:
-            steps_flow_graph.add_edge(step_node, end_node)
+            if successor in step_nodes:
+                steps_flow_graph.add_edge(step_node, successor)
     return steps_flow_graph
 
 

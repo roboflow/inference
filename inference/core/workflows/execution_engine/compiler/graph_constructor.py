@@ -17,6 +17,7 @@ from inference.core.workflows.constants import (
     ROOT_BRANCH_NAME,
     STEP_INPUT_PROPERTY,
     STEP_NODE_KIND,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.entities.base import (
     InputType,
@@ -521,9 +522,14 @@ def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
 def denote_workflow_dimensionality(
     execution_graph: DiGraph,
     available_bocks: List[BlockSpecification],
+    parsed_workflow_definition: ParsedWorkflowDefinition,
 ) -> nx.DiGraph:
+    block_class_by_manifest_type = {
+        block.manifest_class: block.block_class for block in available_bocks
+    }
     block_class_by_step_name = {
-        block.manifest_class.name: block.block_class for block in available_bocks
+        step.name: block_class_by_manifest_type[type(step)]
+        for step in parsed_workflow_definition.steps
     }
     super_input_node = "<super-input>"
     execution_graph = add_super_input_node_in_execution_graph(
@@ -543,7 +549,7 @@ def denote_workflow_dimensionality(
                 else 0
             )
             dimensionality_lineage = (
-                ["<workflow_input>"]
+                [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
                 if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
                 else []
             )

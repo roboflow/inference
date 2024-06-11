@@ -8,13 +8,16 @@ from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
-)
-from inference.core.workflows.execution_engine.executor.execution_cache import (
-    ExecutionCache,
+    is_flow_control_step,
 )
 from inference.core.workflows.execution_engine.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
     handle_flow_control,
+)
+from inference.core.workflows.execution_engine.executor.new_execution_cache import (
+    DynamicBatchesManager,
+    ExecutionBranchesManager,
+    ExecutionCache,
 )
 from inference.core.workflows.execution_engine.executor.output_constructor import (
     construct_workflow_output,
@@ -31,6 +34,14 @@ async def run_workflow(
     max_concurrent_steps: int,
 ) -> Dict[str, List[Any]]:
     execution_cache = ExecutionCache.init()
+    branches_manager = ExecutionBranchesManager.init(
+        workflow_inputs=workflow.workflow_definition.inputs,
+        runtime_parameters=runtime_parameters,
+    )
+    dynamic_batches_manager = DynamicBatchesManager.init(
+        workflow_inputs=workflow.workflow_definition.inputs,
+        runtime_parameters=runtime_parameters,
+    )
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
     )
@@ -46,6 +57,8 @@ async def run_workflow(
             runtime_parameters=runtime_parameters,
             execution_cache=execution_cache,
             max_concurrent_steps=max_concurrent_steps,
+            branches_manager=branches_manager,
+            dynamic_batches_manager=dynamic_batches_manager,
         )
         next_steps = execution_coordinator.get_steps_to_execute_next(
             steps_to_discard=steps_to_discard
@@ -63,6 +76,8 @@ async def execute_steps(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     max_concurrent_steps: int,
+    branches_manager: ExecutionBranchesManager,
+    dynamic_batches_manager: DynamicBatchesManager,
 ) -> Set[str]:
     logger.info(f"Executing steps: {next_steps}.")
     nodes_to_discard = set()
@@ -77,6 +92,8 @@ async def execute_steps(
                 workflow=workflow,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
+                branches_manager=branches_manager,
+                dynamic_batches_manager=dynamic_batches_manager,
             )
             for step in steps_batch
         ]
@@ -91,6 +108,8 @@ async def safe_execute_step(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
+    branches_manager: ExecutionBranchesManager,
+    dynamic_batches_manager: DynamicBatchesManager,
 ) -> Set[str]:
     try:
         return await execute_step(
@@ -98,6 +117,8 @@ async def safe_execute_step(
             workflow=workflow,
             runtime_parameters=runtime_parameters,
             execution_cache=execution_cache,
+            branches_manager=branches_manager,
+            dynamic_batches_manager=dynamic_batches_manager,
         )
     except WorkflowError as error:
         raise error
@@ -115,16 +136,33 @@ async def execute_step(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
+    branches_manager: ExecutionBranchesManager,
+    dynamic_batches_manager: DynamicBatchesManager,
 ) -> Set[str]:
     logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
     step_name = get_last_chunk_of_selector(selector=step)
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
-    step_outputs = step_manifest.get_actual_outputs()
     execution_cache.register_step(
         step_name=step_name,
-        output_definitions=step_outputs,
         compatible_with_batches=step_instance.produces_batch_output(),
+    )
+    print(workflow.execution_graph.nodes[step])
+    print(
+        "branch_mask",
+        branches_manager.retrieve_branch_mask(
+            branch_name=workflow.execution_graph.nodes[step][
+                "execution_branches_stack"
+            ][-1]
+        ),
+    )
+    print(
+        "batch_element_indices",
+        dynamic_batches_manager.get_batch_element_indices(
+            data_lineage=workflow.execution_graph.nodes[step]["dimensionality_lineage"][
+                -1
+            ]
+        ),
     )
     step_parameters = assembly_step_parameters(
         step_manifest=step_manifest,
@@ -133,18 +171,22 @@ async def execute_step(
         accepts_batch_input=step_instance.accepts_batch_input(),
     )
     step_result = await step_instance.run(**step_parameters)
-    if isinstance(step_result, tuple):
-        step_outputs, flow_control = step_result
+    if is_flow_control_step(execution_graph=workflow.execution_graph, node=step):
+        nodes_to_discard = handle_flow_control(
+            current_step_selector=step,
+            flow_control=step_result,
+            execution_graph=workflow.execution_graph,
+        )
     else:
-        step_outputs, flow_control = step_result, FlowControl(mode="pass")
-    execution_cache.register_step_outputs(
-        step_name=step_name,
-        outputs=step_outputs,
-    )
-    nodes_to_discard = handle_flow_control(
-        current_step_selector=step,
-        flow_control=flow_control,
-        execution_graph=workflow.execution_graph,
-    )
+        execution_cache.register_step_outputs(
+            step_name=step_name,
+            indices=dynamic_batches_manager.get_batch_element_indices(
+                data_lineage=workflow.execution_graph.nodes[step][
+                    "dimensionality_lineage"
+                ][-1]
+            ),
+            outputs=step_result,
+        )
+        nodes_to_discard = set()
     logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard

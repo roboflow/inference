@@ -183,7 +183,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         images: Batch[Optional[WorkflowImageData]],
         model_id: str,

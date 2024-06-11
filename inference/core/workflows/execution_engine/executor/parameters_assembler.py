@@ -13,6 +13,10 @@ from inference.core.workflows.execution_engine.compiler.utils import (
 from inference.core.workflows.execution_engine.executor.execution_cache import (
     ExecutionCache,
 )
+from inference.core.workflows.execution_engine.executor.new_execution_cache import (
+    DynamicBatchesManager,
+    ExecutionBranchesManager,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 EXCLUDED_FIELDS = {"type", "name"}
@@ -23,6 +27,8 @@ def assembly_step_parameters(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     accepts_batch_input: bool,
+    branches_manager: ExecutionBranchesManager,
+    dynamic_batches_manager: DynamicBatchesManager,
 ) -> Dict[str, Any]:
     manifest_dict = get_manifest_fields_values(step_manifest=step_manifest)
     result = {}

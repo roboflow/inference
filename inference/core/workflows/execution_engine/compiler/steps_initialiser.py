@@ -59,7 +59,8 @@ def initialise_step(
         raise BlockInterfaceError(
             public_message=f"While initialisation of step {step_manifest.name} of type: {step_manifest.type} there "
             f"was an error in creating instance of workflow block. One of parameters defined "
-            f"({list(init_parameters_values.keys())}) was invalid. Details: {e}",
+            f"({list(init_parameters_values.keys())}) was invalid or block class do not implement all methods. "
+            f"Details: {e}",
             context="workflow_compilation | steps_initialisation",
             inner_error=e,
         ) from e

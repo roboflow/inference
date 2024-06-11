@@ -46,6 +46,7 @@ def compile_workflow(
     execution_graph = denote_workflow_dimensionality(
         execution_graph=execution_graph,
         available_bocks=available_blocks,
+        parsed_workflow_definition=parsed_workflow_definition,
     )
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
