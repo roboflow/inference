@@ -102,7 +102,6 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
-    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -143,7 +142,7 @@ from inference.core.workflows.core_steps.common.query_language.introspection.cor
     prepare_operations_descriptions,
     prepare_operators_descriptions,
 )
-from inference.core.workflows.entities.base import OutputDefinition, StepExecutionMode
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -460,7 +459,6 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
-            step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
@@ -471,7 +469,6 @@ class HttpInterface(BaseInterface):
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                step_execution_mode=step_execution_mode,
                 prevent_local_images_loading=True,
             )
             result = await execution_engine.run_async(
@@ -945,7 +942,6 @@ class HttpInterface(BaseInterface):
             async def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
-                step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
                     "workflows_core.api_key": None,
@@ -955,7 +951,6 @@ class HttpInterface(BaseInterface):
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                    step_execution_mode=step_execution_mode,
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")

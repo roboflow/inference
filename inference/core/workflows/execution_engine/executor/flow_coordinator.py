@@ -83,7 +83,9 @@ def establish_execution_order(
         distance_key=distance_key,
     )
     return group_nodes_by_sorted_key_value(
-        graph=steps_flow_graph, excluded_nodes={start_node, end_node}
+        graph=steps_flow_graph,
+        excluded_nodes={start_node, end_node},
+        key=distance_key,
     )
 
 

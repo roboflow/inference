@@ -2,7 +2,6 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.core.workflows.execution_engine.executor.core import run_workflow
@@ -22,7 +21,6 @@ class ExecutionEngine:
         workflow_definition: dict,
         init_parameters: Optional[Dict[str, Any]] = None,
         max_concurrent_steps: int = 1,
-        step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
         prevent_local_images_loading: bool = False,
     ) -> "ExecutionEngine":
         if init_parameters is None:
@@ -34,7 +32,6 @@ class ExecutionEngine:
         return cls(
             compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
-            step_execution_mode=step_execution_mode,
             prevent_local_images_loading=prevent_local_images_loading,
         )
 
@@ -42,12 +39,10 @@ class ExecutionEngine:
         self,
         compiled_workflow: CompiledWorkflow,
         max_concurrent_steps: int,
-        step_execution_mode: StepExecutionMode,
         prevent_local_images_loading: bool,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
-        self._step_execution_mode = step_execution_mode
         self._prevent_local_images_loading = prevent_local_images_loading
 
     def run(
@@ -80,5 +75,4 @@ class ExecutionEngine:
             workflow=self._compiled_workflow,
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
-            step_execution_mode=self._step_execution_mode,
         )

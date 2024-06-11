@@ -4,7 +4,6 @@ import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -64,7 +63,6 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -143,7 +141,6 @@ async def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -173,7 +170,6 @@ async def test_test_static_crop_workflow_when_invalid_crop_coordinates_defined(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when

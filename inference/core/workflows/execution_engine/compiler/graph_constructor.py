@@ -8,10 +8,13 @@ import networkx as nx
 from networkx import DiGraph
 
 from inference.core.workflows.constants import (
+    DIMENSIONALITY_LINEAGE_PROPERTY,
     DIMENSIONALITY_PROPERTY,
     EXECUTION_BRANCHES_STACK_PROPERTY,
+    FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY,
     INPUT_NODE_KIND,
     OUTPUT_NODE_KIND,
+    ROOT_BRANCH_NAME,
     STEP_INPUT_PROPERTY,
     STEP_NODE_KIND,
 )
@@ -22,7 +25,6 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
-    ConditionalBranchesCollapseError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
 )
@@ -337,7 +339,7 @@ def denote_execution_branches(execution_graph: DiGraph) -> DiGraph:
     )
     execution_graph = denote_execution_branches_for_node(
         node_name=super_input_node,
-        branches=["Branch[root]"],
+        output_branches=[ROOT_BRANCH_NAME],
         execution_graph=execution_graph,
     )
     for node in traverse_graph_ensuring_parents_are_reached_first(
@@ -371,12 +373,17 @@ def start_execution_branches_for_node_successors(
     node_execution_branches_stack = execution_graph.nodes[node][
         EXECUTION_BRANCHES_STACK_PROPERTY
     ]
+    execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY] = {}
     for successor in execution_graph.successors(node):
         successor_stack = copy(node_execution_branches_stack)
-        successor_stack.append(f"Branch[{node} -> {successor}]")
+        successor_execution_branch = f"Branch[{node} -> {successor}]"
+        successor_stack.append(successor_execution_branch)
+        execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY][
+            successor
+        ] = successor_execution_branch
         execution_graph = denote_execution_branches_for_node(
             node_name=successor,
-            branches=successor_stack,
+            output_branches=successor_stack,
             execution_graph=execution_graph,
         )
     return execution_graph
@@ -412,7 +419,7 @@ def denote_common_execution_branch_for_merged_branches(
     if len(merged_stack) == 0:
         raise ValueError(f"Could not merge execution branches defined in step: {node}")
     execution_graph = denote_execution_branches_for_node(
-        node_name=node, branches=merged_stack, execution_graph=execution_graph
+        node_name=node, output_branches=merged_stack, execution_graph=execution_graph
     )
     return denote_execution_branches_for_nodes(
         node_names=execution_graph.successors(node),
@@ -443,16 +450,18 @@ def denote_execution_branches_for_nodes(
     for node_name in node_names:
         execution_graph = denote_execution_branches_for_node(
             node_name=node_name,
-            branches=branches,
+            output_branches=branches,
             execution_graph=execution_graph,
         )
     return execution_graph
 
 
 def denote_execution_branches_for_node(
-    node_name: str, branches: List[str], execution_graph: DiGraph
+    node_name: str, output_branches: List[str], execution_graph: DiGraph
 ) -> DiGraph:
-    execution_graph.nodes[node_name][EXECUTION_BRANCHES_STACK_PROPERTY] = branches
+    execution_graph.nodes[node_name][
+        EXECUTION_BRANCHES_STACK_PROPERTY
+    ] = output_branches
     return execution_graph
 
 
@@ -522,6 +531,7 @@ def denote_workflow_dimensionality(
         super_input_node=super_input_node,
     )
     execution_graph.nodes[super_input_node][DIMENSIONALITY_PROPERTY] = 0
+    execution_graph.nodes[super_input_node][DIMENSIONALITY_LINEAGE_PROPERTY] = []
     for node in traverse_graph_ensuring_parents_are_reached_first(
         graph=execution_graph,
         start_node=super_input_node,
@@ -532,10 +542,16 @@ def denote_workflow_dimensionality(
                 if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
                 else 0
             )
+            dimensionality_lineage = (
+                ["<workflow_input>"]
+                if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
+                else []
+            )
             execution_graph = set_dimensionality_for_node(
                 execution_graph=execution_graph,
                 node=node,
                 dimensionality=dimensionality,
+                dimensionality_lineage=dimensionality_lineage,
             )
         elif is_step_node(execution_graph=execution_graph, node=node):
             execution_graph = set_dimensionality_for_step(
@@ -544,13 +560,16 @@ def denote_workflow_dimensionality(
                 block_class_by_step_name=block_class_by_step_name,
             )
         elif is_output_node(execution_graph=execution_graph, node=node):
-            # output is allowed to have exactly one predecessors
+            # output is allowed to have exactly one predecessor
             predecessor_node = list(execution_graph.predecessors(node))[0]
             execution_graph = set_dimensionality_for_node(
                 execution_graph=execution_graph,
                 node=node,
                 dimensionality=execution_graph.nodes[predecessor_node][
                     DIMENSIONALITY_PROPERTY
+                ],
+                dimensionality_lineage=execution_graph.nodes[predecessor_node][
+                    DIMENSIONALITY_LINEAGE_PROPERTY
                 ],
             )
     execution_graph.remove_node(super_input_node)
@@ -559,7 +578,7 @@ def denote_workflow_dimensionality(
 
 
 DIMENSIONALITY_DELTAS_BY_MODE = {
-    "reduces": -1,
+    "decreases": -1,
     "keeps_the_same": 0,
     "increases": 1,
 }
@@ -572,35 +591,40 @@ def set_dimensionality_for_step(
 ) -> DiGraph:
     step_name = get_last_chunk_of_selector(selector=node)
     if not block_class_by_step_name[step_name].produces_batch_output():
-        print(f"Step {node} does not produce batches")
         return set_dimensionality_for_node(
             execution_graph=execution_graph,
             node=node,
             dimensionality=0,
+            dimensionality_lineage=[],
         )
     predecessors_dimensionalities = defaultdict(list)
-    all_encountered_batch_dimensionalities = set()
+    predecessors_dimensionalities_lineage = defaultdict(list)
+    significant_batch_dimensionalities = set()
+    significant_lineages = set()
     for predecessor in execution_graph.predecessors(node):
         predecessor_dimensionality = execution_graph.nodes[predecessor][
             DIMENSIONALITY_PROPERTY
         ]
-        print(f"Predecessor: {predecessor} - dim: {predecessor_dimensionality}")
+        predecessor_dimensionality_lineage = execution_graph.nodes[predecessor][
+            DIMENSIONALITY_LINEAGE_PROPERTY
+        ]
         edge_properties = execution_graph.edges[(predecessor, node)]
         input_property = edge_properties.get(STEP_INPUT_PROPERTY)
         predecessors_dimensionalities[input_property].append(predecessor_dimensionality)
+        predecessors_dimensionalities_lineage[input_property].append(
+            predecessor_dimensionality_lineage
+        )
         if predecessor_dimensionality == 0:
             continue
-        all_encountered_batch_dimensionalities.add(predecessor_dimensionality)
-    print(
-        f"all_encountered_batch_dimensionalities for {node}: {all_encountered_batch_dimensionalities}"
-    )
-    if len(all_encountered_batch_dimensionalities) == 0:
+        significant_batch_dimensionalities.add(predecessor_dimensionality)
+        significant_lineages.add(" <-> ".join(predecessor_dimensionality_lineage))
+    if len(significant_batch_dimensionalities) == 0:
         # no inputs found, step will produce singular output
-        print(f"No batch inputs found for {node}")
         return set_dimensionality_for_node(
             execution_graph=execution_graph,
             node=node,
             dimensionality=0,
+            dimensionality_lineage=[],
         )
     dimensionality_change = DIMENSIONALITY_DELTAS_BY_MODE[
         block_class_by_step_name[step_name].get_impact_on_data_dimensionality()
@@ -609,7 +633,7 @@ def set_dimensionality_for_step(
         step_name
     ].get_data_dimensionality_property()
     if dimensionality_reference_property is None:
-        if len(all_encountered_batch_dimensionalities) > 1:
+        if len(significant_batch_dimensionalities) > 1:
             dimensionality_summary = ""
             for prop, dims in predecessors_dimensionalities.items():
                 dims_stringified = [str(e) for e in dims]
@@ -619,11 +643,29 @@ def set_dimensionality_for_step(
                 f"requires all batch inputs to be of the same dimensionality, but got: \n"
                 f"{dimensionality_summary}"
             )
-        inputs_dim = next(iter(all_encountered_batch_dimensionalities))
+        if len(significant_lineages) > 1:
+            lineage_summary = ""
+            for prop, lineage in predecessors_dimensionalities_lineage.items():
+                lineage_stringified = [" -> ".join(e) for e in lineage]
+                lineage_summary = (
+                    f"{lineage_summary}\t{prop}: [{', '.join(lineage_stringified)}]\n"
+                )
+            raise RuntimeError(
+                f"While verifying of workflow definition encountered step {node} that "
+                f"requires all batch inputs to present the same data lineage, but got: \n"
+                f"{lineage_summary}"
+            )
+        inputs_dim = next(iter(significant_batch_dimensionalities))
+        lineage = next(iter(significant_lineages)).split(" <-> ")
+        if dimensionality_change < 0:
+            lineage = lineage[:dimensionality_change]
+        if dimensionality_change > 0:
+            lineage.append(f"<{step_name}>")
         return set_dimensionality_for_node(
             execution_graph=execution_graph,
             node=node,
-            dimensionality=inputs_dim + dimensionality_change,
+            dimensionality=max(inputs_dim + dimensionality_change, 0),
+            dimensionality_lineage=lineage,
         )
     if dimensionality_reference_property not in predecessors_dimensionalities:
         raise RuntimeError(
@@ -643,22 +685,85 @@ def set_dimensionality_for_step(
             f" following different dimensions: {dimensionalities_for_reference_property}, whereas it is allowed to "
             f"combine non-batch inputs and batches with the same number of dimensions."
         )
+    selected_dimensionality = max(
+        max(dimensionalities_for_reference_property) + dimensionality_change, 0
+    )
+    for property_name, property_dims in predecessors_dimensionalities.items():
+        non_zero_dims_diffs = [
+            abs(dim - selected_dimensionality) for dim in property_dims if dim > 0
+        ]
+        if any(diff > 1 for diff in non_zero_dims_diffs):
+            raise ValueError(
+                f"It is expected that step changes dimensionality by at max 1, whereas node: {node} "
+                f"defines property: {property_name} with input dimensionalities: {property_dims} that"
+                f"differs from defined block dimensionality ({selected_dimensionality}) more than 1."
+            )
+    lineages_for_reference_property = predecessors_dimensionalities_lineage[
+        dimensionality_reference_property
+    ]
+    unique_lineages_for_reference_property = set()
+    not_empty_lineage = None
+    allowed_different_lineages = 1
+    for lineage in lineages_for_reference_property:
+        if not lineage:
+            allowed_different_lineages = 2
+        else:
+            not_empty_lineage = lineage
+        unique_lineages_for_reference_property.add(" <-> ".join(lineage))
+    if len(unique_lineages_for_reference_property) > allowed_different_lineages:
+        raise ValueError(
+            f"For step {node}, property: {dimensionality_reference_property} fed with data that declare the"
+            f" following different data lineage: {unique_lineages_for_reference_property}, whereas it is allowed to "
+            f"combine non-batch inputs and batches with the same lineage."
+        )
+    selected_lineage = []
+    if not_empty_lineage:
+        selected_lineage = not_empty_lineage
+    for property_name, lineages in predecessors_dimensionalities_lineage.items():
+        if property_name == dimensionality_reference_property:
+            continue
+        for lineage in lineages:
+            if not lineage:
+                continue
+            if lineage == selected_lineage:
+                continue
+            if lineage[:-1] == selected_lineage:
+                continue
+            if lineage == selected_lineage[:-1]:
+                continue
+            raise ValueError(
+                f"For step {node}, property: {dimensionality_reference_property} fed with data that declare the"
+                f" following different data lineage: {unique_lineages_for_reference_property}. At the same time, other "
+                f"properties are only allowed to declare non-batch lineage, or batch lineage that matches reference "
+                f"property lineage, or differs only regarding last element. For property: {property_name} found "
+                f"not matching lineage: {lineage}"
+            )
+    if dimensionality_change < 0:
+        selected_lineage = selected_lineage[:dimensionality_change]
+    if dimensionality_change > 0:
+        selected_lineage.append(f"<{step_name}>")
     return set_dimensionality_for_node(
         execution_graph=execution_graph,
         node=node,
-        dimensionality=max(dimensionalities_for_reference_property)
-        + dimensionality_change,
+        dimensionality=selected_dimensionality,
+        dimensionality_lineage=selected_lineage,
     )
 
 
 def set_dimensionality_for_node(
-    execution_graph: DiGraph, node: str, dimensionality: int
+    execution_graph: DiGraph,
+    node: str,
+    dimensionality: int,
+    dimensionality_lineage: List[str],
 ) -> DiGraph:
     if dimensionality < 0:
         raise ValueError(
             f"Attempted to set dimensionality {dimensionality} for step: {node}"
         )
     execution_graph.nodes[node][DIMENSIONALITY_PROPERTY] = dimensionality
+    execution_graph.nodes[node][
+        DIMENSIONALITY_LINEAGE_PROPERTY
+    ] = dimensionality_lineage
     return execution_graph
 
 
@@ -666,11 +771,17 @@ def add_super_input_node_in_execution_graph(
     execution_graph: DiGraph,
     super_input_node: str,
 ) -> DiGraph:
-    input_nodes = get_nodes_of_specific_kind(
+    nodes_to_attach_super_input_into = get_nodes_of_specific_kind(
         execution_graph=execution_graph, kind=INPUT_NODE_KIND
     )
+    step_nodes_without_predecessors = [
+        node
+        for node in execution_graph.nodes
+        if not list(execution_graph.predecessors(node))
+    ]
+    nodes_to_attach_super_input_into.update(step_nodes_without_predecessors)
     execution_graph.add_node(super_input_node, kind="SUPER_INPUT")
-    for node in input_nodes:
+    for node in nodes_to_attach_super_input_into:
         execution_graph.add_edge(super_input_node, node)
     return execution_graph
 
@@ -733,3 +844,5 @@ def ensure_all_nodes_have_dimensionality_associated(execution_graph: DiGraph) ->
     for node in execution_graph.nodes:
         if DIMENSIONALITY_PROPERTY not in execution_graph.nodes[node]:
             raise ValueError(f"Could not associate dimensionality for {node}")
+        if DIMENSIONALITY_LINEAGE_PROPERTY not in execution_graph.nodes[node]:
+            raise ValueError(f"Could not associate dimensionality lineage for {node}")

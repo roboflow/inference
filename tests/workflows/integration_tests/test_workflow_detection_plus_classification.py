@@ -3,7 +3,6 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
@@ -55,7 +54,6 @@ async def test_detection_plus_classification_workflow_when_minimal_valid_input_p
         workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when

@@ -6,7 +6,6 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
@@ -67,7 +66,6 @@ async def test_flow_control_model(
         workflow_definition=FLOW_CONTROL_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when

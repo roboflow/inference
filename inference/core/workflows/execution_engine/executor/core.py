@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Set
 
 from inference.core import logger
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
@@ -30,7 +29,6 @@ async def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
-    step_execution_mode: StepExecutionMode,
 ) -> Dict[str, List[Any]]:
     execution_cache = ExecutionCache.init()
     execution_coordinator = ParallelStepExecutionCoordinator.init(
@@ -40,6 +38,7 @@ async def run_workflow(
     next_steps = execution_coordinator.get_steps_to_execute_next(
         steps_to_discard=steps_to_discard
     )
+
     while next_steps is not None:
         steps_to_discard = await execute_steps(
             next_steps=next_steps,
@@ -47,7 +46,6 @@ async def run_workflow(
             runtime_parameters=runtime_parameters,
             execution_cache=execution_cache,
             max_concurrent_steps=max_concurrent_steps,
-            step_execution_mode=step_execution_mode,
         )
         next_steps = execution_coordinator.get_steps_to_execute_next(
             steps_to_discard=steps_to_discard
@@ -65,9 +63,8 @@ async def execute_steps(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     max_concurrent_steps: int,
-    step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
-    logger.info(f"Executing steps: {next_steps}. Execution mode: {step_execution_mode}")
+    logger.info(f"Executing steps: {next_steps}.")
     nodes_to_discard = set()
     steps_batches = list(
         make_batches(iterable=next_steps, batch_size=max_concurrent_steps)
@@ -80,7 +77,6 @@ async def execute_steps(
                 workflow=workflow,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
-                step_execution_mode=step_execution_mode,
             )
             for step in steps_batch
         ]
@@ -95,7 +91,6 @@ async def safe_execute_step(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
-    step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
     try:
         return await execute_step(
@@ -103,7 +98,6 @@ async def safe_execute_step(
             workflow=workflow,
             runtime_parameters=runtime_parameters,
             execution_cache=execution_cache,
-            step_execution_mode=step_execution_mode,
         )
     except WorkflowError as error:
         raise error
@@ -121,7 +115,6 @@ async def execute_step(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
-    step_execution_mode: StepExecutionMode,
 ) -> Set[str]:
     logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
     step_name = get_last_chunk_of_selector(selector=step)
@@ -139,12 +132,7 @@ async def execute_step(
         execution_cache=execution_cache,
         accepts_batch_input=step_instance.accepts_batch_input(),
     )
-    step_run_method = (
-        step_instance.run_locally
-        if step_execution_mode is StepExecutionMode.LOCAL
-        else step_instance.run_remotely
-    )
-    step_result = await step_run_method(**step_parameters)
+    step_result = await step_instance.run(**step_parameters)
     if isinstance(step_result, tuple):
         step_outputs, flow_control = step_result
     else:

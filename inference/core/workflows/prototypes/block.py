@@ -12,6 +12,12 @@ from inference.core.workflows.execution_engine.introspection.utils import (
     get_full_type_name,
 )
 
+BatchElementOutputs = Dict[str, Any]
+BatchElementResult = Union[BatchElementOutputs, FlowControl]
+BlockResult = Union[
+    BatchElementResult, List[BatchElementResult], List[List[BatchElementResult]]
+]
+
 
 class WorkflowBlockManifest(BaseModel, ABC):
     model_config = ConfigDict(
@@ -61,7 +67,7 @@ class WorkflowBlock(ABC):
     @classmethod
     def get_impact_on_data_dimensionality(
         cls,
-    ) -> Literal["reduces", "keeps_the_same", "increases"]:
+    ) -> Literal["decreases", "keeps_the_same", "increases"]:
         if not cls.produces_batch_output():
             raise BlockInterfaceError(
                 public_message="Class method `get_impact_on_data_dimensionality()` is only relevant "
@@ -75,19 +81,9 @@ class WorkflowBlock(ABC):
         return None
 
     @abstractmethod
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         pass
-
-    async def run_remotely(
-        self,
-        *args,
-        **kwargs,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        logger.info(
-            "Block has no implementation for run_remotely() method - using run_locally() instead"
-        )
-        return await self.run_locally(*args, **kwargs)

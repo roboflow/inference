@@ -7,7 +7,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
 )
-from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -122,7 +121,6 @@ async def test_filtering_workflow_when_minimal_valid_input_provided(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -166,7 +164,6 @@ async def test_filtering_workflow_when_batch_input_provided(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -221,7 +218,6 @@ async def test_filtering_workflow_when_model_id_not_provided_in_input(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -247,7 +243,6 @@ async def test_filtering_workflow_when_image_not_provided_in_input(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -273,7 +268,6 @@ async def test_filtering_workflow_when_classes_not_provided(
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when
@@ -300,7 +294,6 @@ async def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_mode
         workflow_definition=FILTERING_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        step_execution_mode=StepExecutionMode.LOCAL,
     )
 
     # when

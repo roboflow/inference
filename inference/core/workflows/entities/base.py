@@ -21,11 +21,6 @@ from inference.core.workflows.entities.types import (
 )
 
 
-class StepExecutionMode(Enum):
-    LOCAL = "local"
-    REMOTE = "remote"
-
-
 class OutputDefinition(BaseModel):
     name: str
     kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
