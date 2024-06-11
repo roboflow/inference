@@ -53,10 +53,14 @@ class PaliGemma(RoboflowInferenceModel):
 
     def initialize_model(self):
         self.dtype = torch.float16
-        self.model = PaliGemmaForConditionalGeneration.from_pretrained(
-            self.cache_dir,
-            device_map=DEVICE,
-        ).eval().to(self.dtype)
+        self.model = (
+            PaliGemmaForConditionalGeneration.from_pretrained(
+                self.cache_dir,
+                device_map=DEVICE,
+            )
+            .eval()
+            .to(self.dtype)
+        )
 
         self.processor = AutoProcessor.from_pretrained(
             self.cache_dir,
