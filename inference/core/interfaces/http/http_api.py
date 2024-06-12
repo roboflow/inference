@@ -1622,7 +1622,9 @@ class HttpInterface(BaseInterface):
                     max_detections=max_detections,
                     visualization_labels=labels,
                     visualization_stroke_width=stroke,
-                    visualize_predictions=(format == "image" or format == "image_and_json"),
+                    visualize_predictions=(
+                        format == "image" or format == "image_and_json"
+                    ),
                     disable_preproc_auto_orient=disable_preproc_auto_orient,
                     disable_preproc_contrast=disable_preproc_contrast,
                     disable_preproc_grayscale=disable_preproc_grayscale,
