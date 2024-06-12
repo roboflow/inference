@@ -449,11 +449,11 @@ class InferenceHTTPClient:
                 parsed_response, request_data.image_scaling_factors
             ):
                 if parsed_response_element.get("visualization") is not None:
-                    parsed_response_element[
-                        "visualization"
-                    ] = transform_base64_visualisation(
-                        visualisation=parsed_response_element["visualization"],
-                        expected_format=self.__inference_configuration.output_visualisation_format,
+                    parsed_response_element["visualization"] = (
+                        transform_base64_visualisation(
+                            visualisation=parsed_response_element["visualization"],
+                            expected_format=self.__inference_configuration.output_visualisation_format,
+                        )
                     )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
@@ -521,11 +521,11 @@ class InferenceHTTPClient:
                 parsed_response, request_data.image_scaling_factors
             ):
                 if parsed_response_element.get("visualization") is not None:
-                    parsed_response_element[
-                        "visualization"
-                    ] = transform_base64_visualisation(
-                        visualisation=parsed_response_element["visualization"],
-                        expected_format=self.__inference_configuration.output_visualisation_format,
+                    parsed_response_element["visualization"] = (
+                        transform_base64_visualisation(
+                            visualisation=parsed_response_element["visualization"],
+                            expected_format=self.__inference_configuration.output_visualisation_format,
+                        )
                     )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
