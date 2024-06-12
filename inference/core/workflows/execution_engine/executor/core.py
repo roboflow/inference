@@ -89,6 +89,8 @@ async def run_workflow(
         workflow_outputs=workflow.workflow_definition.outputs,
         execution_cache=execution_cache,
         runtime_parameters=runtime_parameters,
+        execution_graph=workflow.execution_graph,
+        dynamic_batches_manager=dynamic_batches_manager,
     )
 
 
@@ -176,7 +178,14 @@ async def execute_step(
         branches_manager=branches_manager,
         dynamic_batches_manager=dynamic_batches_manager,
     )
+    data_lineage = None
+    registered_lineage = workflow.execution_graph.nodes[step][
+        DIMENSIONALITY_LINEAGE_PROPERTY
+    ]
+    if registered_lineage:
+        data_lineage = registered_lineage[-1]
     step_result = await run_step(
+        step_name=step_name,
         step_instance=step_instance,
         parameters=step_parameters,
         dynamic_batches_manager=dynamic_batches_manager,
@@ -184,24 +193,15 @@ async def execute_step(
         step_controls_flow=is_flow_control_step(
             execution_graph=workflow.execution_graph, node=step
         ),
+        data_lineage=data_lineage,
     )
+    nodes_to_discard = set()
     if is_flow_control_step(execution_graph=workflow.execution_graph, node=step):
         nodes_to_discard = handle_flow_control(
             current_step_selector=step,
             flow_control=step_result,
             execution_graph=workflow.execution_graph,
         )
-    else:
-        execution_cache.register_step_outputs(
-            step_name=step_name,
-            indices=dynamic_batches_manager.get_batch_element_indices(
-                data_lineage=workflow.execution_graph.nodes[step][
-                    "dimensionality_lineage"
-                ][-1]
-            ),
-            outputs=step_result,
-        )
-        nodes_to_discard = set()
     logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard
 
@@ -496,26 +496,32 @@ def retrieve_value_from_runtime_input(
 
 
 async def run_step(
+    step_name: str,
     step_instance: WorkflowBlock,
     parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     dynamic_batches_manager: DynamicBatchesManager,
     step_controls_flow: bool,
+    data_lineage: Optional[str],
 ) -> Optional[Batch[FlowControl]]:
     if step_instance.accepts_batch_input():
         return await run_step_in_batch_mode(
+            step_name=step_name,
             step_instance=step_instance,
             parameters=parameters,
             execution_cache=execution_cache,
             dynamic_batches_manager=dynamic_batches_manager,
             step_controls_flow=step_controls_flow,
+            data_lineage=data_lineage,
         )
     return await run_step_in_non_batch_mode(
+        step_name=step_name,
         step_instance=step_instance,
         parameters=parameters,
         execution_cache=execution_cache,
         dynamic_batches_manager=dynamic_batches_manager,
         step_controls_flow=step_controls_flow,
+        data_lineage=data_lineage,
     )
 
 
@@ -526,7 +532,8 @@ async def run_step_in_batch_mode(
     execution_cache: ExecutionCache,
     dynamic_batches_manager: DynamicBatchesManager,
     step_controls_flow: bool,
-) -> Optional[Batch[FlowControl]]:
+    data_lineage: Optional[str],
+) -> Optional[Union[FlowControl, Batch[FlowControl]]]:
     if not step_instance.accepts_empty_datapoints():
         non_empty_indices = get_all_non_empty_indices(value=parameters)
         parameters = filter_parameters(
@@ -538,10 +545,12 @@ async def run_step_in_batch_mode(
         reference_parameter=step_instance.get_data_dimensionality_property(),
     )
     results = await step_instance.run(**parameters)
-    if step_controls_flow:
-        return results
     if not step_instance.produces_batch_output():
-        # TODO
+        if step_controls_flow:
+            return results
+        execution_cache.register_non_batch_step_outputs(
+            step_name=step_name, outputs=results
+        )
         return None
     if step_instance.get_impact_on_data_dimensionality() == "decreases":
         reduced_indices_of_parameters = []
@@ -553,25 +562,35 @@ async def run_step_in_batch_mode(
                 already_spotted_indices.add(decreased_index)
         indices_of_parameters = reduced_indices_of_parameters
     if indices_of_parameters == [()]:
-        # we have singular output
+        if step_controls_flow:
+            return results
+        execution_cache.register_non_batch_step_outputs(
+            step_name=step_name, outputs=results
+        )
         return None
     if len(results) != len(indices_of_parameters):
         raise ValueError("Missmatch in step result dimension")
     if step_instance.get_impact_on_data_dimensionality() == "increases":
+        if data_lineage is None:
+            raise ValueError("Data lineage required")
         increased_indices, increased_data = [], []
+        nested_sizes = []
         for index, result in zip(indices_of_parameters, results):
+            nested_sizes.append(len(result))
             for nested_idx, result_element in enumerate(result):
                 increased_indices.append(index + (nested_idx,))
                 increased_data.append(result_element)
         indices_of_parameters = increased_indices
         results = increased_data
-        dynamic_batches_manager.register_batch_sizes(data_lineage=..., sizes=...)
+        dynamic_batches_manager.register_batch_sizes(
+            data_lineage=data_lineage, sizes=nested_sizes
+        )
+    if step_controls_flow:
+        return Batch(results, indices_of_parameters)
     execution_cache.register_batch_of_step_outputs(
         step_name=step_name, indices=indices_of_parameters, outputs=results
     )
-
-    # register results
-    return ...
+    return None
 
 
 def get_all_non_empty_indices(value: Any) -> Set[Tuple[int, ...]]:
@@ -680,10 +699,12 @@ def retrieve_indices_of_parameter(value: Any) -> List[Tuple[int, ...]]:
 
 
 async def run_step_in_non_batch_mode(
+    step_name: str,
     step_instance: WorkflowBlock,
     parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     dynamic_batches_manager: DynamicBatchesManager,
     step_controls_flow: bool,
+    data_lineage: Optional[str],
 ) -> Optional[Batch[FlowControl]]:
     pass

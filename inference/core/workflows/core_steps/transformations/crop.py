@@ -24,6 +24,7 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -79,22 +80,21 @@ class CropBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    @classmethod
+    def get_impact_on_data_dimensionality(
+        cls,
+    ) -> Literal["decreases", "keeps_the_same", "increases"]:
+        return "increases"
+
     async def run(
         self,
         images: Batch[Optional[WorkflowImageData]],
         predictions: Batch[Optional[sv.Detections]],
-    ) -> Tuple[List[Any], FlowControl]:
-        result = list(
-            itertools.chain.from_iterable(
-                crop_image(image=image, detections=detections)
-                for image, detections in Batch.zip_nonempty(
-                    batches=[images, predictions]
-                )
-            )
-        )
-        if len(result) == 0:
-            return result, FlowControl(mode="terminate_branch")
-        return result, FlowControl(mode="pass")
+    ) -> BlockResult:
+        return [
+            crop_image(image=image, detections=detections)
+            for image, detections in Batch.zip_nonempty(batches=[images, predictions])
+        ]
 
 
 def crop_image(
