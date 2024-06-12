@@ -57,13 +57,23 @@ def is_tunnel_container(container: Container) -> bool:
 
 
 def extract_tunnel_url(container: Container) -> str:
-    for _ in range(5):
+    for n in range(5):
         tunnel_logs = container.logs(tail=10).decode()
         for logline in reversed(tunnel_logs.split("\n")):
             tunnel_url, *other_parts = logline.split(" is forwarding to ", 1)
             if other_parts:
                 return tunnel_url
-
+        if n == 0:
+            print("Waiting for tunnel to start...")
         time.sleep(1)
 
-    raise RuntimeError(f"Tunnel URL not found:\n{tunnel_logs}")
+    raise RuntimeError(f"Tunnel failed to start:\n{tunnel_logs}")
+
+
+def stop_tunnel_container() -> None:
+    tunnel_container = find_running_tunnel_container()
+    if tunnel_container:
+        container_adapter.terminate_running_containers(
+            containers=[tunnel_container],
+            interactive_mode=False,
+        )

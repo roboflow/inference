@@ -45,6 +45,16 @@ is considered as more important and will shadow the value defined in `.env` file
 
 Use the `--dev` flag to start the Inference Server in development mode. Development mode enables the Inference Server's built in notebook environment for easy testing and development.
 
+#### Tunnel
+
+Use the `--tunnel` flag to start the Inference Server with a tunnel to expose inference to external requests on a TLS-enabled endpoint.
+
+The random generated address will be on server start output:
+
+```
+Tunnel to local inference running on https://somethingrandom-ip-192-168-0-1.roboflow.run
+```
+
 ### inference server status
 
 Checks the status of the local inference server.

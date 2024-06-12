@@ -8,7 +8,7 @@ from inference_cli.lib.container_adapter import (
     ensure_docker_is_running,
     stop_inference_containers,
 )
-from inference_cli.lib.tunnel_adapter import start_tunnel
+from inference_cli.lib.tunnel_adapter import start_tunnel, stop_tunnel_container
 
 server_app = typer.Typer(
     help="""Commands for running the inference server locally. \n 
@@ -64,7 +64,7 @@ def start(
         typer.Option(
             "--tunnel",
             help="Start a tunnel to expose inference to external requests on a TLS-enabled "
-            "https://<subdomain>.roboflow.run domain",
+            "https://<subdomain>.roboflow.run endpoint",
         )
     ] = False,
 ) -> None:
@@ -126,6 +126,12 @@ def stop() -> None:
 
     try:
         stop_inference_containers()
+    except Exception as stop_error:
+        typer.echo(stop_error)
+        raise typer.Exit(code=1) from stop_error
+
+    try:
+        stop_tunnel_container()
     except Exception as stop_error:
         typer.echo(stop_error)
         raise typer.Exit(code=1) from stop_error
