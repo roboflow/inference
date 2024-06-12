@@ -316,6 +316,13 @@ class InferenceHTTPClient:
                 parsed_response = {"visualization": visualisation}
             else:
                 parsed_response = response.json()
+                if parsed_response.get("visualization") is not None:
+                    parsed_response["visualization"] = (
+                        transform_base64_visualisation(
+                            visualisation=parsed_response["visualization"],
+                            expected_format=self.__inference_configuration.output_visualisation_format,
+                        )
+                    )
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -375,6 +382,13 @@ class InferenceHTTPClient:
                 parsed_response = {"visualization": visualisation}
             else:
                 parsed_response = response
+                if parsed_response.get("visualization") is not None:
+                    parsed_response["visualization"] = (
+                        transform_base64_visualisation(
+                            visualisation=parsed_response["visualization"],
+                            expected_format=self.__inference_configuration.output_visualisation_format,
+                        )
+                    )
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
