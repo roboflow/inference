@@ -2,7 +2,18 @@ import base64
 from abc import abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import cv2
 import numpy as np
@@ -117,8 +128,11 @@ class Batch(Generic[B]):
                 f"Could not create common masks for batches of not matching size"
             ) from e
 
-    def __init__(self, content: List[B]):
+    def __init__(
+        self, content: List[B], indices: Optional[List[Tuple[int, ...]]] = None
+    ):
         self._content = content
+        self._indices = indices
 
     def __getitem__(
         self, index: Union[int, List[bool], np.ndarray]
@@ -137,6 +151,15 @@ class Batch(Generic[B]):
 
     def __iter__(self) -> Iterator[B]:
         yield from self._content
+
+    def filter_by_indices(self, indices_to_keep: Set[Tuple[int, ...]]) -> "Batch":
+        content, new_indices = [], []
+        for i, c in zip(self._indices, self._content):
+            if i not in indices_to_keep:
+                continue
+            content.append(c)
+            new_indices.append(i)
+        return Batch(content, new_indices)
 
     def iter_nonempty(
         self,

@@ -18,10 +18,10 @@ from inference.core.workflows.execution_engine.compiler.utils import (
 )
 
 
-class StepCache:
+class BatchStepCache:
 
     @classmethod
-    def init(cls, step_name: str) -> "StepCache":
+    def init(cls, step_name: str) -> "BatchStepCache":
         return cls(
             step_name=step_name,
             cache_content=defaultdict(lambda: defaultdict()),
@@ -90,6 +90,39 @@ class StepCache:
         return property_name in self._cache_content
 
 
+class NonBatchStepCache:
+
+    @classmethod
+    def init(cls, step_name: str) -> "NonBatchStepCache":
+        return cls(
+            step_name=step_name,
+            cache_content=dict(),
+        )
+
+    def __init__(
+        self,
+        step_name: str,
+        cache_content: Dict[str, Any],
+    ):
+        self._step_name = step_name
+        self._cache_content = cache_content
+
+    def register_outputs(self, outputs: Dict[str, Any]):
+        self._cache_content = outputs
+
+    def get_outputs(
+        self,
+        property_name: str,
+    ) -> Any:
+        return self._cache_content[property_name]
+
+    def get_all_outputs(self) -> Dict[str, Any]:
+        return self._cache_content
+
+    def is_property_defined(self, property_name: str) -> bool:
+        return property_name in self._cache_content
+
+
 class ExecutionBranchesManager:
 
     @classmethod
@@ -119,24 +152,57 @@ class ExecutionBranchesManager:
         }
         return cls(execution_branches_masks=execution_branches_masks)
 
-    def __init__(self, execution_branches_masks: Dict[str, Set[Tuple[int, ...]]]):
+    def __init__(
+        self, execution_branches_masks: Dict[str, Union[bool, Set[Tuple[int, ...]]]]
+    ):
         self._execution_branches_masks = execution_branches_masks
+        self._batch_compatibility = {
+            branch_name: not isinstance(mask, bool)
+            for branch_name, mask in execution_branches_masks.items()
+        }
 
-    def register_branch_mask(
+    def register_batch_branch_mask(
         self, branch_name: str, mask: List[Tuple[int, ...]]
     ) -> None:
         if branch_name in self._execution_branches_masks:
             raise ValueError(
                 f"Attempted to re-declare existing branch execution mask: {branch_name}"
             )
+        self._batch_compatibility[branch_name] = True
         self._execution_branches_masks[branch_name] = set(mask)
 
-    def retrieve_branch_mask(self, branch_name: str) -> Set[Tuple[int, ...]]:
-        if branch_name not in self._execution_branches_masks:
+    def register_non_batch_branch_mask(self, branch_name: str, mask: bool) -> None:
+        if branch_name in self._execution_branches_masks:
+            raise ValueError(
+                f"Attempted to re-declare existing branch execution mask: {branch_name}"
+            )
+        self._batch_compatibility[branch_name] = True
+        self._execution_branches_masks[branch_name] = mask
+
+    def retrieve_branch_mask_for_batch(self, branch_name: str) -> Set[Tuple[int, ...]]:
+        if (
+            branch_name not in self._execution_branches_masks
+            or not self._batch_compatibility.get(branch_name)
+        ):
             raise ValueError(
                 f"Attempted to reach non existing branch name: {branch_name}"
             )
         return self._execution_branches_masks[branch_name]
+
+    def retrieve_branch_mask_for_non_batch(self, branch_name: str) -> bool:
+        if (
+            branch_name not in self._execution_branches_masks
+            or self._batch_compatibility.get(branch_name)
+        ):
+            raise ValueError(
+                f"Attempted to reach non existing branch name: {branch_name}"
+            )
+        return self._execution_branches_masks[branch_name]
+
+    def is_batch_compatible_branch(self, branch_name: str) -> bool:
+        if branch_name not in self._batch_compatibility:
+            raise ValueError(f"Branch {branch_name} not registered")
+        return self._batch_compatibility[branch_name]
 
 
 class DynamicBatchesManager:
@@ -207,7 +273,7 @@ class ExecutionCache:
 
     def __init__(
         self,
-        cache_content: Dict[str, StepCache],
+        cache_content: Dict[str, Union[BatchStepCache, NonBatchStepCache]],
         batches_compatibility: Dict[str, bool],
     ):
         self._cache_content = cache_content
@@ -220,22 +286,27 @@ class ExecutionCache:
     ) -> None:
         if self.contains_step(step_name=step_name):
             return None
-        step_cache = StepCache.init(
-            step_name=step_name,
-        )
+        if compatible_with_batches:
+            step_cache = BatchStepCache.init(
+                step_name=step_name,
+            )
+        else:
+            step_cache = NonBatchStepCache.init(
+                step_name=step_name,
+            )
         self._cache_content[step_name] = step_cache
         self._batches_compatibility[step_name] = compatible_with_batches
 
-    def register_step_outputs(
+    def register_batch_of_step_outputs(
         self,
         step_name: str,
         indices: List[Tuple[int, ...]],
         outputs: List[Dict[str, Any]],
     ) -> None:
-        if not self.contains_step(step_name=step_name):
+        if not self.step_outputs_batches(step_name=step_name):
             raise ExecutionEngineRuntimeError(
-                public_message=f"Error in execution engine. Attempted to register outputs for "
-                f"step {step_name} which was not previously registered in cache. "
+                public_message=f"Error in execution engine. Attempted to register batch outputs for "
+                f"step {step_name} which is not registered as batch-compatible. "
                 f"Contact Roboflow team through github issues "
                 f"(https://github.com/roboflow/inference/issues) providing full context of"
                 f"the problem - including workflow definition you use.",
@@ -247,7 +318,7 @@ class ExecutionCache:
             )
         except TypeError as e:
             # checking this case defensively as there is no guarantee on block
-            # meeting contract and we want graceful error handling
+            # meeting contract, and we want graceful error handling
             raise InvalidBlockBehaviourError(
                 public_message=f"Block implementing step {step_name} should return outputs which are lists of "
                 f"dicts, but the type of output does not match expectation.",
@@ -255,7 +326,21 @@ class ExecutionCache:
                 inner_error=e,
             ) from e
 
-    def get_output(
+    def register_non_batch_step_outputs(
+        self, step_name: str, outputs: Dict[str, Any]
+    ) -> None:
+        if self.step_outputs_batches(step_name=step_name):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to register non-batch outputs for "
+                f"step {step_name} which was registered in cache as batch compatible. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        self._cache_content[step_name].register_outputs(outputs=outputs)
+
+    def get_batch_output(
         self,
         selector: str,
         batch_elements_indices: List[Tuple[int, ...]],
@@ -273,6 +358,16 @@ class ExecutionCache:
             )
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
+        if not self.step_outputs_batches(step_name=step_name):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get output in batch mode which is "
+                f"not supported for step {selector}. That behavior should be prevented by "
+                f"workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         property_name = get_last_chunk_of_selector(selector=selector)
         return self._cache_content[step_name].get_outputs(
             property_name=property_name,
@@ -280,13 +375,42 @@ class ExecutionCache:
             mask=mask,
         )
 
-    def get_all_step_outputs(
+    def get_non_batch_output(
+        self,
+        selector: str,
+    ) -> Any:
+        if not self.is_value_registered(selector=selector):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get output which is not registered using "
+                f"step {selector}. That behavior should be prevented by workflows compiler, so "
+                f"this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        step_selector = get_step_selector_from_its_output(step_output_selector=selector)
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        if self.step_outputs_batches(step_name=step_name):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get output in non-batch mode which is "
+                f"not supported for step {selector} registered as batch-compatible. That behavior "
+                f"should be prevented by workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        property_name = get_last_chunk_of_selector(selector=selector)
+        return self._cache_content[step_name].get_outputs(property_name=property_name)
+
+    def get_all_batch_step_outputs(
         self,
         step_name: str,
         batch_elements_indices: List[Tuple[int, ...]],
         mask: Optional[Set[Tuple[int, ...]]] = None,
     ) -> List[Dict[str, Any]]:
-        if not self.contains_step(step_name=step_name):
+        if not self.step_outputs_batches(step_name=step_name):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. Attempted to get all outputs from step {step_name} "
                 f"which is not register in cache. That behavior should be prevented by "
@@ -301,19 +425,33 @@ class ExecutionCache:
             mask=mask,
         )
 
-    def output_represent_batch(self, selector: str) -> bool:
-        if not self.is_value_registered(selector=selector):
+    def get_all_non_batch_step_outputs(
+        self,
+        step_name: str,
+    ) -> List[Dict[str, Any]]:
+        if self.step_outputs_batches(step_name=step_name):
             raise ExecutionEngineRuntimeError(
-                public_message=f"Error in execution engine. Attempted to get batches compatibility status "
-                f"from step {selector} which is not register in cache. That behavior should be prevented by "
+                public_message=f"Error in execution engine. Attempted to get all non-batch outputs from step {step_name} "
+                f"which is registered as batch-compatible. That behavior should be prevented by "
                 f"workflows compiler, so this error should be treated as a bug."
                 f"Contact Roboflow team through github issues "
                 f"(https://github.com/roboflow/inference/issues) providing full context of"
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_output_registration",
             )
-        step_selector = get_step_selector_from_its_output(step_output_selector=selector)
-        step_name = get_last_chunk_of_selector(selector=step_selector)
+        return self._cache_content[step_name].get_all_outputs()
+
+    def step_outputs_batches(self, step_name: str) -> bool:
+        if not self.contains_step(step_name=step_name):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to check outputs status from step {step_name} "
+                f"which is not register in cache. That behavior should be prevented by "
+                f"workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         return self._batches_compatibility[step_name]
 
     def is_value_registered(self, selector: Any) -> bool:

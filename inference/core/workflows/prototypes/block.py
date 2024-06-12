@@ -57,6 +57,10 @@ class WorkflowBlock(ABC):
         )
 
     @classmethod
+    def accepts_empty_datapoints(cls) -> bool:
+        return False
+
+    @classmethod
     def accepts_batch_input(cls) -> bool:
         return True
 
