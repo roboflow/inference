@@ -167,7 +167,6 @@ async def test_wrap_errors_async_when_http_error_occurs() -> None:
     # given
     @wrap_errors_async
     async def example() -> None:
-
         raise ClientResponseError(
             request_info=RequestInfo(
                 url=URL("https://some.com"),
@@ -1431,7 +1430,9 @@ def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visual
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    configuration = InferenceConfiguration(confidence_threshold=0.5, format="image_and_json")
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, format="image_and_json"
+    )
     http_client.configure(inference_configuration=configuration)
     requests_mock.post(
         f"{api_url}/some/1",
