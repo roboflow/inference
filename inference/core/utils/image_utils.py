@@ -423,18 +423,19 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
 )
 def np_image_to_base64(image: np.ndarray) -> bytes:
     """
-    Convert a numpy image to bytes.
+    Convert a numpy image to a base64 encoded byte string.
 
     Args:
         image (np.ndarray): The numpy array representing an image.
 
     Returns:
-        bytes
-
+        bytes: The base64 encoded image.
     """
-    encoded_result: Tuple[bool, np.ndarray] = cv2.imencode(".jpg", image)
+    image = Image.fromarray(image)
     with BytesIO() as buffer:
-        buffer.write(encoded_result[1].tobytes())
+        image = image.convert("RGB")
+        image.save(buffer, format="JPEG")
+        buffer.seek(0)
         return buffer.getvalue()
 
 
