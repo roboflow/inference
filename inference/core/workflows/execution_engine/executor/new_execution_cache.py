@@ -64,7 +64,7 @@ class BatchStepCache:
         return [
             (
                 self._cache_content[property_name].get(index)
-                if mask is None or index[len(mask) :] in mask
+                if mask is None or index[: len(mask)] in mask
                 else None
             )
             for index in indices
@@ -80,7 +80,7 @@ class BatchStepCache:
         return [
             (
                 {k: self._cache_content[k].get(index) for k in all_keys}
-                if mask is None or index[len(mask) :] in mask
+                if mask is None or index[: len(mask)] in mask
                 else copy(empty_value)
             )
             for index in indices

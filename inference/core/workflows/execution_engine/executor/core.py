@@ -522,7 +522,6 @@ async def run_step(
     if step_instance.accepts_batch_input():
         results = await step_instance.run(**parameters)
     else:
-        print("NON BATCH")
         results = await run_step_in_non_batch_mode(
             step_instance=step_instance, parameters=parameters
         )
@@ -592,8 +591,6 @@ def unfold_parameters(
     non_batch_parameters = {
         k: v for k, v in parameters.items() if k not in batch_parameters
     }
-    print("batch_parameters", batch_parameters.keys())
-    print("non_batch_parameters", non_batch_parameters.keys())
     if not batch_parameters:
         if not non_batch_parameters:
             return None

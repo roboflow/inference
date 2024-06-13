@@ -110,8 +110,8 @@ def construct_workflow_output(
                     batch_elements_indices=major_element_indices,
                 )
                 single_result[output.name] = create_array(
-                    indices=np.array(major_element_indices)
-                )[0]
+                    indices=np.array([e[1:] for e in major_element_indices])
+                )
                 for idx, v in zip(major_element_indices, value):
                     if len(idx) == 1:
                         single_result[output.name] = v

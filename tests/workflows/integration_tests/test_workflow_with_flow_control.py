@@ -287,3 +287,111 @@ async def test_flow_control_step_affecting_batches(
         "At crowd image it is expected to spot 2 big instances of classes person, car - hence model b should fire"
     assert not result[1]["predictions_b"] and result[1]["predictions_c"], \
         "At dogs image it is not expected to spot people nor cars - hence model c should fire"
+
+
+WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "first_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "DetectionsTransformation",
+            "name": "enlarging_boxes",
+            "predictions": "$steps.first_detection.predictions",
+            "operations": [
+                {"type": "DetectionsOffset", "offset_x": 50, "offset_y": 50}
+            ]
+        },
+        {
+            "type": "Crop",
+            "name": "first_crop",
+            "image": "$inputs.image",
+            "predictions": "$steps.enlarging_boxes.predictions",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "second_detection",
+            "image": "$steps.first_crop.crops",
+            "model_id": "yolov8n-640",
+            "class_filter": ["dog"]
+        },
+        {
+            "type": "ContinueIf",
+            "name": "continue_if",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [{
+                    "type": "BinaryStatement",
+                    "left_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "prediction",
+                        "operations": [
+                            {"type": "SequenceLength"}
+                        ],
+                    },
+                    "comparator": {"type": "(Number) =="},
+                    "right_operand": {
+                        "type": "StaticOperand",
+                        "value": 1,
+                    },
+                }]
+            },
+            "evaluation_parameters": {
+                "prediction": "$steps.second_detection.predictions"
+            },
+            "next_step": "$steps.classification",
+        },
+        {
+            "type": "ClassificationModel",
+            "name": "classification",
+            "image": "$steps.first_crop.crops",
+            "model_id": "dog-breed-xpaq6/1",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "dog_classification",
+            "selector": "$steps.classification.predictions",
+        }
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_flow_control_step_affecting_data_with_increased_dimensionality(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(runtime_parameters={
+        "image": [crowd_image, dogs_image],
+    })
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {"dog_classification"}, \
+        "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {"dog_classification"}, \
+        "Expected all declared outputs to be delivered for second result"
+    assert result[0]["dog_classification"] == [None] * 12, \
+        "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
+    assert len(result[1]["dog_classification"]) == 2, "Expected 2 bboxes of dogs detected"

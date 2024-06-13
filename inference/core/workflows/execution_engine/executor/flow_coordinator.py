@@ -157,6 +157,7 @@ def handle_flow_control(
                 selected_next_step=flow_control.context,
             )
         return nodes_to_discard
+    # TODO - unwrap Batch[Batch[<...>]]! requires upstream changes!
     target_steps_to_terminate = set()
     target_step2indices = defaultdict(list)
     for idx, element in zip(flow_control._indices, flow_control):

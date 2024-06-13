@@ -23,11 +23,11 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Based on provided configuration, block decides which execution path to take given
-data fed into condition logic.
+Based on provided configuration, block decides if it should follow to pointed
+execution path
 """
 
-SHORT_DESCRIPTION = "Creates alternative execution branches for data"
+SHORT_DESCRIPTION = "Stops execution of processing branch under certain condition"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -39,7 +39,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "flow_control",
         }
     )
-    type: Literal["Condition"]
+    type: Literal["ContinueIf"]
     condition_statement: StatementGroup
     evaluation_parameters: Dict[
         str,
@@ -49,13 +49,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
         default_factory=lambda: {},
     )
-    step_if_true: StepSelector = Field(
+    next_step: StepSelector = Field(
         description="Reference to step which shall be executed if expression evaluates to true",
         examples=["$steps.on_true"],
-    )
-    step_if_false: StepSelector = Field(
-        description="Reference to step which shall be executed if expression evaluates to false",
-        examples=["$steps.on_false"],
     )
 
     @classmethod
@@ -63,7 +59,7 @@ class BlockManifest(WorkflowBlockManifest):
         return []
 
 
-class ConditionBlock(WorkflowBlock):
+class ContinueIfBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -73,14 +69,13 @@ class ConditionBlock(WorkflowBlock):
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
-        step_if_true: StepSelector,
-        step_if_false: StepSelector,
+        next_step: StepSelector,
     ) -> BlockResult:
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
-        next_step = step_if_true if evaluation_result else step_if_false
-        flow_control = FlowControl(mode="select_step", context=next_step)
-        return flow_control
+        if evaluation_result:
+            return FlowControl(mode="select_step", context=next_step)
+        return FlowControl(mode="terminate_branch")
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
