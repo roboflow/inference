@@ -418,7 +418,9 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
     return image
 
 
-@deprecated(reason="Method replaced with inference.core.utils.image_utils.encode_image_to_jpeg_bytes")
+@deprecated(
+    reason="Method replaced with inference.core.utils.image_utils.encode_image_to_jpeg_bytes"
+)
 def np_image_to_base64(image: np.ndarray) -> bytes:
     """
     Convert a numpy image to bytes.
