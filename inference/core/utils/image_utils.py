@@ -427,11 +427,9 @@ def np_image_to_base64(image: np.ndarray) -> bytes:
     Returns:
         bytes: The base64 encoded image.
     """
-    image = Image.fromarray(image)
+    encoded_result: Tuple[bool, np.ndarray] = cv2.imencode(".jpg", image)
     with BytesIO() as buffer:
-        image = image.convert("RGB")
-        image.save(buffer, format="JPEG")
-        buffer.seek(0)
+        buffer.write(encoded_result[1].tobytes())
         return buffer.getvalue()
 
 
