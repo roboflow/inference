@@ -461,7 +461,7 @@ def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> byt
     Encode a numpy image to JPEG format in bytes.
 
     Args:
-        image (np.ndarray): The numpy array representing an image.
+        image (np.ndarray): The numpy array representing a BGR image.
         jpeg_quality (int): Quality of the JPEG image.
 
     Returns:
