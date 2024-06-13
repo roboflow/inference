@@ -1,12 +1,13 @@
 import abc
 from collections import defaultdict
 from queue import Queue
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, Union
 
 import networkx as nx
 from networkx import DiGraph
 
 from inference.core.workflows.constants import STEP_NODE_KIND
+from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import InvalidBlockBehaviourError
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
@@ -15,6 +16,9 @@ from inference.core.workflows.execution_engine.compiler.graph_constructor import
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_nodes_of_specific_kind,
+)
+from inference.core.workflows.execution_engine.executor.new_execution_cache import (
+    ExecutionBranchesManager,
 )
 
 
@@ -121,22 +125,62 @@ def get_next_steps_to_execute(
 
 def handle_flow_control(
     current_step_selector: str,
-    flow_control: FlowControl,
+    flow_control: Union[Batch[FlowControl], FlowControl],
+    branches_manager: ExecutionBranchesManager,
     execution_graph: nx.DiGraph,
+    flow_control_execution_branches: Dict[str, str],
 ) -> Set[str]:
+    if not isinstance(flow_control, Batch):
+        for (
+            target_step_name,
+            target_execution_branch,
+        ) in flow_control_execution_branches.items():
+            if flow_control.mode == "terminate_branch":
+                mask = False
+            else:
+                mask = target_step_name == flow_control.context
+            branches_manager.register_non_batch_branch_mask(
+                branch_name=target_execution_branch,
+                mask=mask,
+            )
+        nodes_to_discard = set()
+        if flow_control.mode == "terminate_branch":
+            nodes_to_discard = get_all_nodes_in_execution_path(
+                execution_graph=execution_graph,
+                source=current_step_selector,
+                include_source=False,
+            )
+        elif flow_control.mode == "select_step":
+            nodes_to_discard = handle_execution_branch_selection(
+                current_step=current_step_selector,
+                execution_graph=execution_graph,
+                selected_next_step=flow_control.context,
+            )
+        return nodes_to_discard
+    target_steps_to_terminate = set()
+    target_step2indices = defaultdict(list)
+    for idx, element in zip(flow_control._indices, flow_control):
+        if element.mode != "select_step":
+            continue
+        target_step2indices[element.context].append(idx)
+    for (
+        target_step_name,
+        target_execution_branch,
+    ) in flow_control_execution_branches.items():
+        if not target_step2indices[target_step_name]:
+            target_steps_to_terminate.add(target_step_name)
+        branches_manager.register_batch_branch_mask(
+            branch_name=target_execution_branch,
+            mask=target_step2indices[target_step_name],
+        )
     nodes_to_discard = set()
-    if flow_control.mode == "terminate_branch":
-        nodes_to_discard = get_all_nodes_in_execution_path(
+    for step in target_steps_to_terminate:
+        step_derived_nodes = get_all_nodes_in_execution_path(
             execution_graph=execution_graph,
-            source=current_step_selector,
-            include_source=False,
+            source=step,
+            include_source=True,
         )
-    elif flow_control.mode == "select_step":
-        nodes_to_discard = handle_execution_branch_selection(
-            current_step=current_step_selector,
-            execution_graph=execution_graph,
-            selected_next_step=flow_control.context,
-        )
+        nodes_to_discard.update(step_derived_nodes)
     return nodes_to_discard
 
 

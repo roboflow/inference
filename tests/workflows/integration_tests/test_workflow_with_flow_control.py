@@ -9,7 +9,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
-FLOW_CONTROL_WORKFLOW = {
+AB_TEST_WORKFLOW = {
     "version": "1.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
     "steps": [
@@ -49,7 +49,7 @@ FLOW_CONTROL_WORKFLOW = {
 
 @pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_model(
+async def test_flow_control_step_not_operating_on_batches(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -63,7 +63,7 @@ async def test_flow_control_model(
         "workflows_core.api_key": None,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=FLOW_CONTROL_WORKFLOW,
+        workflow_definition=AB_TEST_WORKFLOW,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -72,10 +72,218 @@ async def test_flow_control_model(
     result = await execution_engine.run_async(runtime_parameters={"image": crowd_image})
 
     # then
-    assert set(result.keys()) == {
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided, so one output element expected"
+    assert set(result[0].keys()) == {
         "predictions_a",
         "predictions_b",
     }, "Expected all declared outputs to be delivered"
-    assert (len(result["predictions_a"]) > 0) != (
-        len(result["predictions_b"]) > 0
-    ), "Expected only one of two outputs to be filled with data"
+    assert (result[0]["predictions_a"] and not result[0]["predictions_b"]) or (not result[0]["predictions_a"] and result[0]["predictions_b"]), "Expected only one of the results provided, mutually exclusive based on random choice"
+
+
+@pytest.mark.asyncio
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inputs(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.flow_control_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=AB_TEST_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(runtime_parameters={
+        "image": [crowd_image] * 4
+    })
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 4, "4 images provided, so 4 output elements expected"
+    empty_element = "predictions_a" if not result[0]["predictions_a"] else "predictions_b"
+    for i in range(4):
+        assert set(result[i].keys()) == {
+            "predictions_a",
+            "predictions_b",
+        }, "Expected all declared outputs to be delivered"
+        assert (
+            result[i]["predictions_a"] and not result[i]["predictions_b"]
+        ) or (
+            not result[i]["predictions_a"] and result[i]["predictions_b"]
+        ), "Expected only one of the results provided, mutually exclusive based on random choice"
+        assert not result[i][empty_element], f"Expected `{empty_element}` to be empty for each output, as ABTest takes only non-batch parameters and should decide once for all batch elements"
+
+
+FILTERING_OPERATION = {
+    "type": "DetectionsFilter",
+    "filter_operation": {
+        "type": "StatementGroup",
+        "operator": "and",
+        "statements": [
+            {
+                "type": "BinaryStatement",
+                "left_operand": {
+                    "type": "DynamicOperand",
+                    "operations": [
+                        {
+                            "type": "ExtractDetectionProperty",
+                            "property_name": "class_name",
+                        }
+                    ],
+                },
+                "comparator": {"type": "in (Sequence)"},
+                "right_operand": {
+                    "type": "DynamicOperand",
+                    "operand_name": "classes",
+                },
+            },
+            {
+                "type": "BinaryStatement",
+                "left_operand": {
+                    "type": "DynamicOperand",
+                    "operations": [
+                        {
+                            "type": "ExtractDetectionProperty",
+                            "property_name": "size",
+                        },
+                    ],
+                },
+                "comparator": {"type": "(Number) >="},
+                "right_operand": {
+                    "type": "DynamicOperand",
+                    "operand_name": "image",
+                    "operations": [
+                        {
+                            "type": "ExtractImageProperty",
+                            "property_name": "size",
+                        },
+                        {"type": "Multiply", "other": 0.02},
+                    ],
+                },
+            },
+        ],
+    },
+}
+
+WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "classes"},
+        {"type": "WorkflowParameter", "name": "detections_meeting_condition"},
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "a",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "Condition",
+            "name": "condition",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [{
+                    "type": "BinaryStatement",
+                    "left_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "prediction",
+                        "operations": [
+                            FILTERING_OPERATION,
+                            {"type": "SequenceLength"}
+                        ],
+                    },
+                    "comparator": {"type": "(Number) >="},
+                    "right_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "detections_meeting_condition",
+                    },
+                }]
+            },
+            "evaluation_parameters": {
+                "image": "$inputs.image",
+                "prediction": "$steps.a.predictions",
+                "classes": "$inputs.classes",
+                "detections_meeting_condition": "$inputs.detections_meeting_condition"
+            },
+            "step_if_true": "$steps.b",
+            "step_if_false": "$steps.c"
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "b",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "c",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions_b",
+            "selector": "$steps.b.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "predictions_c",
+            "selector": "$steps.c.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_flow_control_step_affecting_batches(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(runtime_parameters={
+        "image": [crowd_image, dogs_image],
+        "classes": ["person", "car"],
+        "detections_meeting_condition": 2,
+    })
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {
+        "predictions_b",
+        "predictions_c",
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[1].keys() == {
+        "predictions_b",
+        "predictions_c",
+    }, "Expected all declared outputs to be delivered for second result"
+    assert result[0]["predictions_b"] and not result[0]["predictions_c"], \
+        "At crowd image it is expected to spot 2 big instances of classes person, car - hence model b should fire"
+    assert not result[1]["predictions_b"] and result[1]["predictions_c"], \
+        "At dogs image it is not expected to spot people nor cars - hence model c should fire"

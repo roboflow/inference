@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -17,6 +17,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -74,12 +75,18 @@ class ConditionBlock(WorkflowBlock):
         evaluation_parameters: Dict[str, Any],
         step_if_true: StepSelector,
         step_if_false: StepSelector,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
+        print(
+            "in step",
+            evaluation_result,
+            evaluation_parameters["image"].numpy_image.shape,
+            evaluation_parameters["classes"],
+        )
         next_step = step_if_true if evaluation_result else step_if_false
         flow_control = FlowControl(mode="select_step", context=next_step)
-        return [], flow_control
+        return flow_control
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

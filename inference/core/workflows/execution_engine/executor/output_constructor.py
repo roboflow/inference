@@ -90,9 +90,12 @@ def construct_workflow_output(
                         get_last_chunk_of_selector(output.selector)
                     ]
                 else:
-                    value = execution_cache.get_non_batch_output(
-                        selector=output.selector
-                    )
+                    if execution_cache.is_value_registered(selector=output.selector):
+                        value = execution_cache.get_non_batch_output(
+                            selector=output.selector
+                        )
+                    else:
+                        value = None
                 single_result[output.name] = value
                 continue
             if is_input_selector(output.selector):
@@ -101,27 +104,30 @@ def construct_workflow_output(
                 ][i]
                 continue
             major_element_indices = [idx for idx in output_indices if idx[0] == i]
-            value = execution_cache.get_batch_output(
-                selector=output.selector,
-                batch_elements_indices=major_element_indices,
-            )
-            single_result[output.name] = create_array(
-                indices=np.array(major_element_indices)
-            )[0]
-            for idx, v in zip(major_element_indices, value):
-                if len(idx) == 1:
-                    single_result[output.name] = v
-                    continue
-                idx = idx[1:]
-                tmp = single_result[output.name]
-                for p in range(len(idx) - 1):
-                    tmp = tmp[p]
-                if (
-                    isinstance(v, sv.Detections)
-                    and output.coordinates_system is CoordinatesSystem.PARENT
-                ):
-                    v = sv_detections_to_root_coordinates(detections=v)
-                tmp[idx[-1]] = v
+            if execution_cache.is_value_registered(output.selector):
+                value = execution_cache.get_batch_output(
+                    selector=output.selector,
+                    batch_elements_indices=major_element_indices,
+                )
+                single_result[output.name] = create_array(
+                    indices=np.array(major_element_indices)
+                )[0]
+                for idx, v in zip(major_element_indices, value):
+                    if len(idx) == 1:
+                        single_result[output.name] = v
+                        continue
+                    idx = idx[1:]
+                    tmp = single_result[output.name]
+                    for p in range(len(idx) - 1):
+                        tmp = tmp[p]
+                    if (
+                        isinstance(v, sv.Detections)
+                        and output.coordinates_system is CoordinatesSystem.PARENT
+                    ):
+                        v = sv_detections_to_root_coordinates(detections=v)
+                    tmp[idx[-1]] = v
+            else:
+                single_result[output.name] = None
         results.append(single_result)
     return results
 

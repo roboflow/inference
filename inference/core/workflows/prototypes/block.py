@@ -66,18 +66,12 @@ class WorkflowBlock(ABC):
 
     @classmethod
     def produces_batch_output(cls) -> bool:
-        return True
+        return cls.accepts_batch_input()
 
     @classmethod
     def get_impact_on_data_dimensionality(
         cls,
     ) -> Literal["decreases", "keeps_the_same", "increases"]:
-        if not cls.produces_batch_output():
-            raise BlockInterfaceError(
-                public_message="Class method `get_impact_on_data_dimensionality()` is only relevant "
-                "for blocks producing batch output.",
-                context="getting_batch_dimensionality",
-            )
         return "keeps_the_same"
 
     @classmethod

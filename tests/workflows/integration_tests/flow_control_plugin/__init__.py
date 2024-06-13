@@ -8,6 +8,7 @@ from inference.core.workflows.entities.types import FlowControl, StepSelector
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
+    BlockResult,
 )
 
 
@@ -28,15 +29,19 @@ class ABTestBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ABTestManifest
 
-    async def run_locally(
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
         self,
         a_step: StepSelector,
         b_step: StepSelector,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         choice = a_step
         if random.random() > 0.5:
             choice = b_step
-        return [], FlowControl(mode="select_step", context=choice)
+        return FlowControl(mode="select_step", context=choice)
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:

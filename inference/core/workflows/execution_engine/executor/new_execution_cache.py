@@ -176,7 +176,7 @@ class ExecutionBranchesManager:
             raise ValueError(
                 f"Attempted to re-declare existing branch execution mask: {branch_name}"
             )
-        self._batch_compatibility[branch_name] = True
+        self._batch_compatibility[branch_name] = False
         self._execution_branches_masks[branch_name] = mask
 
     def retrieve_branch_mask_for_batch(self, branch_name: str) -> Set[Tuple[int, ...]]:

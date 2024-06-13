@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
 from networkx import DiGraph
 
@@ -201,6 +201,10 @@ async def execute_step(
             current_step_selector=step,
             flow_control=step_result,
             execution_graph=workflow.execution_graph,
+            branches_manager=branches_manager,
+            flow_control_execution_branches=workflow.execution_graph.nodes[step][
+                FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY
+            ],
         )
     logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard
@@ -503,36 +507,6 @@ async def run_step(
     dynamic_batches_manager: DynamicBatchesManager,
     step_controls_flow: bool,
     data_lineage: Optional[str],
-) -> Optional[Batch[FlowControl]]:
-    if step_instance.accepts_batch_input():
-        return await run_step_in_batch_mode(
-            step_name=step_name,
-            step_instance=step_instance,
-            parameters=parameters,
-            execution_cache=execution_cache,
-            dynamic_batches_manager=dynamic_batches_manager,
-            step_controls_flow=step_controls_flow,
-            data_lineage=data_lineage,
-        )
-    return await run_step_in_non_batch_mode(
-        step_name=step_name,
-        step_instance=step_instance,
-        parameters=parameters,
-        execution_cache=execution_cache,
-        dynamic_batches_manager=dynamic_batches_manager,
-        step_controls_flow=step_controls_flow,
-        data_lineage=data_lineage,
-    )
-
-
-async def run_step_in_batch_mode(
-    step_name: str,
-    step_instance: WorkflowBlock,
-    parameters: Dict[str, Any],
-    execution_cache: ExecutionCache,
-    dynamic_batches_manager: DynamicBatchesManager,
-    step_controls_flow: bool,
-    data_lineage: Optional[str],
 ) -> Optional[Union[FlowControl, Batch[FlowControl]]]:
     if not step_instance.accepts_empty_datapoints():
         non_empty_indices = get_all_non_empty_indices(value=parameters)
@@ -544,10 +518,17 @@ async def run_step_in_batch_mode(
         parameters=parameters,
         reference_parameter=step_instance.get_data_dimensionality_property(),
     )
-    results = await step_instance.run(**parameters)
-    if not step_instance.produces_batch_output():
+    step_is_simd = len(get_batch_parameters(parameters=parameters)) > 0
+    if step_instance.accepts_batch_input():
+        results = await step_instance.run(**parameters)
+    else:
+        print("NON BATCH")
+        results = await run_step_in_non_batch_mode(
+            step_instance=step_instance, parameters=parameters
+        )
+    if not step_is_simd:
         if step_controls_flow:
-            return results
+            return results[0]
         execution_cache.register_non_batch_step_outputs(
             step_name=step_name, outputs=results
         )
@@ -563,7 +544,7 @@ async def run_step_in_batch_mode(
         indices_of_parameters = reduced_indices_of_parameters
     if indices_of_parameters == [()]:
         if step_controls_flow:
-            return results
+            return Batch(results, indices_of_parameters)
         execution_cache.register_non_batch_step_outputs(
             step_name=step_name, outputs=results
         )
@@ -591,6 +572,89 @@ async def run_step_in_batch_mode(
         step_name=step_name, indices=indices_of_parameters, outputs=results
     )
     return None
+
+
+async def run_step_in_non_batch_mode(
+    step_instance: WorkflowBlock,
+    parameters: Dict[str, Any],
+) -> list:
+    results = []
+    for batch_element_params in unfold_parameters(parameters=parameters):
+        result = await step_instance.run(**batch_element_params)
+        results.append(result)
+    return results
+
+
+def unfold_parameters(
+    parameters: Dict[str, Any]
+) -> Generator[Dict[str, Any], None, None]:
+    batch_parameters = get_batch_parameters(parameters=parameters)
+    non_batch_parameters = {
+        k: v for k, v in parameters.items() if k not in batch_parameters
+    }
+    print("batch_parameters", batch_parameters.keys())
+    print("non_batch_parameters", non_batch_parameters.keys())
+    if not batch_parameters:
+        if not non_batch_parameters:
+            return None
+        yield non_batch_parameters
+        return None
+    for unfolded_batch_parameters in iterate_over_batches(
+        batch_parameters=batch_parameters
+    ):
+        yield {**unfolded_batch_parameters, **non_batch_parameters}
+
+
+def get_batch_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for name, value in parameters.items():
+        if isinstance(value, Batch):
+            result[name] = value
+        elif isinstance(value, list) and any(isinstance(v, Batch) for v in value):
+            result[name] = value
+        elif isinstance(value, dict) and any(
+            isinstance(v, Batch) for v in value.values()
+        ):
+            result[name] = value
+    return result
+
+
+def iterate_over_batches(
+    batch_parameters: Dict[str, Any]
+) -> Generator[Dict[str, Any], None, None]:
+    index = 0
+    end = False
+    while not end:
+        result = {}
+        for name, value in batch_parameters.items():
+            if isinstance(value, Batch):
+                if len(value) <= index:
+                    end = True
+                    break
+                result[name] = value[index]
+            elif isinstance(value, list):
+                to_yield = []
+                for element in value:
+                    if len(element) <= index:
+                        end = True
+                        break
+                    to_yield.append(element[index])
+                result[name] = to_yield
+            elif isinstance(value, dict):
+                to_yield = {}
+                for key, key_value in value.items():
+                    if not isinstance(key_value, Batch):
+                        to_yield[key] = key_value
+                    else:
+                        if len(key_value) <= index:
+                            end = True
+                            break
+                        else:
+                            to_yield[key] = key_value[index]
+                result[name] = to_yield
+        index += 1
+        if not end:
+            yield result
 
 
 def get_all_non_empty_indices(value: Any) -> Set[Tuple[int, ...]]:
@@ -696,15 +760,3 @@ def retrieve_indices_of_parameter(value: Any) -> List[Tuple[int, ...]]:
             return result
         return value._indices
     return []
-
-
-async def run_step_in_non_batch_mode(
-    step_name: str,
-    step_instance: WorkflowBlock,
-    parameters: Dict[str, Any],
-    execution_cache: ExecutionCache,
-    dynamic_batches_manager: DynamicBatchesManager,
-    step_controls_flow: bool,
-    data_lineage: Optional[str],
-) -> Optional[Batch[FlowControl]]:
-    pass
