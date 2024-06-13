@@ -63,7 +63,8 @@ def draw_detection_predictions(
                 box=box,
                 color=color,
             )
-    return encode_image_to_jpeg_bytes(image=image)
+    image_bgr = image[:, :, ::-1]
+    return encode_image_to_jpeg_bytes(image=image_bgr)
 
 
 def draw_bbox(
