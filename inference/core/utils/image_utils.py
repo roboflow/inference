@@ -23,6 +23,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
+from inference.core.utils.function import deprecated
 from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
@@ -419,14 +420,18 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
 
 def np_image_to_base64(image: np.ndarray) -> bytes:
     """
-    Convert a numpy image to a base64 encoded byte string.
+    Convert a numpy image to bytes.
 
     Args:
         image (np.ndarray): The numpy array representing an image.
 
     Returns:
-        bytes: The base64 encoded image.
+        bytes
+
     """
+    deprecated(
+        reason="Method replaced with inference.core.utils.image_utils.encode_image_to_jpeg_bytes"
+    )
     encoded_result: Tuple[bool, np.ndarray] = cv2.imencode(".jpg", image)
     with BytesIO() as buffer:
         buffer.write(encoded_result[1].tobytes())
