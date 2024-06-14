@@ -6,7 +6,7 @@ from inference.core.workflows.constants import (
     ROOT_BRANCH_NAME,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
-from inference.core.workflows.entities.base import InputType
+from inference.core.workflows.entities.base import InputType, OutputDefinition
 from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     InvalidBlockBehaviourError,
@@ -21,18 +21,21 @@ from inference.core.workflows.execution_engine.compiler.utils import (
 class BatchStepCache:
 
     @classmethod
-    def init(cls, step_name: str) -> "BatchStepCache":
+    def init(cls, step_name: str, outputs: List[OutputDefinition]) -> "BatchStepCache":
         return cls(
             step_name=step_name,
+            outputs=outputs,
             cache_content=defaultdict(lambda: defaultdict()),
         )
 
     def __init__(
         self,
         step_name: str,
+        outputs: List[OutputDefinition],
         cache_content: DefaultDict[str, DefaultDict[Tuple[int, ...], Any]],
     ):
         self._step_name = step_name
+        self._outputs = {o.name for o in outputs}
         self._cache_content = cache_content
 
     def register_outputs(
@@ -63,7 +66,7 @@ class BatchStepCache:
     ) -> List[Any]:
         return [
             (
-                self._cache_content[property_name].get(index)
+                self._cache_content.get(property_name, {}).get(index)
                 if mask is None or index[: len(mask)] in mask
                 else None
             )
@@ -76,10 +79,12 @@ class BatchStepCache:
         mask: Optional[Set[Tuple[int, ...]]] = None,
     ) -> List[Dict[str, Any]]:
         all_keys = list(self._cache_content.keys())
+        if not all_keys:
+            all_keys = self._outputs
         empty_value = {k: None for k in all_keys}
         return [
             (
-                {k: self._cache_content[k].get(index) for k in all_keys}
+                {k: self._cache_content.get(k, {}).get(index) for k in all_keys}
                 if mask is None or index[: len(mask)] in mask
                 else copy(empty_value)
             )
@@ -87,24 +92,29 @@ class BatchStepCache:
         ]
 
     def is_property_defined(self, property_name: str) -> bool:
-        return property_name in self._cache_content
+        return property_name in self._cache_content or property_name in self._outputs
 
 
 class NonBatchStepCache:
 
     @classmethod
-    def init(cls, step_name: str) -> "NonBatchStepCache":
+    def init(
+        cls, step_name: str, outputs: List[OutputDefinition]
+    ) -> "NonBatchStepCache":
         return cls(
             step_name=step_name,
+            outputs=outputs,
             cache_content=dict(),
         )
 
     def __init__(
         self,
         step_name: str,
+        outputs: List[OutputDefinition],
         cache_content: Dict[str, Any],
     ):
         self._step_name = step_name
+        self._outputs = {o.name for o in outputs}
         self._cache_content = cache_content
 
     def register_outputs(self, outputs: Dict[str, Any]):
@@ -114,13 +124,14 @@ class NonBatchStepCache:
         self,
         property_name: str,
     ) -> Any:
-        return self._cache_content[property_name]
+        return self._cache_content.get(property_name)
 
     def get_all_outputs(self) -> Dict[str, Any]:
-        return self._cache_content
+        if not self._cache_content:
+            return {output: None for output in self._outputs}
 
     def is_property_defined(self, property_name: str) -> bool:
-        return property_name in self._cache_content
+        return property_name in self._cache_content or property_name in self._outputs
 
 
 class ExecutionBranchesManager:
@@ -164,18 +175,10 @@ class ExecutionBranchesManager:
     def register_batch_branch_mask(
         self, branch_name: str, mask: List[Tuple[int, ...]]
     ) -> None:
-        if branch_name in self._execution_branches_masks:
-            raise ValueError(
-                f"Attempted to re-declare existing branch execution mask: {branch_name}"
-            )
         self._batch_compatibility[branch_name] = True
         self._execution_branches_masks[branch_name] = set(mask)
 
     def register_non_batch_branch_mask(self, branch_name: str, mask: bool) -> None:
-        if branch_name in self._execution_branches_masks:
-            raise ValueError(
-                f"Attempted to re-declare existing branch execution mask: {branch_name}"
-            )
         self._batch_compatibility[branch_name] = False
         self._execution_branches_masks[branch_name] = mask
 
@@ -283,16 +286,19 @@ class ExecutionCache:
         self,
         step_name: str,
         compatible_with_batches: bool,
+        outputs: List[OutputDefinition],
     ) -> None:
         if self.contains_step(step_name=step_name):
             return None
         if compatible_with_batches:
             step_cache = BatchStepCache.init(
                 step_name=step_name,
+                outputs=outputs,
             )
         else:
             step_cache = NonBatchStepCache.init(
                 step_name=step_name,
+                outputs=outputs,
             )
         print(
             f"register_step(): {step_name}, compatible_with_batches: {compatible_with_batches}"

@@ -25,6 +25,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     is_flow_control_step,
     is_input_selector,
     is_step_output_selector,
+    is_step_selector,
 )
 from inference.core.workflows.execution_engine.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
@@ -183,6 +184,7 @@ async def execute_step(
     step_result = await run_step(
         step_name=step_name,
         step_instance=step_instance,
+        step_manifest=workflow.steps[step_name].manifest,
         parameters=step_parameters,
         dynamic_batches_manager=dynamic_batches_manager,
         execution_cache=execution_cache,
@@ -204,8 +206,34 @@ async def execute_step(
                 FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY
             ),
         )
+    register_outputs_placeholders_for_nodes_to_discard(
+        nodes_to_discard=nodes_to_discard,
+        workflow=workflow,
+        execution_cache=execution_cache,
+    )
     logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard
+
+
+def register_outputs_placeholders_for_nodes_to_discard(
+    nodes_to_discard: Set[str],
+    workflow: CompiledWorkflow,
+    execution_cache: ExecutionCache,
+    # branches_manager: ExecutionBranchesManager,
+    # dynamic_batches_manager: DynamicBatchesManager,
+) -> None:
+    for node in nodes_to_discard:
+        if not is_step_selector(node):
+            continue
+        step_name = get_last_chunk_of_selector(selector=node)
+        step_manifest = workflow.steps[step_name].manifest
+        lineage = workflow.execution_graph.nodes[node][DIMENSIONALITY_LINEAGE_PROPERTY]
+        compatible_with_batches = len(lineage) > 0
+        execution_cache.register_step(
+            step_name=step_name,
+            compatible_with_batches=compatible_with_batches,
+            outputs=step_manifest.get_actual_outputs(),
+        )
 
 
 def assembly_step_execution_parameters(
@@ -513,6 +541,7 @@ def retrieve_value_from_runtime_input(
 async def run_step(
     step_name: str,
     step_instance: WorkflowBlock,
+    step_manifest: WorkflowBlockManifest,
     parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     dynamic_batches_manager: DynamicBatchesManager,
@@ -544,11 +573,13 @@ async def run_step(
         execution_cache.register_step(
             step_name=step_name,
             compatible_with_batches=True,
+            outputs=step_manifest.get_actual_outputs(),
         )
     else:
         execution_cache.register_step(
             step_name=step_name,
             compatible_with_batches=False,
+            outputs=step_manifest.get_actual_outputs(),
         )
     if step_instance.accepts_batch_input():
         results = await step_instance.run(**parameters)

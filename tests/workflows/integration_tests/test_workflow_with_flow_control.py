@@ -223,8 +223,8 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
                 "classes": "$inputs.classes",
                 "detections_meeting_condition": "$inputs.detections_meeting_condition",
             },
-            "step_if_true": "$steps.b",
-            "step_if_false": "$steps.c",
+            "steps_if_true": ["$steps.b"],
+            "steps_if_false": ["$steps.c"],
         },
         {
             "type": "ObjectDetectionModel",
@@ -354,7 +354,7 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
             "evaluation_parameters": {
                 "prediction": "$steps.second_detection.predictions"
             },
-            "next_step": "$steps.classification",
+            "next_steps": ["$steps.classification"],
         },
         {
             "type": "ClassificationModel",

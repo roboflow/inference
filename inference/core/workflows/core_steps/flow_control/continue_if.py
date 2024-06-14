@@ -49,9 +49,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
         default_factory=lambda: {},
     )
-    next_step: StepSelector = Field(
+    next_steps: List[StepSelector] = Field(
         description="Reference to step which shall be executed if expression evaluates to true",
-        examples=["$steps.on_true"],
+        examples=[["$steps.on_true"]],
     )
 
     @classmethod
@@ -69,12 +69,14 @@ class ContinueIfBlock(WorkflowBlock):
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
-        next_step: StepSelector,
+        next_steps: List[StepSelector],
     ) -> BlockResult:
+        if not next_steps:
+            return FlowControl(mode="terminate_branch")
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
         if evaluation_result:
-            return FlowControl(mode="select_step", context=next_step)
+            return FlowControl(mode="select_step", context=next_steps)
         return FlowControl(mode="terminate_branch")
 
     @classmethod

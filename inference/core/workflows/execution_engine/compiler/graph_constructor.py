@@ -8,6 +8,7 @@ import networkx as nx
 from networkx import DiGraph
 
 from inference.core.workflows.constants import (
+    CONTROL_FLOW_PROPERTY,
     DIMENSIONALITY_LINEAGE_PROPERTY,
     DIMENSIONALITY_PROPERTY,
     EXECUTION_BRANCHES_STACK_PROPERTY,
@@ -252,7 +253,11 @@ def establish_flow_control_edge(
     other_node_selector = get_step_selector_from_its_output(
         step_output_selector=parsed_selector.value
     )
-    execution_graph.add_edge(step_selector, other_node_selector)
+    execution_graph.add_edge(
+        step_selector,
+        other_node_selector,
+        **{CONTROL_FLOW_PROPERTY: parsed_selector.definition.property_name},
+    )
     execution_graph.nodes[step_selector][FLOW_CONTROL_NODE_KEY] = True
     return execution_graph
 
@@ -377,7 +382,7 @@ def start_execution_branches_for_node_successors(
     execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY] = {}
     for successor in execution_graph.successors(node):
         successor_stack = copy(node_execution_branches_stack)
-        successor_execution_branch = f"Branch[{node} -> {successor}]"
+        successor_execution_branch = f"Branch[{node} -> {execution_graph.edges[(node, successor)][CONTROL_FLOW_PROPERTY]}]"
         successor_stack.append(successor_execution_branch)
         execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY][
             successor

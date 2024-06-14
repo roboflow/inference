@@ -166,4 +166,5 @@ scratch
 docs/workflows/blocks/*
 docs/workflows/kinds/*
 !tests/workflows/integration_tests/assets/*.jpg
+!tests/workflows/integration_tests/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png

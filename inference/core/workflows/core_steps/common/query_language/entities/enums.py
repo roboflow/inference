@@ -43,3 +43,8 @@ class ImageProperty(Enum):
     SIZE = "size"
     HEIGHT = "height"
     WIDTH = "width"
+
+
+class DetectionsSelectionMode(Enum):
+    LEFT_MOST = "left_most"
+    RIGHT_MOST = "right_most"

@@ -49,13 +49,13 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
         default_factory=lambda: {},
     )
-    step_if_true: StepSelector = Field(
+    steps_if_true: List[StepSelector] = Field(
         description="Reference to step which shall be executed if expression evaluates to true",
-        examples=["$steps.on_true"],
+        examples=[["$steps.on_true"]],
     )
-    step_if_false: StepSelector = Field(
+    steps_if_false: List[StepSelector] = Field(
         description="Reference to step which shall be executed if expression evaluates to false",
-        examples=["$steps.on_false"],
+        examples=[["$steps.on_false"]],
     )
 
     @classmethod
@@ -73,13 +73,17 @@ class ConditionBlock(WorkflowBlock):
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
-        step_if_true: StepSelector,
-        step_if_false: StepSelector,
+        steps_if_true: List[StepSelector],
+        steps_if_false: List[StepSelector],
     ) -> BlockResult:
+        if not steps_if_true and not steps_if_false:
+            return FlowControl(mode="terminate_branch")
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
-        next_step = step_if_true if evaluation_result else step_if_false
-        flow_control = FlowControl(mode="select_step", context=next_step)
+        next_steps = steps_if_true if evaluation_result else steps_if_false
+        if not next_steps:
+            return FlowControl(mode="terminate_branch")
+        flow_control = FlowControl(mode="select_step", context=next_steps)
         return flow_control
 
     @classmethod

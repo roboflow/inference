@@ -6,6 +6,7 @@ FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY = "flow_control_execution_branche
 STEP_DEFINITION_PROPERTY = "definition"
 ROOT_BRANCH_NAME = "Branch[root]"
 STEP_INPUT_PROPERTY = "step_input_property"
+CONTROL_FLOW_PROPERTY = "control_flow_property"
 DIMENSIONALITY_PROPERTY = "dimensionality"
 DIMENSIONALITY_LINEAGE_PROPERTY = "dimensionality_lineage"
 WORKFLOW_INPUT_BATCH_LINEAGE_ID = "<workflow_input>"

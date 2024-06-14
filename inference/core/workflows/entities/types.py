@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated, Literal
@@ -659,4 +659,4 @@ FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
 
 class FlowControl(BaseModel):
     mode: Literal["pass", "terminate_branch", "select_step"]
-    context: Optional[str] = Field(default=None)
+    context: Optional[Union[str, List[str]]] = Field(default=None)
