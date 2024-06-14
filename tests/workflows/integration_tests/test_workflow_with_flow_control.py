@@ -78,7 +78,9 @@ async def test_flow_control_step_not_operating_on_batches(
         "predictions_a",
         "predictions_b",
     }, "Expected all declared outputs to be delivered"
-    assert (result[0]["predictions_a"] and not result[0]["predictions_b"]) or (not result[0]["predictions_a"] and result[0]["predictions_b"]), "Expected only one of the results provided, mutually exclusive based on random choice"
+    assert (result[0]["predictions_a"] and not result[0]["predictions_b"]) or (
+        not result[0]["predictions_a"] and result[0]["predictions_b"]
+    ), "Expected only one of the results provided, mutually exclusive based on random choice"
 
 
 @pytest.mark.asyncio
@@ -103,25 +105,27 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={
-        "image": [crowd_image] * 4
-    })
+    result = await execution_engine.run_async(
+        runtime_parameters={"image": [crowd_image] * 4}
+    )
 
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 4, "4 images provided, so 4 output elements expected"
-    empty_element = "predictions_a" if not result[0]["predictions_a"] else "predictions_b"
+    empty_element = (
+        "predictions_a" if not result[0]["predictions_a"] else "predictions_b"
+    )
     for i in range(4):
         assert set(result[i].keys()) == {
             "predictions_a",
             "predictions_b",
         }, "Expected all declared outputs to be delivered"
-        assert (
-            result[i]["predictions_a"] and not result[i]["predictions_b"]
-        ) or (
+        assert (result[i]["predictions_a"] and not result[i]["predictions_b"]) or (
             not result[i]["predictions_a"] and result[i]["predictions_b"]
         ), "Expected only one of the results provided, mutually exclusive based on random choice"
-        assert not result[i][empty_element], f"Expected `{empty_element}` to be empty for each output, as ABTest takes only non-batch parameters and should decide once for all batch elements"
+        assert not result[i][
+            empty_element
+        ], f"Expected `{empty_element}` to be empty for each output, as ABTest takes only non-batch parameters and should decide once for all batch elements"
 
 
 FILTERING_OPERATION = {
@@ -194,31 +198,33 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
             "name": "condition",
             "condition_statement": {
                 "type": "StatementGroup",
-                "statements": [{
-                    "type": "BinaryStatement",
-                    "left_operand": {
-                        "type": "DynamicOperand",
-                        "operand_name": "prediction",
-                        "operations": [
-                            FILTERING_OPERATION,
-                            {"type": "SequenceLength"}
-                        ],
-                    },
-                    "comparator": {"type": "(Number) >="},
-                    "right_operand": {
-                        "type": "DynamicOperand",
-                        "operand_name": "detections_meeting_condition",
-                    },
-                }]
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "prediction",
+                            "operations": [
+                                FILTERING_OPERATION,
+                                {"type": "SequenceLength"},
+                            ],
+                        },
+                        "comparator": {"type": "(Number) >="},
+                        "right_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "detections_meeting_condition",
+                        },
+                    }
+                ],
             },
             "evaluation_parameters": {
                 "image": "$inputs.image",
                 "prediction": "$steps.a.predictions",
                 "classes": "$inputs.classes",
-                "detections_meeting_condition": "$inputs.detections_meeting_condition"
+                "detections_meeting_condition": "$inputs.detections_meeting_condition",
             },
             "step_if_true": "$steps.b",
-            "step_if_false": "$steps.c"
+            "step_if_false": "$steps.c",
         },
         {
             "type": "ObjectDetectionModel",
@@ -266,11 +272,13 @@ async def test_flow_control_step_affecting_batches(
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={
-        "image": [crowd_image, dogs_image],
-        "classes": ["person", "car"],
-        "detections_meeting_condition": 2,
-    })
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "classes": ["person", "car"],
+            "detections_meeting_condition": 2,
+        }
+    )
 
     # then
     assert isinstance(result, list), "Expected result to be list"
@@ -283,10 +291,12 @@ async def test_flow_control_step_affecting_batches(
         "predictions_b",
         "predictions_c",
     }, "Expected all declared outputs to be delivered for second result"
-    assert result[0]["predictions_b"] and not result[0]["predictions_c"], \
-        "At crowd image it is expected to spot 2 big instances of classes person, car - hence model b should fire"
-    assert not result[1]["predictions_b"] and result[1]["predictions_c"], \
-        "At dogs image it is not expected to spot people nor cars - hence model c should fire"
+    assert (
+        result[0]["predictions_b"] and not result[0]["predictions_c"]
+    ), "At crowd image it is expected to spot 2 big instances of classes person, car - hence model b should fire"
+    assert (
+        not result[1]["predictions_b"] and result[1]["predictions_c"]
+    ), "At dogs image it is not expected to spot people nor cars - hence model c should fire"
 
 
 WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
@@ -305,7 +315,7 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
             "predictions": "$steps.first_detection.predictions",
             "operations": [
                 {"type": "DetectionsOffset", "offset_x": 50, "offset_y": 50}
-            ]
+            ],
         },
         {
             "type": "Crop",
@@ -318,28 +328,28 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
             "name": "second_detection",
             "image": "$steps.first_crop.crops",
             "model_id": "yolov8n-640",
-            "class_filter": ["dog"]
+            "class_filter": ["dog"],
         },
         {
             "type": "ContinueIf",
             "name": "continue_if",
             "condition_statement": {
                 "type": "StatementGroup",
-                "statements": [{
-                    "type": "BinaryStatement",
-                    "left_operand": {
-                        "type": "DynamicOperand",
-                        "operand_name": "prediction",
-                        "operations": [
-                            {"type": "SequenceLength"}
-                        ],
-                    },
-                    "comparator": {"type": "(Number) =="},
-                    "right_operand": {
-                        "type": "StaticOperand",
-                        "value": 1,
-                    },
-                }]
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "prediction",
+                            "operations": [{"type": "SequenceLength"}],
+                        },
+                        "comparator": {"type": "(Number) =="},
+                        "right_operand": {
+                            "type": "StaticOperand",
+                            "value": 1,
+                        },
+                    }
+                ],
             },
             "evaluation_parameters": {
                 "prediction": "$steps.second_detection.predictions"
@@ -381,17 +391,24 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={
-        "image": [crowd_image, dogs_image],
-    })
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+        }
+    )
 
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 2, "2 images provided, so 2 output elements expected"
-    assert result[0].keys() == {"dog_classification"}, \
-        "Expected all declared outputs to be delivered for first result"
-    assert result[0].keys() == {"dog_classification"}, \
-        "Expected all declared outputs to be delivered for second result"
-    assert result[0]["dog_classification"] == [None] * 12, \
-        "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
-    assert len(result[1]["dog_classification"]) == 2, "Expected 2 bboxes of dogs detected"
+    assert result[0].keys() == {
+        "dog_classification"
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {
+        "dog_classification"
+    }, "Expected all declared outputs to be delivered for second result"
+    assert (
+        result[0]["dog_classification"] == [None] * 12
+    ), "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
+    assert (
+        len(result[1]["dog_classification"]) == 2
+    ), "Expected 2 bboxes of dogs detected"

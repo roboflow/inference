@@ -40,14 +40,19 @@ def construct_workflow_output(
         output_lineage = execution_graph.nodes[graph_element][
             DIMENSIONALITY_LINEAGE_PROPERTY
         ]
+        print(output.name, output_lineage)
         if not output_lineage:
             output_name2indices[output.name] = [()]
-        else:
+        elif dynamic_batches_manager.is_lineage_registered(
+            data_lineage=output_lineage[-1]
+        ):
             output_name2indices[output.name] = (
                 dynamic_batches_manager.get_batch_element_indices(
                     data_lineage=output_lineage[-1],
                 )
             )
+        else:
+            output_name2indices[output.name] = [()]
     all_indices_lengths = [
         len(index) for indices in output_name2indices.values() for index in indices
     ]
@@ -60,7 +65,11 @@ def construct_workflow_output(
                 output.name: (
                     runtime_parameters[get_last_chunk_of_selector(output.selector)]
                     if is_input_selector(selector_or_value=output.selector)
-                    else execution_cache.get_non_batch_output(selector=output.selector)
+                    else (
+                        execution_cache.get_non_batch_output(selector=output.selector)
+                        if execution_cache.is_value_registered(selector=output.selector)
+                        else None
+                    )
                 )
                 for output in workflow_outputs
             }
@@ -77,10 +86,12 @@ def construct_workflow_output(
         + 1
     )
     results = []
+    print("output_name2indices", output_name2indices)
     for i in range(major_batch_size):
         single_result = {}
         for output in workflow_outputs:
             output_indices = output_name2indices[output.name]
+            print("name", output.name, "indices", output_indices)
             output_dimension = 0
             if output_indices:
                 output_dimension = len(output_indices[0])

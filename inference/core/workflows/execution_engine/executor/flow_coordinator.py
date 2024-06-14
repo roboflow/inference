@@ -128,21 +128,22 @@ def handle_flow_control(
     flow_control: Union[Batch[FlowControl], FlowControl],
     branches_manager: ExecutionBranchesManager,
     execution_graph: nx.DiGraph,
-    flow_control_execution_branches: Dict[str, str],
+    flow_control_execution_branches: Optional[Dict[str, str]],
 ) -> Set[str]:
     if not isinstance(flow_control, Batch):
-        for (
-            target_step_name,
-            target_execution_branch,
-        ) in flow_control_execution_branches.items():
-            if flow_control.mode == "terminate_branch":
-                mask = False
-            else:
-                mask = target_step_name == flow_control.context
-            branches_manager.register_non_batch_branch_mask(
-                branch_name=target_execution_branch,
-                mask=mask,
-            )
+        if flow_control_execution_branches:
+            for (
+                target_step_name,
+                target_execution_branch,
+            ) in flow_control_execution_branches.items():
+                if flow_control.mode == "terminate_branch":
+                    mask = False
+                else:
+                    mask = target_step_name == flow_control.context
+                branches_manager.register_non_batch_branch_mask(
+                    branch_name=target_execution_branch,
+                    mask=mask,
+                )
         nodes_to_discard = set()
         if flow_control.mode == "terminate_branch":
             nodes_to_discard = get_all_nodes_in_execution_path(
@@ -164,16 +165,17 @@ def handle_flow_control(
         if element.mode != "select_step":
             continue
         target_step2indices[element.context].append(idx)
-    for (
-        target_step_name,
-        target_execution_branch,
-    ) in flow_control_execution_branches.items():
-        if not target_step2indices[target_step_name]:
-            target_steps_to_terminate.add(target_step_name)
-        branches_manager.register_batch_branch_mask(
-            branch_name=target_execution_branch,
-            mask=target_step2indices[target_step_name],
-        )
+    if flow_control_execution_branches:
+        for (
+            target_step_name,
+            target_execution_branch,
+        ) in flow_control_execution_branches.items():
+            if not target_step2indices[target_step_name]:
+                target_steps_to_terminate.add(target_step_name)
+            branches_manager.register_batch_branch_mask(
+                branch_name=target_execution_branch,
+                mask=target_step2indices[target_step_name],
+            )
     nodes_to_discard = set()
     for step in target_steps_to_terminate:
         step_derived_nodes = get_all_nodes_in_execution_path(

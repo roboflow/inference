@@ -10,10 +10,9 @@ from inference.core.workflows.constants import (
     FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY,
     STEP_DEFINITION_PROPERTY,
 )
-from inference.core.workflows.entities.base import Batch, WorkflowImageData
+from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import (
-    ExecutionEngineNotImplementedError,
     ExecutionEngineRuntimeError,
     StepExecutionError,
     WorkflowError,
@@ -165,11 +164,8 @@ async def execute_step(
 ) -> Set[str]:
     logger.info(f"started execution of: {step} - {datetime.now().isoformat()}")
     step_name = get_last_chunk_of_selector(selector=step)
+    print(f"execute_step(step_name={step_name})")
     step_instance = workflow.steps[step_name].step
-    execution_cache.register_step(
-        step_name=step_name,
-        compatible_with_batches=step_instance.produces_batch_output(),
-    )
     step_parameters = assembly_step_execution_parameters(
         step=step,
         workflow=workflow,
@@ -196,15 +192,17 @@ async def execute_step(
         data_lineage=data_lineage,
     )
     nodes_to_discard = set()
-    if is_flow_control_step(execution_graph=workflow.execution_graph, node=step):
+    if is_flow_control_step(
+        execution_graph=workflow.execution_graph, node=step
+    ) or isinstance(step_result, FlowControl):
         nodes_to_discard = handle_flow_control(
             current_step_selector=step,
             flow_control=step_result,
             execution_graph=workflow.execution_graph,
             branches_manager=branches_manager,
-            flow_control_execution_branches=workflow.execution_graph.nodes[step][
+            flow_control_execution_branches=workflow.execution_graph.nodes[step].get(
                 FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY
-            ],
+            ),
         )
     logger.info(f"finished execution of: {step} - {datetime.now().isoformat()}")
     return nodes_to_discard
@@ -365,7 +363,7 @@ def retrieve_value(
 ) -> Any:
     if is_step_output_selector(selector_or_value=value):
         this_step_selector = construct_step_selector(step_name=step_name)
-        predecessors = execution_graph.predecessors(this_step_selector)
+        predecessors = list(execution_graph.predecessors(this_step_selector))
         predecessors_batch_dims = [
             len(execution_graph.nodes[predecessor][DIMENSIONALITY_LINEAGE_PROPERTY])
             for predecessor in predecessors
@@ -508,17 +506,37 @@ async def run_step(
     step_controls_flow: bool,
     data_lineage: Optional[str],
 ) -> Optional[Union[FlowControl, Batch[FlowControl]]]:
+    print("Running", step_name)
     if not step_instance.accepts_empty_datapoints():
         non_empty_indices = get_all_non_empty_indices(value=parameters)
         parameters = filter_parameters(
             value=parameters,
             non_empty_indices=non_empty_indices,
         )
-    indices_of_parameters = retrieve_indices(
+    reference_parameter = step_instance.get_data_dimensionality_property()
+    dimensionality_of_result = get_dimensionality_of_result(parameters=parameters)
+    dimensionality_of_results_indices = dimensionality_of_result
+    if reference_parameter is not None:
+        dimensionality_of_results_indices = get_dimensionality_of_parameter(
+            parameters=parameters,
+            parameter_name=reference_parameter,
+        )
+    indices_of_results = retrieve_indices(
         parameters=parameters,
-        reference_parameter=step_instance.get_data_dimensionality_property(),
+        reference_parameter=reference_parameter,
     )
     step_is_simd = len(get_batch_parameters(parameters=parameters)) > 0
+    print(f"step_name: {step_name}, step_is_simd: {step_is_simd}")
+    if step_is_simd:
+        execution_cache.register_step(
+            step_name=step_name,
+            compatible_with_batches=True,
+        )
+    else:
+        execution_cache.register_step(
+            step_name=step_name,
+            compatible_with_batches=False,
+        )
     if step_instance.accepts_batch_input():
         results = await step_instance.run(**parameters)
     else:
@@ -535,40 +553,82 @@ async def run_step(
     if step_instance.get_impact_on_data_dimensionality() == "decreases":
         reduced_indices_of_parameters = []
         already_spotted_indices = set()
-        for index in indices_of_parameters:
+        for index in indices_of_results:
             decreased_index = index[:-1]
             if decreased_index not in already_spotted_indices:
                 reduced_indices_of_parameters.append(decreased_index)
                 already_spotted_indices.add(decreased_index)
-        indices_of_parameters = reduced_indices_of_parameters
-    if indices_of_parameters == [()]:
+        indices_of_results = reduced_indices_of_parameters
+    if indices_of_results == [()]:
         if step_controls_flow:
-            return Batch(results, indices_of_parameters)
+            return Batch(results, indices_of_results)
         execution_cache.register_non_batch_step_outputs(
             step_name=step_name, outputs=results
         )
         return None
-    if len(results) != len(indices_of_parameters):
-        raise ValueError("Missmatch in step result dimension")
+
+    if dimensionality_of_result == dimensionality_of_results_indices:
+        if len(results) != len(indices_of_results):
+            raise ValueError("Missmatch in step result dimension")
+    else:
+        reduced_indices_of_parameters = []
+        already_spotted_indices = set()
+        for index in indices_of_results:
+            decreased_index = index[:-1]
+            if decreased_index not in already_spotted_indices:
+                reduced_indices_of_parameters.append(decreased_index)
+                already_spotted_indices.add(decreased_index)
+        if len(results) != len(reduced_indices_of_parameters):
+            raise ValueError("Missmatch in step result dimension")
+
     if step_instance.get_impact_on_data_dimensionality() == "increases":
         if data_lineage is None:
             raise ValueError("Data lineage required")
         increased_indices, increased_data = [], []
         nested_sizes = []
-        for index, result in zip(indices_of_parameters, results):
+        for index, result in zip(indices_of_results, results):
             nested_sizes.append(len(result))
             for nested_idx, result_element in enumerate(result):
                 increased_indices.append(index + (nested_idx,))
                 increased_data.append(result_element)
-        indices_of_parameters = increased_indices
+        indices_of_results = increased_indices
         results = increased_data
+        print("Registering lineage", data_lineage, "sizes", nested_sizes)
         dynamic_batches_manager.register_batch_sizes(
             data_lineage=data_lineage, sizes=nested_sizes
         )
     if step_controls_flow:
-        return Batch(results, indices_of_parameters)
+        return Batch(results, indices_of_results)
+    if not indices_of_results:
+        return FlowControl(mode="terminate_branch")
+    if dimensionality_of_result < dimensionality_of_results_indices:
+        increased_data = []
+        grouped_indices = []
+        last_group = None
+        already_spotted = set()
+        for idx in indices_of_results:
+            if idx[:-1] in already_spotted:
+                last_group.append(idx)
+            else:
+                if last_group is not None:
+                    grouped_indices.append(last_group)
+                already_spotted.add(idx[:-1])
+                last_group = [idx]
+        if last_group:
+            grouped_indices.append(last_group)
+        for group_of_indices, result_element in zip(grouped_indices, results):
+            if not isinstance(result_element, list) or len(result_element) != len(
+                group_of_indices
+            ):
+                raise ValueError("Dimensionality missmatch")
+            increased_data.extend(result_element)
+        results = increased_data
+
+    if step_name == "coordinates_transform":
+        print(len(results), indices_of_results)
+
     execution_cache.register_batch_of_step_outputs(
-        step_name=step_name, indices=indices_of_parameters, outputs=results
+        step_name=step_name, indices=indices_of_results, outputs=results
     )
     return None
 
@@ -710,6 +770,33 @@ def retrieve_indices(
         if values:
             return values
     return []
+
+
+def get_dimensionality_of_result(parameters: Dict[str, Any]) -> int:
+    minimal_non_zero_dimension = None
+    for parameter_name in parameters:
+        dim = get_dimensionality_of_parameter(
+            parameters=parameters, parameter_name=parameter_name
+        )
+        if dim == 0:
+            continue
+        if not minimal_non_zero_dimension:
+            minimal_non_zero_dimension = dim
+        else:
+            if dim < minimal_non_zero_dimension:
+                minimal_non_zero_dimension = dim
+    if minimal_non_zero_dimension:
+        return minimal_non_zero_dimension
+    return 0
+
+
+def get_dimensionality_of_parameter(
+    parameters: Dict[str, Any], parameter_name: str
+) -> int:
+    indices = retrieve_indices_of_parameter(parameters[parameter_name])
+    if not indices:
+        return 0
+    return len(indices[0])
 
 
 def retrieve_indices_of_all_parameters(

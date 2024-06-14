@@ -1,14 +1,18 @@
+"""
+This is just example, test implementation, please do not assume it being fully functional.
+"""
+
 import random
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import List, Literal, Type
 
 from pydantic import Field
 
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import FlowControl, StepSelector
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
-    BlockResult,
 )
 
 

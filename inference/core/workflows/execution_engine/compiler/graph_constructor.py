@@ -596,7 +596,13 @@ def set_dimensionality_for_step(
     block_class_by_step_name: Dict[str, Type[WorkflowBlock]],
 ) -> DiGraph:
     step_name = get_last_chunk_of_selector(selector=node)
-    if not block_class_by_step_name[step_name].produces_batch_output():
+    all_predecessors_non_batch = all(
+        [
+            not execution_graph.nodes[predecessor][DIMENSIONALITY_LINEAGE_PROPERTY]
+            for predecessor in execution_graph.predecessors(node)
+        ]
+    )
+    if all_predecessors_non_batch:
         return set_dimensionality_for_node(
             execution_graph=execution_graph,
             node=node,
