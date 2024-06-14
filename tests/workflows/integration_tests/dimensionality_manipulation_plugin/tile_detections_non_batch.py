@@ -39,12 +39,12 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal["StitchDetectionsNonBatch"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    type: Literal["TileDetectionsNonBatch"]
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    image_predictions: StepOutputSelector(
+    crops_predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
             BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -59,15 +59,11 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="predictions", kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            ]),
+            OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
         ]
 
 
-class StitchDetectionsNonBatchBlock(WorkflowBlock):
+class TileDetectionsNonBatchBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -77,11 +73,7 @@ class StitchDetectionsNonBatchBlock(WorkflowBlock):
     def get_impact_on_data_dimensionality(
         cls,
     ) -> Literal["decreases", "keeps_the_same", "increases"]:
-        return "keeps_the_same"
-
-    @classmethod
-    def get_data_dimensionality_property(cls) -> Optional[str]:
-        return "image"
+        return "decreases"
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -89,11 +81,16 @@ class StitchDetectionsNonBatchBlock(WorkflowBlock):
 
     async def run(
         self,
-        image: WorkflowImageData,
-        image_predictions: Batch[sv.Detections],
+        crops: Batch[WorkflowImageData],
+        crops_predictions: Batch[sv.Detections],
     ) -> BlockResult:
-        image_predictions = [deepcopy(p) for p in image_predictions if len(p)]
-        for p in image_predictions:
-            coords = p["parent_coordinates"][0]
-            p.xyxy += np.concatenate((coords, coords))
-        return {"predictions": sv.Detections.merge(image_predictions)}
+        annotator = sv.BoundingBoxAnnotator()
+        visualisations = []
+        for image, prediction in zip(crops, crops_predictions):
+            annotated_image = annotator.annotate(
+                image.numpy_image.copy(),
+                prediction,
+            )
+            visualisations.append(annotated_image)
+        tile = sv.create_tiles(visualisations)
+        return {"visualisations": tile}

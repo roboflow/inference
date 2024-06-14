@@ -13,6 +13,10 @@ from tests.workflows.integration_tests.dimensionality_manipulation_plugin.stitch
 from tests.workflows.integration_tests.dimensionality_manipulation_plugin.stitch_detections_non_batch import (
     StitchDetectionsNonBatchBlock,
 )
+from tests.workflows.integration_tests.dimensionality_manipulation_plugin.tile_detections_batch import \
+    TileDetectionsBatchBlock
+from tests.workflows.integration_tests.dimensionality_manipulation_plugin.tile_detections_non_batch import \
+    TileDetectionsNonBatchBlock
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
@@ -21,4 +25,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsToParentCoordinatesNonBatchBlock,
         StitchDetectionsBatchBlock,
         StitchDetectionsNonBatchBlock,
+        TileDetectionsBatchBlock,
+        TileDetectionsNonBatchBlock,
     ]

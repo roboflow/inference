@@ -372,6 +372,19 @@ def retrieve_value(
         ]
         if len(predecessors_batch_dims) > 0:
             requested_dimensionality = min(predecessors_batch_dims)
+            # TODO: validate constraint that reduction only happens on equal input dims
+            # and that we do not hit 0
+            if (
+                len(
+                    execution_graph.nodes[this_step_selector][
+                        DIMENSIONALITY_LINEAGE_PROPERTY
+                    ]
+                )
+                < requested_dimensionality
+            ):
+                requested_dimensionality -= 1
+            if requested_dimensionality < 1:
+                raise ValueError("Should not hit 0 with requested_dimensionality!")
         else:
             requested_dimensionality = None
         value = retrieve_step_output(

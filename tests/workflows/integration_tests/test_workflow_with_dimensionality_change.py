@@ -457,3 +457,179 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     assert sum(len(e) for e in result[1]["predictions_for_crops"]) == len(
         result[1]["aggregated_predictions"]
     ), "Number of bounding boxes in aggregated prediction must match sum of number of boxes for all crops"
+
+
+DETECTIONS_TILING_BATCH_VARIANT_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "first_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "DetectionsTransformation",
+            "name": "enlarging_boxes",
+            "predictions": "$steps.first_detection.predictions",
+            "operations": [
+                {"type": "DetectionsOffset", "offset_x": 50, "offset_y": 50}
+            ],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.enlarging_boxes.predictions",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "specialised_detection",
+            "image": "$steps.cropping.crops",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "TileDetectionsBatch",
+            "name": "tiles",
+            "images_crops": "$steps.cropping.crops",
+            "crops_predictions": "$steps.specialised_detection.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "visualisation",
+            "selector": "$steps.tiles.visualisations",
+            "coordinates_system": "own",
+        }
+    ],
+}
+
+
+@pytest.mark.asyncio
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+async def test_workflow_with_detections_stitching_in_batch_variant(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_TILING_BATCH_VARIANT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={"image": [crowd_image, dogs_image]}
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two output elements expected"
+    assert set(result[0].keys()) == {
+        "visualisation",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "visualisation",
+    }, "Expected all declared outputs to be delivered"
+    assert result[0]["visualisation"].shape == (416, 362, 3), "Expected visualisation to be image of shape (416, 362, 3)"
+    assert result[1]["visualisation"].shape == (296, 522, 3), "Expected visualisation to be image of shape (296, 522, 3)"
+
+
+DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "first_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "DetectionsTransformation",
+            "name": "enlarging_boxes",
+            "predictions": "$steps.first_detection.predictions",
+            "operations": [
+                {"type": "DetectionsOffset", "offset_x": 50, "offset_y": 50}
+            ],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.enlarging_boxes.predictions",
+        },
+        {
+            "type": "ObjectDetectionModel",
+            "name": "specialised_detection",
+            "image": "$steps.cropping.crops",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "TileDetectionsNonBatch",
+            "name": "tiles",
+            "crops": "$steps.cropping.crops",
+            "crops_predictions": "$steps.specialised_detection.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "visualisation",
+            "selector": "$steps.tiles.visualisations",
+            "coordinates_system": "own",
+        }
+    ],
+}
+
+
+@pytest.mark.asyncio
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+async def test_workflow_with_detections_stitching_in_batch_variant(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={"image": [crowd_image, dogs_image]}
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two output elements expected"
+    assert set(result[0].keys()) == {
+        "visualisation",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "visualisation",
+    }, "Expected all declared outputs to be delivered"
+    assert result[0]["visualisation"].shape == (416, 362, 3), "Expected visualisation to be image of shape (416, 362, 3)"
+    assert result[1]["visualisation"].shape == (296, 522, 3), "Expected visualisation to be image of shape (296, 522, 3)"
