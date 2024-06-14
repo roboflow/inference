@@ -28,7 +28,7 @@ class UsageCollector:
         self._settings: TelemetrySettings = get_telemetry_settings()
         self._stats = self._create_empty_stats()
         # TODO: use persistent queue, i.e. https://pypi.org/project/persist-queue/
-        self._queue = Queue(max_size=self._settings.queue_size)
+        self._queue = Queue(maxsize=self._settings.queue_size)
 
         # TODO: collect list of blocks where telemetry is compulsory
         self._blocks_with_compulsory_telemetry = set()
