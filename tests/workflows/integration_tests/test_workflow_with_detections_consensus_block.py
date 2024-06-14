@@ -82,11 +82,13 @@ async def test_consensus_workflow_when_minimal_valid_input_provided(
     )
 
     # then
-    assert set(result.keys()) == {
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
         "result"
     }, "Only single output key should be extracted"
-    assert len(result["result"]) == 1, "Result for single image is expected"
-    detections: sv.Detections = result["result"][0]["predictions"]
+    assert len(result[0]["result"]) == 1, "Result for single image is expected"
+    detections: sv.Detections = result[0]["result"][0]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -98,10 +100,10 @@ async def test_consensus_workflow_when_minimal_valid_input_provided(
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
     assert (
-        result["result"][0]["object_present"] is True
+        result[0]["result"][0]["object_present"] is True
     ), "Detected 2 instances of person in combined prediction, so `object_present` should be marked True"
     assert (
-        abs(result["result"][0]["presence_confidence"]["person"] - 0.84284) < 1e-4
+        abs(result[0]["result"][0]["presence_confidence"]["person"] - 0.84284) < 1e-4
     ), "Expected presence confidence to be max of merged person class confidence"
 
 

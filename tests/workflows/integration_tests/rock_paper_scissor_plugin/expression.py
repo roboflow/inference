@@ -4,11 +4,11 @@ This is extremely unsafe block - be aware for injected code execution!
 """
 
 from copy import deepcopy
-from typing import List, Literal, Optional, Type, Union, Dict, Any
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field, BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from inference.core.workflows.entities.base import (
     Batch,
@@ -22,7 +22,8 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
-    WorkflowImageSelector, WorkflowParameterSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -72,9 +73,7 @@ class ExpressionBlock(WorkflowBlock):
         return False
 
     async def run(
-        self,
-        data: Dict[str, Any],
-        output: Union[str, PythonCodeBlock]
+        self, data: Dict[str, Any], output: Union[str, PythonCodeBlock]
     ) -> BlockResult:
         if isinstance(output, str):
             return {"output": output}
@@ -83,4 +82,3 @@ class ExpressionBlock(WorkflowBlock):
         code = output.code + f"\n\nresult = function({params})"
         exec(code, data, results)
         return {"output": results["result"]}
-

@@ -54,6 +54,17 @@ async def test_flow_control_step_not_operating_on_batches(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test scenario, we run step (ABTest) which is not running in
+    SIMD mode, as it only accepts non-batch parameters - hence
+    single decision made at start will affect all downstream execution
+    paths.
+
+    We expect, based on flip of coin to execute either step "a" or step "b".
+
+    What is verified from EE standpoint:
+    * Creating execution branches for all batch elements, when input batch size is 1
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.flow_control_plugin"
@@ -90,6 +101,17 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test scenario, we run step (ABTest) which is not running in
+    SIMD mode, as it only accepts non-batch parameters - hence
+    single decision made at start will affect all downstream execution
+    paths.
+
+    We expect, based on flip of coin to execute either step "a" or step "b".
+
+    What is verified from EE standpoint:
+    * Creating execution branches for all batch elements, when input batch size is 4
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.flow_control_plugin"
@@ -260,6 +282,20 @@ async def test_flow_control_step_affecting_batches(
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    Inn this test scenario, we make predictions from object detection model.
+    Then we make if-else statement for each image form input batch checking if
+    model found at least 2 big instances of classes {car, person}. If that is
+    the case we run $steps.b otherwise $steps.c.
+
+    What is verified from EE standpoint:
+    * Creating execution branches for each batch element separately, and then
+    executing downstream step according to decision made at previous step -
+    with execution branches being independent
+    * proper behavior of steps expecting non-empty inputs w.r.t. masks for
+    execution branches
+    * proper broadcasting of non-batch parameters for execution branches
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -379,6 +415,24 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    In this test scenario we verify if we can successfully apply conditional
+    branching when data dimensionality increases.
+    We first make detections on input images and perform crop increasing
+    dimensionality to 2. Then we make another detections on cropped images
+    and check if inside crop we only see one instance of class dog (very naive
+    way of making sure that bboxes contain only single objects).
+    Only if that condition is true, we run classification model - to
+    classify dog breed.
+
+    What is verified from EE standpoint:
+    * Creating execution branches for each batch element separately on deeper
+    dimensionality levels and then executing downstream step according to
+    decision made previously - with execution branches being independent
+    * proper behavior of steps expecting non-empty inputs w.r.t. masks for
+    execution branches
+    * correctness of building nested outputs
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,

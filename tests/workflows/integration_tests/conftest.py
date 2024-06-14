@@ -38,22 +38,30 @@ def dogs_image() -> np.ndarray:
 
 @pytest.fixture(scope="function")
 def left_scissors_right_paper() -> np.ndarray:
-    return cv2.imread(os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_paper.jpg"))
+    return cv2.imread(
+        os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_paper.jpg")
+    )
 
 
 @pytest.fixture(scope="function")
 def left_rock_right_paper() -> np.ndarray:
-    return cv2.imread(os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_rock_right_paper.jpg"))
+    return cv2.imread(
+        os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_rock_right_paper.jpg")
+    )
 
 
 @pytest.fixture(scope="function")
 def left_rock_right_rock() -> np.ndarray:
-    return cv2.imread(os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_rock_right_rock.jpg"))
+    return cv2.imread(
+        os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_rock_right_rock.jpg")
+    )
 
 
 @pytest.fixture(scope="function")
 def left_scissors_right_scissors() -> np.ndarray:
-    return cv2.imread(os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_scissors.jpg"))
+    return cv2.imread(
+        os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_scissors.jpg")
+    )
 
 
 @pytest.fixture

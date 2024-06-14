@@ -70,6 +70,27 @@ async def test_workflow_with_detections_coordinates_transformation_in_batch_vari
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `DetectionsToParentsCoordinatesBatch`
+    that is supposed to take:
+    * original image (before crop)
+    * detections (performed on crops made from original image)
+    and aligns coordinates system of predictions (in very naive way, not fully functional) to
+    be represented in original image coordinates.
+    Which means that block operates on input occupying in two different dimensionality levels.
+    Block produces outputs at "detections" dimensionality level.
+    Block takes BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with original image into
+    `DetectionsToParentsCoordinatesBatch` block instance.
+
+    What is verified from EE standpoint:
+    * ability to operate with steps that take inputs sitting at different dimensionality level
+    * ability to select output dimensionality when inputs are ay different dimensionality levels
+    * ability for steps under that conditions to operate in batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -195,6 +216,27 @@ async def test_workflow_with_detections_coordinates_transformation_in_non_batch_
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `DetectionsToParentsCoordinatesNonBatch`
+    that is supposed to take:
+    * original image (before crop)
+    * detections (performed on crops made from original image)
+    and aligns coordinates system of predictions (in very naive way, not fully functional) to
+    be represented in original image coordinates.
+    Which means that block operates on input occupying in two different dimensionality levels.
+    Block produces outputs at "detections" dimensionality level.
+    Block takes NON-BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with original image into
+    `DetectionsToParentsCoordinatesNonBatch` block instance.
+
+    What is verified from EE standpoint:
+    * ability to operate with steps that take inputs sitting at different dimensionality level
+    * ability to select output dimensionality when inputs are ay different dimensionality levels
+    * ability for steps under that conditions to operate in non-batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -321,6 +363,27 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `StitchDetectionsBatch`
+    that is supposed to take:
+    * original image (before crop)
+    * detections (performed on crops made from original image)
+    and merge together detections for all crops coming from the same image.
+    Which means that block operates on input occupying in two different dimensionality levels.
+    Block produces outputs at "original image" dimensionality level.
+    Block takes BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with original image into
+    `StitchDetectionsBatch` block instance to merge and get results at image
+    dimensionality level
+
+    What is verified from EE standpoint:
+    * ability to operate with steps that take inputs sitting at different dimensionality level
+    * ability to select output dimensionality when inputs are ay different dimensionality levels
+    * ability for steps under that conditions to operate in batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -421,6 +484,27 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `StitchDetectionsNonBatch`
+    that is supposed to take:
+    * original image (before crop)
+    * detections (performed on crops made from original image)
+    and merge together detections for all crops coming from the same image.
+    Which means that block operates on input occupying in two different dimensionality levels.
+    Block produces outputs at "original image" dimensionality level.
+    Block takes NON-BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with original image into
+    `StitchDetectionsNonBatch` block instance to merge and get results at image
+    dimensionality level
+
+    What is verified from EE standpoint:
+    * ability to operate with steps that take inputs sitting at different dimensionality level
+    * ability to select output dimensionality when inputs are ay different dimensionality levels
+    * ability for steps under that conditions to operate in non-batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -509,12 +593,33 @@ DETECTIONS_TILING_BATCH_VARIANT_WORKFLOW = {
 
 @pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_stitching_in_batch_variant(
+async def test_workflow_with_detections_tiling_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `TileDetectionsBatch`
+    that is supposed to take:
+    * cropped images
+    * detections for cropped images
+    and overlays predictions on crops then making tiles out of visualisation - decreasing
+    data dimensionality by one.
+    Block takes BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with cropped images into
+    `TileDetectionsBatch` block instance to create tiles and send back into the
+    dimensionality level of original image
+
+    What is verified from EE standpoint:
+    * ability to decrease dimensionality
+    * ability to unwrap one dimensionality level of input data before submitting into block
+    execution
+    * properly handling the scenario when block operates in batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -543,8 +648,16 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     assert set(result[1].keys()) == {
         "visualisation",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["visualisation"].shape == (416, 362, 3), "Expected visualisation to be image of shape (416, 362, 3)"
-    assert result[1]["visualisation"].shape == (296, 522, 3), "Expected visualisation to be image of shape (296, 522, 3)"
+    assert result[0]["visualisation"].shape == (
+        416,
+        362,
+        3,
+    ), "Expected visualisation to be image of shape (416, 362, 3)"
+    assert result[1]["visualisation"].shape == (
+        296,
+        522,
+        3,
+    ), "Expected visualisation to be image of shape (296, 522, 3)"
 
 
 DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
@@ -597,12 +710,33 @@ DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
 
 @pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_stitching_in_batch_variant(
+async def test_workflow_with_detections_stitching_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
+    """
+    In this test case scenario we rely on custom block `TileDetectionsNonBatch`
+    that is supposed to take:
+    * cropped images
+    * detections for cropped images
+    and overlays predictions on crops then making tiles out of visualisation - decreasing
+    data dimensionality by one.
+    Block takes NON-BATCHED as input
+
+    What this workflow do is making detection, then cropping images according to
+    detections, then performing detections on crop and then making detections on crops.
+    Detections from crops are submitted along with cropped images into
+    `TileDetectionsNonBatch` block instance to create tiles and send back into the
+    dimensionality level of original image
+
+    What is verified from EE standpoint:
+    * ability to decrease dimensionality
+    * ability to unwrap one dimensionality level of input data before submitting into block
+    execution
+    * properly handling the scenario when block operates in non-batch mode
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
@@ -631,5 +765,13 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     assert set(result[1].keys()) == {
         "visualisation",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["visualisation"].shape == (416, 362, 3), "Expected visualisation to be image of shape (416, 362, 3)"
-    assert result[1]["visualisation"].shape == (296, 522, 3), "Expected visualisation to be image of shape (296, 522, 3)"
+    assert result[0]["visualisation"].shape == (
+        416,
+        362,
+        3,
+    ), "Expected visualisation to be image of shape (416, 362, 3)"
+    assert result[1]["visualisation"].shape == (
+        296,
+        522,
+        3,
+    ), "Expected visualisation to be image of shape (296, 522, 3)"

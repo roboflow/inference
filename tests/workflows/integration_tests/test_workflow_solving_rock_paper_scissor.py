@@ -57,23 +57,19 @@ ROCK_PAPER_SCISSOR_IF_ELSE_WORKFLOW = {
             "data": {
                 "image_only_for_dimension": "$inputs.image",
             },
-            "output": "Gestures not detected"
+            "output": "Gestures not detected",
         },
         {
             "type": "DetectionsTransformation",
             "name": "take_leftmost_detection",
             "predictions": "$steps.gestures_detection.predictions",
-            "operations": [
-                {"type": "DetectionsSelection", "mode": "left_most"}
-            ]
+            "operations": [{"type": "DetectionsSelection", "mode": "left_most"}],
         },
         {
             "type": "DetectionsTransformation",
             "name": "take_rightmost_detection",
             "predictions": "$steps.gestures_detection.predictions",
-            "operations": [
-                {"type": "DetectionsSelection", "mode": "right_most"}
-            ]
+            "operations": [{"type": "DetectionsSelection", "mode": "right_most"}],
         },
         {
             "type": "Expression",
@@ -107,17 +103,17 @@ def function(left_player_detections, right_player_detections):
         else:
             return "left wins"
     return "undefined - should never happen"
-                """
-            }
+                """,
+            },
         },
         {
             "type": "TakeFirstNonEmpty",
             "name": "verdict",
             "inputs": [
                 "$steps.defined_verdict_generator.output",
-                "$steps.undefined_verdict_generator.output"
-            ]
-        }
+                "$steps.undefined_verdict_generator.output",
+            ],
+        },
     ],
     "outputs": [
         {
@@ -125,7 +121,7 @@ def function(left_player_detections, right_player_detections):
             "name": "verdict",
             "selector": "$steps.verdict.output",
         },
-    ]
+    ],
 }
 
 
@@ -141,6 +137,27 @@ async def test_rock_paper_scissors_workflow(
     left_scissors_right_scissors: np.ndarray,
     roboflow_api_key: str,
 ) -> None:
+    """
+    In this test we created rock-paper-scissor game relying on two
+    blocks from rock_paper_scissor_plugin - namely Expression (capable of executing
+    arbitrary Python function on data that is referred to block or provide static
+    output - yet some batch input must be provided to deduce dimensionality) and
+    TakeFirstNonEmpty which is capable of collapsing execution branches
+
+    What happens is the following:
+    * we detect instances of rock / paper / scissors gesture
+    * we check if there are exactly 2 instances detected
+        - if not we go into block producing "Gestures not detected" verdict
+        - else - we go into blocks filtering detections - taking leftmost and rightmost
+            ones. Those two detections are plugged into Expression block running
+            Python function to turn classes of left- and right- most BBoxes into
+            verdict
+    * at the end, two branches created by if-else statement collapses to one output, for
+    convenience - taking first non-empty result
+
+    What is verified from EE standpoint:
+    * Creating and collapsing execution branches
+    """
     # given
     get_plugin_modules_mock.return_value = [
         "tests.workflows.integration_tests.rock_paper_scissor_plugin"
@@ -156,19 +173,25 @@ async def test_rock_paper_scissors_workflow(
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={"image": [
-        crowd_image,
-        left_scissors_right_paper,
-        left_rock_right_paper,
-        left_rock_right_rock,
-        left_scissors_right_scissors,
-    ]})
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [
+                crowd_image,
+                left_scissors_right_paper,
+                left_rock_right_paper,
+                left_rock_right_rock,
+                left_scissors_right_scissors,
+            ]
+        }
+    )
 
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 5, "5 images provided, so 5 output elements expected"
     for element in result:
         assert set(element.keys()) == {"verdict"}, "Expected output to be registered"
-    assert result[0]["verdict"] == "Gestures not detected", "Expected first image not detect gestures"
+    assert (
+        result[0]["verdict"] == "Gestures not detected"
+    ), "Expected first image not detect gestures"
     assert result[1]["verdict"] == "left wins", "Expected scissors to win over paper"
     assert result[2]["verdict"] == "right wins", "Expected paper wins over rock"
     assert result[3]["verdict"] == "tie", "Expected tie for 4th image"

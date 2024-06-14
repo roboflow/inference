@@ -59,11 +59,14 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="predictions", kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            ]),
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
         ]
 
 
