@@ -23,6 +23,7 @@ from inference.core.workflows.execution_engine.executor.output_constructor impor
 from inference.core.workflows.execution_engine.executor.parameters_assembler import (
     assembly_step_parameters,
 )
+from inference.telemetry import collector
 from inference_sdk.http.utils.iterables import make_batches
 
 
@@ -144,7 +145,8 @@ async def execute_step(
         if step_execution_mode is StepExecutionMode.LOCAL
         else step_instance.run_remotely
     )
-    step_result = await step_run_method(**step_parameters)
+    step_run_method_with_telemetry = collector(step_run_method)
+    step_result = await step_run_method_with_telemetry(**step_parameters)
     if isinstance(step_result, tuple):
         step_outputs, flow_control = step_result
     else:
