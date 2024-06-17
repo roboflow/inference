@@ -1,4 +1,3 @@
-import itertools
 from dataclasses import replace
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
@@ -18,7 +17,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,

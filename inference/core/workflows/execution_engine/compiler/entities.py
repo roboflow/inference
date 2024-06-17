@@ -56,7 +56,7 @@ class NodeCategory(Enum):
     OUTPUT_NODE = "OUTPUT_NODE"
 
 
-@dataclass(frozen=True)
+@dataclass
 class ExecutionGraphNode:
     node_category: NodeCategory
     name: str
@@ -64,7 +64,7 @@ class ExecutionGraphNode:
     data_lineage: List[str]
 
 
-@dataclass(frozen=True)
+@dataclass
 class InputNode(ExecutionGraphNode):
     input_manifest: InputType
 
@@ -76,7 +76,7 @@ class InputNode(ExecutionGraphNode):
         return len(self.data_lineage) > 0
 
 
-@dataclass(frozen=True)
+@dataclass
 class OutputNode(ExecutionGraphNode):
     output_manifest: JsonField
 
@@ -131,11 +131,15 @@ class StepInputDefinition:
 
 @dataclass(frozen=True)
 class DynamicStepInputDefinition(StepInputDefinition):
-    dimensionality: int
+    data_lineage: List[str]
     selector: str
 
     def is_batch_oriented(self) -> bool:
-        return self.dimensionality > 0
+        return len(self.data_lineage) > 0
+
+    @property
+    def dimensionality(self) -> int:
+        return len(self.data_lineage)
 
 
 @dataclass(frozen=True)
@@ -168,14 +172,21 @@ class ListOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
 
 @dataclass(frozen=True)
 class DictOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
-    nested_definitions: Dict[str, StaticStepInputDefinition]
+    nested_definitions: Dict[
+        str, Union[StaticStepInputDefinition, DynamicStepInputDefinition]
+    ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class StepNode(ExecutionGraphNode):
     step_manifest: WorkflowBlockManifest
     input_data: Dict[
-        str, Union[DynamicStepInputDefinition, CompoundDynamicStepInputDefinition]
+        str,
+        Union[
+            DynamicStepInputDefinition,
+            StaticStepInputDefinition,
+            CompoundDynamicStepInputDefinition,
+        ],
     ] = field(default_factory=dict)
     dimensionality_reference_property: Optional[str] = None
     child_execution_branches: Dict[str, str] = field(default_factory=dict)

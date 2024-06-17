@@ -27,6 +27,8 @@ class SelectorDefinition:
     allowed_references: List[ReferenceDefinition]
     is_list_element: bool
     is_dict_element: bool
+    dimensionality_offset: int
+    is_dimensionality_reference_property: bool
 
 
 @dataclass(frozen=True)

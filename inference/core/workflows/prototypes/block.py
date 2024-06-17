@@ -40,6 +40,28 @@ class WorkflowBlockManifest(BaseModel, ABC):
     def get_actual_outputs(self) -> List[OutputDefinition]:
         return self.describe_outputs()
 
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {}
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return None
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return 0
+
+    @classmethod
+    def accepts_empty_values(cls) -> bool:
+        return False
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
 
 class WorkflowBlock(ABC):
 
@@ -55,28 +77,6 @@ class WorkflowBlock(ABC):
             "deriving from WorkflowBlockManifest.",
             context="getting_block_manifest",
         )
-
-    @classmethod
-    def accepts_empty_datapoints(cls) -> bool:
-        return False
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
-
-    @classmethod
-    def produces_batch_output(cls) -> bool:
-        return cls.accepts_batch_input()
-
-    @classmethod
-    def get_impact_on_data_dimensionality(
-        cls,
-    ) -> Literal["decreases", "keeps_the_same", "increases"]:
-        return "keeps_the_same"
-
-    @classmethod
-    def get_data_dimensionality_property(cls) -> Optional[str]:
-        return None
 
     @abstractmethod
     async def run(

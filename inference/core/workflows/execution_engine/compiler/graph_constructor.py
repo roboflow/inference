@@ -2,7 +2,7 @@ import itertools
 from collections import defaultdict
 from copy import copy
 from queue import Queue
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
 import networkx as nx
 from networkx import DiGraph
@@ -32,11 +32,16 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
+    CompoundDynamicStepInputDefinition,
+    DynamicStepInputDefinition,
     ExecutionGraphNode,
     InputNode,
     NodeCategory,
+    NodeInputCategory,
     OutputNode,
     ParsedWorkflowDefinition,
+    StaticStepInputDefinition,
+    StepInputDefinition,
     StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
@@ -48,7 +53,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     construct_output_selector,
     construct_step_selector,
     get_last_chunk_of_selector,
-    get_nodes_of_specific_kind,
+    get_nodes_of_specific_category,
     get_step_selector_from_its_output,
     is_flow_control_step,
     is_input_node,
@@ -70,7 +75,8 @@ from inference.core.workflows.prototypes.block import (
 )
 
 NODE_DEFINITION_KEY = "definition"
-STEP_INPUT_PROPERTY = "step_input_property"
+STEP_INPUT_SELECTOR_PROPERTY = "step_input_selector"
+EXCLUDED_FIELDS = {"type", "name"}
 
 
 def prepare_execution_graph(
@@ -109,11 +115,10 @@ def construct_graph(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
     )
-    execution_graph = add_edges_for_outputs(
+    return add_edges_for_outputs(
         workflow_definition=workflow_definition,
         execution_graph=execution_graph,
     )
-    return denote_execution_branches(execution_graph=execution_graph)
 
 
 def add_input_nodes_for_graph(
@@ -270,7 +275,7 @@ def add_edge_for_step(
     execution_graph.add_edge(
         target_step_selector,
         source_step_selector,
-        **{STEP_INPUT_PROPERTY: target_step_parsed_selector.definition.property_name},
+        **{STEP_INPUT_SELECTOR_PROPERTY: target_step_parsed_selector},
     )
     return execution_graph
 
@@ -406,146 +411,6 @@ def add_edges_for_outputs(
     return execution_graph
 
 
-def denote_execution_branches(execution_graph: DiGraph) -> DiGraph:
-    super_input_node = "<super-input>"
-    execution_graph = add_super_input_node_in_execution_graph(
-        execution_graph=execution_graph,
-        super_input_node=super_input_node,
-    )
-    execution_graph = denote_execution_branches_for_node(
-        node_name=super_input_node,
-        output_branches=[ROOT_BRANCH_NAME],
-        execution_graph=execution_graph,
-    )
-    for node in traverse_graph_ensuring_parents_are_reached_first(
-        graph=execution_graph,
-        start_node=super_input_node,
-    ):
-        if is_flow_control_step(execution_graph=execution_graph, node=node):
-            execution_graph = start_execution_branches_for_node_successors(
-                execution_graph=execution_graph,
-                node=node,
-            )
-        elif node_merges_execution_paths(execution_graph=execution_graph, node=node):
-            execution_graph = denote_common_execution_branch_for_merged_branches(
-                execution_graph=execution_graph,
-                node=node,
-            )
-        else:
-            execution_graph = denote_execution_branches_for_nodes(
-                node_names=execution_graph.successors(node),
-                branches=execution_graph.nodes[node][EXECUTION_BRANCHES_STACK_PROPERTY],
-                execution_graph=execution_graph,
-            )
-    execution_graph.remove_node(super_input_node)
-    ensure_all_nodes_have_execution_branch_associated(execution_graph=execution_graph)
-    return execution_graph
-
-
-def start_execution_branches_for_node_successors(
-    execution_graph: DiGraph, node: str
-) -> DiGraph:
-    node_execution_branches_stack = execution_graph.nodes[node][
-        EXECUTION_BRANCHES_STACK_PROPERTY
-    ]
-    execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY] = {}
-    for successor in execution_graph.successors(node):
-        successor_stack = copy(node_execution_branches_stack)
-        successor_execution_branch = f"Branch[{node} -> {execution_graph.edges[(node, successor)][CONTROL_FLOW_PROPERTY]}]"
-        successor_stack.append(successor_execution_branch)
-        execution_graph.nodes[node][FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY][
-            successor
-        ] = successor_execution_branch
-        execution_graph = denote_execution_branches_for_node(
-            node_name=successor,
-            output_branches=successor_stack,
-            execution_graph=execution_graph,
-        )
-    return execution_graph
-
-
-def node_merges_execution_paths(execution_graph: DiGraph, node: str) -> bool:
-    node_predecessors = list(execution_graph.predecessors(node))
-    if len(node_predecessors) < 2:
-        return False
-    reference_execution_branches_stack = execution_graph.nodes[node_predecessors[0]][
-        EXECUTION_BRANCHES_STACK_PROPERTY
-    ]
-    for predecessor in node_predecessors[1:]:
-        predecessor_execution_branches_stack = execution_graph.nodes[predecessor][
-            EXECUTION_BRANCHES_STACK_PROPERTY
-        ]
-        if reference_execution_branches_stack != predecessor_execution_branches_stack:
-            return True
-    return False
-
-
-def denote_common_execution_branch_for_merged_branches(
-    execution_graph: DiGraph, node: str
-) -> DiGraph:
-    node_predecessors = list(execution_graph.predecessors(node))
-    execution_branches_stacks_to_merge = [
-        execution_graph.nodes[node_predecessor][EXECUTION_BRANCHES_STACK_PROPERTY]
-        for node_predecessor in node_predecessors
-    ]
-    merged_stack = find_longest_common_array_elements_prefix(
-        arrays=execution_branches_stacks_to_merge,
-    )
-    if len(merged_stack) == 0:
-        raise ValueError(f"Could not merge execution branches defined in step: {node}")
-    execution_graph = denote_execution_branches_for_node(
-        node_name=node, output_branches=merged_stack, execution_graph=execution_graph
-    )
-    return denote_execution_branches_for_nodes(
-        node_names=execution_graph.successors(node),
-        branches=merged_stack,
-        execution_graph=execution_graph,
-    )
-
-
-def find_longest_common_array_elements_prefix(arrays: List[List[str]]) -> List[str]:
-    if len(arrays) == 0:
-        return []
-    if len(arrays) == 1:
-        return copy(arrays[0])
-    longest_common_prefix = []
-    shortest_array = min(len(array) for array in arrays)
-    for i in range(shortest_array):
-        reference_element = arrays[0][i]
-        for j in range(1, len(arrays)):
-            if arrays[j][i] != reference_element:
-                return longest_common_prefix
-        longest_common_prefix.append(reference_element)
-    return longest_common_prefix
-
-
-def denote_execution_branches_for_nodes(
-    node_names: Iterable[str], branches: List[str], execution_graph: DiGraph
-) -> DiGraph:
-    for node_name in node_names:
-        execution_graph = denote_execution_branches_for_node(
-            node_name=node_name,
-            output_branches=branches,
-            execution_graph=execution_graph,
-        )
-    return execution_graph
-
-
-def denote_execution_branches_for_node(
-    node_name: str, output_branches: List[str], execution_graph: DiGraph
-) -> DiGraph:
-    execution_graph.nodes[node_name][
-        EXECUTION_BRANCHES_STACK_PROPERTY
-    ] = output_branches
-    return execution_graph
-
-
-def ensure_all_nodes_have_execution_branch_associated(execution_graph: DiGraph) -> None:
-    for node in execution_graph.nodes:
-        if EXECUTION_BRANCHES_STACK_PROPERTY not in execution_graph.nodes[node]:
-            raise ValueError(f"Could not associate execution branch for {node}")
-
-
 def verify_edge_is_created_between_existing_nodes(
     execution_graph: DiGraph,
     start: str,
@@ -595,49 +460,37 @@ def get_nodes_that_are_reachable_from_pointed_ones_in_reversed_graph(
 
 def denote_workflow_dimensionality(
     execution_graph: DiGraph,
-    available_bocks: List[BlockSpecification],
     parsed_workflow_definition: ParsedWorkflowDefinition,
 ) -> nx.DiGraph:
-    block_class_by_manifest_type = {
-        block.manifest_class: block.block_class for block in available_bocks
-    }
-    block_class_by_step_name = {
-        step.name: block_class_by_manifest_type[type(step)]
-        for step in parsed_workflow_definition.steps
+    block_manifest_by_step_name = {
+        step.name: step for step in parsed_workflow_definition.steps
     }
     super_input_node = "<super-input>"
     execution_graph = add_super_input_node_in_execution_graph(
         execution_graph=execution_graph,
         super_input_node=super_input_node,
     )
-    execution_graph.nodes[super_input_node][DIMENSIONALITY_PROPERTY] = 0
-    execution_graph.nodes[super_input_node][DIMENSIONALITY_LINEAGE_PROPERTY] = []
+    execution_graph.nodes[super_input_node][NODE_COMPILATION_OUTPUT_PROPERTY] = (
+        InputNode(
+            node_category=NodeCategory.INPUT_NODE,
+            name=super_input_node,
+            selector=f"$inputs.{super_input_node}",
+            data_lineage=[],
+            input_manifest=None,  # this is expected never to be reached
+        )
+    )
     for node in traverse_graph_ensuring_parents_are_reached_first(
         graph=execution_graph,
         start_node=super_input_node,
     ):
         if is_input_node(execution_graph=execution_graph, node=node):
-            dimensionality = (
-                1
-                if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
-                else 0
-            )
-            dimensionality_lineage = (
-                [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-                if execution_graph.nodes[node][NODE_DEFINITION_KEY].is_batch_oriented()
-                else []
-            )
-            execution_graph = set_dimensionality_for_node(
-                execution_graph=execution_graph,
-                node=node,
-                dimensionality=dimensionality,
-                dimensionality_lineage=dimensionality_lineage,
-            )
+            # everything already set there
+            continue
         elif is_step_node(execution_graph=execution_graph, node=node):
             execution_graph = set_dimensionality_for_step(
                 execution_graph=execution_graph,
                 node=node,
-                block_class_by_step_name=block_class_by_step_name,
+                block_manifest_by_step_name=block_manifest_by_step_name,
             )
         elif is_output_node(execution_graph=execution_graph, node=node):
             # output is allowed to have exactly one predecessor
@@ -664,10 +517,194 @@ DIMENSIONALITY_DELTAS_BY_MODE = {
 }
 
 
+def new_set_dimensionality_for_step(
+    execution_graph: DiGraph,
+    node: str,
+    block_manifest_by_step_name: Dict[str, WorkflowBlockManifest],
+) -> DiGraph:
+    all_predecessors = list(execution_graph.predecessors(node))
+    all_control_flow_predecessors = [
+        predecessor
+        for predecessor in all_predecessors
+        if is_flow_control_step(execution_graph=execution_graph, node=node)
+    ]
+    all_non_control_flow_predecessors = [
+        predecessor
+        for predecessor in all_predecessors
+        if not is_flow_control_step(execution_graph=execution_graph, node=node)
+    ]
+    input_data = collect_input_data(
+        manifest=block_manifest_by_step_name[get_last_chunk_of_selector(selector=node)],
+        step_node=node,
+        all_non_control_flow_predecessors=all_non_control_flow_predecessors,
+        execution_graph=execution_graph,
+    )
+
+
+def collect_input_data(
+    manifest: WorkflowBlockManifest,
+    step_node: str,
+    all_non_control_flow_predecessors: List[str],
+    execution_graph: DiGraph,
+) -> Dict[
+    str,
+    Union[
+        DynamicStepInputDefinition,
+        StaticStepInputDefinition,
+        CompoundDynamicStepInputDefinition,
+    ],
+]:
+    predecessors_by_property_name = defaultdict(list)
+    for predecessor in all_non_control_flow_predecessors:
+        selector_associated_to_edge: ParsedSelector = execution_graph.edges[
+            (predecessor, step_node)
+        ][STEP_INPUT_SELECTOR_PROPERTY]
+        predecessors_by_property_name[
+            selector_associated_to_edge.definition.property_name
+        ].append((predecessor, selector_associated_to_edge))
+    manifest_fields_values = get_manifest_fields_values(step_manifest=manifest)
+    result = {}
+    for name, value in manifest_fields_values.items():
+        if isinstance(value, dict) and name in predecessors_by_property_name:
+            result[name] = build_nested_dict_of_input_data(
+                property_name=name,
+                value=value,
+                predecessors_by_property_name=predecessors_by_property_name,
+                execution_graph=execution_graph,
+            )
+        elif isinstance(value, list) and name in predecessors_by_property_name:
+            result[name] = build_nested_list_of_input_data(
+                property_name=name,
+                value=value,
+                predecessors_by_property_name=predecessors_by_property_name,
+                execution_graph=execution_graph,
+            )
+        else:
+            result[name] = StaticStepInputDefinition(
+                name=name,
+                category=NodeInputCategory.STATIC_VALUE,
+                value=value,
+            )
+    return result
+
+
+def build_nested_dict_of_input_data(
+    property_name: str,
+    value: dict,
+    predecessors_by_property_name: Dict[str, List[Tuple[str, ParsedSelector]]],
+    execution_graph: DiGraph,
+) -> Dict[str, Union[StaticStepInputDefinition, DynamicStepInputDefinition]]:
+    nested_property_name2data = {
+        e[1].key: e for e in predecessors_by_property_name[property_name]
+    }
+    result = {}
+    for k, v in value.items():
+        if k not in nested_property_name2data:
+            result[k] = StaticStepInputDefinition(
+                name=f"{property_name}[{k}]",
+                category=NodeInputCategory.STATIC_VALUE,
+                value=v,
+            )
+            continue
+        referred_node_selector = nested_property_name2data[k][0]
+        referred_node_data = execution_graph.nodes[referred_node_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        if is_input_node(execution_graph=execution_graph, node=referred_node_selector):
+            category = (
+                NodeInputCategory.BATCH_INPUT_PARAMETER
+                if referred_node_data.is_batch_oriented()
+                else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
+            )
+            result[k] = DynamicStepInputDefinition(
+                name=f"{property_name}[{k}]",
+                category=category,
+                data_lineage=referred_node_data.data_lineage,
+                selector=referred_node_data.selector,
+            )
+            continue
+        category = (
+            NodeInputCategory.BATCH_STEP_OUTPUT
+            if referred_node_data.output_dimensionality > 0
+            else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+        )
+        result[k] = DynamicStepInputDefinition(
+            name=f"{property_name}[{k}]",
+            category=category,
+            data_lineage=referred_node_data.data_lineage,
+            selector=referred_node_data.selector,
+        )
+    return result
+
+
+def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str, Any]:
+    result = {}
+    for field in step_manifest.model_fields:
+        if field in EXCLUDED_FIELDS:
+            continue
+        result[field] = getattr(step_manifest, field)
+    return result
+
+
+def build_nested_list_of_input_data(
+    property_name: str,
+    value: list,
+    predecessors_by_property_name: Dict[str, List[Tuple[str, ParsedSelector]]],
+    execution_graph: DiGraph,
+) -> List[Union[StaticStepInputDefinition, DynamicStepInputDefinition]]:
+    nested_index2data = {
+        e[1].index: e for e in predecessors_by_property_name[property_name]
+    }
+    result = []
+    for index, element in enumerate(value):
+        if index not in nested_index2data:
+            result.append(
+                StaticStepInputDefinition(
+                    name=f"{property_name}[{index}]",
+                    category=NodeInputCategory.STATIC_VALUE,
+                    value=element,
+                )
+            )
+            continue
+        referred_node_selector = nested_index2data[index][0]
+        referred_node_data = execution_graph.nodes[referred_node_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        if is_input_node(execution_graph=execution_graph, node=referred_node_selector):
+            category = (
+                NodeInputCategory.BATCH_INPUT_PARAMETER
+                if referred_node_data.is_batch_oriented()
+                else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
+            )
+            result.append(
+                DynamicStepInputDefinition(
+                    name=f"{property_name}[{index}]",
+                    category=category,
+                    data_lineage=referred_node_data.data_lineage,
+                    selector=referred_node_data.selector,
+                )
+            )
+            continue
+        category = (
+            NodeInputCategory.BATCH_STEP_OUTPUT
+            if referred_node_data.output_dimensionality > 0
+            else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+        )
+        result.append(
+            DynamicStepInputDefinition(
+                name=f"{property_name}[{index}]",
+                category=category,
+                data_lineage=referred_node_data.data_lineage,
+                selector=referred_node_data.selector,
+            )
+        )
+    return result
+
+
 def set_dimensionality_for_step(
     execution_graph: DiGraph,
     node: str,
-    block_class_by_step_name: Dict[str, Type[WorkflowBlock]],
+    block_class_by_step_name: Dict[str, Type[WorkflowBlockManifest]],
 ) -> DiGraph:
     step_name = get_last_chunk_of_selector(selector=node)
     all_predecessors_non_batch = all(
@@ -695,7 +732,7 @@ def set_dimensionality_for_step(
             DIMENSIONALITY_LINEAGE_PROPERTY
         ]
         edge_properties = execution_graph.edges[(predecessor, node)]
-        input_property = edge_properties.get(STEP_INPUT_PROPERTY)
+        input_property = edge_properties.get(STEP_INPUT_SELECTOR_PROPERTY)
         predecessors_dimensionalities[input_property].append(predecessor_dimensionality)
         predecessors_dimensionalities_lineage[input_property].append(
             predecessor_dimensionality_lineage
@@ -857,8 +894,9 @@ def add_super_input_node_in_execution_graph(
     execution_graph: DiGraph,
     super_input_node: str,
 ) -> DiGraph:
-    nodes_to_attach_super_input_into = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=INPUT_NODE_KIND
+    nodes_to_attach_super_input_into = get_nodes_of_specific_category(
+        execution_graph=execution_graph,
+        category=NodeCategory.INPUT_NODE,
     )
     step_nodes_without_predecessors = [
         node

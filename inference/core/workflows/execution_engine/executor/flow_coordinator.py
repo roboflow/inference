@@ -13,12 +13,13 @@ from inference.core.workflows.constants import (
 from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import InvalidBlockBehaviourError
+from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
     assign_max_distances_from_start,
     group_nodes_by_sorted_key_value,
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
-    get_nodes_of_specific_kind,
+    get_nodes_of_specific_category,
 )
 from inference.core.workflows.execution_engine.executor.new_execution_cache import (
     ExecutionBranchesManager,
@@ -101,8 +102,9 @@ def construct_steps_flow_graph(
 ) -> nx.DiGraph:
     steps_flow_graph = nx.DiGraph()
     steps_flow_graph.add_node(super_start_node)
-    step_nodes = get_nodes_of_specific_kind(
-        execution_graph=execution_graph, kind=STEP_NODE_KIND
+    step_nodes = get_nodes_of_specific_category(
+        execution_graph=execution_graph,
+        category=NodeCategory.STEP_NODE,
     )
     for step_node in step_nodes:
         has_predecessors = False

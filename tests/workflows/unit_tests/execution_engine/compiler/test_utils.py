@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     construct_input_selector,
     get_input_parameters_selectors,
     get_last_chunk_of_selector,
-    get_nodes_of_specific_kind,
+    get_nodes_of_specific_category,
     get_output_selectors,
     get_step_selector_from_its_output,
     get_steps_selectors,
@@ -87,7 +87,7 @@ def test_get_nodes_of_specific_kind() -> None:
     )
 
     # when
-    result = get_nodes_of_specific_kind(execution_graph=graph, kind=STEP_NODE_KIND)
+    result = get_nodes_of_specific_category(execution_graph=graph, category=STEP_NODE_KIND)
 
     # then
     assert result == {

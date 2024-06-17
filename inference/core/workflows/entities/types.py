@@ -1,4 +1,5 @@
-from typing import List, Optional, Union
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated, Literal
@@ -16,7 +17,8 @@ class Kind(BaseModel):
 REFERENCE_KEY = "reference"
 SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
-
+DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
+DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
 DOCS_NOTE_ABOUT_BATCH = """
 **Important note**:
 

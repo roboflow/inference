@@ -4,10 +4,12 @@ from networkx import DiGraph
 
 from inference.core.workflows.constants import (
     INPUT_NODE_KIND,
+    NODE_COMPILATION_OUTPUT_PROPERTY,
     OUTPUT_NODE_KIND,
     STEP_NODE_KIND,
 )
 from inference.core.workflows.entities.base import InputType, JsonField
+from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 FLOW_CONTROL_NODE_KEY = "flow_control_node"
@@ -68,11 +70,13 @@ def get_step_selector_from_its_output(step_output_selector: str) -> str:
     return ".".join(step_output_selector.split(".")[:2])
 
 
-def get_nodes_of_specific_kind(execution_graph: DiGraph, kind: str) -> Set[str]:
+def get_nodes_of_specific_category(
+    execution_graph: DiGraph, category: NodeCategory
+) -> Set[str]:
     return {
         node[0]
         for node in execution_graph.nodes(data=True)
-        if node[1].get("kind") == kind
+        if node[1][NODE_COMPILATION_OUTPUT_PROPERTY].node_category is category
     }
 
 
@@ -80,20 +84,31 @@ def get_last_chunk_of_selector(selector: str) -> str:
     return selector.split(".")[-1]
 
 
+def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
+    if not is_step_node(execution_graph=execution_graph, node=node):
+        return False
+    return execution_graph.nodes[node][NODE_COMPILATION_OUTPUT_PROPERTY].controls_flow()
+
+
 def is_input_node(execution_graph: DiGraph, node: str) -> bool:
-    return execution_graph.nodes[node].get("kind") == INPUT_NODE_KIND
+    return (
+        execution_graph.nodes[node][NODE_COMPILATION_OUTPUT_PROPERTY].node_category
+        is NodeCategory.INPUT_NODE
+    )
 
 
 def is_step_node(execution_graph: DiGraph, node: str) -> bool:
-    return execution_graph.nodes[node].get("kind") == STEP_NODE_KIND
+    return (
+        execution_graph.nodes[node][NODE_COMPILATION_OUTPUT_PROPERTY].node_category
+        is NodeCategory.STEP_NODE
+    )
 
 
 def is_output_node(execution_graph: DiGraph, node: str) -> bool:
-    return execution_graph.nodes[node].get("kind") == OUTPUT_NODE_KIND
-
-
-def is_flow_control_step(execution_graph: DiGraph, node: str) -> bool:
-    return execution_graph.nodes[node].get(FLOW_CONTROL_NODE_KEY, False)
+    return (
+        execution_graph.nodes[node][NODE_COMPILATION_OUTPUT_PROPERTY].node_category
+        is NodeCategory.OUTPUT_NODE
+    )
 
 
 def is_selector(selector_or_value: Any) -> bool:
