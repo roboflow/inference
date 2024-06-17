@@ -24,7 +24,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     get_input_parameters_selectors,
     get_last_chunk_of_selector,
     get_nodes_of_specific_kind,
-    get_output_names,
+    get_output_selectors,
     get_step_selector_from_its_output,
     get_steps_selectors,
     is_flow_control_step,
@@ -170,7 +170,7 @@ def test_get_output_names() -> None:
     ]
 
     # when
-    result = get_output_names(outputs=outputs)
+    result = get_output_selectors(outputs=outputs)
 
     # then
     assert result == {

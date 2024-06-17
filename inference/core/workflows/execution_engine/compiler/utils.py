@@ -32,11 +32,11 @@ def construct_step_selector(step_name: str) -> str:
     return f"$steps.{step_name}"
 
 
-def get_output_names(outputs: List[JsonField]) -> Set[str]:
-    return {construct_output_name(name=output.name) for output in outputs}
+def get_output_selectors(outputs: List[JsonField]) -> Set[str]:
+    return {construct_output_selector(name=output.name) for output in outputs}
 
 
-def construct_output_name(name: str) -> str:
+def construct_output_selector(name: str) -> str:
     return f"$outputs.{name}"
 
 

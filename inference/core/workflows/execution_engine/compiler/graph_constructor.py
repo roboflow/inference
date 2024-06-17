@@ -14,9 +14,9 @@ from inference.core.workflows.constants import (
     EXECUTION_BRANCHES_STACK_PROPERTY,
     FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY,
     INPUT_NODE_KIND,
+    NODE_COMPILATION_OUTPUT_PROPERTY,
     OUTPUT_NODE_KIND,
     ROOT_BRANCH_NAME,
-    STEP_INPUT_PROPERTY,
     STEP_NODE_KIND,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
@@ -32,7 +32,12 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
+    ExecutionGraphNode,
+    InputNode,
+    NodeCategory,
+    OutputNode,
     ParsedWorkflowDefinition,
+    StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
     validate_reference_kinds,
@@ -40,7 +45,7 @@ from inference.core.workflows.execution_engine.compiler.reference_type_checker i
 from inference.core.workflows.execution_engine.compiler.utils import (
     FLOW_CONTROL_NODE_KEY,
     construct_input_selector,
-    construct_output_name,
+    construct_output_selector,
     construct_step_selector,
     get_last_chunk_of_selector,
     get_nodes_of_specific_kind,
@@ -65,6 +70,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 NODE_DEFINITION_KEY = "definition"
+STEP_INPUT_PROPERTY = "step_input_property"
 
 
 def prepare_execution_graph(
@@ -116,11 +122,23 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
+        data_lineage = (
+            []
+            if not input_spec.is_batch_oriented()
+            else [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+        )
+        compilation_output = InputNode(
+            node_category=NodeCategory.INPUT_NODE,
+            name=input_spec.name,
+            selector=input_selector,
+            data_lineage=data_lineage,
+            input_manifest=input_spec,
+        )
         execution_graph.add_node(
             input_selector,
-            kind=INPUT_NODE_KIND,
-            definition=input_spec,
-            batch_oriented=input_spec.is_batch_oriented(),
+            **{
+                NODE_COMPILATION_OUTPUT_PROPERTY: compilation_output,
+            },
         )
     return execution_graph
 
@@ -131,10 +149,18 @@ def add_steps_nodes_for_graph(
 ) -> DiGraph:
     for step in steps:
         step_selector = construct_step_selector(step_name=step.name)
+        compilation_output = StepNode(
+            node_category=NodeCategory.STEP_NODE,
+            name=step.name,
+            selector=step_selector,
+            data_lineage=[],
+            step_manifest=step,
+        )
         execution_graph.add_node(
             step_selector,
-            kind=STEP_NODE_KIND,
-            definition=step,
+            **{
+                NODE_COMPILATION_OUTPUT_PROPERTY: compilation_output,
+            },
         )
     return execution_graph
 
@@ -144,10 +170,19 @@ def add_output_nodes_for_graph(
     execution_graph: DiGraph,
 ) -> DiGraph:
     for output_spec in outputs:
+        output_selector = construct_output_selector(name=output_spec.name)
+        compilation_output = OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=output_spec.name,
+            selector=output_selector,
+            data_lineage=[],
+            output_manifest=output_spec,
+        )
         execution_graph.add_node(
-            construct_output_name(name=output_spec.name),
-            kind=OUTPUT_NODE_KIND,
-            definition=output_spec,
+            output_selector,
+            **{
+                NODE_COMPILATION_OUTPUT_PROPERTY: compilation_output,
+            },
         )
     return execution_graph
 
@@ -161,7 +196,7 @@ def add_steps_edges(
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
             step_name=step.name,
-            parsed_selectors=step_selectors,
+            target_step_parsed_selectors=step_selectors,
         )
     return execution_graph
 
@@ -169,57 +204,61 @@ def add_steps_edges(
 def add_edges_for_step(
     execution_graph: DiGraph,
     step_name: str,
-    parsed_selectors: List[ParsedSelector],
+    target_step_parsed_selectors: List[ParsedSelector],
 ) -> DiGraph:
-    step_selector = construct_step_selector(step_name=step_name)
-    for parsed_selector in parsed_selectors:
+    source_step_selector = construct_step_selector(step_name=step_name)
+    for target_step_parsed_selector in target_step_parsed_selectors:
         execution_graph = add_edge_for_step(
             execution_graph=execution_graph,
-            step_selector=step_selector,
-            parsed_selector=parsed_selector,
+            source_step_selector=source_step_selector,
+            target_step_parsed_selector=target_step_parsed_selector,
         )
     return execution_graph
 
 
 def add_edge_for_step(
     execution_graph: DiGraph,
-    step_selector: str,
-    parsed_selector: ParsedSelector,
+    source_step_selector: str,
+    target_step_parsed_selector: ParsedSelector,
 ) -> DiGraph:
-    other_step_selector = get_step_selector_from_its_output(
-        step_output_selector=parsed_selector.value
+    target_step_selector = get_step_selector_from_its_output(
+        step_output_selector=target_step_parsed_selector.value
     )
     verify_edge_is_created_between_existing_nodes(
         execution_graph=execution_graph,
-        start=step_selector,
-        end=other_step_selector,
+        start=source_step_selector,
+        end=target_step_selector,
     )
-    if is_step_selector(parsed_selector.value):
+    if is_step_selector(target_step_parsed_selector.value):
         return establish_flow_control_edge(
-            step_selector=step_selector,
-            parsed_selector=parsed_selector,
+            source_step_selector=source_step_selector,
+            target_step_parsed_selector=target_step_parsed_selector,
             execution_graph=execution_graph,
         )
-    if is_input_selector(parsed_selector.value):
-        actual_input_kind = execution_graph.nodes[parsed_selector.value][
-            NODE_DEFINITION_KEY
-        ].kind
+    if is_input_selector(target_step_parsed_selector.value):
+        input_node_compilation_data: InputNode = execution_graph.nodes[
+            target_step_parsed_selector.value
+        ][NODE_COMPILATION_OUTPUT_PROPERTY]
+        actual_input_kind = input_node_compilation_data.input_manifest.kind
     else:
-        other_step_manifest: WorkflowBlockManifest = execution_graph.nodes[
-            other_step_selector
-        ][NODE_DEFINITION_KEY]
+        other_step_compilation_data: StepNode = execution_graph.nodes[
+            target_step_selector
+        ][NODE_COMPILATION_OUTPUT_PROPERTY]
         actual_input_kind = get_kind_of_value_provided_in_step_output(
-            step_manifest=other_step_manifest,
-            step_property=get_last_chunk_of_selector(selector=parsed_selector.value),
+            step_manifest=other_step_compilation_data.step_manifest,
+            step_property=get_last_chunk_of_selector(
+                selector=target_step_parsed_selector.value
+            ),
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
-            ref.kind for ref in parsed_selector.definition.allowed_references
+            ref.kind
+            for ref in target_step_parsed_selector.definition.allowed_references
         )
     )
     error_message = (
-        f"Failed to validate reference provided for step: {step_selector} regarding property: "
-        f"{parsed_selector.definition.property_name} with value: {parsed_selector.value}. "
+        f"Failed to validate reference provided for step: {source_step_selector} regarding property: "
+        f"{target_step_parsed_selector.definition.property_name} with value: {target_step_parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
         f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
     )
@@ -229,36 +268,66 @@ def add_edge_for_step(
         error_message=error_message,
     )
     execution_graph.add_edge(
-        other_step_selector,
-        step_selector,
-        **{STEP_INPUT_PROPERTY: parsed_selector.definition.property_name},
+        target_step_selector,
+        source_step_selector,
+        **{STEP_INPUT_PROPERTY: target_step_parsed_selector.definition.property_name},
     )
     return execution_graph
 
 
 def establish_flow_control_edge(
-    step_selector: str,
-    parsed_selector: ParsedSelector,
+    source_step_selector: str,
+    target_step_parsed_selector: ParsedSelector,
     execution_graph: DiGraph,
 ) -> DiGraph:
     if not step_definition_allows_flow_control_references(
-        parsed_selector=parsed_selector
+        parsed_selector=target_step_parsed_selector
     ):
         raise ExecutionGraphStructureError(
-            public_message=f"Detected reference to other step in manifest of step {step_selector}. "
+            public_message=f"Detected reference to other step in manifest of step {source_step_selector}. "
             f"This is not allowed, as step manifest does not define any properties of type `StepSelector` "
             f"allowing for defining connections between steps that represent flow control in `workflows`.",
             context="workflow_compilation | execution_graph_construction",
         )
-    other_node_selector = get_step_selector_from_its_output(
-        step_output_selector=parsed_selector.value
+    target_step_selector = get_step_selector_from_its_output(
+        step_output_selector=target_step_parsed_selector.value
     )
+    source_compilation_data: StepNode = execution_graph.nodes[source_step_selector][
+        NODE_COMPILATION_OUTPUT_PROPERTY
+    ]
+    target_compilation_data: StepNode = execution_graph.nodes[target_step_selector][
+        NODE_COMPILATION_OUTPUT_PROPERTY
+    ]
+    nodes_categories = {
+        source_compilation_data.node_category,
+        target_compilation_data.node_category,
+    }
+    if nodes_categories != {NodeCategory.STEP_NODE}:
+        raise ExecutionGraphStructureError(
+            public_message=f"Attempted to create flow-control connection between workflow nodes: "
+            f"{source_step_selector} and {target_step_selector}, one of which is not denoted"
+            f"as step node.",
+            context="workflow_compilation | execution_graph_construction",
+        )
     execution_graph.add_edge(
-        step_selector,
-        other_node_selector,
-        **{CONTROL_FLOW_PROPERTY: parsed_selector.definition.property_name},
+        source_step_selector,
+        target_step_selector,
     )
-    execution_graph.nodes[step_selector][FLOW_CONTROL_NODE_KEY] = True
+    if target_step_selector in source_compilation_data.child_execution_branches:
+        raise ExecutionGraphStructureError(
+            public_message=f"While establishing flow-control connection between source `{source_step_selector}` "
+            f"and target `{target_step_selector}` it was discovered that source step defines"
+            f"control flow transition into target one more than once, which is not allowed as "
+            f"that situation creates ambiguity in selecting execution branch.",
+            context="workflow_compilation | execution_graph_construction",
+        )
+    execution_branch_name = f"Branch[{source_step_selector} -> {target_step_parsed_selector.definition.property_name}]"
+    source_compilation_data.child_execution_branches[target_step_selector] = (
+        execution_branch_name
+    )
+    target_compilation_data.execution_branches_impacting_inputs.add(
+        execution_branch_name
+    )
     return execution_graph
 
 
@@ -320,7 +389,7 @@ def add_edges_for_outputs(
             node_selector = get_step_selector_from_its_output(
                 step_output_selector=node_selector
             )
-        output_name = construct_output_name(name=output.name)
+        output_name = construct_output_selector(name=output.name)
         verify_edge_is_created_between_existing_nodes(
             execution_graph=execution_graph,
             start=node_selector,
