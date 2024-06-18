@@ -164,7 +164,7 @@ class StaticStepInputDefinition(StepInputDefinition):
 
 
 @dataclass(frozen=True)
-class CompoundDynamicStepInputDefinition:
+class CompoundStepInputDefinition:
     name: str
     nested_definitions: Union[List[StepInputDefinition], Dict[str, StepInputDefinition]]
 
@@ -181,7 +181,7 @@ class CompoundDynamicStepInputDefinition:
 
 
 @dataclass(frozen=True)
-class ListOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
+class ListOfStepInputDefinitions(CompoundStepInputDefinition):
     nested_definitions: List[StepInputDefinition]
 
     def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
@@ -190,7 +190,7 @@ class ListOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
 
 
 @dataclass(frozen=True)
-class DictOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
+class DictOfStepInputDefinitions(CompoundStepInputDefinition):
     nested_definitions: Dict[str, Union[StepInputDefinition]]
 
     def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
@@ -206,30 +206,12 @@ class StepNode(ExecutionGraphNode):
         Union[
             DynamicStepInputDefinition,
             StaticStepInputDefinition,
-            CompoundDynamicStepInputDefinition,
+            CompoundStepInputDefinition,
         ],
     ] = field(default_factory=dict)
     dimensionality_reference_property: Optional[str] = None
     child_execution_branches: Dict[str, str] = field(default_factory=dict)
     execution_branches_impacting_inputs: Set[str] = field(default_factory=set)
-
-    # def is_simd_step(self) -> bool:
-    #     for input_definition in self.input_data.values():
-    #         if not input_definition.is_compound_input():
-    #             if input_definition.is_batch_oriented():
-    #                 return True
-    #         nested_elements = input_definition.nested_definitions
-    #         if not input_definition.represents_list_of_inputs():
-    #             nested_elements = nested_elements.values()
-    #         for nested_element in nested_elements:
-    #             if nested_element.is_compound_input():
-    #                 raise ValueError(
-    #                     f"While examining the nature of step `{self.name}` input `{input_definition.name}` "
-    #                     f" discovered inputs nesting beyond supported nesting levels."
-    #                 )
-    #             if nested_element.is_batch_oriented():
-    #                 return True
-    #     return False
 
     def controls_flow(self) -> bool:
         if self.child_execution_branches:
