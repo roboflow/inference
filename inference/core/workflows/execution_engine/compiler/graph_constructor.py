@@ -39,6 +39,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     NodeCategory,
     NodeInputCategory,
     OutputNode,
+    ParameterSpecification,
     ParsedWorkflowDefinition,
     StaticStepInputDefinition,
     StepInputDefinition,
@@ -401,7 +402,9 @@ def add_edges_for_outputs(
             end=output_name,
         )
         if is_step_output_selector(selector_or_value=output.selector):
-            step_manifest = execution_graph.nodes[node_selector][NODE_DEFINITION_KEY]
+            step_manifest = execution_graph.nodes[node_selector][
+                NODE_COMPILATION_OUTPUT_PROPERTY
+            ].step_manifest
             step_outputs = step_manifest.get_actual_outputs()
             verify_output_selector_points_to_valid_output(
                 output_selector=output.selector,
@@ -487,7 +490,7 @@ def denote_workflow_dimensionality(
             # everything already set there
             continue
         elif is_step_node(execution_graph=execution_graph, node=node):
-            execution_graph = set_dimensionality_for_step(
+            execution_graph = new_set_dimensionality_for_step(
                 execution_graph=execution_graph,
                 node=node,
                 block_manifest_by_step_name=block_manifest_by_step_name,
@@ -539,6 +542,40 @@ def new_set_dimensionality_for_step(
         all_non_control_flow_predecessors=all_non_control_flow_predecessors,
         execution_graph=execution_graph,
     )
+    step_name = get_last_chunk_of_selector(node)
+    inputs_dimensionalities = get_inputs_dimensionalities(
+        step_name=step_name,
+        input_data=input_data,
+    )
+    parameters_with_batch_inputs = grab_parameters_defining_batch_inputs(
+        inputs_dimensionalities=inputs_dimensionalities,
+    )
+    manifest = block_manifest_by_step_name[step_name]
+    dimensionality_reference_property = manifest.get_dimensionality_reference_property()
+    input_dimensionality_offsets = manifest.get_input_dimensionality_offsets()
+    output_dimensionality_offset = manifest.get_output_dimensionality_offset()
+    verify_step_input_dimensionality_offsets(
+        step_name=step_name,
+        input_dimensionality_offsets=input_dimensionality_offsets,
+    )
+    verify_output_offset(
+        step_name=step_name,
+        parameters_with_batch_inputs=parameters_with_batch_inputs,
+        dimensionality_reference_property=dimensionality_reference_property,
+        input_dimensionality_offsets=input_dimensionality_offsets,
+        output_dimensionality_offset=output_dimensionality_offset,
+    )
+    verify_input_data_dimensionality(
+        step_name=step_name,
+        dimensionality_reference_property=dimensionality_reference_property,
+        inputs_dimensionalities=inputs_dimensionalities,
+        dimensionality_offstes=input_dimensionality_offsets,
+    )
+    all_lineages = get_all_data_lineage(input_data=input_data)
+    print("all_lineages", all_lineages)
+    print(input_data["images"])
+    print(parameters_with_batch_inputs)
+    raise Exception()
 
 
 def collect_input_data(
@@ -580,11 +617,55 @@ def collect_input_data(
                 execution_graph=execution_graph,
             )
         else:
-            result[name] = StaticStepInputDefinition(
-                name=name,
-                category=NodeInputCategory.STATIC_VALUE,
-                value=value,
-            )
+            if name not in predecessors_by_property_name:
+                result[name] = StaticStepInputDefinition(
+                    parameter_specification=ParameterSpecification(
+                        parameter_name=name,
+                    ),
+                    category=NodeInputCategory.STATIC_VALUE,
+                    value=value,
+                )
+            else:
+                if len(predecessors_by_property_name[name]) != 1:
+                    raise ValueError("Should not meet more than one predecessor here")
+                predecessor_selector, _ = predecessors_by_property_name[name][0]
+                predecessor_node_data = execution_graph.nodes[predecessor_selector][
+                    NODE_COMPILATION_OUTPUT_PROPERTY
+                ]
+                if is_input_node(
+                    execution_graph=execution_graph, node=predecessor_selector
+                ):
+                    category = (
+                        NodeInputCategory.BATCH_INPUT_PARAMETER
+                        if predecessor_node_data.is_batch_oriented()
+                        else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
+                    )
+                    result[name] = DynamicStepInputDefinition(
+                        parameter_specification=ParameterSpecification(
+                            parameter_name=name,
+                        ),
+                        category=category,
+                        data_lineage=predecessor_node_data.data_lineage,
+                        selector=predecessor_node_data.selector,
+                    )
+                elif is_step_node(
+                    execution_graph=execution_graph, node=predecessor_selector
+                ):
+                    category = (
+                        NodeInputCategory.BATCH_STEP_OUTPUT
+                        if predecessor_node_data.output_dimensionality > 0
+                        else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+                    )
+                    result[name] = DynamicStepInputDefinition(
+                        parameter_specification=ParameterSpecification(
+                            parameter_name=name,
+                        ),
+                        category=category,
+                        data_lineage=predecessor_node_data.data_lineage,
+                        selector=predecessor_node_data.selector,
+                    )
+                else:
+                    raise ValueError("Should not reach here")
     return result
 
 
@@ -601,7 +682,10 @@ def build_nested_dict_of_input_data(
     for k, v in value.items():
         if k not in nested_property_name2data:
             result[k] = StaticStepInputDefinition(
-                name=f"{property_name}[{k}]",
+                parameter_specification=ParameterSpecification(
+                    parameter_name=property_name,
+                    nested_element_key=k,
+                ),
                 category=NodeInputCategory.STATIC_VALUE,
                 value=v,
             )
@@ -617,7 +701,10 @@ def build_nested_dict_of_input_data(
                 else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
             )
             result[k] = DynamicStepInputDefinition(
-                name=f"{property_name}[{k}]",
+                parameter_specification=ParameterSpecification(
+                    parameter_name=property_name,
+                    nested_element_key=k,
+                ),
                 category=category,
                 data_lineage=referred_node_data.data_lineage,
                 selector=referred_node_data.selector,
@@ -629,7 +716,10 @@ def build_nested_dict_of_input_data(
             else NodeInputCategory.NON_BATCH_STEP_OUTPUT
         )
         result[k] = DynamicStepInputDefinition(
-            name=f"{property_name}[{k}]",
+            parameter_specification=ParameterSpecification(
+                parameter_name=property_name,
+                nested_element_key=k,
+            ),
             category=category,
             data_lineage=referred_node_data.data_lineage,
             selector=referred_node_data.selector,
@@ -660,7 +750,10 @@ def build_nested_list_of_input_data(
         if index not in nested_index2data:
             result.append(
                 StaticStepInputDefinition(
-                    name=f"{property_name}[{index}]",
+                    parameter_specification=ParameterSpecification(
+                        parameter_name=property_name,
+                        nested_element_index=index,
+                    ),
                     category=NodeInputCategory.STATIC_VALUE,
                     value=element,
                 )
@@ -678,7 +771,10 @@ def build_nested_list_of_input_data(
             )
             result.append(
                 DynamicStepInputDefinition(
-                    name=f"{property_name}[{index}]",
+                    parameter_specification=ParameterSpecification(
+                        parameter_name=property_name,
+                        nested_element_index=index,
+                    ),
                     category=category,
                     data_lineage=referred_node_data.data_lineage,
                     selector=referred_node_data.selector,
@@ -692,13 +788,238 @@ def build_nested_list_of_input_data(
         )
         result.append(
             DynamicStepInputDefinition(
-                name=f"{property_name}[{index}]",
+                parameter_specification=ParameterSpecification(
+                    parameter_name=property_name,
+                    nested_element_index=index,
+                ),
                 category=category,
                 data_lineage=referred_node_data.data_lineage,
                 selector=referred_node_data.selector,
             )
         )
     return result
+
+
+def verify_step_input_dimensionality_offsets(
+    step_name: str,
+    input_dimensionality_offsets: Dict[str, int],
+) -> None:
+    min_offset, max_offset = None, None
+    for offset in input_dimensionality_offsets.values():
+        if min_offset is None or offset < min_offset:
+            min_offset = offset
+        if max_offset is None or offset > max_offset:
+            max_offset = offset
+    if min_offset is None or max_offset is None:
+        return None
+    if min_offset < 0 or max_offset < 0:
+        raise ValueError(
+            f"Offsets could not be negative, but block defining step: {step_name} defines that values."
+        )
+    if abs(max_offset - min_offset) > 1:
+        raise ValueError(
+            f"Offsets of input parameters could not differ more than 1, but block defining step {step_name} "
+            f"violates that rule."
+        )
+
+
+def verify_output_offset(
+    step_name: str,
+    parameters_with_batch_inputs: Set[str],
+    input_dimensionality_offsets: Dict[str, int],
+    dimensionality_reference_property: Optional[str],
+    output_dimensionality_offset: int,
+) -> None:
+    if (
+        dimensionality_reference_property is not None
+        and dimensionality_reference_property not in parameters_with_batch_inputs
+    ):
+        raise ValueError(
+            f"Block defining step {step_name} defines dimensionality reference property which is not in scope of "
+            f"parameters bring batch-oriented input, which makes it impossible to use as reference for output "
+            f"dimensionality."
+        )
+    if output_dimensionality_offset not in {-1, 0, 1}:
+        raise ValueError(
+            f"Block defining step {step_name} defines output dimensionality offset "
+            f"being {output_dimensionality_offset}, whereas it is only possible for that offset being "
+            f"in set [-1, 0, 1]."
+        )
+    different_offsets = {o for o in input_dimensionality_offsets.values()}
+    if len(parameters_with_batch_inputs) != len(input_dimensionality_offsets):
+        different_offsets.add(0)
+    if 0 not in different_offsets:
+        raise ValueError(
+            f"Block defining step {step_name} explicitly defines input dimensionalities offsets"
+            f"with {input_dimensionality_offsets}, but the definition lack 0-level input, which is "
+            f"not allowed, as in this scenario offsets could be adjusted to include 0"
+        )
+    if len(different_offsets) > 1 and dimensionality_reference_property is None:
+        raise ValueError(
+            f"Block defining step {step_name} explicitly defines input dimensionality "
+            f"offsets {input_dimensionality_offsets}. In this scenario it is required to provide dimensionality "
+            f"reference property."
+        )
+    if len(different_offsets) > 1 and output_dimensionality_offset != 0:
+        raise ValueError(
+            f"Block defining step {step_name} explicitly defines input dimensionality "
+            f"offsets {input_dimensionality_offsets} and output dimensionality offset {output_dimensionality_offset} "
+            f"where the latter is not 0, but for inputs differing with dimensionality it is only possible to keep "
+            f"output dimensionality the same and point reference parameter."
+        )
+
+
+def verify_input_data_dimensionality(
+    step_name: str,
+    dimensionality_reference_property: Optional[str],
+    inputs_dimensionalities: Dict[str, Set[int]],
+    dimensionality_offstes: Dict[str, int],
+) -> None:
+    parameter2offset_and_non_zero_dimensionality = {}
+    for parameter_name, dimensionality in inputs_dimensionalities.items():
+        parameter_offset = dimensionality_offstes.get(parameter_name, 0)
+        non_zero_dims = {d for d in dimensionality if d > 0}
+        if len(non_zero_dims) > 1:
+            raise ValueError("Should not be possible here")
+        if non_zero_dims:
+            parameter2offset_and_non_zero_dimensionality[parameter_name] = (
+                parameter_offset,
+                next(iter(non_zero_dims)),
+            )
+    if not parameter2offset_and_non_zero_dimensionality:
+        return None
+    if dimensionality_reference_property is None:
+        different_dims = {e[1] for e in parameter2offset_and_non_zero_dimensionality}
+        if len(different_dims) != 1:
+            param2dim = {
+                k: e[1] for k, e in parameter2offset_and_non_zero_dimensionality.items()
+            }
+            raise ValueError(
+                f"Block defining step {step_name} does not define dimensionality reference property, "
+                f"which means that all batch-oriented parameters must be at the same dimensionality level, "
+                f"but detected the following dimensionalities for parameters {param2dim}"
+            )
+        return None
+    reference_offset, reference_property_dim = (
+        parameter2offset_and_non_zero_dimensionality[dimensionality_reference_property]
+    )
+    expected_dimensionalities = {
+        property_name: (e[0] - reference_offset) + reference_property_dim
+        for property_name, e in parameter2offset_and_non_zero_dimensionality.items()
+    }
+    if any(v <= 0 for v in expected_dimensionalities.values()):
+        raise ValueError(
+            f"Given the definition of block defining step {step_name} and data provided, "
+            f"the block would expect batch input dimensionality to be 0 or below, which is invalid."
+        )
+    for property_name, expected_dimensionality in expected_dimensionalities.items():
+        actual_dimensionality = parameter2offset_and_non_zero_dimensionality[
+            property_name
+        ][1]
+        if actual_dimensionality != expected_dimensionality:
+            raise ValueError(
+                f"Data fed into step `{step_name}` property `{property_name}` has "
+                f"actual dimensionality {actual_dimensionality}, when expected was {expected_dimensionality}"
+            )
+    return None
+
+
+def get_inputs_dimensionalities(
+    step_name: str,
+    input_data: Dict[
+        str,
+        Union[
+            DynamicStepInputDefinition,
+            StaticStepInputDefinition,
+            CompoundDynamicStepInputDefinition,
+        ],
+    ],
+) -> Dict[str, Set[int]]:
+    result = defaultdict(set)
+    dimensionalities_spotted = set()
+    for property_name, input_definition in input_data.items():
+        if input_definition.is_compound_input():
+            result[property_name] = get_compound_input_dimensionality(
+                step_name=step_name,
+                property_name=property_name,
+                input_definition=input_definition,
+            )
+        else:
+            result[property_name] = {input_definition.get_dimensionality()}
+        dimensionalities_spotted.update(result[property_name])
+    non_zero_dimensionalities_spotted = {d for d in dimensionalities_spotted if d != 0}
+    if len(non_zero_dimensionalities_spotted) > 0:
+        min_dim, max_dim = min(non_zero_dimensionalities_spotted), max(
+            non_zero_dimensionalities_spotted
+        )
+        if abs(max_dim - min_dim) > 1:
+            raise ValueError(
+                f"For step {step_name} attempted to plug input data differing in dimensionality more than 1"
+            )
+    return result
+
+
+def get_compound_input_dimensionality(
+    step_name: str,
+    property_name: str,
+    input_definition: CompoundDynamicStepInputDefinition,
+) -> Set[int]:
+    dimensionalities_spotted = set()
+    for definition in input_definition.iterate_through_definitions():
+        dimensionalities_spotted.add(definition.get_dimensionality())
+    non_zero_dimensionalities = {e for e in dimensionalities_spotted if e != 0}
+    if len(non_zero_dimensionalities) > 1:
+        raise ValueError(
+            f"While evaluating compound property {property_name} of step {step_name}, "
+            f"detected multiple inputs of differing batch dimensionalities: {non_zero_dimensionalities}"
+        )
+    return dimensionalities_spotted
+
+
+def grab_parameters_defining_batch_inputs(
+    inputs_dimensionalities: Dict[str, Set[int]],
+) -> Set[str]:
+    result = set()
+    for paremeter, dimensionalities in inputs_dimensionalities.items():
+        batch_dimensionalities = {d for d in dimensionalities if d > 0}
+        if len(batch_dimensionalities):
+            result.add(paremeter)
+    return result
+
+
+def get_all_data_lineage(
+    input_data: Dict[
+        str,
+        Union[
+            DynamicStepInputDefinition,
+            StaticStepInputDefinition,
+            CompoundDynamicStepInputDefinition,
+        ],
+    ]
+) -> List[List[str]]:
+    lineage_id2lineage = set()
+    lineages = []
+    for input_definition in input_data.values():
+        if input_definition.is_compound_input():
+            for nested_element in input_definition.iterate_through_definitions():
+                if nested_element.is_batch_oriented():
+                    lineage = nested_element.data_lineage
+                    lineage_id = identify_lineage(lineage=lineage)
+                    if lineage_id not in lineage_id2lineage:
+                        lineage_id2lineage.add(lineage_id)
+                        lineages.append(lineage)
+        else:
+            if input_definition.is_batch_oriented():
+                lineage = input_definition.data_lineage
+                lineage_id = identify_lineage(lineage=lineage)
+                if lineage_id not in lineage_id2lineage:
+                    lineage_id2lineage.add(lineage_id)
+                    lineages.append(lineage)
+    return lineages
+
+
+def identify_lineage(lineage: List[str]) -> int:
+    return sum(hash(e) for e in lineage)
 
 
 def set_dimensionality_for_step(

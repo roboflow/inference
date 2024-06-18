@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Set, Type, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Type, Union
 
 import networkx as nx
 
@@ -107,8 +107,15 @@ STEPS_OUTPUTS_REFERENCES = {
 
 
 @dataclass(frozen=True)
+class ParameterSpecification:
+    parameter_name: str
+    nested_element_key: Optional[str] = None
+    nested_element_index: Optional[int] = None
+
+
+@dataclass(frozen=True)
 class StepInputDefinition:
-    name: str
+    parameter_specification: ParameterSpecification
     category: NodeInputCategory
 
     def points_to_input(self) -> bool:
@@ -124,6 +131,10 @@ class StepInputDefinition:
     def is_batch_oriented(self) -> bool:
         pass
 
+    @abstractmethod
+    def get_dimensionality(self) -> bool:
+        pass
+
     @classmethod
     def is_compound_input(cls) -> bool:
         return False
@@ -137,8 +148,7 @@ class DynamicStepInputDefinition(StepInputDefinition):
     def is_batch_oriented(self) -> bool:
         return len(self.data_lineage) > 0
 
-    @property
-    def dimensionality(self) -> int:
+    def get_dimensionality(self) -> int:
         return len(self.data_lineage)
 
 
@@ -149,13 +159,14 @@ class StaticStepInputDefinition(StepInputDefinition):
     def is_batch_oriented(self) -> bool:
         return False
 
+    def get_dimensionality(self) -> int:
+        return 0
+
 
 @dataclass(frozen=True)
 class CompoundDynamicStepInputDefinition:
     name: str
-    nested_definitions: Union[
-        List[StepInputDefinition], Dict[str, StaticStepInputDefinition]
-    ]
+    nested_definitions: Union[List[StepInputDefinition], Dict[str, StepInputDefinition]]
 
     @classmethod
     def is_compound_input(cls) -> bool:
@@ -164,17 +175,27 @@ class CompoundDynamicStepInputDefinition:
     def represents_list_of_inputs(self) -> bool:
         return isinstance(self.nested_definitions, list)
 
+    @abstractmethod
+    def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
+        pass
+
 
 @dataclass(frozen=True)
 class ListOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
     nested_definitions: List[StepInputDefinition]
 
+    def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
+        for definition in self.nested_definitions:
+            yield definition
+
 
 @dataclass(frozen=True)
 class DictOfDynamicStepInputDefinition(CompoundDynamicStepInputDefinition):
-    nested_definitions: Dict[
-        str, Union[StaticStepInputDefinition, DynamicStepInputDefinition]
-    ]
+    nested_definitions: Dict[str, Union[StepInputDefinition]]
+
+    def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
+        for definition in self.nested_definitions.values():
+            yield definition
 
 
 @dataclass
