@@ -5,7 +5,7 @@ from typing_extensions import Optional
 
 
 class TelemetrySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="telemetry")
+    model_config = SettingsConfigDict(env_prefix="telemetry_")
 
     opt_out: Optional[bool] = False
     queue_size: int = 10

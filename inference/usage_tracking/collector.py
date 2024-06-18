@@ -32,6 +32,7 @@ class UsageCollector:
         self._lock = Lock()
 
         self._settings: TelemetrySettings = get_telemetry_settings()
+        print(self._settings)
         self._usage: APIKeyUsage = self._get_empty_usage_dict()
 
         # TODO: use persistent queue, i.e. https://pypi.org/project/persist-queue/
@@ -70,8 +71,8 @@ class UsageCollector:
                 return
             # TODO: aggregate last element of the queue if maxsize is reached
             self._queue.put(self._usage)
+            logger.error("Recorded usage: %s", self._usage)
             self._usage = self._get_empty_usage_dict()
-            logger.debug("Queue: %s", [e for e in self._queue.queue])
 
     @staticmethod
     def _guess_source_type(source) -> str:
@@ -146,18 +147,20 @@ class UsageCollector:
             "inference_version": self._inference_version,
         }
 
-    def record_execution_details(self, workflow, api_key: Optional[str] = None, workflow_id: Optional[str] = None):
+    def record_execution_details(self, workflow: Optional[Dict[str, Any]] = None, api_key: Optional[str] = None, workflow_id: Optional[str] = None, ip_address_hash: Optional[str] = None):
         if not api_key:
             api_key = API_KEY
-        if workflow_id is None:
+        if workflow and workflow_id is None:
             workflow_id = self._calculate_workflow_hash(workflow)
         with self._lock:
-            self._queue.put({
-                api_key: {
-                    workflow_id: workflow,
-                }
-            })
-            self._queue.put(self._get_system_info())
+            if workflow:
+                self._queue.put({
+                    api_key: {
+                        workflow_id: workflow,
+                    }
+                })
+            self._queue.put(self._get_system_info(api_key=api_key, ip_address_hash=ip_address_hash))
+            logger.error("Recorded exec info: %s", [q for q in self._queue.queue])
 
     def _cleanup(self):
         self._terminate_scheduler.set()

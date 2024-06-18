@@ -53,6 +53,7 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
+from inference.usage_tracking.collector import UsageCollector
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -266,6 +267,10 @@ class InferencePipeline:
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         on_pipeline_start = active_learning_middleware.start_registration_thread
         on_pipeline_end = active_learning_middleware.stop_registration_thread
+        usage_collector = UsageCollector()
+        usage_collector.record_execution_details(
+            api_key=api_key,
+        )
         return InferencePipeline.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
@@ -280,6 +285,7 @@ class InferencePipeline:
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            usage_collector=usage_collector,
         )
 
     @classmethod
@@ -560,6 +566,11 @@ class InferencePipeline:
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
             )
+            usage_collector = UsageCollector()
+            usage_collector.record_execution_details(
+                api_key=api_key,
+                workflow=workflow_specification,
+            )
         except ImportError as error:
             raise CannotInitialiseModelError(
                 f"Could not initialise workflow processing due to lack of dependencies required. "
@@ -577,6 +588,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            usage_collector=usage_collector,
         )
 
     @classmethod
@@ -595,6 +607,7 @@ class InferencePipeline:
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        usage_collector: Optional[UsageCollector] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -694,6 +707,7 @@ class InferencePipeline:
             on_pipeline_end=on_pipeline_end,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            usage_collector=usage_collector,
         )
 
     def __init__(
@@ -709,6 +723,7 @@ class InferencePipeline:
         max_fps: Optional[float] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        usage_collector: Optional[UsageCollector] = None,
     ):
         self._on_video_frame = on_video_frame
         self._video_sources = video_sources
@@ -726,6 +741,11 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
+        if usage_collector:
+            self._usage_collector = usage_collector
+        else:
+            self._usage_collector = UsageCollector()
+            self._usage_collector.record_execution_details()
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False
@@ -798,6 +818,15 @@ class InferencePipeline:
                     },
                     status_update_handlers=self._status_update_handlers,
                 )
+                for s in self._video_sources:
+                    # TODO: InferencePipeline does not expose workflow reference during execution
+                    #       One instance of InferencePipeline executes one workflow
+                    #       UsageCollector can accept workflow specification as init param
+                    self._usage_collector.record_usage(
+                        source=s.describe_source().source_reference,
+                        frames=1,
+                        fps=s._source_properties.fps,
+                    )
 
         except Exception as error:
             payload = {
