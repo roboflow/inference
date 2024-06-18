@@ -9,6 +9,7 @@ class TelemetrySettings(BaseSettings):
 
     opt_out: Optional[bool] = False
     queue_size: int = 10
+    flush_interval: int = 10
 
 
 @lru_cache

@@ -7,5 +7,3 @@ can turn the telemetry off by setting TELEMETRY_OPT_OUT environment variable to 
 
 Please consult the license for more information regarding when telemetry cannot be turned off.
 """
-
-from .collector import collector
