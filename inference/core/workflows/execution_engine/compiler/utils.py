@@ -2,11 +2,8 @@ from typing import Any, List, Set
 
 from networkx import DiGraph
 
-from inference.core.workflows.constants import (
-    INPUT_NODE_KIND,
+from inference.core.workflows.constants import (  # INPUT_NODE_KIND,; OUTPUT_NODE_KIND,; STEP_NODE_KIND,
     NODE_COMPILATION_OUTPUT_PROPERTY,
-    OUTPUT_NODE_KIND,
-    STEP_NODE_KIND,
 )
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.compiler.entities import NodeCategory

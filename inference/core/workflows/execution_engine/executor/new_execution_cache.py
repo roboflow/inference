@@ -2,8 +2,7 @@ from collections import defaultdict
 from copy import copy
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
-from inference.core.workflows.constants import (
-    ROOT_BRANCH_NAME,
+from inference.core.workflows.constants import (  # ROOT_BRANCH_NAME,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.entities.base import InputType, OutputDefinition

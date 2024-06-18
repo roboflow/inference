@@ -49,7 +49,6 @@ def compile_workflow(
     )
     for node in execution_graph.nodes:
         print(execution_graph.nodes[node]["node_compilation_output"])
-    raise Exception()
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
         available_bocks=available_blocks,

@@ -5,9 +5,7 @@ from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from networkx import DiGraph
 
 from inference.core import logger
-from inference.core.workflows.constants import (
-    DIMENSIONALITY_LINEAGE_PROPERTY,
-    FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY,
+from inference.core.workflows.constants import (  # DIMENSIONALITY_LINEAGE_PROPERTY,; FLOW_CONTROL_EXECUTION_BRANCHES_STACK_PROPERTY,
     STEP_DEFINITION_PROPERTY,
 )
 from inference.core.workflows.entities.base import Batch

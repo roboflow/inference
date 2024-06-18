@@ -4,7 +4,7 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core.workflows.constants import DIMENSIONALITY_LINEAGE_PROPERTY
+# from inference.core.workflows.constants import DIMENSIONALITY_LINEAGE_PROPERTY
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
