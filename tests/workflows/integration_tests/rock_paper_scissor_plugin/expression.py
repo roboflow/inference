@@ -81,4 +81,6 @@ class ExpressionBlock(WorkflowBlock):
         params = ", ".join(f"{k}={k}" for k in data)
         code = output.code + f"\n\nresult = function({params})"
         exec(code, data, results)
-        return {"output": results["result"]}
+        result = {"output": results["result"]}
+        print("result", result)
+        return result

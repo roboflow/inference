@@ -87,7 +87,9 @@ def test_get_nodes_of_specific_kind() -> None:
     )
 
     # when
-    result = get_nodes_of_specific_category(execution_graph=graph, category=STEP_NODE_KIND)
+    result = get_nodes_of_specific_category(
+        execution_graph=graph, category=STEP_NODE_KIND
+    )
 
     # then
     assert result == {

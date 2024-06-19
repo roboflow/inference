@@ -1,18 +1,8 @@
 import abc
-from collections import defaultdict
-from queue import Queue
-from typing import Dict, List, Optional, Set, Union
+from typing import List, Optional, Set
 
 import networkx as nx
-from networkx import DiGraph
 
-# from inference.core.workflows.constants import (
-#     EXECUTION_BRANCHES_STACK_PROPERTY,
-#     STEP_NODE_KIND,
-# )
-from inference.core.workflows.entities.base import Batch
-from inference.core.workflows.entities.types import FlowControl
-from inference.core.workflows.errors import InvalidBlockBehaviourError
 from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
     assign_max_distances_from_start,
@@ -20,9 +10,6 @@ from inference.core.workflows.execution_engine.compiler.graph_constructor import
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_nodes_of_specific_category,
-)
-from inference.core.workflows.execution_engine.executor.new_execution_cache import (
-    ExecutionBranchesManager,
 )
 
 

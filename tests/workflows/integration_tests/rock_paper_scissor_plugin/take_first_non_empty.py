@@ -56,6 +56,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_empty_values(cls) -> bool:
+        return False
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output")]
 
@@ -69,10 +73,6 @@ class TakeFirstNonEmptyBlock(WorkflowBlock):
     @classmethod
     def accepts_batch_input(cls) -> bool:
         return False
-
-    @classmethod
-    def accepts_empty_datapoints(cls) -> bool:
-        return True
 
     async def run(
         self,

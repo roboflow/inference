@@ -14,6 +14,9 @@ from inference.core.workflows.execution_engine.executor.execution_data_manager.m
 from inference.core.workflows.execution_engine.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
 )
+from inference.core.workflows.execution_engine.executor.output_constructor import (
+    construct_workflow_output,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference_sdk.http.utils.iterables import make_batches
 
@@ -41,7 +44,10 @@ async def run_workflow(
         next_steps = execution_coordinator.get_steps_to_execute_next(
             steps_to_discard=set()
         )
-    return []
+    return construct_workflow_output(
+        workflow_outputs=workflow.workflow_definition.outputs,
+        execution_data_manager=execution_data_manager,
+    )
 
 
 async def execute_steps(

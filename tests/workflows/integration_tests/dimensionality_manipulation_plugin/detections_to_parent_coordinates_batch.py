@@ -3,7 +3,7 @@ This is just example, test implementation, please do not assume it being fully f
 """
 
 from copy import deepcopy
-from typing import List, Literal, Optional, Type, Union, Dict
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv

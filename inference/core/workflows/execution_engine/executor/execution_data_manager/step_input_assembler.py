@@ -224,7 +224,7 @@ def prepare_parameters(
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_compound_parameter_value(
                     parameter=parameter_specs,
-                    step_execution_dimensionality_offset=step_node.step_execution_dimensionality_offset,
+                    step_execution_dimensionality=step_node.step_execution_dimensionality,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -237,7 +237,7 @@ def prepare_parameters(
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_non_compound_parameter_value(
                     parameter=parameter_specs,
-                    step_execution_dimensionality_offset=step_node.step_execution_dimensionality_offset,
+                    step_execution_dimensionality=step_node.step_execution_dimensionality,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -245,6 +245,7 @@ def prepare_parameters(
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                 )
             )
+    print("indices_for_parameter", indices_for_parameter)
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -264,7 +265,7 @@ def prepare_parameters(
 
 def get_compound_parameter_value(
     parameter: CompoundStepInputDefinition,
-    step_execution_dimensionality_offset: int,
+    step_execution_dimensionality: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
@@ -278,7 +279,7 @@ def get_compound_parameter_value(
             non_compound_parameter_value, non_compound_indices = (
                 get_non_compound_parameter_value(
                     parameter=nested_element,
-                    step_execution_dimensionality_offset=step_execution_dimensionality_offset,
+                    step_execution_dimensionality=step_execution_dimensionality,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -286,7 +287,7 @@ def get_compound_parameter_value(
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                 )
             )
-            result.append(nested_element)
+            result.append(non_compound_parameter_value)
             if non_compound_indices is not None:
                 batch_indices.append(non_compound_indices)
     else:
@@ -295,7 +296,7 @@ def get_compound_parameter_value(
             non_compound_parameter_value, non_compound_indices = (
                 get_non_compound_parameter_value(
                     parameter=nested_element,
-                    step_execution_dimensionality_offset=step_execution_dimensionality_offset,
+                    step_execution_dimensionality=step_execution_dimensionality,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -317,7 +318,7 @@ def get_compound_parameter_value(
 
 def get_non_compound_parameter_value(
     parameter: StepInputDefinition,
-    step_execution_dimensionality_offset: int,
+    step_execution_dimensionality: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
@@ -335,11 +336,11 @@ def get_non_compound_parameter_value(
         return static_input.value, None
     print(f"Parameter: {parameter.parameter_specification} is dynamic")
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
-    batch_dimensionality = dynamic_parameter.get_dimensionality()
+    parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
         lineage=dynamic_parameter.data_lineage,
     )
-    mask_for_dimension = masks[batch_dimensionality]
+    mask_for_dimension = masks[parameter_dimensionality]
     print("lineage_indices", lineage_indices)
     if dynamic_parameter.points_to_input():
         print("Taking input! Mask:", mask_for_dimension)
@@ -360,16 +361,16 @@ def get_non_compound_parameter_value(
             mask=mask_for_dimension,
         )
     print(
-        "param", parameter, step_execution_dimensionality_offset, batch_dimensionality
+        parameter.parameter_specification,
+        step_execution_dimensionality,
+        parameter_dimensionality,
     )
-    if step_execution_dimensionality_offset == 0:
+    if step_execution_dimensionality == parameter_dimensionality:
         return Batch(batch_input, lineage_indices), lineage_indices
-    if step_execution_dimensionality_offset < 1:
+    if step_execution_dimensionality > parameter_dimensionality:
         raise ValueError("Not expected!")
-    if step_execution_dimensionality_offset > 1:
+    if abs(parameter_dimensionality - step_execution_dimensionality) > 1:
         raise ValueError("Unexpected diff in dimension!")
-    if batch_dimensionality < 2:
-        raise ValueError("Must have some space to decrease")
     result = reduce_batch_dimensionality(
         indices=lineage_indices,
         data=batch_input,
@@ -393,20 +394,24 @@ def reduce_batch_dimensionality(
         if downgraded_index in already_spotted_downgraded_indices:
             wrapped_batch_index.append(index)
             wrapped_batch_content.append(data)
-        elif not wrapped_batch_index:
-            result_index.append(wrapped_batch_index[-1][:-1])
-            result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
+        else:
+            if wrapped_batch_index:
+                result_index.append(wrapped_batch_index[-1][:-1])
+                result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
+            already_spotted_downgraded_indices.add(downgraded_index)
             wrapped_batch_content = []
             wrapped_batch_index = []
-    if not wrapped_batch_index:
+    if wrapped_batch_index:
         result_index.append(wrapped_batch_index[-1][:-1])
         result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
+    print("result_index", result_index)
     return Batch(result_data, result_index)
 
 
 def ensure_compound_input_indices_match(indices: List[List[DynamicBatchIndex]]) -> None:
     if not indices:
         return None
+    print("ensure_compound_input_indices_match()", indices)
     reference_set = set(indices[0])
     for index in indices[1:]:
         other_set = set(index)

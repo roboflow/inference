@@ -566,7 +566,6 @@ def set_dimensionality_for_step(
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
-    step_node_data.output_dimensionality_offset = output_dimensionality_offset
     non_zero_dimensionalities = {
         dimensionality
         for dimensionalities in inputs_dimensionalities.values()
@@ -574,12 +573,10 @@ def set_dimensionality_for_step(
         if dimensionality > 0
     }
     if len(non_zero_dimensionalities) > 0:
-        minimum_input_dimensionality = min(non_zero_dimensionalities)
-        maximum_input_dimensionality = max(non_zero_dimensionalities)
-        offset = maximum_input_dimensionality - minimum_input_dimensionality
+        step_execution_dimensionality = min(non_zero_dimensionalities)
         if output_dimensionality_offset < 0:
-            offset += 1
-        step_node_data.step_execution_dimensionality_offset = offset
+            step_execution_dimensionality -= 1
+        step_node_data.step_execution_dimensionality = step_execution_dimensionality
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:

@@ -213,8 +213,7 @@ class StepNode(ExecutionGraphNode):
     child_execution_branches: Dict[str, str] = field(default_factory=dict)
     execution_branches_impacting_inputs: Set[str] = field(default_factory=set)
     batch_oriented_parameters: Set[str] = field(default_factory=set)
-    output_dimensionality_offset: int = 0
-    step_execution_dimensionality_offset: int = 0
+    step_execution_dimensionality: int = 0
 
     def controls_flow(self) -> bool:
         if self.child_execution_branches:

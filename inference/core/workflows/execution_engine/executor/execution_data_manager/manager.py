@@ -7,13 +7,16 @@ from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
+    InputNode,
     StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
     is_input_selector,
+    is_selector,
     is_step_output_selector,
+    is_step_selector,
 )
 from inference.core.workflows.execution_engine.executor.execution_data_manager.branching_manager import (
     BranchingManager,
@@ -167,7 +170,9 @@ class ExecutionDataManager:
         step_node: StepNode = self._execution_graph.nodes[step_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
-        if step_node.output_dimensionality_offset > 0:
+        if (
+            step_node.output_dimensionality - step_node.step_execution_dimensionality
+        ) > 0:
             # increase in dimensionality
             indices, outputs = flatten_nested_output(indices=indices, outputs=outputs)
             self._dynamic_batches_manager.register_element_indices_for_lineage(
@@ -192,11 +197,107 @@ class ExecutionDataManager:
             outputs=outputs,
         )
 
+    def get_selector_indices(self, selector: str) -> Optional[List[DynamicBatchIndex]]:
+        print("get_selector_indices()", selector)
+        selector_lineage = []
+        if not is_selector(selector_or_value=selector):
+            raise ValueError(f"Not a valid selector: {selector}")
+        potential_step_selector = get_step_selector_from_its_output(
+            step_output_selector=selector
+        )
+        if is_input_selector(selector_or_value=selector):
+            if self.does_input_represent_batch(input_selector=selector):
+                input_node: InputNode = self._execution_graph.nodes[selector][
+                    NODE_COMPILATION_OUTPUT_PROPERTY
+                ]
+                selector_lineage = input_node.data_lineage
+        elif is_step_selector(selector_or_value=potential_step_selector):
+            if self.is_step_simd(step_selector=potential_step_selector):
+                step_node_data: StepNode = self._execution_graph.nodes[
+                    potential_step_selector
+                ][NODE_COMPILATION_OUTPUT_PROPERTY]
+                selector_lineage = step_node_data.data_lineage
+        else:
+            raise ValueError(f"Unknown selector: {selector}")
+        if not selector_lineage:
+            return None
+        if not self._dynamic_batches_manager.is_lineage_registered(
+            lineage=selector_lineage
+        ):
+            return []
+        return self._dynamic_batches_manager.get_indices_for_data_lineage(
+            lineage=selector_lineage
+        )
+
+    def get_non_batch_data(self, selector: str) -> Any:
+        if not is_selector(selector_or_value=selector):
+            raise ValueError(f"Not a valid selector: {selector}")
+        potential_step_selector = get_step_selector_from_its_output(
+            step_output_selector=selector
+        )
+        if is_input_selector(
+            selector_or_value=selector
+        ) and not self.does_input_represent_batch(input_selector=selector):
+            input_name = get_last_chunk_of_selector(selector=selector)
+            return self._runtime_parameters[input_name]
+        elif is_step_selector(
+            selector_or_value=potential_step_selector
+        ) and not self.is_step_simd(step_selector=potential_step_selector):
+            step_name = get_last_chunk_of_selector(selector=potential_step_selector)
+            if selector.endswith(".*"):
+                return self._execution_cache.get_all_non_batch_step_outputs(
+                    step_name=step_name,
+                )
+            return self._execution_cache.get_non_batch_output(selector=selector)
+        else:
+            raise ValueError(f"Invalid selector {selector}!")
+
+    def get_batch_data(
+        self, selector: str, indices: List[DynamicBatchIndex]
+    ) -> List[Any]:
+        if not is_selector(selector_or_value=selector):
+            raise ValueError(f"Not a valid selector: {selector}")
+        potential_step_selector = get_step_selector_from_its_output(
+            step_output_selector=selector
+        )
+        if is_input_selector(
+            selector_or_value=selector
+        ) and self.does_input_represent_batch(input_selector=selector):
+            input_name = get_last_chunk_of_selector(selector=selector)
+            input_data = self._runtime_parameters[input_name]
+            # simplification: assumption that we can only request dim-1 batch from inputs
+            requested_indices = {i[0] for i in indices}
+            return [
+                data_element if idx in requested_indices else None
+                for idx, data_element in enumerate(input_data)
+            ]
+        elif is_step_selector(
+            selector_or_value=potential_step_selector
+        ) and self.is_step_simd(step_selector=potential_step_selector):
+            step_name = get_last_chunk_of_selector(selector=potential_step_selector)
+            if selector.endswith(".*"):
+                return self._execution_cache.get_all_batch_step_outputs(
+                    step_name=step_name,
+                    batch_elements_indices=indices,
+                )
+            return self._execution_cache.get_batch_output(
+                selector=selector,
+                batch_elements_indices=indices,
+            )
+        else:
+            raise ValueError(f"Invalid selector {selector}!")
+
     def is_step_simd(self, step_selector: str) -> bool:
         step_node_data: StepNode = self._execution_graph.nodes[step_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
         return step_node_data.is_batch_oriented()
+
+    def does_input_represent_batch(self, input_selector: str) -> bool:
+        input_node: InputNode = self._execution_graph.nodes[input_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        return input_node.is_batch_oriented()
 
     def _register_flow_control_output_for_non_simd_step(
         self,
