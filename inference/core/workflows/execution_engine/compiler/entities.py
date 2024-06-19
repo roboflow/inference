@@ -132,7 +132,7 @@ class StepInputDefinition:
         pass
 
     @abstractmethod
-    def get_dimensionality(self) -> bool:
+    def get_dimensionality(self) -> int:
         pass
 
     @classmethod
@@ -223,3 +223,6 @@ class StepNode(ExecutionGraphNode):
     @property
     def output_dimensionality(self) -> int:
         return len(self.data_lineage)
+
+    def is_batch_oriented(self) -> bool:
+        return len(self.batch_oriented_parameters) > 0

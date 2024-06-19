@@ -152,10 +152,10 @@ class Batch(Generic[B]):
     def __iter__(self) -> Iterator[B]:
         yield from self._content
 
-    def filter_by_indices(self, indices_to_keep: Set[Tuple[int, ...]]) -> "Batch":
+    def filter_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
         content, new_indices = [], []
         for i, c in zip(self._indices, self._content):
-            if i not in indices_to_keep:
+            if i in indices_to_remove:
                 continue
             content.append(c)
             new_indices.append(i)
