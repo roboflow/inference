@@ -1,24 +1,24 @@
 # Inference Workflows
 
-!!! note
+## What is a Workflow?
 
-    Workflows is an alpha product undergoing active development. Stay tuned for updates as we continue to 
-    refine and enhance this feature.
+Workflows allow you to define multi-step processes that run one or more models to return results based on model outputs and custom logic.
 
-Inference Workflows allow you to define multi-step processes that run one or more models and returns a result based on the output of the models.
-
-With Inference workflows, you can:
+With Workflows, you can:
 
 - Detect, classify, and segment objects in images.
-- Apply filters (i.e. process detections in a specific region, filter detections by confidence).
+- Apply logic filters such as establish detection consensus or filter detections by confidence.
 - Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
 
-You can build simple workflows in the Roboflow web interface that you can then deploy to your own device or the cloud using Inference.
+<div class="button-holder">
+<a href="https://inference.roboflow.com/workflows/blocks/" class="button half-button">Explore all Workflows blocks</a>
+<a href="https://app.roboflow.com/workflows" class="button half-button">Begin building with Workflows</a>
+</div>
 
-You can build more advanced workflows for use on your own devices by writing a workflow configuration directly in JSON.
+![A license plate detection workflow implemented in Workflows](https://media.roboflow.com/inference/workflow-example.png)
 
-In this section of documentation, we describe what you need to know to create workflows.
+You can build and configure Workflows in the Roboflow web interface that you can then deploy using the Roboflow Hosted API, self-host locally and on the cloud using inference, or offline to your hardware devices. You can also build more advanced workflows by writing a Workflow configuration directly in the JSON editor.
 
-Here is an example structure for a workflow you can build with Inference Workflows:
+In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started! 
 
-![](https://github.com/roboflow/inference/blob/main/inference/enterprise/workflows/assets/example_pipeline.jpg?raw=true)
+[Create and run a workflow.](/workflows/create_and_run/)

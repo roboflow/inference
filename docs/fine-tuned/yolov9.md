@@ -15,7 +15,7 @@ Click a link below to see instructions on how to run a YOLOv9 model on different
 
 ### Available Pretrained Models
 
-You may use keypoint detection models available on the [Universe](https://universe.roboflow.com/search?q=model:yolov9).
+You may use YOLOv9 object detection models available on the [Universe](https://universe.roboflow.com/search?q=model:yolov9).
 
 ## Configure Your Deployment
 
