@@ -57,6 +57,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return -1
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
@@ -68,12 +74,6 @@ class TileDetectionsBatchBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def get_impact_on_data_dimensionality(
-        cls,
-    ) -> Literal["decreases", "keeps_the_same", "increases"]:
-        return "decreases"
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

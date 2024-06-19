@@ -58,10 +58,6 @@ class WorkflowBlockManifest(BaseModel, ABC):
     def accepts_empty_values(cls) -> bool:
         return False
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
-
 
 class WorkflowBlock(ABC):
 
@@ -77,6 +73,10 @@ class WorkflowBlock(ABC):
             "deriving from WorkflowBlockManifest.",
             context="getting_block_manifest",
         )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @abstractmethod
     async def run(

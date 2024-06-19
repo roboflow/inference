@@ -3,7 +3,7 @@ This is just example, test implementation, please do not assume it being fully f
 """
 
 from copy import deepcopy
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union, Dict
 
 import numpy as np
 import supervision as sv
@@ -57,6 +57,19 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def get_input_dimensionality_offsets(
+            cls,
+    ) -> Dict[str, int]:
+        return {
+            "image": 0,
+            "image_predictions": 1,
+        }
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "image"
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -75,16 +88,6 @@ class StitchDetectionsNonBatchBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def get_impact_on_data_dimensionality(
-        cls,
-    ) -> Literal["decreases", "keeps_the_same", "increases"]:
-        return "keeps_the_same"
-
-    @classmethod
-    def get_data_dimensionality_property(cls) -> Optional[str]:
-        return "image"
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

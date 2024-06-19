@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
 from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.execution_engine.compiler.entities import (
@@ -80,6 +80,30 @@ def construct_non_simd_step_input(
     return result
 
 
+def iterate_over_simd_step_input(
+    step_node: StepNode,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+    dynamic_batches_manager: DynamicBatchesManager,
+    branching_manager: BranchingManager,
+) -> Generator[NonBatchModeSIMDStepInput, None, None]:
+    simd_step_input = construct_simd_step_input(
+        step_node=step_node,
+        runtime_parameters=runtime_parameters,
+        execution_cache=execution_cache,
+        dynamic_batches_manager=dynamic_batches_manager,
+        branching_manager=branching_manager,
+    )
+    parameters_generator = unfold_parameters(parameters=simd_step_input.parameters)
+    for index, single_parameters_set in zip(
+        simd_step_input.indices, parameters_generator
+    ):
+        yield NonBatchModeSIMDStepInput(
+            index=index,
+            parameters=single_parameters_set,
+        )
+
+
 def construct_simd_step_input(
     step_node: StepNode,
     runtime_parameters: Dict[str, Any],
@@ -91,6 +115,7 @@ def construct_simd_step_input(
         step_node=step_node,
         branching_manager=branching_manager,
     )
+    print(f"Masks for step {step_node.name}: {masks}")
     return prepare_parameters(
         step_node=step_node,
         dynamic_batches_manager=dynamic_batches_manager,
@@ -107,6 +132,10 @@ def construct_mask_for_all_inputs_dimensionalities(
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
     batch_masks, non_batch_masks = [], set()
+    print(
+        "step_node.execution_branches_impacting_inputs",
+        step_node.execution_branches_impacting_inputs,
+    )
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
@@ -121,6 +150,8 @@ def construct_mask_for_all_inputs_dimensionalities(
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
             non_batch_masks.add(mask)
+    print("batch_masks", batch_masks)
+    print("non_batch_masks", non_batch_masks)
     if False in non_batch_masks:
         return {dimension: set() for dimension in all_dimensionalities}
     return {
@@ -145,7 +176,8 @@ def collect_inputs_dimensionalities(
             # to help for empty values
             dimensionalities.append(0)
             result[parameter_name] = max(dimensionalities)
-        result[parameter_name] = parameter_specs.get_dimensionality()
+        else:
+            result[parameter_name] = parameter_specs.get_dimensionality()
     return result
 
 
@@ -188,10 +220,11 @@ def prepare_parameters(
     guard_of_indices_wrapping = GuardForIndicesWrapping()
     for parameter_name, parameter_specs in step_node.input_data.items():
         if parameter_specs.is_compound_input():
+            print(f"{parameter_name} is compound")
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_compound_parameter_value(
                     parameter=parameter_specs,
-                    requested_input_dimensionality=step_node.step_execution_dimensionality,
+                    step_execution_dimensionality_offset=step_node.step_execution_dimensionality_offset,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -200,10 +233,11 @@ def prepare_parameters(
                 )
             )
         else:
+            print(f"{parameter_name} is simple")
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_non_compound_parameter_value(
                     parameter=parameter_specs,
-                    requested_input_dimensionality=step_node.step_execution_dimensionality,
+                    step_execution_dimensionality_offset=step_node.step_execution_dimensionality_offset,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -230,7 +264,7 @@ def prepare_parameters(
 
 def get_compound_parameter_value(
     parameter: CompoundStepInputDefinition,
-    requested_input_dimensionality: int,
+    step_execution_dimensionality_offset: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
@@ -244,7 +278,7 @@ def get_compound_parameter_value(
             non_compound_parameter_value, non_compound_indices = (
                 get_non_compound_parameter_value(
                     parameter=nested_element,
-                    requested_input_dimensionality=requested_input_dimensionality,
+                    step_execution_dimensionality_offset=step_execution_dimensionality_offset,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -261,7 +295,7 @@ def get_compound_parameter_value(
             non_compound_parameter_value, non_compound_indices = (
                 get_non_compound_parameter_value(
                     parameter=nested_element,
-                    requested_input_dimensionality=requested_input_dimensionality,
+                    step_execution_dimensionality_offset=step_execution_dimensionality_offset,
                     masks=masks,
                     dynamic_batches_manager=dynamic_batches_manager,
                     runtime_parameters=runtime_parameters,
@@ -283,39 +317,59 @@ def get_compound_parameter_value(
 
 def get_non_compound_parameter_value(
     parameter: StepInputDefinition,
-    requested_input_dimensionality: int,
+    step_execution_dimensionality_offset: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Union[Any, Optional[List[DynamicBatchIndex]]]:
-    if parameter.is_batch_oriented():
+    if not parameter.is_batch_oriented():
+        input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
+        if parameter.points_to_input():
+            parameter_name = get_last_chunk_of_selector(
+                selector=input_parameter.selector
+            )
+            return runtime_parameters[parameter_name], None
         static_input: StaticStepInputDefinition = parameter  # type: ignore
         return static_input.value, None
+    print(f"Parameter: {parameter.parameter_specification} is dynamic")
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     batch_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
         lineage=dynamic_parameter.data_lineage,
     )
+    mask_for_dimension = masks[batch_dimensionality]
+    print("lineage_indices", lineage_indices)
     if dynamic_parameter.points_to_input():
+        print("Taking input! Mask:", mask_for_dimension)
         input_name = get_last_chunk_of_selector(selector=dynamic_parameter.selector)
         batch_input = runtime_parameters[input_name]
+        if mask_for_dimension is not None:
+            if len(lineage_indices) != len(batch_input):
+                raise ValueError("Input dimensions missmatch")
+            batch_input = [
+                input_element if element_index in mask_for_dimension else None
+                for element_index, input_element in zip(lineage_indices, batch_input)
+            ]
     else:
-        mask_for_dimension = masks[batch_dimensionality]
+        print("step output input! Mask: ", mask_for_dimension)
         batch_input = execution_cache.get_batch_output(
             selector=dynamic_parameter.selector,
             batch_elements_indices=lineage_indices,
             mask=mask_for_dimension,
         )
-    if requested_input_dimensionality == batch_dimensionality:
+    print(
+        "param", parameter, step_execution_dimensionality_offset, batch_dimensionality
+    )
+    if step_execution_dimensionality_offset == 0:
         return Batch(batch_input, lineage_indices), lineage_indices
-    if requested_input_dimensionality > batch_dimensionality:
+    if step_execution_dimensionality_offset < 1:
         raise ValueError("Not expected!")
-    if abs(requested_input_dimensionality - batch_dimensionality) > 1:
+    if step_execution_dimensionality_offset > 1:
         raise ValueError("Unexpected diff in dimension!")
-    if requested_input_dimensionality < 1:
-        raise ValueError("Requested dim must be >= 1!")
+    if batch_dimensionality < 2:
+        raise ValueError("Must have some space to decrease")
     result = reduce_batch_dimensionality(
         indices=lineage_indices,
         data=batch_input,
@@ -329,6 +383,7 @@ def reduce_batch_dimensionality(
     data: List[T],
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Batch[Batch[T]]:
+    print("reduce_batch_dimensionality()", indices)
     guard_of_indices_wrapping.register_wrapping(indices_before_wrapping=indices)
     already_spotted_downgraded_indices = set()
     wrapped_batch_index, wrapped_batch_content = [], []
@@ -376,7 +431,7 @@ def get_empty_indices(value: Any) -> Set[DynamicBatchIndex]:
                 value_result = get_empty_indices(v)
                 result = result.union(value_result)
             elif v is None:
-                result = result.add(i)
+                result.add(i)
     return result
 
 
@@ -391,3 +446,73 @@ def filter_parameters(value: Any, empty_indices: Set[DynamicBatchIndex]) -> Any:
     if isinstance(value, Batch):
         return value.filter_by_indices(indices_to_remove=empty_indices)
     return value
+
+
+def unfold_parameters(
+    parameters: Dict[str, Any]
+) -> Generator[Dict[str, Any], None, None]:
+    batch_parameters = get_batch_parameters(parameters=parameters)
+    non_batch_parameters = {
+        k: v for k, v in parameters.items() if k not in batch_parameters
+    }
+    if not batch_parameters:
+        if not non_batch_parameters:
+            return None
+        yield non_batch_parameters
+        return None
+    for unfolded_batch_parameters in iterate_over_batches(
+        batch_parameters=batch_parameters
+    ):
+        yield {**unfolded_batch_parameters, **non_batch_parameters}
+
+
+def get_batch_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for name, value in parameters.items():
+        if isinstance(value, Batch):
+            result[name] = value
+        elif isinstance(value, list) and any(isinstance(v, Batch) for v in value):
+            result[name] = value
+        elif isinstance(value, dict) and any(
+            isinstance(v, Batch) for v in value.values()
+        ):
+            result[name] = value
+    return result
+
+
+def iterate_over_batches(
+    batch_parameters: Dict[str, Any]
+) -> Generator[Dict[str, Any], None, None]:
+    index = 0
+    end = False
+    while not end:
+        result = {}
+        for name, value in batch_parameters.items():
+            if isinstance(value, Batch):
+                if len(value) <= index:
+                    end = True
+                    break
+                result[name] = value[index]
+            elif isinstance(value, list):
+                to_yield = []
+                for element in value:
+                    if len(element) <= index:
+                        end = True
+                        break
+                    to_yield.append(element[index])
+                result[name] = to_yield
+            elif isinstance(value, dict):
+                to_yield = {}
+                for key, key_value in value.items():
+                    if not isinstance(key_value, Batch):
+                        to_yield[key] = key_value
+                    else:
+                        if len(key_value) <= index:
+                            end = True
+                            break
+                        else:
+                            to_yield[key] = key_value[index]
+                result[name] = to_yield
+        index += 1
+        if not end:
+            yield result

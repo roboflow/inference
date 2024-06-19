@@ -526,6 +526,7 @@ def set_dimensionality_for_step(
     step_node_data: StepNode = execution_graph.nodes[node][
         NODE_COMPILATION_OUTPUT_PROPERTY
     ]
+    print(f"input_data - {node}", input_data)
     inputs_dimensionalities = get_inputs_dimensionalities(
         step_name=step_name,
         input_data=input_data,
@@ -565,6 +566,7 @@ def set_dimensionality_for_step(
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
+    step_node_data.output_dimensionality_offset = output_dimensionality_offset
     non_zero_dimensionalities = {
         dimensionality
         for dimensionalities in inputs_dimensionalities.values()
@@ -572,10 +574,12 @@ def set_dimensionality_for_step(
         if dimensionality > 0
     }
     if len(non_zero_dimensionalities) > 0:
-        minimum_dimensionality = min(non_zero_dimensionalities)
+        minimum_input_dimensionality = min(non_zero_dimensionalities)
+        maximum_input_dimensionality = max(non_zero_dimensionalities)
+        offset = maximum_input_dimensionality - minimum_input_dimensionality
         if output_dimensionality_offset < 0:
-            minimum_dimensionality -= 1
-        step_node_data.step_execution_dimensionality = minimum_dimensionality
+            offset += 1
+        step_node_data.step_execution_dimensionality_offset = offset
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:
@@ -603,11 +607,15 @@ def collect_input_data(
         CompoundStepInputDefinition,
     ],
 ]:
+    print("manifest.name", manifest.name, all_non_control_flow_predecessors)
     predecessors_by_property_name = defaultdict(list)
     for predecessor in all_non_control_flow_predecessors:
-        selector_associated_to_edge: ParsedSelector = execution_graph.edges[
-            (predecessor, step_node)
-        ][STEP_INPUT_SELECTOR_PROPERTY]
+        edge_data = execution_graph.edges[(predecessor, step_node)]
+        if STEP_INPUT_SELECTOR_PROPERTY not in edge_data:
+            continue
+        selector_associated_to_edge: ParsedSelector = edge_data[
+            STEP_INPUT_SELECTOR_PROPERTY
+        ]
         predecessors_by_property_name[
             selector_associated_to_edge.definition.property_name
         ].append((predecessor, selector_associated_to_edge))
@@ -640,7 +648,9 @@ def collect_input_data(
             else:
                 if len(predecessors_by_property_name[name]) != 1:
                     raise ValueError("Should not meet more than one predecessor here")
-                predecessor_selector, _ = predecessors_by_property_name[name][0]
+                predecessor_selector, predecessor_parsed_selector = (
+                    predecessors_by_property_name[name][0]
+                )
                 predecessor_node_data = execution_graph.nodes[predecessor_selector][
                     NODE_COMPILATION_OUTPUT_PROPERTY
                 ]
@@ -674,7 +684,7 @@ def collect_input_data(
                         ),
                         category=category,
                         data_lineage=predecessor_node_data.data_lineage,
-                        selector=predecessor_node_data.selector,
+                        selector=predecessor_parsed_selector.value,
                     )
                 else:
                     raise ValueError("Should not reach here")
@@ -703,6 +713,7 @@ def build_nested_dict_of_input_data(
             )
             continue
         referred_node_selector = nested_property_name2data[k][0]
+        referred_node_parsed_selector = nested_property_name2data[k][1]
         referred_node_data = execution_graph.nodes[referred_node_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
@@ -734,7 +745,7 @@ def build_nested_dict_of_input_data(
             ),
             category=category,
             data_lineage=referred_node_data.data_lineage,
-            selector=referred_node_data.selector,
+            selector=referred_node_parsed_selector.value,
         )
     return DictOfStepInputDefinitions(
         name=property_name,
@@ -775,6 +786,7 @@ def build_nested_list_of_input_data(
             )
             continue
         referred_node_selector = nested_index2data[index][0]
+        referred_node_parsed_selector = nested_index2data[index][1]
         referred_node_data = execution_graph.nodes[referred_node_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
@@ -809,7 +821,7 @@ def build_nested_list_of_input_data(
                 ),
                 category=category,
                 data_lineage=referred_node_data.data_lineage,
-                selector=referred_node_data.selector,
+                selector=referred_node_parsed_selector.value,
             )
         )
     return ListOfStepInputDefinitions(
@@ -871,9 +883,9 @@ def verify_output_offset(
     different_offsets = {o for o in input_dimensionality_offsets.values()}
     if len(parameters_with_batch_inputs) != len(input_dimensionality_offsets):
         different_offsets.add(0)
-    if 0 not in different_offsets:
+    if 0 not in different_offsets and parameters_with_batch_inputs:
         raise ValueError(
-            f"Block defining step {step_name} explicitly defines input dimensionalities offsets"
+            f"Block defining step {step_name} explicitly defines input dimensionalities offset s"
             f"with {input_dimensionality_offsets}, but the definition lack 0-level input, which is "
             f"not allowed, as in this scenario offsets could be adjusted to include 0"
         )
@@ -898,16 +910,19 @@ def verify_input_data_dimensionality(
     inputs_dimensionalities: Dict[str, Set[int]],
     dimensionality_offstes: Dict[str, int],
 ) -> None:
+    print("inputs_dimensionalities", inputs_dimensionalities)
     parameter2offset_and_non_zero_dimensionality = {}
     for parameter_name, dimensionality in inputs_dimensionalities.items():
         parameter_offset = dimensionality_offstes.get(parameter_name, 0)
+        print("offset for parameter", parameter_name, parameter_offset)
         non_zero_dims = {d for d in dimensionality if d > 0}
         if len(non_zero_dims) > 1:
             raise ValueError("Should not be possible here")
         if non_zero_dims:
+            dim = next(iter(non_zero_dims))
             parameter2offset_and_non_zero_dimensionality[parameter_name] = (
                 parameter_offset,
-                next(iter(non_zero_dims)),
+                dim,
             )
     if not parameter2offset_and_non_zero_dimensionality:
         return None
@@ -937,6 +952,12 @@ def verify_input_data_dimensionality(
             f"Given the definition of block defining step {step_name} and data provided, "
             f"the block would expect batch input dimensionality to be 0 or below, which is invalid."
         )
+
+    print("expected_dimensionalities", expected_dimensionalities)
+    print(
+        "parameter2offset_and_non_zero_dimensionality",
+        parameter2offset_and_non_zero_dimensionality,
+    )
     for property_name, expected_dimensionality in expected_dimensionalities.items():
         actual_dimensionality = parameter2offset_and_non_zero_dimensionality[
             property_name
@@ -944,7 +965,8 @@ def verify_input_data_dimensionality(
         if actual_dimensionality != expected_dimensionality:
             raise ValueError(
                 f"Data fed into step `{step_name}` property `{property_name}` has "
-                f"actual dimensionality {actual_dimensionality}, when expected was {expected_dimensionality}"
+                f"actual dimensionality offset {actual_dimensionality}, "
+                f"when expected was {expected_dimensionality}"
             )
     return None
 
@@ -1116,7 +1138,7 @@ def get_all_data_lineage(
         return lineages
     lineages_by_length = defaultdict(list)
     for lineage in lineages:
-        lineages_by_length[len(lineage)].append(lineages)
+        lineages_by_length[len(lineage)].append(lineage)
     if len(lineages_by_length) > 2:
         raise ValueError(
             f"Input data provided for step: `{step_name}` comes with lineages at more than two "
@@ -1134,8 +1156,10 @@ def get_all_data_lineage(
             f"If lineage differ at the last level, then Execution Engine requires at least one higher-dimension "
             f"input that will come with common lineage, but this is not the case for step {step_name}."
         )
+    print("lineages_by_length", lineages_by_length)
     if len(lineage_lengths) == 2:
         reference_lineage = lineages_by_length[lineage_lengths[0]][0]
+        print("diff", reference_lineage, lineages_by_length[lineage_lengths[1]][0][:-1])
         if reference_lineage != lineages_by_length[lineage_lengths[1]][0][:-1]:
             raise ValueError(
                 f"Step `{step_name}` inputs does not share common lineage. Differing element: "
@@ -1195,7 +1219,7 @@ def get_reference_lineage(
     dimensionality_reference_property: Optional[str],
 ) -> List[str]:
     if len(all_lineages) == 1:
-        return all_lineages[0]
+        return copy(all_lineages[0])
     if dimensionality_reference_property not in input_data:
         raise ValueError(
             "Dimensionality reference property not set and that should be picked up earlier"

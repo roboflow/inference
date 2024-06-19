@@ -60,12 +60,11 @@ class BatchStepCache:
                 for element_idx, sub_element in enumerate(elements):
                     indices_to_register.append(main_idx + (element_idx,))
                     outputs_to_register.append(sub_element)
-        required_properties = set(self._cache_content.keys())
         for idx, element in zip(indices_to_register, outputs_to_register):
             element_properties = set(element.keys())
-            if element_properties != required_properties:
+            if element_properties != self._outputs:
                 raise ValueError(
-                    f"Step did not produced required outputs. Expected: {required_properties}. Got: {element_properties}"
+                    f"Step did not produced required outputs. Expected: {self._outputs}. Got: {element_properties}"
                 )
             for property_name, property_value in element.items():
                 self._cache_content[property_name][idx] = property_value

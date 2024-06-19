@@ -1,9 +1,9 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from networkx import DiGraph
 
 from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
+from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.executor.execution_data_manager.b
 )
 from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchesManager,
+    DynamicBatchIndex,
 )
 from inference.core.workflows.execution_engine.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
@@ -27,6 +28,9 @@ from inference.core.workflows.execution_engine.executor.execution_data_manager.e
 from inference.core.workflows.execution_engine.executor.execution_data_manager.step_input_assembler import (
     BatchModeSIMDStepInput,
     NonBatchModeSIMDStepInput,
+    construct_non_simd_step_input,
+    construct_simd_step_input,
+    iterate_over_simd_step_input,
 )
 
 
@@ -87,51 +91,174 @@ class ExecutionDataManager:
             and all_execution_branches_registered
         )
 
-    def get_non_simd_step_input(self, step_selector: str) -> Dict[str, Any]:
+    def get_non_simd_step_input(self, step_selector: str) -> Optional[Dict[str, Any]]:
         if self.is_step_simd(step_selector=step_selector):
             raise ValueError(f"SIMD step {step_selector} requested non-simd input")
-        return {}
+        step_node: StepNode = self._execution_graph.nodes[step_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        return construct_non_simd_step_input(
+            step_node=step_node,
+            runtime_parameters=self._runtime_parameters,
+            execution_cache=self._execution_cache,
+            branching_manager=self._branching_manager,
+        )
 
     def register_non_simd_step_output(
-        self, step_selector: str, output: Dict[str, Any]
+        self, step_selector: str, output: Union[Dict[str, Any], FlowControl]
     ) -> None:
         if self.is_step_simd(step_selector=step_selector):
             raise ValueError(f"SIMD step {step_selector} registering non-simd output")
-
-    def get_non_simd_step_output(
-        self, output_selector: str
-    ) -> Union[Any, Dict[str, Any]]:
-        pass
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        step_node: StepNode = self._execution_graph.nodes[step_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        if isinstance(output, FlowControl):
+            self._register_flow_control_output_for_non_simd_step(
+                step_node=step_node,
+                output=output,
+            )
+            return None
+        self._execution_cache.register_non_batch_step_outputs(
+            step_name=step_name,
+            outputs=output,
+        )
 
     def get_simd_step_input(self, step_selector: str) -> BatchModeSIMDStepInput:
         if not self.is_step_simd(step_selector=step_selector):
             raise ValueError()
-        return {}
+        step_node: StepNode = self._execution_graph.nodes[step_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        return construct_simd_step_input(
+            step_node=step_node,
+            runtime_parameters=self._runtime_parameters,
+            execution_cache=self._execution_cache,
+            dynamic_batches_manager=self._dynamic_batches_manager,
+            branching_manager=self._branching_manager,
+        )
 
     def iterate_over_simd_step_input(
         self, step_selector: str
     ) -> Generator[NonBatchModeSIMDStepInput, None, None]:
         if not self.is_step_simd(step_selector=step_selector):
             raise ValueError()
-        yield {}
+        step_node: StepNode = self._execution_graph.nodes[step_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        yield from iterate_over_simd_step_input(
+            step_node=step_node,
+            runtime_parameters=self._runtime_parameters,
+            execution_cache=self._execution_cache,
+            dynamic_batches_manager=self._dynamic_batches_manager,
+            branching_manager=self._branching_manager,
+        )
 
     def register_simd_step_output(
-        self, step_selector: str, output: List[Dict[str, Any]]
+        self,
+        step_selector: str,
+        indices: List[DynamicBatchIndex],
+        outputs: List[
+            Union[List[Dict[str, Any]], Dict[str, Any], List[FlowControl], FlowControl]
+        ],
     ) -> None:
-        if self.is_step_simd(step_selector=step_selector):
+        if not self.is_step_simd(step_selector=step_selector):
             raise ValueError()
-
-    def get_simd_step_output(self, output_selector: str) -> list:
-        pass
-
-    def get_all_simd_step_outputs(self, step_selector: str) -> list:
-        pass
+        step_node: StepNode = self._execution_graph.nodes[step_selector][
+            NODE_COMPILATION_OUTPUT_PROPERTY
+        ]
+        if step_node.output_dimensionality_offset > 0:
+            # increase in dimensionality
+            indices, outputs = flatten_nested_output(indices=indices, outputs=outputs)
+            self._dynamic_batches_manager.register_element_indices_for_lineage(
+                lineage=step_node.data_lineage,
+                indices=indices,
+            )
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        if step_node.child_execution_branches:
+            if not all(isinstance(element, FlowControl) for element in outputs):
+                raise ValueError(
+                    f"Flow control step {step_name} expected to only produce FlowControl objects"
+                )
+            self._register_flow_control_output_for_simd_step(
+                step_node=step_node,
+                indices=indices,
+                outputs=outputs,
+            )
+            return None
+        self._execution_cache.register_batch_of_step_outputs(
+            step_name=step_name,
+            indices=indices,
+            outputs=outputs,
+        )
 
     def is_step_simd(self, step_selector: str) -> bool:
         step_node_data: StepNode = self._execution_graph.nodes[step_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
         return step_node_data.is_batch_oriented()
+
+    def _register_flow_control_output_for_non_simd_step(
+        self,
+        step_node: StepNode,
+        output: FlowControl,
+    ) -> None:
+        if not step_node.child_execution_branches:
+            raise ValueError(
+                "This step is not flow-control, so cannot return FlowControl object"
+            )
+        if not output.context:
+            raise ValueError("Step must decode on flow control!")
+        selected_steps = output.context
+        if not isinstance(selected_steps, list):
+            selected_steps = {selected_steps}
+        else:
+            selected_steps = set(selected_steps)
+        selected_execution_branches = set()
+        for target_step, branch_name in step_node.child_execution_branches.items():
+            if target_step in selected_steps:
+                selected_execution_branches.add(branch_name)
+        for branch_name in step_node.child_execution_branches.values():
+            mask = branch_name in selected_execution_branches
+            print(f"NON-SIMD flow control -> {branch_name}: {mask}")
+            self._branching_manager.register_non_batch_mask(
+                execution_branch=branch_name,
+                mask=mask,
+            )
+        return None
+
+    def _register_flow_control_output_for_simd_step(
+        self,
+        step_node: StepNode,
+        indices: List[DynamicBatchIndex],
+        outputs: List[FlowControl],
+    ) -> None:
+        all_branches_masks = {
+            branch_name: set()
+            for branch_name in step_node.child_execution_branches.values()
+        }
+        for output_index, output in zip(indices, outputs):
+            selected_steps = output.context
+            if selected_steps is None:
+                selected_steps = []
+            if not isinstance(selected_steps, list):
+                selected_steps = {selected_steps}
+            else:
+                selected_steps = set(selected_steps)
+            for selected_step in selected_steps:
+                branch_for_step = step_node.child_execution_branches.get(selected_step)
+                print("selected_step", selected_step, "branch", branch_for_step)
+                if branch_for_step is None:
+                    raise ValueError(
+                        f"Cannot find execution branch for step {selected_step}"
+                    )
+                all_branches_masks[branch_for_step].add(output_index)
+        for branch_name, mask in all_branches_masks.items():
+            print(f"SIMD flow control -> {branch_name}: {mask}")
+            self._branching_manager.register_batch_oriented_mask(
+                execution_branch=branch_name,
+                mask=mask,
+            )
 
 
 def are_all_batch_oriented_parameters_registered(
@@ -182,3 +309,19 @@ def is_dynamic_step_input_registered(
         step_name = get_last_chunk_of_selector(selector=step_selector)
         return execution_cache.is_step_output_registered(step_name=step_name)
     raise ValueError("Should not be possible")
+
+
+def flatten_nested_output(
+    indices: List[DynamicBatchIndex],
+    outputs: List[
+        Union[List[Dict[str, Any]], Dict[str, Any], List[FlowControl], FlowControl]
+    ],
+) -> Tuple[List[DynamicBatchIndex], List[Union[Dict[str, Any], FlowControl]]]:
+    flattened_index, flattened_output = [], []
+    for index, output_element in zip(indices, outputs):
+        if not isinstance(output_element, list):
+            raise ValueError("Output missmatch")
+        for nested_index, nested_element_of_output_element in enumerate(output_element):
+            flattened_index.append(index + (nested_index,))
+            flattened_output.append(nested_element_of_output_element)
+    return flattened_index, flattened_output

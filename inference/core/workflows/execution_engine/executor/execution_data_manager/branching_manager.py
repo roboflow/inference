@@ -21,14 +21,14 @@ class BranchingManager:
     def register_batch_oriented_mask(
         self,
         execution_branch: str,
-        mask: List[DynamicBatchIndex],
+        mask: set[DynamicBatchIndex],
     ) -> None:
         if execution_branch in self._masks:
             raise ValueError(
                 f"Attempted to re-register maks for execution branch: {execution_branch}"
             )
         self._batch_compatibility[execution_branch] = True
-        self._masks[execution_branch] = set(mask)
+        self._masks[execution_branch] = mask
 
     def register_non_batch_mask(self, execution_branch: str, mask: bool) -> None:
         if execution_branch in self._masks:
