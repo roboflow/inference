@@ -19,9 +19,12 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
     BlockInterfaceError,
+    ControlFlowDefinitionError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     StepInputDimensionalityError,
+    StepInputLineageError,
+    StepOutputLineageError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
@@ -941,10 +944,11 @@ def verify_input_data_dimensionality(
             param2dim = {
                 k: e[1] for k, e in parameter2offset_and_non_zero_dimensionality.items()
             }
-            raise ValueError(
-                f"Block defining step {step_name} does not define dimensionality reference property, "
+            raise StepInputDimensionalityError(
+                public_message=f"Block defining step {step_name} does not define dimensionality reference property, "
                 f"which means that all batch-oriented parameters must be at the same dimensionality level, "
-                f"but detected the following dimensionalities for parameters {param2dim}"
+                f"but detected the following dimensionalities for parameters {param2dim}",
+                context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
             )
         return None
     reference_offset, reference_property_dim = (
@@ -955,9 +959,10 @@ def verify_input_data_dimensionality(
         for property_name, e in parameter2offset_and_non_zero_dimensionality.items()
     }
     if any(v <= 0 for v in expected_dimensionalities.values()):
-        raise ValueError(
-            f"Given the definition of block defining step {step_name} and data provided, "
-            f"the block would expect batch input dimensionality to be 0 or below, which is invalid."
+        raise StepInputDimensionalityError(
+            public_message=f"Given the definition of block defining step {step_name} and data provided, "
+            f"the block would expect batch input dimensionality to be 0 or below, which is invalid.",
+            context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
         )
 
     print("expected_dimensionalities", expected_dimensionalities)
@@ -1008,11 +1013,12 @@ def verify_lineage_of_flow_control_steps_impacting_inputs(
             problematic_flow_control_steps = lineage_id2control_flow_steps[
                 control_flow_lineage_id
             ]
-            raise ValueError(
-                f"Step {step_name} execution is impacted by control flow outcome of the following "
+            raise ControlFlowDefinitionError(
+                public_message=f"Step {step_name} execution is impacted by control flow outcome of the following "
                 f"steps {problematic_flow_control_steps} which make decision based on data that is "
                 f"not compatible with data fed to the step {step_name} - which would cause the step "
-                f"to never execute. This behaviour is invalid and prevented upfront by Workflows compiler."
+                f"to never execute. This behaviour is invalid and prevented upfront by Workflows compiler.",
+                context="workflow_compilation | execution_graph_construction | verification_of_flow_control_lineage",
             )
 
 
@@ -1069,8 +1075,9 @@ def get_inputs_dimensionalities(
             non_zero_dimensionalities_spotted
         )
         if abs(max_dim - min_dim) > 1:
-            raise ValueError(
-                f"For step {step_name} attempted to plug input data differing in dimensionality more than 1"
+            raise StepInputDimensionalityError(
+                public_message=f"For step {step_name} attempted to plug input data differing in dimensionality more than 1",
+                context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
             )
     return result
 
@@ -1085,9 +1092,10 @@ def get_compound_input_dimensionality(
         dimensionalities_spotted.add(definition.get_dimensionality())
     non_zero_dimensionalities = {e for e in dimensionalities_spotted if e != 0}
     if len(non_zero_dimensionalities) > 1:
-        raise ValueError(
-            f"While evaluating compound property {property_name} of step {step_name}, "
-            f"detected multiple inputs of differing batch dimensionalities: {non_zero_dimensionalities}"
+        raise StepInputDimensionalityError(
+            public_message=f"While evaluating compound property {property_name} of step {step_name}, "
+            f"detected multiple inputs of differing batch dimensionalities: {non_zero_dimensionalities}",
+            context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
         )
     return dimensionalities_spotted
 
@@ -1130,10 +1138,11 @@ def get_all_data_lineage(
                             lineages_detected_in_compound_input
                         )
             if len(lineages_detected_in_compound_input) > 1:
-                raise ValueError(
-                    f"Input data provided for step: `{step_name}` comes with multiple different lineages "
+                raise StepInputLineageError(
+                    public_message=f"Input data provided for step: `{step_name}` comes with multiple different lineages "
                     f"{lineages_detected_in_compound_input} for property `{property_name}` accepting "
-                    f"multiple selectors"
+                    f"multiple selectors",
+                    context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
                 )
         else:
             if input_definition.is_batch_oriented():
@@ -1148,31 +1157,35 @@ def get_all_data_lineage(
     for lineage in lineages:
         lineages_by_length[len(lineage)].append(lineage)
     if len(lineages_by_length) > 2:
-        raise ValueError(
-            f"Input data provided for step: `{step_name}` comes with lineages at more than two "
-            f"dimensionality levels, which should not be possible."
+        raise StepInputLineageError(
+            public_message=f"Input data provided for step: `{step_name}` comes with lineages at more than two "
+            f"dimensionality levels, which should not be possible.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
     lineage_lengths = sorted(lineages_by_length.keys())
     for lineage_length in lineage_lengths:
         if len(lineages_by_length[lineage_length]) > 1:
-            raise ValueError(
-                f"Among step `{step_name}` inputs found different lineages at the same  "
-                f"dimensionality levels dimensionality."
+            raise StepInputLineageError(
+                public_message=f"Among step `{step_name}` inputs found different lineages at the same  "
+                f"dimensionality levels dimensionality.",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
             )
     if len(lineages_by_length[lineage_lengths[-1]]) > 1 and len(lineage_lengths) < 2:
-        raise ValueError(
-            f"If lineage differ at the last level, then Execution Engine requires at least one higher-dimension "
-            f"input that will come with common lineage, but this is not the case for step {step_name}."
+        raise StepInputLineageError(
+            public_message=f"If lineage differ at the last level, then Execution Engine requires at least one higher-dimension "
+            f"input that will come with common lineage, but this is not the case for step {step_name}.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
     print("lineages_by_length", lineages_by_length)
     if len(lineage_lengths) == 2:
         reference_lineage = lineages_by_length[lineage_lengths[0]][0]
         print("diff", reference_lineage, lineages_by_length[lineage_lengths[1]][0][:-1])
         if reference_lineage != lineages_by_length[lineage_lengths[1]][0][:-1]:
-            raise ValueError(
-                f"Step `{step_name}` inputs does not share common lineage. Differing element: "
+            raise StepInputLineageError(
+                public_message=f"Step `{step_name}` inputs does not share common lineage. Differing element: "
                 f"{lineages_by_length[lineage_lengths[1]][0]}, "
-                f"reference lineage prefix: {reference_lineage}"
+                f"reference lineage prefix: {reference_lineage}",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
             )
     return lineages
 
@@ -1203,9 +1216,11 @@ def establish_batch_oriented_step_lineage(
     if output_dimensionality_offset < 0:
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
         if len(result_dimensionality) == 0:
-            raise ValueError(
-                f"Step {step_selector} is to decrease dimensionality, but it is not possible if "
-                f"input dimensionality is not greater or equal 2, otherwise output is not batch-oriented."
+            raise StepOutputLineageError(
+                public_message=f"Step {step_selector} is to decrease dimensionality, but it is not possible if "
+                f"input dimensionality is not greater or equal 2, otherwise output would not "
+                f"be batch-oriented.",
+                context="workflow_compilation | execution_graph_construction | establishing_step_output_lineage",
             )
         return result_dimensionality
     if output_dimensionality_offset == 0:

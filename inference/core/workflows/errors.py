@@ -85,6 +85,18 @@ class StepInputDimensionalityError(WorkflowCompilerError):
     pass
 
 
+class StepInputLineageError(WorkflowCompilerError):
+    pass
+
+
+class StepOutputLineageError(WorkflowCompilerError):
+    pass
+
+
+class ControlFlowDefinitionError(WorkflowCompilerError):
+    pass
+
+
 class WorkflowExecutionEngineError(WorkflowError):
     pass
 

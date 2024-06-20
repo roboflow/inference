@@ -212,6 +212,244 @@ class DimensionalityReferencePropertyIsNotBatchBlock(WorkflowBlock):
         pass
 
 
+class OutputDimensionalityInInvalidRangeManifest(WorkflowBlockManifest):
+    type: Literal["OutputDimensionalityInInvalidRange"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return 2
+
+
+class OutputDimensionalityInInvalidRangeBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return OutputDimensionalityInInvalidRangeManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
+        self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
+    ) -> BlockResult:
+        pass
+
+
+class LackOfZeroGroundOffsetManifest(WorkflowBlockManifest):
+    type: Literal["LackOfZeroGroundOffset"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {
+            "images": 1,
+            "crops": 2,
+        }
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "images"
+
+
+class LackOfZeroGroundOffsetBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return LackOfZeroGroundOffsetManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
+        self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
+    ) -> BlockResult:
+        pass
+
+
+class LackOfRequiredReferencePropertyManifest(WorkflowBlockManifest):
+    type: Literal["LackOfRequiredReferenceProperty"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {
+            "images": 0,
+            "crops": 1,
+        }
+
+
+class LackOfRequiredReferencePropertyBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return LackOfRequiredReferencePropertyManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
+        self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
+    ) -> BlockResult:
+        pass
+
+
+class ManipulationOutputDimensionalityWhenInvalidManifest(WorkflowBlockManifest):
+    type: Literal["ManipulationOutputDimensionalityWhenInvalid"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {
+            "images": 0,
+            "crops": 1,
+        }
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "images"
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return 1
+
+
+class ManipulationOutputDimensionalityWhenInvalidBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ManipulationOutputDimensionalityWhenInvalidManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
+        self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
+    ) -> BlockResult:
+        pass
+
+
+class ExpectsTheSameDimensionalityManifest(WorkflowBlockManifest):
+    type: Literal["ExpectsTheSameDimensionality"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+
+class ExpectsTheSameDimensionalityBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return ExpectsTheSameDimensionalityManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(
+        self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
+    ) -> BlockResult:
+        pass
+
+
+class DecreasingDimensionalityManifest(WorkflowBlockManifest):
+    type: Literal["DecreasingDimensionality"]
+    name: str = Field(description="name field")
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Reference an image to be used as input for step processing",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="output")]
+
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return -1
+
+
+class DecreasingDimensionalityBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return DecreasingDimensionalityManifest
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    async def run(self, images: Batch[WorkflowImageData]) -> BlockResult:
+        pass
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         BlockRequestingDifferentDimsBlock,
@@ -219,4 +457,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BlockWithNegativeOffsetBlock,
         NonSIMDWithOutputOffsetBlock,
         DimensionalityReferencePropertyIsNotBatchBlock,
+        OutputDimensionalityInInvalidRangeBlock,
+        LackOfZeroGroundOffsetBlock,
+        LackOfRequiredReferencePropertyBlock,
+        ManipulationOutputDimensionalityWhenInvalidBlock,
+        ExpectsTheSameDimensionalityBlock,
+        DecreasingDimensionalityBlock,
     ]
