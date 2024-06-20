@@ -10,7 +10,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-class ABTestManifest(WorkflowBlockManifest):
+class FaultyInitManifest(WorkflowBlockManifest):
     type: Literal["FaultyInit"]
     name: str = Field(description="name field")
 
@@ -26,7 +26,7 @@ class FaultyInitBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return ABTestManifest
+        return FaultyInitManifest
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

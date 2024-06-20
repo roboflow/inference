@@ -1,16 +1,12 @@
-from copy import deepcopy
 from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import ValidationError
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
-    ExecutionGraphStructureError,
-    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader

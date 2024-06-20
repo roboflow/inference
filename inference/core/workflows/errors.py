@@ -73,15 +73,15 @@ class InvalidReferenceTargetError(WorkflowCompilerError):
     pass
 
 
-class ConditionalBranchesCollapseError(ExecutionGraphStructureError):
-    pass
-
-
 class UnknownManifestType(WorkflowCompilerError):
     pass
 
 
 class BlockInitParameterNotProvidedError(WorkflowCompilerError):
+    pass
+
+
+class StepInputDimensionalityError(WorkflowCompilerError):
     pass
 
 

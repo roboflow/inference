@@ -18,8 +18,10 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
+    BlockInterfaceError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
+    StepInputDimensionalityError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
@@ -840,13 +842,15 @@ def verify_step_input_dimensionality_offsets(
     if min_offset is None or max_offset is None:
         return None
     if min_offset < 0 or max_offset < 0:
-        raise ValueError(
-            f"Offsets could not be negative, but block defining step: {step_name} defines that values."
+        raise BlockInterfaceError(
+            public_message=f"Offsets could not be negative, but block defining step: {step_name} defines that values.",
+            context="workflow_compilation | execution_graph_construction | verification_of_input_offset_definitions",
         )
     if abs(max_offset - min_offset) > 1:
-        raise ValueError(
-            f"Offsets of input parameters could not differ more than 1, but block defining step {step_name} "
-            f"violates that rule."
+        raise BlockInterfaceError(
+            public_message="Offsets of input parameters could not differ more than 1, but block defining step {step_name} "
+            f"violates that rule.",
+            context="workflow_compilation | execution_graph_construction | verification_of_input_offset_definitions",
         )
 
 
@@ -858,46 +862,52 @@ def verify_output_offset(
     output_dimensionality_offset: int,
 ) -> None:
     if not parameters_with_batch_inputs and output_dimensionality_offset != 0:
-        raise ValueError(
-            f"Block defining step {step_name} defines dimensionality offset different than zero while taking "
-            f"only non-batch parameters, which is not allowed."
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} defines dimensionality offset different than zero while taking "
+            f"only non-batch parameters, which is not allowed.",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if (
         dimensionality_reference_property is not None
         and dimensionality_reference_property not in parameters_with_batch_inputs
     ):
-        raise ValueError(
-            f"Block defining step {step_name} defines dimensionality reference property which is not in scope of "
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} defines dimensionality reference property which is not in scope of "
             f"parameters bring batch-oriented input, which makes it impossible to use as reference for output "
-            f"dimensionality."
+            f"dimensionality.",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if output_dimensionality_offset not in {-1, 0, 1}:
-        raise ValueError(
-            f"Block defining step {step_name} defines output dimensionality offset "
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} defines output dimensionality offset "
             f"being {output_dimensionality_offset}, whereas it is only possible for that offset being "
-            f"in set [-1, 0, 1]."
+            f"in set [-1, 0, 1].",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     different_offsets = {o for o in input_dimensionality_offsets.values()}
     if len(parameters_with_batch_inputs) != len(input_dimensionality_offsets):
         different_offsets.add(0)
     if 0 not in different_offsets and parameters_with_batch_inputs:
-        raise ValueError(
-            f"Block defining step {step_name} explicitly defines input dimensionalities offset s"
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} explicitly defines input dimensionalities offsets"
             f"with {input_dimensionality_offsets}, but the definition lack 0-level input, which is "
-            f"not allowed, as in this scenario offsets could be adjusted to include 0"
+            f"not allowed, as in this scenario offsets could be adjusted to include 0",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if len(different_offsets) > 1 and dimensionality_reference_property is None:
-        raise ValueError(
-            f"Block defining step {step_name} explicitly defines input dimensionality "
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} explicitly defines input dimensionality "
             f"offsets {input_dimensionality_offsets}. In this scenario it is required to provide dimensionality "
-            f"reference property."
+            f"reference property.",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if len(different_offsets) > 1 and output_dimensionality_offset != 0:
-        raise ValueError(
-            f"Block defining step {step_name} explicitly defines input dimensionality "
+        raise BlockInterfaceError(
+            public_message=f"Block defining step {step_name} explicitly defines input dimensionality "
             f"offsets {input_dimensionality_offsets} and output dimensionality offset {output_dimensionality_offset} "
             f"where the latter is not 0, but for inputs differing with dimensionality it is only possible to keep "
-            f"output dimensionality the same and point reference parameter."
+            f"output dimensionality the same and point reference parameter.",
+            context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
 
 
@@ -960,10 +970,11 @@ def verify_input_data_dimensionality(
             property_name
         ][1]
         if actual_dimensionality != expected_dimensionality:
-            raise ValueError(
-                f"Data fed into step `{step_name}` property `{property_name}` has "
-                f"actual dimensionality offset {actual_dimensionality}, "
-                f"when expected was {expected_dimensionality}"
+            raise StepInputDimensionalityError(
+                public_message=f"Data fed into step `{step_name}` property `{property_name}` has "
+                f"actual dimensionality {actual_dimensionality + reference_offset}, "
+                f"when expected was {expected_dimensionality + reference_offset}",
+                context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
             )
     return None
 
