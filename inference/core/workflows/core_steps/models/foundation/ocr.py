@@ -25,6 +25,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -72,6 +73,10 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 
@@ -178,4 +183,6 @@ class OCRModelBlock(WorkflowBlock):
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
+            if "time" in prediction:
+                del prediction["time"]
         return predictions

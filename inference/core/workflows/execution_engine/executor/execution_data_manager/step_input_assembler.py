@@ -397,12 +397,18 @@ def reduce_batch_dimensionality(
         else:
             if wrapped_batch_index:
                 result_index.append(wrapped_batch_index[-1][:-1])
+                print(
+                    "wrapped_batch_index",
+                    wrapped_batch_index,
+                    len(wrapped_batch_content),
+                )
                 result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
             already_spotted_downgraded_indices.add(downgraded_index)
-            wrapped_batch_content = []
-            wrapped_batch_index = []
+            wrapped_batch_index = [index]
+            wrapped_batch_content = [data]
     if wrapped_batch_index:
         result_index.append(wrapped_batch_index[-1][:-1])
+        print("wrapped_batch_index", wrapped_batch_index, len(wrapped_batch_content))
         result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
     print("result_index", result_index)
     return Batch(result_data, result_index)

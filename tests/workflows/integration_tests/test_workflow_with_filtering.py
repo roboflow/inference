@@ -133,11 +133,9 @@ async def test_filtering_workflow_when_minimal_valid_input_provided(
     )
 
     # then
-    assert set(result.keys()) == {
-        "result"
-    }, "Only single output key should be extracted"
-    assert len(result["result"]) == 1, "Result for single image is expected"
-    detections: sv.Detections = result["result"][0]["predictions"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    detections: sv.Detections = result[0]["result"]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -176,12 +174,10 @@ async def test_filtering_workflow_when_batch_input_provided(
     )
 
     # then
-    assert set(result.keys()) == {
-        "result"
-    }, "Only single output key should be extracted"
-    assert len(result["result"]) == 2, "Results for botch images are expected"
-    detections_1: sv.Detections = result["result"][0]["predictions"]
-    detections_2: sv.Detections = result["result"][1]["predictions"]
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided - two outputs expected"
+    detections_1: sv.Detections = result[0]["result"]["predictions"]
+    detections_2: sv.Detections = result[1]["result"]["predictions"]
     assert np.allclose(
         detections_1.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,

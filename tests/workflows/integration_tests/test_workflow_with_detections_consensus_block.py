@@ -87,8 +87,7 @@ async def test_consensus_workflow_when_minimal_valid_input_provided(
     assert set(result[0].keys()) == {
         "result"
     }, "Only single output key should be extracted"
-    assert len(result[0]["result"]) == 1, "Result for single image is expected"
-    detections: sv.Detections = result[0]["result"][0]["predictions"]
+    detections: sv.Detections = result[0]["result"]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -100,10 +99,10 @@ async def test_consensus_workflow_when_minimal_valid_input_provided(
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
     assert (
-        result[0]["result"][0]["object_present"] is True
+        result[0]["result"]["object_present"] is True
     ), "Detected 2 instances of person in combined prediction, so `object_present` should be marked True"
     assert (
-        abs(result[0]["result"][0]["presence_confidence"]["person"] - 0.84284) < 1e-4
+        abs(result[0]["result"]["presence_confidence"]["person"] - 0.84284) < 1e-4
     ), "Expected presence confidence to be max of merged person class confidence"
 
 
@@ -132,12 +131,16 @@ async def test_consensus_workflow_when_batch_input_provided(
     )
 
     # then
-    assert set(result.keys()) == {
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
         "result"
-    }, "Only single output key should be extracted"
-    assert len(result["result"]) == 2, "Results for botch images are expected"
-    detections_1: sv.Detections = result["result"][0]["predictions"]
-    detections_2: sv.Detections = result["result"][1]["predictions"]
+    }, "Only single output key should be extracted in first output"
+    assert set(result[1].keys()) == {
+        "result"
+    }, "Only single output key should be extracted in second output"
+    detections_1: sv.Detections = result[0]["result"]["predictions"]
+    detections_2: sv.Detections = result[1]["result"]["predictions"]
     assert np.allclose(
         detections_1.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
@@ -186,11 +189,9 @@ async def test_consensus_workflow_when_confidence_is_restricted_by_input_paramet
     )
 
     # then
-    assert set(result.keys()) == {
-        "result"
-    }, "Only single output key should be extracted"
-    assert len(result["result"]) == 1, "Result for single image is expected"
-    detections: sv.Detections = result["result"][0]["predictions"]
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    detections: sv.Detections = result[0]["result"]["predictions"]
     assert np.allclose(
         detections.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES[:4],

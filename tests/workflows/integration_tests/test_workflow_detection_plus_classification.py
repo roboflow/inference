@@ -63,10 +63,14 @@ async def test_detection_plus_classification_workflow_when_minimal_valid_input_p
         }
     )
 
-    assert len(result) == 1, "One image in - one batch result expected"
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
     assert set(result[0].keys()) == {
         "predictions",
     }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
     assert [result[0]["predictions"][0]["top"], result[0]["predictions"][1]["top"]] == [
         "116.Parson_russell_terrier",
         "131.Wirehaired_pointing_griffon",

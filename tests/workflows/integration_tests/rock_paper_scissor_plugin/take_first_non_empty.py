@@ -57,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def accepts_empty_values(cls) -> bool:
-        return False
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

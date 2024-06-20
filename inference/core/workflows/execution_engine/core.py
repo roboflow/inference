@@ -49,7 +49,7 @@ class ExecutionEngine:
         self,
         runtime_parameters: Dict[str, Any],
         event_loop: Optional[AbstractEventLoop] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         if event_loop is None:
             try:
                 event_loop = asyncio.get_event_loop()
@@ -61,7 +61,7 @@ class ExecutionEngine:
 
     async def run_async(
         self, runtime_parameters: Dict[str, Any]
-    ) -> Dict[str, List[Any]]:
+    ) -> List[Dict[str, List[Any]]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
