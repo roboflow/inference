@@ -160,7 +160,7 @@ async def test_rock_paper_scissors_workflow(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.rock_paper_scissor_plugin"
+        "tests.workflows.integration_tests.execution.rock_paper_scissor_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,

@@ -67,7 +67,7 @@ async def test_flow_control_step_not_operating_on_batches(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.flow_control_plugin"
+        "tests.workflows.integration_tests.execution.flow_control_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -114,7 +114,7 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.flow_control_plugin"
+        "tests.workflows.integration_tests.execution.flow_control_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,

@@ -93,7 +93,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_batch_vari
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -241,7 +241,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_non_batch_
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -388,7 +388,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -509,7 +509,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -624,7 +624,7 @@ async def test_workflow_with_detections_tiling_in_batch_variant(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -741,7 +741,7 @@ async def test_workflow_with_detections_stitching_in_non_batch_variant(
     """
     # given
     get_plugin_modules_mock.return_value = [
-        "tests.workflows.integration_tests.dimensionality_manipulation_plugin"
+        "tests.workflows.integration_tests.execution.dimensionality_manipulation_plugin"
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
