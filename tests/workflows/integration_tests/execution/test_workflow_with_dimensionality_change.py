@@ -712,7 +712,7 @@ DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
 
 @pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_stitching_in_non_batch_variant(
+async def test_workflow_with_detections_tiling_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,

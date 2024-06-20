@@ -82,4 +82,5 @@ class TakeFirstNonEmptyBlock(WorkflowBlock):
         for input_element in inputs:
             if input_element is not None:
                 result = input_element
+                break
         return {"output": result}

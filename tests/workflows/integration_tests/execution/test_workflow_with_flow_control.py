@@ -464,5 +464,5 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
         result[0]["dog_classification"] == [None] * 12
     ), "There is 12 crops for first image, but none got dogs classification results due to not meeting condition"
     assert (
-        len(result[1]["dog_classification"]) == 2
+        len([e for e in result[1]["dog_classification"] if e]) == 2
     ), "Expected 2 bboxes of dogs detected"

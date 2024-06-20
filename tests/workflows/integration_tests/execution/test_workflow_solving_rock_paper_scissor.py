@@ -185,6 +185,7 @@ async def test_rock_paper_scissors_workflow(
         }
     )
 
+    # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 5, "5 images provided, so 5 output elements expected"
     for element in result:
