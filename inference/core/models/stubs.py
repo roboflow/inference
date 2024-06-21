@@ -9,7 +9,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse, StubResponse
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import np_image_to_base64
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 
 
 class ModelStub(Model):
@@ -67,7 +67,7 @@ class ClassificationModelStub(ModelStub):
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         stub_visualisation = None
         if getattr(request, "visualize_predictions", False):
-            stub_visualisation = np_image_to_base64(
+            stub_visualisation = encode_image_to_jpeg_bytes(
                 np.zeros((128, 128, 3), dtype=np.uint8)
             )
         return StubResponse(
@@ -86,7 +86,7 @@ class ObjectDetectionModelStub(ModelStub):
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         stub_visualisation = None
         if getattr(request, "visualize_predictions", False):
-            stub_visualisation = np_image_to_base64(
+            stub_visualisation = encode_image_to_jpeg_bytes(
                 np.zeros((128, 128, 3), dtype=np.uint8)
             )
         return StubResponse(
@@ -105,7 +105,7 @@ class InstanceSegmentationModelStub(ModelStub):
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         stub_visualisation = None
         if getattr(request, "visualize_predictions", False):
-            stub_visualisation = np_image_to_base64(
+            stub_visualisation = encode_image_to_jpeg_bytes(
                 np.zeros((128, 128, 3), dtype=np.uint8)
             )
         return StubResponse(
@@ -124,7 +124,7 @@ class KeypointsDetectionModelStub(ModelStub):
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         stub_visualisation = None
         if getattr(request, "visualize_predictions", False):
-            stub_visualisation = np_image_to_base64(
+            stub_visualisation = encode_image_to_jpeg_bytes(
                 np.zeros((128, 128, 3), dtype=np.uint8)
             )
         return StubResponse(

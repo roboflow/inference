@@ -122,7 +122,10 @@ def render_boxes(
         ticks = sum(f is not None for f in video_frame)
         for _ in range(ticks):
             fps_monitor.tick()
-        fps_value = fps_monitor()
+        if hasattr(fps_monitor, "fps"):
+            fps_value = fps_monitor.fps
+        else:
+            fps_value = fps_monitor()
     images: List[ImageWithSourceID] = []
     annotators = annotator if isinstance(annotator, list) else [annotator]
     for idx, (single_frame, frame_prediction) in enumerate(
@@ -156,7 +159,10 @@ def _handle_frame_rendering(
     else:
         try:
             labels = [p["class"] for p in prediction["predictions"]]
-            detections = sv.Detections.from_roboflow(prediction)
+            if hasattr(sv.Detections, "from_inference"):
+                detections = sv.Detections.from_inference(prediction)
+            else:
+                detections = sv.Detections.from_roboflow(prediction)
             image = frame.image.copy()
             for annotator in annotators:
                 kwargs = {
@@ -170,7 +176,7 @@ def _handle_frame_rendering(
             logger.warning(
                 f"Used `render_boxes(...)` sink, but predictions that were provided do not match the expected "
                 f"format of object detection prediction that could be accepted by "
-                f"`supervision.Detection.from_roboflow(...)"
+                f"`supervision.Detection.from_inference(...)"
             )
             image = frame.image.copy()
     if display_size is not None:
