@@ -3320,7 +3320,9 @@ def test_infer_from_workflow_when_v0_mode_used(
     )
 
     # then
-    assert result == [{"some": 3, "other": [1, {"a": "b"}]}], "Response from API must be properly decoded"
+    assert result == [
+        {"some": 3, "other": [1, {"a": "b"}]}
+    ], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {},

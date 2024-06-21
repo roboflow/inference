@@ -112,12 +112,14 @@ def load_core_workflow_blocks() -> List[BlockSpecification]:
     for block in core_blocks:
         if block in already_spotted_blocks:
             continue
-        result.append(BlockSpecification(
-            block_source="workflows_core",
-            identifier=get_full_type_name(selected_type=block),
-            block_class=block,
-            manifest_class=block.get_manifest(),
-        ))
+        result.append(
+            BlockSpecification(
+                block_source="workflows_core",
+                identifier=get_full_type_name(selected_type=block),
+                block_class=block,
+                manifest_class=block.get_manifest(),
+            )
+        )
         already_spotted_blocks.add(block)
     return result
 
@@ -164,12 +166,14 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     for block in blocks:
         if block in already_spotted_blocks:
             continue
-        result.append(BlockSpecification(
-            block_source=plugin_name,
-            identifier=get_full_type_name(selected_type=block),
-            block_class=block,
-            manifest_class=block.get_manifest(),
-        ))
+        result.append(
+            BlockSpecification(
+                block_source=plugin_name,
+                identifier=get_full_type_name(selected_type=block),
+                block_class=block,
+                manifest_class=block.get_manifest(),
+            )
+        )
         already_spotted_blocks.add(block)
     return result
 
