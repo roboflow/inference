@@ -26,6 +26,8 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     FloatZeroToOne,
     FlowControl,
+    ImageInputField,
+    RoboflowModelField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -51,7 +53,8 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run a multi-label classification model.",
+            "name": "Multi-Label Classification Model",
+            "short_description": "Apply multiple tags to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -61,16 +64,9 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(
-            description="Roboflow model identifier",
-            examples=["my_project/3", "$inputs.model"],
-        )
+        RoboflowModelField
     )
     confidence: Union[
         FloatZeroToOne,

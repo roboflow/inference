@@ -32,6 +32,8 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     FloatZeroToOne,
+    ImageInputField,
+    RoboflowModelField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -57,7 +59,8 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Detect objects using an object detection model.",
+            "name": "Object Detection Model",
+            "short_description": "Localize objects with bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -65,16 +68,9 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowObjectDetectionModel", "ObjectDetectionModel"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(
-            description="Roboflow model identifier",
-            examples=["my_project/3", "$inputs.model"],
-        )
+        RoboflowModelField
     )
     class_agnostic_nms: Union[
         Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])

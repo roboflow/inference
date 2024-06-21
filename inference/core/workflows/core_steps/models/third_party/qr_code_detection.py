@@ -7,7 +7,12 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PREDICTION_TYPE_KEY
+from inference.core.workflows.constants import (
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -18,6 +23,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -45,11 +51,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["QRCodeDetector", "QRCodeDetection"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -113,7 +115,11 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     )
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
     detections[PREDICTION_TYPE_KEY] = np.array(["qrcode-detection"] * len(detections))
-    detections["data"] = np.array(extracted_data)
+    detections[DETECTED_CODE_KEY] = np.array(extracted_data)
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,

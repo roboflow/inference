@@ -38,23 +38,12 @@ nav:
           - "Models: Universe": quickstart/load_from_universe.md
           - "Models: Local Weights": models/from_local_weights.md
       - Supported Fine-Tuned Models:
+          - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
           - YOLOv8: fine-tuned/yolov8.md
           - YOLOv7: fine-tuned/yolov7.md
           - YOLOv5: fine-tuned/yolov5.md
           - YOLO-NAS: fine-tuned/yolonas.md
-      - Run a Model:
-          - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-          - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-          - Predict Over UDP: quickstart/run_model_over_udp.md
-          - Keypoint Detection: quickstart/run_keypoint_detection.md
-
-      - Deploy a Model:
-          - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
-          - How Do I Run Inference?: quickstart/inference_101.md
-          - What Devices Can I Use?: quickstart/devices.md
-          - Retrieve Your API Key: quickstart/configure_api_key.md
-          - Model Licenses: quickstart/licensing.md
       - Foundation Model:
           - What is a Foundation Model?: foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
@@ -62,8 +51,20 @@ nav:
           - DocTR (OCR): foundation/doctr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
+      - Run a Model:
+          - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
+          - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+          - Predict Over UDP: quickstart/run_model_over_udp.md
+          - Keypoint Detection: quickstart/run_keypoint_detection.md
+      - Deploy a Model:
+          - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
+          - How Do I Run Inference?: quickstart/inference_101.md
+          - What Devices Can I Use?: quickstart/devices.md
+          - Retrieve Your API Key: quickstart/configure_api_key.md
+          - Model Licenses: https://roboflow.com/licensing
   - Workflows:
       - What is a Workflow?: workflows/about.md
       - Understanding Workflows: workflows/understanding.md

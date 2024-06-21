@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.env import (
@@ -28,6 +28,7 @@ from inference.core.workflows.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -56,6 +57,7 @@ guide](https://blog.roboflow.com/yolo-world-prompting-tips/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
+            "name": "YOLO-World Model",
             "short_description": "Run a zero-shot object detection model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -63,33 +65,37 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["YoloWorldModel", "YoloWorld"]
-    name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     class_names: Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
     ] = Field(
-        description="List of classes to use YoloWorld model against",
-        examples=[["a", "b", "c"], "$inputs.class_names"],
+        description="One or more classes that you want YOLO-World to detect. The model accepts any string as an input, though does best with short descriptions of common objects.",
+        examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
     version: Union[
-        Literal["s", "m", "l", "x", "v2-s", "v2-m", "v2-l", "v2-x"],
+        Literal[
+            "v2-s",
+            "v2-m",
+            "v2-l",
+            "v2-x",
+            "s",
+            "m",
+            "l",
+            "x",
+        ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
-        default="l",
+        default="v2-s",
         description="Variant of YoloWorld model",
-        examples=["l", "$inputs.variant"],
+        examples=["v2-s", "$inputs.variant"],
     )
     confidence: Union[
         Optional[FloatZeroToOne],
         WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
-        default=0.4,
+        default=0.005,
         description="Confidence threshold for detections",
-        examples=[0.3, "$inputs.confidence"],
+        examples=[0.005, "$inputs.confidence"],
     )
 
     @classmethod

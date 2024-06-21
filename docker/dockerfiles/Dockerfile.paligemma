@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -41,6 +41,7 @@ FROM scratch
 COPY --from=base / /
 
 WORKDIR /app/
+RUN pip3 uninstall -y nvidia-cudnn-cu11
 COPY inference inference
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
@@ -61,5 +62,6 @@ ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

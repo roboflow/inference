@@ -168,17 +168,6 @@ You may use keypoint detection models available on the [Universe](https://univer
 
 With [supervision](https://supervision.roboflow.com/latest/) you may visualize the results, carry out post-processing. Supervision library standardizes results from various keypoint detection and pose estimation models into a consistent format, using adaptors such as `from_inference`.
 
-<details>
-<summary>⚠️ release candidate feature</summary>
-
-`from_inference` will be supported in `supervision>=0.21.0`. If you'd like to try it now, install the following:
-
-```bash
-pip install supervision==0.21.0rc3
-```
-
-</details>
-
 Example usage:
 
 ```python

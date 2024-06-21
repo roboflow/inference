@@ -7,6 +7,7 @@ from inference.core.workflows.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
     CONFIDENCE_KEY,
+    DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -84,6 +85,8 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                         "y": float(y),
                     }
                 )
+        if DETECTED_CODE_KEY in data:
+            detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
         serialized_detections.append(detection_dict)
     image_metadata = {
         "width": None,

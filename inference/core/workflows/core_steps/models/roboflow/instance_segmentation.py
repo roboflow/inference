@@ -35,6 +35,8 @@ from inference.core.workflows.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     FloatZeroToOne,
+    ImageInputField,
+    RoboflowModelField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -60,7 +62,8 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run an instance segmentation model.",
+            "name": "Instance Segmentation Model",
+            "short_description": "Predict the shape and size of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -68,16 +71,9 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        Field(
-            description="Roboflow model identifier",
-            examples=["my_project/3", "$inputs.model"],
-        )
+        RoboflowModelField
     )
     class_agnostic_nms: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
         Field(

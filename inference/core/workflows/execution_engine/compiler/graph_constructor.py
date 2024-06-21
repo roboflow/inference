@@ -44,7 +44,6 @@ from inference.core.workflows.execution_engine.compiler.reference_type_checker i
     validate_reference_kinds,
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
-    FLOW_CONTROL_NODE_KEY,
     construct_input_selector,
     construct_output_selector,
     construct_step_selector,

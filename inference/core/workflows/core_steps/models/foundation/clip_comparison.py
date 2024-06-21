@@ -27,6 +27,7 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_PREDICTION_TYPE_KIND,
     LIST_OF_VALUES_KIND,
     FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -61,11 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     texts: Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
         Field(
             description="List of texts to calculate similarity against each input image",
