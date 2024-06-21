@@ -34,9 +34,6 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
-from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
-    DetectionsRateLimiterBlock,
-)
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
 )
@@ -87,7 +84,6 @@ def load_blocks() -> list:
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
-        DetectionsRateLimiterBlock,
         RoboflowDatasetUploadBlock,
         DetectionsFilterBlock,
         ContinueIfBlock,
