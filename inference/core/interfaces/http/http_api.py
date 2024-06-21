@@ -102,6 +102,7 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
+    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -134,6 +135,7 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
@@ -459,11 +461,13 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
+            step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
                 "workflows_core.cache": cache,
+                "workflows_core.step_execution_mode": step_execution_mode,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,

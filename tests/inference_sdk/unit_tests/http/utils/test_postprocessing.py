@@ -559,7 +559,7 @@ def test_decode_workflow_output_image_when_pil_image_expected(
 @mock.patch.object(post_processing, "transform_base64_visualisation", MagicMock())
 def test_decode_workflow_outputs() -> None:
     # given
-    workflow_outputs = {
+    workflow_outputs = [{
         "some": "value",
         "other": {"type": "base64", "value": "base64_image_here"},
         "third": [1, {"type": "base64", "value": "base64_image_here"}],
@@ -567,7 +567,7 @@ def test_decode_workflow_outputs() -> None:
             1,
             [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}],
         ],
-    }
+    }]
 
     # when
     result = decode_workflow_outputs(
@@ -576,19 +576,21 @@ def test_decode_workflow_outputs() -> None:
     )
 
     # then
-    assert len(result) == 4, "Number of elements in dict cannot be altered"
-    assert result["some"] == "value", "This value must not be changed"
+    assert len(result) == 1, "Expected one output element"
+    result_element = result[0]
+    assert len(result_element) == 4, "Number of elements in dict cannot be altered"
+    assert result_element["some"] == "value", "This value must not be changed"
     assert (
-        result["other"]["type"] == "numpy_object"
+        result_element["other"]["type"] == "numpy_object"
     ), "This element must be deserialized"
-    assert result["third"][0] == 1, "This object cannot be mutated"
+    assert result_element["third"][0] == 1, "This object cannot be mutated"
     assert (
-        result["third"][1]["type"] == "numpy_object"
+        result_element["third"][1]["type"] == "numpy_object"
     ), "This element must be deserialize"
-    assert result["fourth"][0] == 1, "First element of `fourth` key not to be changed"
-    assert result["fourth"][1][0]["a"] == 2, "Nested dict key `a` not to be changed"
+    assert result_element["fourth"][0] == 1, "First element of `fourth` key not to be changed"
+    assert result_element["fourth"][1][0]["a"] == 2, "Nested dict key `a` not to be changed"
     assert (
-        result["fourth"][1][0]["b"]["type"] == "numpy_object"
+        result_element["fourth"][1][0]["b"]["type"] == "numpy_object"
     ), "This element must be deserialized"
 
 

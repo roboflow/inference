@@ -1014,7 +1014,7 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
         Triggers inference from workflow specification at the inference HTTP
         side. Either (`workspace_name` and `workflow_name`) or `workflow_specification` must be
@@ -1046,7 +1046,7 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
         Triggers inference from workflow specification at the inference HTTP
         side. Either (`workspace_name` and `workflow_id`) or `workflow_specification` must be
@@ -1082,7 +1082,7 @@ class InferenceHTTPClient:
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
         legacy_endpoints: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
