@@ -975,10 +975,12 @@ class HttpInterface(BaseInterface):
             async def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
+                step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
                     "workflows_core.api_key": None,
                     "workflows_core.background_tasks": None,
+                    "workflows_core.step_execution_mode": step_execution_mode,
                 }
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
