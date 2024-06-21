@@ -89,18 +89,13 @@ def is_workflow_image(value: Any) -> bool:
 def decode_workflow_output_image(
     value: Dict[str, Any],
     expected_format: VisualisationResponseFormat,
-) -> Dict[str, Any]:
+) -> Union[str, np.ndarray, Image.Image]:
     if expected_format is VisualisationResponseFormat.BASE64:
-        return value
-    if expected_format is VisualisationResponseFormat.NUMPY:
-        value["type"] = "numpy_object"
-    else:
-        value["type"] = "pil"
-    value["value"] = transform_base64_visualisation(
+        return value["value"]
+    return transform_base64_visualisation(
         visualisation=value["value"],
         expected_format=expected_format,
     )
-    return value
 
 
 def response_contains_jpeg_image(response: Response) -> bool:

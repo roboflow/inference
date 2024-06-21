@@ -1,3 +1,5 @@
+from typing import List, Type
+
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
@@ -61,9 +63,10 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
-def load_blocks() -> list:
+def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         DetectionsConsensusBlock,
         ClipComparisonBlock,
@@ -85,7 +88,6 @@ def load_blocks() -> list:
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
         RoboflowDatasetUploadBlock,
-        DetectionsFilterBlock,
         ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,

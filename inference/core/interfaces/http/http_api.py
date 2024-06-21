@@ -1403,6 +1403,46 @@ class HttpInterface(BaseInterface):
                         trackUsage(cog_model_id, actor)
                     return response
 
+        if not LAMBDA:
+
+            @app.get(
+                "/notebook/start",
+                summary="Jupyter Lab Server Start",
+                description="Starts a jupyter lab server for running development code",
+            )
+            @with_route_exceptions
+            async def notebook_start(browserless: bool = False):
+                """Starts a jupyter lab server for running development code.
+
+                Args:
+                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
+                """
+                logger.debug(f"Reached /notebook/start")
+                if NOTEBOOK_ENABLED:
+                    start_notebook()
+                    if browserless:
+                        return {
+                            "success": True,
+                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
+                        }
+                    else:
+                        sleep(2)
+                        return RedirectResponse(
+                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
+                        )
+                else:
+                    if browserless:
+                        return {
+                            "success": False,
+                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
+                        }
+                    else:
+                        return RedirectResponse(f"/notebook-instructions.html")
+
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatability
             @app.get(
@@ -1706,46 +1746,6 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
-
-        if not LAMBDA:
-
-            @app.get(
-                "/notebook/start",
-                summary="Jupyter Lab Server Start",
-                description="Starts a jupyter lab server for running development code",
-            )
-            @with_route_exceptions
-            async def notebook_start(browserless: bool = False):
-                """Starts a jupyter lab server for running development code.
-
-                Args:
-                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
-                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
-
-                Returns:
-                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
-                """
-                logger.debug(f"Reached /notebook/start")
-                if NOTEBOOK_ENABLED:
-                    start_notebook()
-                    if browserless:
-                        return {
-                            "success": True,
-                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
-                        }
-                    else:
-                        sleep(2)
-                        return RedirectResponse(
-                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
-                        )
-                else:
-                    if browserless:
-                        return {
-                            "success": False,
-                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
-                        }
-                    else:
-                        return RedirectResponse(f"/notebook-instructions.html")
 
         app.mount(
             "/",

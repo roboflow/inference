@@ -81,6 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
                 name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
@@ -195,4 +196,10 @@ class ClipComparisonBlock(WorkflowBlock):
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
+            # removing fields from `inference` response model
+            # that are not registered as outputs
+            if "frame_id" in prediction:
+                del prediction["frame_id"]
+            if "time" in prediction:
+                del prediction["time"]
         return predictions
