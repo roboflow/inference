@@ -61,7 +61,7 @@ class ExecutionEngine:
 
     async def run_async(
         self, runtime_parameters: Dict[str, Any]
-    ) -> List[Dict[str, List[Any]]]:
+    ) -> List[Dict[str, Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
