@@ -76,6 +76,7 @@ def construct_workflow_output(
         for name, array in outputs_arrays.items():
             single_result[name] = array[i]
         results.append(single_result)
+    print("DONE", flush=True)
     return results
 
 
@@ -93,9 +94,18 @@ def create_array(indices: np.ndarray) -> Optional[list]:
             and sum(indices_subset.shape) > 0
             and indices_subset.shape[0] == 0
         ):
-            inner_array = []
+            inner_array = create_empty_index_array(
+                level=indices.shape[-1] - 1,
+                accumulator=[],
+            )
         result.append(inner_array)
     return result
+
+
+def create_empty_index_array(level: int, accumulator: list) -> list:
+    if level <= 1:
+        return accumulator
+    return create_empty_index_array(level - 1, [accumulator])
 
 
 def place_data_in_array(array: list, index: DynamicBatchIndex, data: Any) -> None:

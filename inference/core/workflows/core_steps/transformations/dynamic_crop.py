@@ -128,13 +128,13 @@ def crop_image(
             parent_id=image.workflow_root_ancestor_metadata.parent_id,
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
-        crops.append(
-            {
-                "crops": WorkflowImageData(
-                    parent_metadata=parent_metadata,
-                    workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-                    numpy_image=cropped_image,
-                )
-            }
-        )
+        if cropped_image.size:
+            result = WorkflowImageData(
+                parent_metadata=parent_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                numpy_image=cropped_image,
+            )
+        else:
+            result = None
+        crops.append({"crops": result})
     return crops

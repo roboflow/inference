@@ -256,6 +256,7 @@ def prepare_parameters(
     if not step_node.step_manifest.accepts_empty_values():
         empty_indices = get_empty_indices(value=result)
         indices = [e for e in indices if e not in empty_indices]
+        print("empty_indices", empty_indices, flush=True)
         result = filter_parameters(value=result, empty_indices=empty_indices)
     return BatchModeSIMDStepInput(
         indices=indices,

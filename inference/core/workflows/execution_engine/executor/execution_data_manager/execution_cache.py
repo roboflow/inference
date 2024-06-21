@@ -79,7 +79,7 @@ class BatchStepCache:
         return [
             (
                 self._cache_content.get(property_name, {}).get(index)
-                if mask is None or index[: len(mask)] in mask
+                if mask is None or index in mask
                 else None
             )
             for index in indices

@@ -6,7 +6,7 @@ from inference.core.entities.requests.inference import (
     InstanceSegmentationInferenceRequest,
 )
 from inference.core.env import (
-    HOSTED_CLASSIFICATION_URL,
+    HOSTED_INSTANCE_SEGMENTATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
@@ -304,7 +304,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
-            else HOSTED_CLASSIFICATION_URL
+            else HOSTED_INSTANCE_SEGMENTATION_URL
         )
         client = InferenceHTTPClient(
             api_url=api_url,
