@@ -27,6 +27,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -71,6 +72,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -92,10 +97,10 @@ class DetectionsTransformationBlock(WorkflowBlock):
 
     async def run(
         self,
-        predictions: Batch[Optional[sv.Detections]],
+        predictions: Batch[sv.Detections],
         operations: List[OperationDefinition],
         operations_parameters: Dict[str, Any],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         return execute_transformation(
             predictions=predictions,
             operations=operations,
@@ -104,10 +109,10 @@ class DetectionsTransformationBlock(WorkflowBlock):
 
 
 def execute_transformation(
-    predictions: Batch[Optional[sv.Detections]],
+    predictions: Batch[sv.Detections],
     operations: List[OperationDefinition],
     operations_parameters: Dict[str, Any],
-) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+) -> BlockResult:
     if DEFAULT_OPERAND_NAME in operations_parameters:
         raise ValueError(
             f"Detected reserved parameter name: {DEFAULT_OPERAND_NAME} declared in `operations_parameters` "
@@ -126,7 +131,7 @@ def execute_transformation(
         batch_parameters[k] for k in batch_parameters_keys
     ]
     results = []
-    for payload in Batch.zip_nonempty(batches=batches_to_align):
+    for payload in zip(*batches_to_align):
         detections = payload[0]
         single_evaluation_parameters = copy(non_batch_parameters)
         for key, value in zip(batch_parameters_keys, payload[1:]):
@@ -142,8 +147,4 @@ def execute_transformation(
                 "which is not allowed."
             )
         results.append({"predictions": transformed_detections})
-    return Batch.align_batches_results(
-        batches=batches_to_align,
-        results=results,
-        null_element={"predictions": None},
-    )
+    return results

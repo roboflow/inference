@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader
@@ -45,6 +46,7 @@ async def test_compilation_of_workflow_where_block_defines_out_of_range_offsets(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -92,6 +94,7 @@ async def test_compilation_of_workflow_where_block_defines_negative_offset(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -134,6 +137,7 @@ async def test_compilation_of_workflow_where_block_is_not_simd_but_defines_outpu
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -177,6 +181,7 @@ async def test_compilation_of_workflow_where_block_declares_non_batch_dimensiona
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -224,6 +229,7 @@ async def test_compilation_of_workflow_where_block_declares_out_of_range_output_
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -271,6 +277,7 @@ async def test_compilation_of_workflow_where_block_which_does_not_declare_zero_g
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -318,6 +325,7 @@ async def test_compilation_of_workflow_where_block_which_does_not_declare_requir
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -365,6 +373,7 @@ async def test_compilation_of_workflow_where_block_manipulates_output_dimension_
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

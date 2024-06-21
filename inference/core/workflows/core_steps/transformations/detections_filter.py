@@ -30,6 +30,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -68,6 +69,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -89,10 +94,10 @@ class DetectionsFilterBlock(WorkflowBlock):
 
     async def run(
         self,
-        predictions: Batch[Optional[sv.Detections]],
+        predictions: Batch[sv.Detections],
         operations: List[OperationDefinition],
         operations_parameters: Dict[str, Any],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         return execute_transformation(
             predictions=predictions,
             operations=operations,

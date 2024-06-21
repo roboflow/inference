@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     WorkflowSyntaxError,
@@ -48,6 +49,7 @@ async def test_compilation_of_workflow_where_definition_does_not_specify_fields(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -71,6 +73,7 @@ async def test_compilation_of_workflow_where_definition_does_not_specify_all_fie
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     workflow_definition = deepcopy(VALID_DEFINITION)
     del workflow_definition[field_to_remove]
@@ -116,6 +119,7 @@ async def test_compilation_of_workflow_where_non_existing_step_is_requested(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -160,6 +164,7 @@ async def test_compilation_of_workflow_where_existing_step_is_defined_incorrectl
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

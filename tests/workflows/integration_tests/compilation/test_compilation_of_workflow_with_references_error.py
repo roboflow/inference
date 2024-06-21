@@ -1,6 +1,7 @@
 import pytest
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -39,6 +40,7 @@ async def test_compilation_of_workflow_with_reference_to_non_existing_image_in_s
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -84,6 +86,7 @@ async def test_compilation_of_workflow_with_reference_to_non_existing_image_in_o
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -135,6 +138,7 @@ async def test_compilation_of_workflow_with_reference_to_non_existing_step_outpu
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -180,6 +184,7 @@ async def test_compilation_of_workflow_with_reference_to_non_existing_step_in_ou
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -225,6 +230,7 @@ async def test_compilation_of_workflow_with_reference_to_non_existing_step_outpu
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

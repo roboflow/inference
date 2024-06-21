@@ -4,6 +4,7 @@ import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -58,6 +59,7 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,
@@ -136,6 +138,7 @@ async def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,
@@ -165,6 +168,7 @@ async def test_test_static_crop_workflow_when_invalid_crop_coordinates_defined(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=RELATIVE_STATIC_CROP_WORKFLOW,

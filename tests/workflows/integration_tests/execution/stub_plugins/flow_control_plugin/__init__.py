@@ -45,10 +45,6 @@ class ABTestBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ABTestManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self,
         a_step: StepSelector,
@@ -123,10 +119,6 @@ class ConditionBlock(WorkflowBlock):
             return FlowControl(mode="terminate_branch")
         flow_control = FlowControl(mode="select_step", context=next_steps)
         return flow_control
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:

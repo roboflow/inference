@@ -6,6 +6,7 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
@@ -72,6 +73,7 @@ async def test_flow_control_step_not_operating_on_batches(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=AB_TEST_WORKFLOW,
@@ -119,6 +121,7 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=AB_TEST_WORKFLOW,
@@ -305,6 +308,7 @@ async def test_flow_control_step_affecting_batches(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION,
@@ -442,6 +446,7 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,

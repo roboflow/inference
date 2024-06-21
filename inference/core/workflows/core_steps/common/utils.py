@@ -1,7 +1,7 @@
 import logging
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 import supervision as sv
@@ -154,7 +154,7 @@ def add_inference_keypoints_to_sv_detections(
 
 def attach_parents_coordinates_to_batch_of_sv_detections(
     predictions: List[sv.Detections],
-    images: List[WorkflowImageData],
+    images: Iterable[WorkflowImageData],
 ) -> List[sv.Detections]:
     result = []
     for prediction, image in zip(predictions, images):

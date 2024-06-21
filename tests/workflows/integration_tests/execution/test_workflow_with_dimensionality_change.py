@@ -6,6 +6,7 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
@@ -98,6 +99,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_batch_vari
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW,
@@ -246,6 +248,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_non_batch_
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_TO_PARENT_COORDINATES_NON_BATCH_VARIANT_WORKFLOW,
@@ -393,6 +396,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_STITCHING_BATCH_VARIANT_WORKFLOW,
@@ -514,6 +518,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_STITCHING_NON_BATCH_VARIANT_WORKFLOW,
@@ -629,6 +634,7 @@ async def test_workflow_with_detections_tiling_in_batch_variant(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_TILING_BATCH_VARIANT_WORKFLOW,
@@ -746,6 +752,7 @@ async def test_workflow_with_detections_tiling_in_non_batch_variant(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW,

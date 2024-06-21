@@ -1,6 +1,7 @@
 import pytest
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import ExecutionGraphStructureError
 from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 
@@ -42,6 +43,7 @@ async def test_compilation_of_cyclic_workflow(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

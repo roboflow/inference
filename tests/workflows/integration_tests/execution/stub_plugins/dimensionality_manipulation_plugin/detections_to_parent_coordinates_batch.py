@@ -57,6 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_input_dimensionality_offsets(
         cls,
     ) -> Dict[str, int]:

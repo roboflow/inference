@@ -75,10 +75,6 @@ class TileDetectionsNonBatchBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self,
         crops: Batch[WorkflowImageData],

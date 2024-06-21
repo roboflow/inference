@@ -4,6 +4,7 @@ import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -71,6 +72,7 @@ async def test_object_detection_workflow_when_minimal_valid_input_provided(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -108,6 +110,7 @@ async def test_object_detection_workflow_when_batch_input_provided(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -159,6 +162,7 @@ async def test_object_detection_workflow_when_confidence_is_restricted_by_input_
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -200,6 +204,7 @@ async def test_object_detection_workflow_when_model_id_not_provided_in_input(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -224,6 +229,7 @@ async def test_object_detection_workflow_when_image_not_provided_in_input(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -249,6 +255,7 @@ async def test_object_detection_workflow_when_confidence_provided_with_invalid_t
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,
@@ -276,6 +283,7 @@ async def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_val
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=OBJECT_DETECTION_WORKFLOW,

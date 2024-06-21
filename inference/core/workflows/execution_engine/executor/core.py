@@ -127,7 +127,8 @@ async def run_simd_step(
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
-    if step_instance.accepts_batch_input():
+    step_manifest = workflow.steps[step_name].manifest
+    if step_manifest.accepts_batch_input():
         return await run_simd_step_in_batch_mode(
             step_selector=step_selector,
             step_instance=step_instance,

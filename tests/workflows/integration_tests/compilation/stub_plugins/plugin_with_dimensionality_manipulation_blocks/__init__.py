@@ -35,6 +35,10 @@ class BlockRequestingDifferentDimsManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="output")]
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
         return {
             "images": 0,
@@ -51,10 +55,6 @@ class BlockRequestingDifferentDimsBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockRequestingDifferentDimsManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
@@ -73,6 +73,10 @@ class BlockOffsetsNotInProperRangeManifest(WorkflowBlockManifest):
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -96,10 +100,6 @@ class BlockOffsetsNotInProperRangeBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockOffsetsNotInProperRangeManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
@@ -117,6 +117,10 @@ class BlockWithNegativeOffsetManifest(WorkflowBlockManifest):
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -139,10 +143,6 @@ class BlockWithNegativeOffsetBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockWithNegativeOffsetManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
@@ -171,10 +171,6 @@ class NonSIMDWithOutputOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return NonSIMDWithOutputOffsetManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self,
     ) -> BlockResult:
@@ -201,10 +197,6 @@ class DimensionalityReferencePropertyIsNotBatchBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DimensionalityReferencePropertyIsNotBatchManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self,
         dim_reference: str,
@@ -229,6 +221,10 @@ class OutputDimensionalityInInvalidRangeManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="output")]
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_output_dimensionality_offset(
         cls,
     ) -> int:
@@ -240,10 +236,6 @@ class OutputDimensionalityInInvalidRangeBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return OutputDimensionalityInInvalidRangeManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
@@ -268,6 +260,10 @@ class LackOfZeroGroundOffsetManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="output")]
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
         return {
             "images": 1,
@@ -284,10 +280,6 @@ class LackOfZeroGroundOffsetBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LackOfZeroGroundOffsetManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
@@ -308,6 +300,10 @@ class LackOfRequiredReferencePropertyManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output")]
 
@@ -324,10 +320,6 @@ class LackOfRequiredReferencePropertyBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LackOfRequiredReferencePropertyManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
@@ -346,6 +338,10 @@ class ManipulationOutputDimensionalityWhenInvalidManifest(WorkflowBlockManifest)
         description="Reference an image to be used as input for step processing",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -375,10 +371,6 @@ class ManipulationOutputDimensionalityWhenInvalidBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ManipulationOutputDimensionalityWhenInvalidManifest
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
-
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
@@ -398,6 +390,10 @@ class ExpectsTheSameDimensionalityManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output")]
 
@@ -407,10 +403,6 @@ class ExpectsTheSameDimensionalityBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExpectsTheSameDimensionalityManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(
         self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
@@ -427,9 +419,14 @@ class DecreasingDimensionalityManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output")]
 
+    @classmethod
     def get_output_dimensionality_offset(
         cls,
     ) -> int:
@@ -441,10 +438,6 @@ class DecreasingDimensionalityBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DecreasingDimensionalityManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     async def run(self, images: Batch[WorkflowImageData]) -> BlockResult:
         pass

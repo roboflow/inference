@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     ControlFlowDefinitionError,
     StepInputLineageError,
@@ -113,6 +114,7 @@ async def test_compilation_of_workflow_where_control_flow_block_causes_lineage_i
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -210,6 +212,7 @@ async def test_compilation_of_workflow_where_fusion_block_collapses_different_li
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

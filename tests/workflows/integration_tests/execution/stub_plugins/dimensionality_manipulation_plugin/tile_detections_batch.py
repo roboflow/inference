@@ -57,6 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_output_dimensionality_offset(
         cls,
     ) -> int:
@@ -74,10 +78,6 @@ class TileDetectionsBatchBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
 
     async def run(
         self,

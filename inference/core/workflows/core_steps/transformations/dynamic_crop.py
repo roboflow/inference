@@ -67,6 +67,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_output_dimensionality_offset(cls) -> int:
         return 1
 
@@ -85,12 +89,12 @@ class DynamicCropBlock(WorkflowBlock):
 
     async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-        predictions: Batch[Optional[sv.Detections]],
+        images: Batch[WorkflowImageData],
+        predictions: Batch[sv.Detections],
     ) -> BlockResult:
         return [
             crop_image(image=image, detections=detections)
-            for image, detections in Batch.zip_nonempty(batches=[images, predictions])
+            for image, detections in zip(images, predictions)
         ]
 
 

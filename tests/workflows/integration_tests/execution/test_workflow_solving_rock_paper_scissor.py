@@ -6,6 +6,7 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 
@@ -166,6 +167,7 @@ async def test_rock_paper_scissors_workflow(
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=ROCK_PAPER_SCISSOR_IF_ELSE_WORKFLOW,

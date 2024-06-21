@@ -78,7 +78,3 @@ class ContinueIfBlock(WorkflowBlock):
         if evaluation_result:
             return FlowControl(mode="select_step", context=next_steps)
         return FlowControl(mode="terminate_branch")
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     StepInputDimensionalityError,
     StepOutputLineageError,
@@ -48,6 +49,7 @@ async def test_compilation_of_workflow_where_step_input_dimensionality_is_mismat
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -113,6 +115,7 @@ async def test_compilation_of_workflow_where_step_input_dimensionality_is_mismat
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -172,6 +175,7 @@ async def test_compilation_of_workflow_where_step_expects_the_same_dimensionalit
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when
@@ -217,6 +221,7 @@ async def test_compilation_of_workflow_where_step_attempts_decreasing_dimensiona
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
     # when

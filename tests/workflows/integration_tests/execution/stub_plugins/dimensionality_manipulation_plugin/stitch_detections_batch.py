@@ -57,6 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def get_input_dimensionality_offsets(
         cls,
     ) -> Dict[str, int]:
@@ -88,10 +92,6 @@ class StitchDetectionsBatchBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
 
     async def run(
         self,
