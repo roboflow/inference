@@ -277,7 +277,9 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
 
 
 @pytest.mark.asyncio
+@mock.patch.object(blocks_loader, "get_plugin_modules")
 async def test_flow_control_step_affecting_batches(
+    get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
@@ -297,6 +299,9 @@ async def test_flow_control_step_affecting_batches(
     * proper broadcasting of non-batch parameters for execution branches
     """
     # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.flow_control_plugin"
+    ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,

@@ -1,4 +1,3 @@
-from inference.core.workflows.core_steps.flow_control.condition import ConditionBlock
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
@@ -89,7 +88,6 @@ def load_blocks() -> list:
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
         DetectionsRateLimiterBlock,
-        ConditionBlock,
         RoboflowDatasetUploadBlock,
         DetectionsFilterBlock,
         ContinueIfBlock,
