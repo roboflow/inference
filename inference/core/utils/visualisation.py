@@ -16,7 +16,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
     Point,
 )
-from inference.core.utils.image_utils import load_image_rgb, np_image_to_base64
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image_rgb
 
 
 def draw_detection_predictions(
@@ -63,7 +63,8 @@ def draw_detection_predictions(
                 box=box,
                 color=color,
             )
-    return np_image_to_base64(image=image)
+    image_bgr = image[:, :, ::-1]
+    return encode_image_to_jpeg_bytes(image=image_bgr)
 
 
 def draw_bbox(

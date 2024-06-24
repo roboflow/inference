@@ -227,9 +227,14 @@ class UdpStream(BaseInterface):
                     prediction_type=self.task_type,
                 )
                 if self.use_bytetrack:
-                    detections = sv.Detections.from_roboflow(
-                        predictions.dict(by_alias=True), self.model.class_names
-                    )
+                    if hasattr(sv.Detections, "from_inference"):
+                        detections = sv.Detections.from_inference(
+                            predictions.dict(by_alias=True), self.model.class_names
+                        )
+                    else:
+                        detections = sv.Detections.from_roboflow(
+                            predictions.dict(by_alias=True), self.model.class_names
+                        )
                     detections = self.byte_tracker.update_with_detections(detections)
                     for pred, detect in zip(predictions.predictions, detections):
                         pred.tracker_id = int(detect[4])

@@ -274,9 +274,14 @@ class Stream(BaseInterface):
                     prediction_type=self.task_type,
                 )
                 if self.use_bytetrack:
-                    detections = sv.Detections.from_roboflow(
-                        predictions.dict(by_alias=True, exclude_none=True)
-                    )
+                    if hasattr(sv.Detections, "from_inference"):
+                        detections = sv.Detections.from_inference(
+                            predictions.dict(by_alias=True, exclude_none=True)
+                        )
+                    else:
+                        detections = sv.Detections.from_roboflow(
+                            predictions.dict(by_alias=True, exclude_none=True)
+                        )
                     detections = self.byte_tracker.update_with_detections(detections)
 
                     if detections.tracker_id is None:
