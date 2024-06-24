@@ -1,8 +1,7 @@
 import itertools
-import logging
 from collections import defaultdict
 from copy import copy
-from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx as nx
 from networkx import DiGraph
@@ -19,8 +18,8 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
+    AssumptionError,
     BlockInterfaceError,
-    CompilerAssumptionError,
     ControlFlowDefinitionError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -68,6 +67,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     is_step_node,
     is_step_output_selector,
     is_step_selector,
+    node_as,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
@@ -76,8 +76,6 @@ from inference.core.workflows.execution_engine.introspection.selectors_parser im
     get_step_selectors,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
-
-NodeTypeVar = TypeVar("NodeTypeVar", bound=ExecutionGraphNode)
 
 NODE_DEFINITION_KEY = "definition"
 STEP_INPUT_SELECTOR_PROPERTY = "step_input_selector"
@@ -507,7 +505,7 @@ def denote_data_flow_for_node(
     if is_step_node(execution_graph=execution_graph, node=node):
         step_name = get_last_chunk_of_selector(selector=node)
         if step_name not in block_manifest_by_step_name:
-            raise CompilerAssumptionError(
+            raise AssumptionError(
                 public_message=f"Workflow Compiler expected manifest for the step: {step_name} to be registered "
                 f"but this condition is not met. This is most likely the bug. "
                 f"Contact Roboflow team through github issues "
@@ -525,7 +523,7 @@ def denote_data_flow_for_node(
         # output is allowed to have exactly one predecessor
         output_predecessors = list(execution_graph.predecessors(node))
         if len(output_predecessors) != 1:
-            raise CompilerAssumptionError(
+            raise AssumptionError(
                 public_message=f"Workflow Compiler expected each output in compiled graph to have one predecessor, "
                 f"but this condition is not met for node {node}. This is most likely the bug. "
                 f"Contact Roboflow team through github issues "
@@ -547,7 +545,7 @@ def denote_data_flow_for_node(
         )
         output_node_data.data_lineage = predecessor_node_lineage
         return execution_graph
-    raise CompilerAssumptionError(
+    raise AssumptionError(
         f"Workflow Compiler encountered node: {node} which cannot be classified as known node type. "
         f"This is most likely the bug. Contact Roboflow team through github issues "
         f"(https://github.com/roboflow/inference/issues) providing full "
@@ -740,7 +738,7 @@ def build_input_property(
         )
     matching_predecessors_data = predecessors_by_property_name[manifest_property_name]
     if len(matching_predecessors_data) != 1:
-        raise CompilerAssumptionError(
+        raise AssumptionError(
             public_message=f"Workflow Compiler deduced that property `{manifest_property_name}` of step `{step_node}` "
             f"should be fed with data coming from exactly one execution graph node, but found "
             f"{len(matching_predecessors_data)} data sources. This is most likely the bug. "
@@ -791,7 +789,7 @@ def build_input_property(
             data_lineage=predecessor_node_data.data_lineage,
             selector=predecessor_parsed_selector.value,
         )
-    raise CompilerAssumptionError(
+    raise AssumptionError(
         public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
         f"found data providing predecessor `{predecessor_selector}` which has unsupported step type."
         f"This is most likely the bug. "
@@ -873,7 +871,7 @@ def build_nested_dictionary_for_input_property(
                 selector=referred_node_parsed_selector.value,
             )
             continue
-        raise CompilerAssumptionError(
+        raise AssumptionError(
             public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
             f"found data providing predecessor `{referred_node_selector}` which has "
             f"unsupported step type (key: {nested_dict_key} of nested data dictionary). "
@@ -969,7 +967,7 @@ def build_nested_list_for_input_property(
                 )
             )
             continue
-        raise CompilerAssumptionError(
+        raise AssumptionError(
             public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
             f"found data providing predecessor `{referred_node_selector}` which has "
             f"unsupported step type (index: {index} of nested data list). "
@@ -1139,7 +1137,7 @@ def grab_input_data_dimensionality_specifications(
         parameter_offset = dimensionality_offstes.get(parameter_name, 0)
         non_zero_dimensionalities_for_parameter = {d for d in dimensionality if d > 0}
         if len(non_zero_dimensionalities_for_parameter) > 1:
-            raise CompilerAssumptionError(
+            raise AssumptionError(
                 public_message=f"Workflow Compiler for step: `{step_name}` and parameter: {parameter_name}"
                 f"found multiple different values of actual input dimensionalities: "
                 f"`{non_zero_dimensionalities_for_parameter}` which should be detected and addresses "
@@ -1438,7 +1436,7 @@ def get_reference_lineage(
     if len(all_lineages) == 1:
         return copy(all_lineages[0])
     if dimensionality_reference_property not in input_data:
-        raise CompilerAssumptionError(
+        raise AssumptionError(
             public_message=f"Workflow Compiler for step: `{step_selector}` expected dimensionality_reference_property "
             f"presence to be verified at earlier stages, which did not happen as expected. "
             f"This is most likely the bug. Contact Roboflow team through github issues "
@@ -1454,7 +1452,7 @@ def get_reference_lineage(
                 lineage = copy(nested_element.data_lineage)
                 return lineage
         if lineage is None:
-            raise CompilerAssumptionError(
+            raise AssumptionError(
                 public_message=f"Workflow Compiler for step: `{step_selector}` cannot establish output lineage. "
                 f"At this stage it is expected to succeed - lack of success indicates bug. "
                 f"Contact Roboflow team through github issues "
@@ -1463,7 +1461,7 @@ def get_reference_lineage(
                 context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
             )
     if not property_data.is_batch_oriented():
-        raise CompilerAssumptionError(
+        raise AssumptionError(
             public_message=f"Workflow Compiler for step: `{step_selector}` cannot establish output lineage. "
             f"At this stage it is expected to succeed - lack of success indicates bug. "
             f"Contact Roboflow team through github issues "
@@ -1492,39 +1490,3 @@ def add_super_input_node_in_execution_graph(
     for node in nodes_to_attach_super_input_into:
         execution_graph.add_edge(super_input_node, node)
     return execution_graph
-
-
-def node_as(
-    execution_graph: DiGraph, node: str, expected_type: Type[NodeTypeVar]
-) -> NodeTypeVar:
-    if node not in execution_graph.nodes:
-        raise CompilerAssumptionError(
-            public_message=f"Workflow Compiler expected node: {node} to be present in execution graph, "
-            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
-            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
-            f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
-        )
-    if NODE_COMPILATION_OUTPUT_PROPERTY not in execution_graph.nodes[node]:
-        raise CompilerAssumptionError(
-            public_message=f"Workflow Compiler expected key: {NODE_COMPILATION_OUTPUT_PROPERTY} to be present "
-            f"for node {node} in execution graph, "
-            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
-            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
-            f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
-        )
-    node_data: ExecutionGraphNode = execution_graph.nodes[node][
-        NODE_COMPILATION_OUTPUT_PROPERTY
-    ]
-    if not isinstance(node_data, expected_type):
-        node_data_type = type(node_data)
-        raise CompilerAssumptionError(
-            public_message=f"Workflow Compiler expected compilation output for node {node}"
-            f"to be {expected_type}, but found: {node_data_type}. "
-            f"This is most likely the bug. Contact Roboflow team "
-            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
-            f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
-        )
-    return node_data

@@ -2,8 +2,10 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from networkx import DiGraph
 
+from inference.core import logger
 from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
 from inference.core.workflows.entities.types import FlowControl
+from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
@@ -17,6 +19,7 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     is_selector,
     is_step_output_selector,
     is_step_selector,
+    node_as,
 )
 from inference.core.workflows.execution_engine.executor.execution_data_manager.branching_manager import (
     BranchingManager,
@@ -35,6 +38,7 @@ from inference.core.workflows.execution_engine.executor.execution_data_manager.s
     construct_simd_step_input,
     iterate_over_simd_step_input,
 )
+from inference.core.workflows.prototypes.block import BlockResult
 
 
 class ExecutionDataManager:
@@ -96,7 +100,14 @@ class ExecutionDataManager:
 
     def get_non_simd_step_input(self, step_selector: str) -> Optional[Dict[str, Any]]:
         if self.is_step_simd(step_selector=step_selector):
-            raise ValueError(f"SIMD step {step_selector} requested non-simd input")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                f"get non-simd input. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         step_node: StepNode = self._execution_graph.nodes[step_selector][
             NODE_COMPILATION_OUTPUT_PROPERTY
         ]
@@ -111,11 +122,20 @@ class ExecutionDataManager:
         self, step_selector: str, output: Union[Dict[str, Any], FlowControl]
     ) -> None:
         if self.is_step_simd(step_selector=step_selector):
-            raise ValueError(f"SIMD step {step_selector} registering non-simd output")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                f"register non-simd output. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         step_name = get_last_chunk_of_selector(selector=step_selector)
-        step_node: StepNode = self._execution_graph.nodes[step_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+        step_node = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
         if isinstance(output, FlowControl):
             self._register_flow_control_output_for_non_simd_step(
                 step_node=step_node,
@@ -129,10 +149,19 @@ class ExecutionDataManager:
 
     def get_simd_step_input(self, step_selector: str) -> BatchModeSIMDStepInput:
         if not self.is_step_simd(step_selector=step_selector):
-            raise ValueError()
-        step_node: StepNode = self._execution_graph.nodes[step_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. In context of non-SIMD step: {step_selector} attempts to "
+                f"get SIMD step input. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | getting_workflow_data",
+            )
+        step_node = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
         return construct_simd_step_input(
             step_node=step_node,
             runtime_parameters=self._runtime_parameters,
@@ -145,10 +174,19 @@ class ExecutionDataManager:
         self, step_selector: str
     ) -> Generator[NonBatchModeSIMDStepInput, None, None]:
         if not self.is_step_simd(step_selector=step_selector):
-            raise ValueError()
-        step_node: StepNode = self._execution_graph.nodes[step_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. In context of non-SIMD step: {step_selector} attempts to "
+                f"get SIMD step input. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | getting_workflow_data",
+            )
+        step_node = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
         yield from iterate_over_simd_step_input(
             step_node=step_node,
             runtime_parameters=self._runtime_parameters,
@@ -161,20 +199,29 @@ class ExecutionDataManager:
         self,
         step_selector: str,
         indices: List[DynamicBatchIndex],
-        outputs: List[
-            Union[List[Dict[str, Any]], Dict[str, Any], List[FlowControl], FlowControl]
-        ],
+        outputs: BlockResult,
     ) -> None:
         if not self.is_step_simd(step_selector=step_selector):
-            raise ValueError()
-        step_node: StepNode = self._execution_graph.nodes[step_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. In context of non-SIMD step: {step_selector} attempts to "
+                f"register SIMD step input. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        step_node = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
         if (
             step_node.output_dimensionality - step_node.step_execution_dimensionality
         ) > 0:
             # increase in dimensionality
-            indices, outputs = flatten_nested_output(indices=indices, outputs=outputs)
+            indices, outputs = flatten_nested_output(
+                step_selector=step_selector, indices=indices, outputs=outputs
+            )
             self._dynamic_batches_manager.register_element_indices_for_lineage(
                 lineage=step_node.data_lineage,
                 indices=indices,
@@ -182,8 +229,13 @@ class ExecutionDataManager:
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.child_execution_branches:
             if not all(isinstance(element, FlowControl) for element in outputs):
-                raise ValueError(
-                    f"Flow control step {step_name} expected to only produce FlowControl objects"
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Error in execution engine. Flow control step {step_name} "
+                    f"expected to only produce FlowControl objects. This is most likely bug. "
+                    f"Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | step_output_registration",
                 )
             self._register_flow_control_output_for_simd_step(
                 step_node=step_node,
@@ -191,7 +243,6 @@ class ExecutionDataManager:
                 outputs=outputs,
             )
             return None
-        print(f"Registering outputs with indices: {indices}")
         self._execution_cache.register_batch_of_step_outputs(
             step_name=step_name,
             indices=indices,
@@ -199,10 +250,16 @@ class ExecutionDataManager:
         )
 
     def get_selector_indices(self, selector: str) -> Optional[List[DynamicBatchIndex]]:
-        print("get_selector_indices()", selector)
         selector_lineage = []
         if not is_selector(selector_or_value=selector):
-            raise ValueError(f"Not a valid selector: {selector}")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get indices for: {selector}, "
+                f"which is not recognised as valid selector. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         potential_step_selector = get_step_selector_from_its_output(
             step_output_selector=selector
         )
@@ -219,7 +276,14 @@ class ExecutionDataManager:
                 ][NODE_COMPILATION_OUTPUT_PROPERTY]
                 selector_lineage = step_node_data.data_lineage
         else:
-            raise ValueError(f"Unknown selector: {selector}")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get indices for: {selector}, "
+                f"which is not recognised as neither input selector or step selector. "
+                f"This is most likely bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | getting_workflow_data_indices",
+            )
         if not selector_lineage:
             return None
         if not self._dynamic_batches_manager.is_lineage_registered(
@@ -232,7 +296,14 @@ class ExecutionDataManager:
 
     def get_non_batch_data(self, selector: str) -> Any:
         if not is_selector(selector_or_value=selector):
-            raise ValueError(f"Not a valid selector: {selector}")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                f"which is not recognised as valid selector. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         potential_step_selector = get_step_selector_from_its_output(
             step_output_selector=selector
         )
@@ -251,13 +322,27 @@ class ExecutionDataManager:
                 )
             return self._execution_cache.get_non_batch_output(selector=selector)
         else:
-            raise ValueError(f"Invalid selector {selector}!")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                f"which is not recognised as neither input selector or step selector. "
+                f"This is most likely bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | getting_workflow_data",
+            )
 
     def get_batch_data(
         self, selector: str, indices: List[DynamicBatchIndex]
     ) -> List[Any]:
         if not is_selector(selector_or_value=selector):
-            raise ValueError(f"Not a valid selector: {selector}")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                f"which is not recognised as valid selector. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | getting_workflow_data",
+            )
         potential_step_selector = get_step_selector_from_its_output(
             step_output_selector=selector
         )
@@ -286,18 +371,29 @@ class ExecutionDataManager:
                 batch_elements_indices=indices,
             )
         else:
-            raise ValueError(f"Invalid selector {selector}!")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                f"which is not recognised as neither input selector or step selector. "
+                f"This is most likely bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
 
     def is_step_simd(self, step_selector: str) -> bool:
-        step_node_data: StepNode = self._execution_graph.nodes[step_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+        step_node_data = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
         return step_node_data.is_batch_oriented()
 
     def does_input_represent_batch(self, input_selector: str) -> bool:
-        input_node: InputNode = self._execution_graph.nodes[input_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+        input_node = node_as(
+            execution_graph=self._execution_graph,
+            node=input_selector,
+            expected_type=InputNode,
+        )
         return input_node.is_batch_oriented()
 
     def _register_flow_control_output_for_non_simd_step(
@@ -306,11 +402,15 @@ class ExecutionDataManager:
         output: FlowControl,
     ) -> None:
         if not step_node.child_execution_branches:
-            raise ValueError(
-                "This step is not flow-control, so cannot return FlowControl object"
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Step: {step_node.name} "
+                f"which is not flow-control step attempted to register FlowControl output. "
+                f"This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
             )
-        if not output.context:
-            raise ValueError("Step must decode on flow control!")
         selected_steps = output.context
         if not isinstance(selected_steps, list):
             selected_steps = {selected_steps}
@@ -322,7 +422,7 @@ class ExecutionDataManager:
                 selected_execution_branches.add(branch_name)
         for branch_name in step_node.child_execution_branches.values():
             mask = branch_name in selected_execution_branches
-            print(f"NON-SIMD flow control -> {branch_name}: {mask}")
+            logger.debug(f"NON-SIMD flow control -> {branch_name}: {mask}")
             self._branching_manager.register_non_batch_mask(
                 execution_branch=branch_name,
                 mask=mask,
@@ -349,14 +449,19 @@ class ExecutionDataManager:
                 selected_steps = set(selected_steps)
             for selected_step in selected_steps:
                 branch_for_step = step_node.child_execution_branches.get(selected_step)
-                print("selected_step", selected_step, "branch", branch_for_step)
                 if branch_for_step is None:
-                    raise ValueError(
-                        f"Cannot find execution branch for step {selected_step}"
+                    raise ExecutionEngineRuntimeError(
+                        public_message=f"Error in execution engine. Handing with step: {step_node.name} output "
+                        f"Cannot find execution branch for selected step {selected_step}"
+                        f"This is most likely bug. "
+                        f"Contact Roboflow team through github issues "
+                        f"(https://github.com/roboflow/inference/issues) providing full context of"
+                        f"the problem - including workflow definition you use.",
+                        context="workflow_execution | step_output_registration",
                     )
                 all_branches_masks[branch_for_step].add(output_index)
         for branch_name, mask in all_branches_masks.items():
-            print(f"SIMD flow control -> {branch_name}: {mask}")
+            logger.debug(f"SIMD flow control -> {branch_name}: {mask}")
             self._branching_manager.register_batch_oriented_mask(
                 execution_branch=branch_name,
                 mask=mask,
@@ -410,19 +515,33 @@ def is_dynamic_step_input_registered(
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
         return execution_cache.is_step_output_registered(step_name=step_name)
-    raise ValueError("Should not be possible")
+    raise ExecutionEngineRuntimeError(
+        public_message=f"Error in execution engine. Not recognised type of selector: {selector}. "
+        f"This is most likely bug. "
+        f"Contact Roboflow team through github issues "
+        f"(https://github.com/roboflow/inference/issues) providing full context of"
+        f"the problem - including workflow definition you use.",
+        context="workflow_execution | assembling_step_inputs",
+    )
 
 
 def flatten_nested_output(
+    step_selector: str,
     indices: List[DynamicBatchIndex],
-    outputs: List[
-        Union[List[Dict[str, Any]], Dict[str, Any], List[FlowControl], FlowControl]
-    ],
+    outputs: BlockResult,
 ) -> Tuple[List[DynamicBatchIndex], List[Union[Dict[str, Any], FlowControl]]]:
     flattened_index, flattened_output = [], []
     for index, output_element in zip(indices, outputs):
         if not isinstance(output_element, list):
-            raise ValueError("Output missmatch")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Handing with step: {step_selector} output "
+                f"it was expected that the output is nested list, but the condition "
+                f"is not met. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         for nested_index, nested_element_of_output_element in enumerate(output_element):
             flattened_index.append(index + (nested_index,))
             flattened_output.append(nested_element_of_output_element)

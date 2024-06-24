@@ -37,7 +37,7 @@ class WorkflowCompilerError(WorkflowError):
     pass
 
 
-class CompilerAssumptionError(WorkflowCompilerError):
+class AssumptionError(WorkflowError):
     pass
 
 

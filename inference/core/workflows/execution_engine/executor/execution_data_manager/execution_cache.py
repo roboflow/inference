@@ -45,30 +45,31 @@ class BatchStepCache:
     def register_outputs(
         self,
         indices: List[DynamicBatchIndex],
-        outputs: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]],
-    ) -> List[DynamicBatchIndex]:
+        outputs: List[Dict[str, Any]],
+    ) -> None:
         if len(indices) != len(outputs):
-            raise ValueError("Outputs misaligned with indices")
-        indices_to_register, outputs_to_register = indices, outputs
-        all_outputs_nested = all(isinstance(e, list) for e in outputs)
-        any_input_nested = any(isinstance(e, list) for e in outputs)
-        if any_input_nested and not all_outputs_nested:
-            raise ValueError("Batch output missmatch")
-        if all_outputs_nested:
-            indices_to_register, outputs_to_register = [], []
-            for main_idx, elements in zip(indices, outputs):
-                for element_idx, sub_element in enumerate(elements):
-                    indices_to_register.append(main_idx + (element_idx,))
-                    outputs_to_register.append(sub_element)
-        for idx, element in zip(indices_to_register, outputs_to_register):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to register batch of step outputs for step:"
+                f"{self._step_name} providing not aligned indices (length of indices: {len(indices)}, "
+                f" length of data: {len(outputs)}). This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
+        for index, element in zip(indices, outputs):
             element_properties = set(element.keys())
             if element_properties != self._outputs:
-                raise ValueError(
-                    f"Step did not produced required outputs. Expected: {self._outputs}. Got: {element_properties}"
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Step {self._step_name} did not produced required outputs. "
+                    f"Expected: {self._outputs}. Got: {element_properties}. "
+                    f"Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | step_output_registration",
                 )
             for property_name, property_value in element.items():
-                self._cache_content[property_name][idx] = property_value
-        return indices_to_register
+                self._cache_content[property_name][index] = property_value
 
     def get_outputs(
         self,
@@ -211,7 +212,7 @@ class ExecutionCache:
         step_name: str,
         indices: List[DynamicBatchIndex],
         outputs: List[Dict[str, Any]],
-    ) -> List[DynamicBatchIndex]:
+    ) -> None:
         if not self.step_outputs_batches(step_name=step_name):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. Attempted to register batch outputs for "
@@ -222,11 +223,10 @@ class ExecutionCache:
                 context="workflow_execution | step_output_registration",
             )
         try:
-            registered_indices = self._cache_content[step_name].register_outputs(
+            self._cache_content[step_name].register_outputs(
                 indices=indices, outputs=outputs
             )
             self._step_outputs_registered.add(step_name)
-            return registered_indices
         except TypeError as e:
             # checking this case defensively as there is no guarantee on block
             # meeting contract, and we want graceful error handling
@@ -380,7 +380,15 @@ class ExecutionCache:
 
     def is_step_output_registered(self, step_name: str) -> bool:
         if not self.contains_step(step_name=step_name):
-            raise ValueError(f"Step {step_name} not registered")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Attempted to check if step {step_name} "
+                f"registered outputs actual, but provided unknown step name. Behavior should "
+                f"be prevented by workflows compiler, so this error should be treated as a bug."
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         return step_name in self._step_outputs_registered
 
     def contains_step(self, step_name: str) -> bool:

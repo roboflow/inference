@@ -1,15 +1,17 @@
-from typing import Any, List, Set
+from typing import Any, List, Set, Type, TypeVar
 
 from networkx import DiGraph
 
-from inference.core.workflows.constants import (  # INPUT_NODE_KIND,; OUTPUT_NODE_KIND,; STEP_NODE_KIND,
-    NODE_COMPILATION_OUTPUT_PROPERTY,
-)
+from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
 from inference.core.workflows.entities.base import InputType, JsonField
-from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
+from inference.core.workflows.errors import AssumptionError
+from inference.core.workflows.execution_engine.compiler.entities import (
+    ExecutionGraphNode,
+    NodeCategory,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
-FLOW_CONTROL_NODE_KEY = "flow_control_node"
+NodeTypeVar = TypeVar("NodeTypeVar", bound=ExecutionGraphNode)
 
 
 def get_input_parameters_selectors(inputs: List[InputType]) -> Set[str]:
@@ -114,3 +116,39 @@ def is_selector(selector_or_value: Any) -> bool:
 
 def identify_lineage(lineage: List[str]) -> int:
     return sum(hash(e) for e in lineage)
+
+
+def node_as(
+    execution_graph: DiGraph, node: str, expected_type: Type[NodeTypeVar]
+) -> NodeTypeVar:
+    if node not in execution_graph.nodes:
+        raise AssumptionError(
+            public_message=f"Workflow Compiler expected node: {node} to be present in execution graph, "
+            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    if NODE_COMPILATION_OUTPUT_PROPERTY not in execution_graph.nodes[node]:
+        raise AssumptionError(
+            public_message=f"Workflow Compiler expected key: {NODE_COMPILATION_OUTPUT_PROPERTY} to be present "
+            f"for node {node} in execution graph, "
+            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    node_data: ExecutionGraphNode = execution_graph.nodes[node][
+        NODE_COMPILATION_OUTPUT_PROPERTY
+    ]
+    if not isinstance(node_data, expected_type):
+        node_data_type = type(node_data)
+        raise AssumptionError(
+            public_message=f"Workflow Compiler expected compilation output for node {node}"
+            f"to be {expected_type}, but found: {node_data_type}. "
+            f"This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    return node_data
