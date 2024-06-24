@@ -163,6 +163,7 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -432,6 +433,8 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
+        usage_collector.record_execution_details()
+
         self.app = app
         self.model_manager = model_manager
 
@@ -461,6 +464,10 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
+            usage_collector.record_workflow_details(
+                workflow=workflow_specification,
+                api_key=workflow_request.api_key,
+            )
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
