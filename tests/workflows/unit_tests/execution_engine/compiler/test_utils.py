@@ -1,23 +1,27 @@
-from typing import Any
+from typing import Any, Set
+from unittest.mock import MagicMock
 
 import networkx as nx
 import pytest
 
-from inference.core.workflows.constants import INPUT_NODE_KIND, STEP_NODE_KIND
-from inference.core.workflows.core_steps.common.operators import Operator
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     IsTrue,
     StatementGroup,
     StaticOperand,
     UnaryStatement,
 )
-from inference.core.workflows.core_steps.flow_control import condition
 from inference.core.workflows.core_steps.models.roboflow import object_detection
 from inference.core.workflows.core_steps.transformations import dynamic_crop
 from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
+)
+from inference.core.workflows.execution_engine.compiler.entities import (
+    InputNode,
+    NodeCategory,
+    OutputNode,
+    StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
     construct_input_selector,
@@ -43,59 +47,70 @@ def test_construct_input_selector() -> None:
     assert result == "$inputs.some"
 
 
-def test_get_nodes_of_specific_kind() -> None:
+@pytest.mark.parametrize(
+    "expected_kind, expected_result",
+    [
+        (NodeCategory.INPUT_NODE, {"some"}),
+        (NodeCategory.STEP_NODE, {"step_one", "step_two"}),
+        (NodeCategory.OUTPUT_NODE, {"other"}),
+    ],
+)
+def test_get_nodes_of_specific_kind(
+    expected_kind: NodeCategory, expected_result: Set[str]
+) -> None:
     # given
     graph = nx.DiGraph()
     graph.add_node(
-        "one",
-        kind=STEP_NODE_KIND,
-        definition=condition.BlockManifest(
-            type="Condition",
-            name="one",
-            condition_statement=StatementGroup(
-                type="StatementGroup",
-                statements=[
-                    UnaryStatement(
-                        type="UnaryStatement",
-                        operand=StaticOperand(
-                            type="StaticOperand",
-                            value=True,
-                        ),
-                        operator=IsTrue(type="(Boolean) is True"),
-                    )
-                ],
+        "some",
+        node_compilation_output=InputNode(
+            node_category=NodeCategory.INPUT_NODE,
+            name="some",
+            selector=f"$inputs.some",
+            data_lineage=[],
+            input_manifest=WorkflowParameter(
+                type="WorkflowParameter",
+                name="some",
             ),
-            evaluation_parameters={},
-            step_if_true="$steps.a",
-            step_if_false="$steps.b",
         ),
     )
     graph.add_node(
-        "two",
-        kind=STEP_NODE_KIND,
-        definition=dynamic_crop.BlockManifest(
-            type="Crop",
-            name="two",
-            image="$inputs.image",
-            detections="$steps.detection.predictions",
+        "step_one",
+        node_compilation_output=StepNode(
+            node_category=NodeCategory.STEP_NODE,
+            name="step_one",
+            selector="$steps.selector",
+            data_lineage=["Batch[image]"],
+            step_manifest=MagicMock(),
         ),
     )
     graph.add_node(
-        "three",
-        kind=INPUT_NODE_KIND,
-        definition=WorkflowParameter(type="WorkflowParameter", name="three"),
+        "step_two",
+        node_compilation_output=StepNode(
+            node_category=NodeCategory.STEP_NODE,
+            name="step_two",
+            selector="$steps.selector",
+            data_lineage=["Batch[image]"],
+            step_manifest=MagicMock(),
+        ),
+    )
+    graph.add_node(
+        "other",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name="step_two",
+            selector="$steps.selector",
+            data_lineage=["Batch[image]"],
+            output_manifest=MagicMock(),
+        ),
     )
 
     # when
     result = get_nodes_of_specific_category(
-        execution_graph=graph, category=STEP_NODE_KIND
+        execution_graph=graph, category=expected_kind
     )
 
     # then
-    assert result == {
-        "one",
-        "two",
-    }, "Only nodes `one` and `two` are defined with step kind"
+    assert result == expected_result, "Only expected steps are to be extracted"
 
 
 def test_get_step_selector_from_its_output() -> None:
@@ -268,10 +283,22 @@ def test_get_last_chunk_of_selector() -> None:
     assert result == "value"
 
 
-def test_is_flow_control_step_when_flow_control_step_given() -> None:
+def test_is_flow_control_step_when_not_a_step_node_given() -> None:
     # given
     graph = nx.DiGraph()
-    graph.add_node("some")
+    graph.add_node(
+        "some",
+        node_compilation_output=InputNode(
+            node_category=NodeCategory.INPUT_NODE,
+            name="some",
+            selector=f"$inputs.some",
+            data_lineage=[],
+            input_manifest=WorkflowParameter(
+                type="WorkflowParameter",
+                name="some",
+            ),
+        ),
+    )
 
     # when
     result = is_flow_control_step(execution_graph=graph, node="some")
@@ -280,10 +307,41 @@ def test_is_flow_control_step_when_flow_control_step_given() -> None:
     assert result is False
 
 
-def test_is_flow_control_step_when_not_a_flow_control_step_given() -> None:
+def test_is_flow_control_step_when_step_node_given_but_not_control_flow() -> None:
     # given
     graph = nx.DiGraph()
-    graph.add_node("some", flow_control_node=True)
+    graph.add_node(
+        "some",
+        node_compilation_output=StepNode(
+            node_category=NodeCategory.STEP_NODE,
+            name="some",
+            selector=f"$inputs.some",
+            data_lineage=[],
+            step_manifest=MagicMock(),
+        ),
+    )
+
+    # when
+    result = is_flow_control_step(execution_graph=graph, node="some")
+
+    # then
+    assert result is False
+
+
+def test_is_flow_control_step_when_control_flow_step_given() -> None:
+    # given
+    graph = nx.DiGraph()
+    graph.add_node(
+        "some",
+        node_compilation_output=StepNode(
+            node_category=NodeCategory.STEP_NODE,
+            name="some",
+            selector=f"$inputs.some",
+            data_lineage=[],
+            step_manifest=MagicMock(),
+            child_execution_branches={"branch_a": "$steps.a"},
+        ),
+    )
 
     # when
     result = is_flow_control_step(execution_graph=graph, node="some")

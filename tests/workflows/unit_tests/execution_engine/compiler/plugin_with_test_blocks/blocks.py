@@ -52,7 +52,7 @@ class ExampleModelBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleModelBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -74,7 +74,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleFlowControlBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -108,7 +108,7 @@ class ExampleTransformationBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleTransformationBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -139,7 +139,7 @@ class ExampleSinkBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleSinkBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -171,7 +171,7 @@ class ExampleFusionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleFusionBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -212,7 +212,7 @@ class ExampleBlockWithInit(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithInitManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -253,7 +253,7 @@ class ExampleBlockWithFaultyInit(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithFaultyInitManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,

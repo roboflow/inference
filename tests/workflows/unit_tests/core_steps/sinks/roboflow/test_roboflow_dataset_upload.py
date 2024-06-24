@@ -574,7 +574,7 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
 
     # when
     with pytest.raises(ValueError):
-        _ = await data_collector_block.run_locally(
+        _ = await data_collector_block.run(
             images=Batch(content=[]),
             predictions=Batch(content=[]),
             target_project="my_project",
@@ -614,7 +614,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     }
 
     # when
-    result = await data_collector_block.run_locally(
+    result = await data_collector_block.run(
         images=Batch(content=[image, image, image]),
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
@@ -646,54 +646,6 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_sink_when_images_filtered_out() -> None:
-    # given
-    data_collector_block = RoboflowDatasetUploadBlock(
-        cache=MemoryCache(),
-        background_tasks=None,
-        api_key="my_api_key",
-    )
-    prediction = {
-        "top": "car",
-        "predictions": [
-            {"class": "car", "confidence": 0.7},
-            {"class": "truck", "confidence": 0.3},
-        ],
-    }
-
-    # when
-    result = await data_collector_block.run_locally(
-        images=Batch(content=[None, None, None]),
-        predictions=Batch(content=[prediction, prediction, prediction]),
-        target_project="my_project",
-        usage_quota_name="my_quota",
-        persist_predictions=True,
-        minutely_usage_limit=10,
-        hourly_usage_limit=100,
-        daily_usage_limit=1000,
-        max_image_size=(128, 128),
-        compression_level=75,
-        registration_tags=["some"],
-        disable_sink=False,
-        fire_and_forget=True,
-        labeling_batch_prefix="my_batch",
-        labeling_batches_recreation_frequency="never",
-    )
-
-    # then
-    assert (
-        result
-        == [
-            {
-                "error_status": False,
-                "message": "Batch element skipped",
-            }
-        ]
-        * 3
-    ), "Expected skip status to be presented"
-
-
-@pytest.mark.asyncio
 @mock.patch.object(roboflow_dataset_upload, "execute_registration", MagicMock())
 async def test_run_sink_when_registration_should_happen_in_background() -> None:
     # given
@@ -716,7 +668,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
     }
 
     # when
-    result = await data_collector_block.run_locally(
+    result = await data_collector_block.run(
         images=Batch(content=[image, image, image]),
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
@@ -775,7 +727,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
     execute_registration_mock.return_value = False, "OK"
 
     # when
-    result = await data_collector_block.run_locally(
+    result = await data_collector_block.run(
         images=Batch(content=[image, image, image]),
         predictions=Batch(content=[prediction, prediction, prediction]),
         target_project="my_project",
