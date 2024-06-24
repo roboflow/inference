@@ -56,7 +56,6 @@ def construct_workflow_output(
             selector=name2selector[name],
             indices=indices,
         )
-        print(f"retrieved data: {len(data)}, indices: {indices}")
         for index, data_piece in zip(indices, data):
             if (
                 name in outputs_requested_in_parent_coordinates
@@ -76,7 +75,6 @@ def construct_workflow_output(
         for name, array in outputs_arrays.items():
             single_result[name] = array[i]
         results.append(single_result)
-    print("DONE", flush=True)
     return results
 
 

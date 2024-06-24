@@ -3,7 +3,11 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from inference.core import logger
-from inference.core.workflows.errors import StepExecutionError, WorkflowError
+from inference.core.workflows.errors import (
+    ExecutionEngineRuntimeError,
+    StepExecutionError,
+    WorkflowError,
+)
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_last_chunk_of_selector,
@@ -80,7 +84,6 @@ async def safe_execute_step(
         logger.info(
             f"started execution of: {step_selector} - {datetime.now().isoformat()}"
         )
-        print(f"Running step: {step_selector}")
         await run_step(
             step_selector=step_selector,
             workflow=workflow,
@@ -147,10 +150,8 @@ async def run_simd_step_in_batch_mode(
     step_input = execution_data_manager.get_simd_step_input(step_selector=step_selector)
     if not step_input.indices:
         # no inputs - discarded either by conditional exec or by not accepting empty
-        print(f"NO INPUTS TO: {step_selector}")
         return None
     outputs = await step_instance.run(**step_input.parameters)
-    print("Step result", step_input.indices, len(outputs))
     execution_data_manager.register_simd_step_output(
         step_selector=step_selector,
         indices=step_input.indices,
@@ -171,9 +172,7 @@ async def run_simd_step_in_non_batch_mode(
         results.append(result)
         indices.append(input_definition.index)
     if not indices:
-        print(f"NO INPUTS TO: {step_selector}")
         return None
-    print("Step result", indices, len(results))
     execution_data_manager.register_simd_step_output(
         step_selector=step_selector,
         indices=indices,
@@ -191,14 +190,19 @@ async def run_non_simd_step(
     )
     if not step_input:
         # discarded by conditional execution
-        print(f"NO INPUTS TO: {step_selector}")
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
     step_result = await step_instance.run(**step_input)
     if isinstance(step_result, list):
-        raise ValueError("Invalid non-SIMD step output - list!")
-    print("Step result", type(step_result))
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Error in execution engine. Non-SIMD step {step_name} "
+            f"produced list of results which is not expected. This is most likely bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_output_registration",
+        )
     execution_data_manager.register_non_simd_step_output(
         step_selector=step_selector,
         output=step_result,

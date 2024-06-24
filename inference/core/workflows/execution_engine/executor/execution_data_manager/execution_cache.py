@@ -201,9 +201,6 @@ class ExecutionCache:
                 step_name=step_name,
                 outputs=outputs,
             )
-        print(
-            f"register_step(): {step_name}, compatible_with_batches: {compatible_with_batches}"
-        )
         self._cache_content[step_name] = step_cache
         self._batches_compatibility[step_name] = compatible_with_batches
 

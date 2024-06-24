@@ -31,7 +31,6 @@ def assembly_runtime_parameters(
                 batch_input_size=batch_input_size,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
-            print("NAME", defined_input.name)
             batch_input_size = len(runtime_parameters[defined_input.name])
         else:
             runtime_parameters[defined_input.name] = assembly_inference_parameter(

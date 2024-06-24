@@ -115,7 +115,6 @@ def construct_simd_step_input(
         step_node=step_node,
         branching_manager=branching_manager,
     )
-    print(f"Masks for step {step_node.name}: {masks}")
     return prepare_parameters(
         step_node=step_node,
         dynamic_batches_manager=dynamic_batches_manager,
@@ -132,10 +131,6 @@ def construct_mask_for_all_inputs_dimensionalities(
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
     batch_masks, non_batch_masks = [], set()
-    print(
-        "step_node.execution_branches_impacting_inputs",
-        step_node.execution_branches_impacting_inputs,
-    )
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
@@ -150,8 +145,6 @@ def construct_mask_for_all_inputs_dimensionalities(
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
             non_batch_masks.add(mask)
-    print("batch_masks", batch_masks)
-    print("non_batch_masks", non_batch_masks)
     if False in non_batch_masks:
         return {dimension: set() for dimension in all_dimensionalities}
     return {
@@ -220,7 +213,6 @@ def prepare_parameters(
     guard_of_indices_wrapping = GuardForIndicesWrapping()
     for parameter_name, parameter_specs in step_node.input_data.items():
         if parameter_specs.is_compound_input():
-            print(f"{parameter_name} is compound")
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_compound_parameter_value(
                     parameter=parameter_specs,
@@ -233,7 +225,6 @@ def prepare_parameters(
                 )
             )
         else:
-            print(f"{parameter_name} is simple")
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_non_compound_parameter_value(
                     parameter=parameter_specs,
@@ -245,7 +236,6 @@ def prepare_parameters(
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                 )
             )
-    print("indices_for_parameter", indices_for_parameter)
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -256,7 +246,6 @@ def prepare_parameters(
     if not step_node.step_manifest.accepts_empty_values():
         empty_indices = get_empty_indices(value=result)
         indices = [e for e in indices if e not in empty_indices]
-        print("empty_indices", empty_indices, flush=True)
         result = filter_parameters(value=result, empty_indices=empty_indices)
     return BatchModeSIMDStepInput(
         indices=indices,
@@ -335,16 +324,13 @@ def get_non_compound_parameter_value(
             return runtime_parameters[parameter_name], None
         static_input: StaticStepInputDefinition = parameter  # type: ignore
         return static_input.value, None
-    print(f"Parameter: {parameter.parameter_specification} is dynamic")
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
         lineage=dynamic_parameter.data_lineage,
     )
     mask_for_dimension = masks[parameter_dimensionality]
-    print("lineage_indices", lineage_indices)
     if dynamic_parameter.points_to_input():
-        print("Taking input! Mask:", mask_for_dimension)
         input_name = get_last_chunk_of_selector(selector=dynamic_parameter.selector)
         batch_input = runtime_parameters[input_name]
         if mask_for_dimension is not None:
@@ -355,17 +341,11 @@ def get_non_compound_parameter_value(
                 for element_index, input_element in zip(lineage_indices, batch_input)
             ]
     else:
-        print("step output input! Mask: ", mask_for_dimension)
         batch_input = execution_cache.get_batch_output(
             selector=dynamic_parameter.selector,
             batch_elements_indices=lineage_indices,
             mask=mask_for_dimension,
         )
-    print(
-        parameter.parameter_specification,
-        step_execution_dimensionality,
-        parameter_dimensionality,
-    )
     if step_execution_dimensionality == parameter_dimensionality:
         return Batch(batch_input, lineage_indices), lineage_indices
     if step_execution_dimensionality > parameter_dimensionality:
@@ -385,7 +365,6 @@ def reduce_batch_dimensionality(
     data: List[T],
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Batch[Batch[T]]:
-    print("reduce_batch_dimensionality()", indices)
     guard_of_indices_wrapping.register_wrapping(indices_before_wrapping=indices)
     already_spotted_downgraded_indices = set()
     wrapped_batch_index, wrapped_batch_content = [], []
@@ -398,27 +377,19 @@ def reduce_batch_dimensionality(
         else:
             if wrapped_batch_index:
                 result_index.append(wrapped_batch_index[-1][:-1])
-                print(
-                    "wrapped_batch_index",
-                    wrapped_batch_index,
-                    len(wrapped_batch_content),
-                )
                 result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
             already_spotted_downgraded_indices.add(downgraded_index)
             wrapped_batch_index = [index]
             wrapped_batch_content = [data]
     if wrapped_batch_index:
         result_index.append(wrapped_batch_index[-1][:-1])
-        print("wrapped_batch_index", wrapped_batch_index, len(wrapped_batch_content))
         result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
-    print("result_index", result_index)
     return Batch(result_data, result_index)
 
 
 def ensure_compound_input_indices_match(indices: List[List[DynamicBatchIndex]]) -> None:
     if not indices:
         return None
-    print("ensure_compound_input_indices_match()", indices)
     reference_set = set(indices[0])
     for index in indices[1:]:
         other_set = set(index)
