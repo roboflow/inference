@@ -422,7 +422,7 @@ class InferencePipeline:
 
     @classmethod
     @experimental(
-        reason="Usage of workflows with `InferencePipeline` is experimental feature now. Please report any issues "
+        reason="Usage of workflows with `InferencePipeline` is an experimental feature. Please report any issues "
         "here: https://github.com/roboflow/inference/issues"
     )
     def init_with_workflow(
