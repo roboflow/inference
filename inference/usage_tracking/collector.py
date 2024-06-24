@@ -1,26 +1,26 @@
 import asyncio
 import atexit
-from collections import defaultdict
-from functools import wraps
 import hashlib
 import json
-import importlib_metadata
 import mimetypes
-from queue import Queue
 import socket
 import sys
-from threading import Event, Lock, Thread
 import time
-import torch
+from collections import defaultdict
+from functools import wraps
+from queue import Queue
+from threading import Event, Lock, Thread
 from typing import Any, Callable, DefaultDict, Dict, List, Optional
 from uuid import uuid4
+
+import importlib_metadata
+import torch
 
 from inference.core.env import API_KEY
 from inference.core.logger import logger
 from inference.usage_tracking.utils import collect_func_params
 
-from .config import get_telemetry_settings, TelemetrySettings
-
+from .config import TelemetrySettings, get_telemetry_settings
 
 Source = str
 UsagePayload = DefaultDict[Source, Any]
