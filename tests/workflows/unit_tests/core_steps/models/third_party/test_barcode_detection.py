@@ -60,7 +60,7 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
                 numpy_image=barcode_image,
             )
         ],
-        indices=[(0, )]
+        indices=[(0,)],
     )
 
     # when

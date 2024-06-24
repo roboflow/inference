@@ -60,7 +60,7 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
                 numpy_image=qr_codes_image,
             )
         ],
-        indices=[(0, )]
+        indices=[(0,)],
     )
 
     # when

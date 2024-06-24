@@ -8,9 +8,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     InputNode,
     NodeCategory,
 )
-from inference.core.workflows.execution_engine.compiler.graph_constructor import (
-    identify_lineage,
-)
+from inference.core.workflows.execution_engine.compiler.utils import identify_lineage
 
 DynamicBatchIndex = tuple
 

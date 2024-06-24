@@ -4,7 +4,7 @@ from typing import List, Optional, Set
 import networkx as nx
 
 from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
-from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+from inference.core.workflows.execution_engine.compiler.graph_traversal import (
     assign_max_distances_from_start,
     group_nodes_by_sorted_key_value,
 )

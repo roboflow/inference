@@ -1,3 +1,4 @@
+import networkx as nx
 import pytest
 
 from inference.core.workflows.entities.base import (
@@ -19,6 +20,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+    add_input_nodes_for_graph,
     prepare_execution_graph,
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
@@ -28,6 +30,7 @@ from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_block
     ExampleFlowControlBlockManifest,
     ExampleFusionBlockManifest,
     ExampleModelBlockManifest,
+    ExampleNonBatchFlowControlBlockManifest,
     ExampleTransformationBlockManifest,
 )
 
@@ -443,7 +446,13 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
             ExampleFlowControlBlockManifest(
                 type="ExampleFlowControl",
                 name="random_choice",
-                steps_to_choose=["$steps.model_1", "$steps.model_2"],
+                a_steps=["$steps.model_1"],
+                b_steps=["$steps.model_2"],
+            ),
+            ExampleNonBatchFlowControlBlockManifest(
+                type="ExampleNonBatchFlowControl",
+                name="non_batch_condition",
+                next_steps=["$steps.model_1"],
             ),
             ExampleModelBlockManifest(
                 type="ExampleModel",
@@ -479,7 +488,7 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
 
     # then
     assert (
-        len(result.nodes) == 6
+        len(result.nodes) == 7
     ), "Expected 1 input node, 3 step nodes and 2 output nodes"
     assert (
         "$inputs.image" in result.nodes
@@ -487,6 +496,31 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     assert (
         "$steps.random_choice" in result.nodes
     ), "Expected random_choice step to be a node in execution graph"
+    assert result.nodes["$steps.random_choice"][
+        "node_compilation_output"
+    ].child_execution_branches == {
+        "$steps.model_1": f"Branch[$steps.random_choice -> a_steps]",
+        "$steps.model_2": f"Branch[$steps.random_choice -> b_steps]",
+    }, "Expected execution branches to be denoted properly for random_choice step"
+    assert (
+        "$steps.non_batch_condition" in result.nodes
+    ), "Expected non_batch_condition step node in execution graph"
+    assert result.nodes["$steps.non_batch_condition"][
+        "node_compilation_output"
+    ].child_execution_branches == {
+        "$steps.model_1": f"Branch[$steps.non_batch_condition -> next_steps]",
+    }, "Expected execution branches to be denoted properly for non_batch_condition step"
+    assert result.nodes["$steps.model_1"][
+        "node_compilation_output"
+    ].execution_branches_impacting_inputs == {
+        f"Branch[$steps.random_choice -> a_steps]",
+        f"Branch[$steps.non_batch_condition -> next_steps]",
+    }, "Expected execution branches impacting inputs to be denoted"
+    assert result.nodes["$steps.model_2"][
+        "node_compilation_output"
+    ].execution_branches_impacting_inputs == {
+        f"Branch[$steps.random_choice -> b_steps]",
+    }
     assert (
         "$steps.model_1" in result.nodes
     ), "Expected model_1 step to be a node in execution graph"
@@ -499,13 +533,16 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     assert (
         "$outputs.predictions_2" in result.nodes
     ), "Expected predictions_2 output to be a node in execution graph"
-    assert len(result.edges) == 6, "Only 6 unique edges expected in the graph"
+    assert len(result.edges) == 7, "Only 7 unique edges expected in the graph"
     assert result.has_edge(
         "$inputs.image", "$steps.model_1"
     ), "Expected to see connection between image and model_1"
     assert result.has_edge(
         "$steps.random_choice", "$steps.model_1"
     ), "Expected to see connection between random_choice and model_1"
+    assert result.has_edge(
+        "$steps.non_batch_condition", "$steps.model_1"
+    ), "Expected to see connection between non_batch_condition and model_1"
     assert result.has_edge(
         "$inputs.image", "$steps.model_2"
     ), "Expected to see connection between image and model_2"

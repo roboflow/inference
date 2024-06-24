@@ -60,9 +60,19 @@ class ExampleModelBlock(WorkflowBlock):
         pass
 
 
+class ExampleNonBatchFlowControlBlockManifest(WorkflowBlockManifest):
+    type: Literal["ExampleNonBatchFlowControl"]
+    next_steps: List[StepSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
 class ExampleFlowControlBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleFlowControl"]
-    steps_to_choose: List[StepSelector]
+    a_steps: List[StepSelector]
+    b_steps: List[StepSelector]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

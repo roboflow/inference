@@ -29,7 +29,7 @@ def test_standard_iteration_through_batch() -> None:
     # given
     batch = Batch.init(
         content=[1, "2", None, 3.0],
-        indices=[(0, ), (1, ), (2, ), (3, )],
+        indices=[(0,), (1,), (2,), (3,)],
     )
 
     # when
@@ -43,14 +43,14 @@ def test_standard_iteration_through_batch_with_indices() -> None:
     # given
     batch = Batch.init(
         content=[1, "2", None, 3.0],
-        indices=[(0, ), (1, ), (2, ), (3, )],
+        indices=[(0,), (1,), (2,), (3,)],
     )
 
     # when
     result = list(batch.iter_with_indices())
 
     # then
-    assert result == [((0, ), 1), ((1,), "2"), ((2, ), None), ((3, ), 3.0)]
+    assert result == [((0,), 1), ((1,), "2"), ((2,), None), ((3,), 3.0)]
 
 
 def test_getting_batch_length() -> None:
@@ -109,10 +109,7 @@ def test_broadcast_batch_when_requested_size_is_equal_to_batch_size() -> None:
 
 def test_broadcast_batch_when_requested_size_is_valid_and_batch_size_is_one() -> None:
     # given
-    batch = Batch.init(
-        content=[1],
-        indices=[(0, )]
-    )
+    batch = Batch.init(content=[1], indices=[(0,)])
 
     # when
     result = batch.broadcast(n=4)
@@ -125,7 +122,7 @@ def test_broadcast_batch_when_requested_size_is_valid_and_batch_size_is_not_matc
     None
 ):
     # given
-    batch = Batch.init(content=[1, 2], indices=[(0, ), (1, )])
+    batch = Batch.init(content=[1, 2], indices=[(0,), (1,)])
 
     # when
     with pytest.raises(ValueError):

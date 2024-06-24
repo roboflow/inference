@@ -110,3 +110,7 @@ def is_output_node(execution_graph: DiGraph, node: str) -> bool:
 
 def is_selector(selector_or_value: Any) -> bool:
     return str(selector_or_value).startswith("$")
+
+
+def identify_lineage(lineage: List[str]) -> int:
+    return sum(hash(e) for e in lineage)
