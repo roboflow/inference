@@ -231,3 +231,9 @@ class StepNode(ExecutionGraphNode):
 class PropertyPredecessorDefinition:
     predecessor_selector: str
     parsed_selector: ParsedSelector
+
+
+@dataclass(frozen=True)
+class InputDimensionalitySpecification:
+    actual_dimensionality: int
+    expected_offset: int

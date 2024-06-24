@@ -33,6 +33,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     DictOfStepInputDefinitions,
     DynamicStepInputDefinition,
     ExecutionGraphNode,
+    InputDimensionalitySpecification,
     InputNode,
     ListOfStepInputDefinitions,
     NodeCategory,
@@ -607,8 +608,8 @@ def denote_data_flow_for_step(
         inputs_dimensionalities=inputs_dimensionalities,
         dimensionality_offstes=input_dimensionality_offsets,
     )
-    all_lineages = get_all_data_lineage(step_name=step_name, input_data=input_data)
-    verify_lineage_of_flow_control_steps_impacting_inputs(
+    all_lineages = get_input_data_lineage(step_name=step_name, input_data=input_data)
+    verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         step_name=step_name,
         inputs_lineage=all_lineages,
         flow_control_steps_selectors=all_control_flow_predecessors,
@@ -617,17 +618,12 @@ def denote_data_flow_for_step(
     step_node_data.input_data = input_data
     step_node_data.dimensionality_reference_property = dimensionality_reference_property
     step_node_data.batch_oriented_parameters = parameters_with_batch_inputs
-    non_zero_dimensionalities = {
-        dimensionality
-        for dimensionalities in inputs_dimensionalities.values()
-        for dimensionality in dimensionalities
-        if dimensionality > 0
-    }
-    if len(non_zero_dimensionalities) > 0:
-        step_execution_dimensionality = min(non_zero_dimensionalities)
-        if output_dimensionality_offset < 0:
-            step_execution_dimensionality -= 1
-        step_node_data.step_execution_dimensionality = step_execution_dimensionality
+    step_node_data.step_execution_dimensionality = (
+        establish_step_execution_dimensionality(
+            inputs_dimensionalities=inputs_dimensionalities,
+            output_dimensionality_offset=output_dimensionality_offset,
+        )
+    )
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:
@@ -1078,69 +1074,91 @@ def verify_input_data_dimensionality(
     inputs_dimensionalities: Dict[str, Set[int]],
     dimensionality_offstes: Dict[str, int],
 ) -> None:
-    parameter2offset_and_non_zero_dimensionality = {}
-    for parameter_name, dimensionality in inputs_dimensionalities.items():
-        parameter_offset = dimensionality_offstes.get(parameter_name, 0)
-        non_zero_dims = {d for d in dimensionality if d > 0}
-        if len(non_zero_dims) > 1:
-            raise ValueError("Should not be possible here")
-        if non_zero_dims:
-            dim = next(iter(non_zero_dims))
-            parameter2offset_and_non_zero_dimensionality[parameter_name] = (
-                parameter_offset,
-                dim,
-            )
-    if not parameter2offset_and_non_zero_dimensionality:
+    parameter_name2dimensionality_specification = (
+        grab_input_data_dimensionality_specifications(
+            step_name=step_name,
+            inputs_dimensionalities=inputs_dimensionalities,
+            dimensionality_offstes=dimensionality_offstes,
+        )
+    )
+    if not parameter_name2dimensionality_specification:
+        # nothing to check if no batch-oriented inputs
         return None
+    different_dimensionalities_of_parameters = {
+        specification.actual_dimensionality
+        for specification in parameter_name2dimensionality_specification.values()
+    }
     if dimensionality_reference_property is None:
-        different_dims = {
-            e[1] for e in parameter2offset_and_non_zero_dimensionality.values()
-        }
-        if len(different_dims) != 1:
-            param2dim = {
-                k: e[1] for k, e in parameter2offset_and_non_zero_dimensionality.items()
+        if len(different_dimensionalities_of_parameters) > 1:
+            parameter2dimensionality = {
+                k: e.actual_dimensionality
+                for k, e in parameter_name2dimensionality_specification.items()
             }
             raise StepInputDimensionalityError(
                 public_message=f"Block defining step {step_name} does not define dimensionality reference property, "
                 f"which means that all batch-oriented parameters must be at the same dimensionality level, "
-                f"but detected the following dimensionalities for parameters {param2dim}",
+                f"but detected the following dimensionalities for parameters {parameter2dimensionality}",
                 context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
             )
         return None
-    reference_offset, reference_property_dim = (
-        parameter2offset_and_non_zero_dimensionality[dimensionality_reference_property]
-    )
+    reference_specification = parameter_name2dimensionality_specification[
+        dimensionality_reference_property
+    ]
     expected_dimensionalities = {
-        property_name: (e[0] - reference_offset) + reference_property_dim
-        for property_name, e in parameter2offset_and_non_zero_dimensionality.items()
+        property_name: (e.expected_offset - reference_specification.expected_offset)
+        + reference_specification.actual_dimensionality
+        for property_name, e in parameter_name2dimensionality_specification.items()
     }
-    if any(v <= 0 for v in expected_dimensionalities.values()):
+    if any(dim <= 0 for dim in expected_dimensionalities.values()):
         raise StepInputDimensionalityError(
             public_message=f"Given the definition of block defining step {step_name} and data provided, "
             f"the block would expect batch input dimensionality to be 0 or below, which is invalid.",
             context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
         )
-
-    print("expected_dimensionalities", expected_dimensionalities)
-    print(
-        "parameter2offset_and_non_zero_dimensionality",
-        parameter2offset_and_non_zero_dimensionality,
-    )
     for property_name, expected_dimensionality in expected_dimensionalities.items():
-        actual_dimensionality = parameter2offset_and_non_zero_dimensionality[
+        actual_dimensionality = parameter_name2dimensionality_specification[
             property_name
-        ][1]
+        ].actual_dimensionality
         if actual_dimensionality != expected_dimensionality:
             raise StepInputDimensionalityError(
                 public_message=f"Data fed into step `{step_name}` property `{property_name}` has "
-                f"actual dimensionality {actual_dimensionality + reference_offset}, "
-                f"when expected was {expected_dimensionality + reference_offset}",
+                f"actual dimensionality {actual_dimensionality}, "
+                f"when expected was {expected_dimensionality}",
                 context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
             )
     return None
 
 
-def verify_lineage_of_flow_control_steps_impacting_inputs(
+def grab_input_data_dimensionality_specifications(
+    step_name: str,
+    inputs_dimensionalities: Dict[str, Set[int]],
+    dimensionality_offstes: Dict[str, int],
+) -> Dict[str, InputDimensionalitySpecification]:
+    result = {}
+    for parameter_name, dimensionality in inputs_dimensionalities.items():
+        parameter_offset = dimensionality_offstes.get(parameter_name, 0)
+        non_zero_dimensionalities_for_parameter = {d for d in dimensionality if d > 0}
+        if len(non_zero_dimensionalities_for_parameter) > 1:
+            raise CompilerAssumptionError(
+                public_message=f"Workflow Compiler for step: `{step_name}` and parameter: {parameter_name}"
+                f"found multiple different values of actual input dimensionalities: "
+                f"`{non_zero_dimensionalities_for_parameter}` which should be detected and addresses "
+                f"at earlier stages of compilation."
+                f"This is most likely the bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full "
+                f"context of the problem - including workflow definition you use.",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+            )
+        if non_zero_dimensionalities_for_parameter:
+            actual_dimensionality = next(iter(non_zero_dimensionalities_for_parameter))
+            result[parameter_name] = InputDimensionalitySpecification(
+                actual_dimensionality=actual_dimensionality,
+                expected_offset=parameter_offset,
+            )
+    return result
+
+
+def verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
     step_name: str,
     inputs_lineage: List[List[str]],
     flow_control_steps_selectors: List[str],
@@ -1150,16 +1168,18 @@ def verify_lineage_of_flow_control_steps_impacting_inputs(
     lineage_id2control_flow_steps = defaultdict(list)
     batch_oriented_control_flow_lineages = []
     for flow_control_steps_selector in flow_control_steps_selectors:
-        flow_control_step_data = execution_graph.nodes[flow_control_steps_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+        flow_control_step_data = node_as(
+            execution_graph=execution_graph,
+            node=flow_control_steps_selector,
+            expected_type=StepNode,
+        )
         lineage = flow_control_step_data.data_lineage
         lineage_id = identify_lineage(lineage=lineage)
         if lineage_id not in already_spotted_input_lineages and lineage:
             already_spotted_input_lineages.add(lineage_id)
             batch_oriented_control_flow_lineages.append(lineage)
         lineage_id2control_flow_steps[lineage_id].append(flow_control_steps_selector)
-    all_input_lineage_prefixes = get_all_lineage_prefixes(lineages=inputs_lineage)
+    all_input_lineage_prefixes = get_all_batch_lineage_prefixes(lineages=inputs_lineage)
     all_input_lineage_prefixes_hashes = {
         identify_lineage(lineage=lineage) for lineage in all_input_lineage_prefixes
     }
@@ -1178,11 +1198,11 @@ def verify_lineage_of_flow_control_steps_impacting_inputs(
             )
 
 
-def get_all_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
+def get_all_batch_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
     result = []
     already_spotted = set()
     for lineage in lineages:
-        lineage_prefixes = get_lineage_prefixes(lineage=lineage)
+        lineage_prefixes = get_batch_lineage_prefixes(lineage=lineage)
         for lineage_prefix in lineage_prefixes:
             lineage_prefix_id = identify_lineage(lineage=lineage_prefix)
             if lineage_prefix_id not in already_spotted:
@@ -1191,7 +1211,7 @@ def get_all_lineage_prefixes(lineages: List[List[str]]) -> List[List[str]]:
     return result
 
 
-def get_lineage_prefixes(lineage: List[str]) -> List[List[str]]:
+def get_batch_lineage_prefixes(lineage: List[str]) -> List[List[str]]:
     if not lineage:
         return []
     result = []
@@ -1259,50 +1279,76 @@ def grab_parameters_defining_batch_inputs(
     return result
 
 
-def get_all_data_lineage(
+def get_input_data_lineage(
     step_name: str,
-    input_data: Dict[
-        str,
-        Union[
-            DynamicStepInputDefinition,
-            StaticStepInputDefinition,
-            CompoundStepInputDefinition,
-        ],
-    ],
+    input_data: StepInputData,
 ) -> List[List[str]]:
-    lineage_id2lineage = set()
+    lineage_deduplication_set = set()
     lineages = []
     for property_name, input_definition in input_data.items():
-        if input_definition.is_compound_input():
-            lineages_detected_in_compound_input = []
-            for nested_element in input_definition.iterate_through_definitions():
-                if nested_element.is_batch_oriented():
-                    lineage = nested_element.data_lineage
-                    lineage_id = identify_lineage(lineage=lineage)
-                    if lineage_id not in lineage_id2lineage:
-                        lineage_id2lineage.add(lineage_id)
-                        lineages.append(lineage)
-                        lineages_detected_in_compound_input.append(
-                            lineages_detected_in_compound_input
-                        )
-            if len(lineages_detected_in_compound_input) > 1:
-                raise StepInputLineageError(
-                    public_message=f"Input data provided for step: `{step_name}` comes with multiple different lineages "
-                    f"{lineages_detected_in_compound_input} for property `{property_name}` accepting "
-                    f"multiple selectors",
-                    context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
-                )
-        else:
-            if input_definition.is_batch_oriented():
-                lineage = input_definition.data_lineage
-                lineage_id = identify_lineage(lineage=lineage)
-                if lineage_id not in lineage_id2lineage:
-                    lineage_id2lineage.add(lineage_id)
-                    lineages.append(lineage)
+        new_lineages_detected_within_property_data = get_lineage_for_input_property(
+            step_name=step_name,
+            property_name=property_name,
+            input_definition=input_definition,
+            lineage_deduplication_set=lineage_deduplication_set,
+        )
+        lineages.extend(new_lineages_detected_within_property_data)
     if not lineages:
         return lineages
+    verify_lineages(step_name=step_name, detected_lineages=lineages)
+    return lineages
+
+
+def get_lineage_for_input_property(
+    step_name: str,
+    property_name: str,
+    input_definition: Union[StepInputDefinition, CompoundStepInputDefinition],
+    lineage_deduplication_set: Set[int],
+) -> List[List[str]]:
+    if input_definition.is_compound_input():
+        return get_lineage_from_compound_input(
+            step_name=step_name,
+            property_name=property_name,
+            input_definition=input_definition,
+            lineage_deduplication_set=lineage_deduplication_set,
+        )
+    lineages = []
+    if input_definition.is_batch_oriented():
+        lineage = input_definition.data_lineage
+        lineage_id = identify_lineage(lineage=lineage)
+        if lineage_id not in lineage_deduplication_set:
+            lineage_deduplication_set.add(lineage_id)
+            lineages.append(lineage)
+    return lineages
+
+
+def get_lineage_from_compound_input(
+    step_name: str,
+    property_name: str,
+    input_definition: Union[StepInputDefinition, CompoundStepInputDefinition],
+    lineage_deduplication_set: Set[int],
+) -> List[List[str]]:
+    lineages = []
+    for nested_element in input_definition.iterate_through_definitions():
+        if nested_element.is_batch_oriented():
+            lineage = nested_element.data_lineage
+            lineage_id = identify_lineage(lineage=lineage)
+            if lineage_id not in lineage_deduplication_set:
+                lineage_deduplication_set.add(lineage_id)
+                lineages.append(lineage)
+    if len(lineages) > 1:
+        raise StepInputLineageError(
+            public_message=f"Input data provided for step: `{step_name}` comes with multiple different lineages "
+            f"{lineages} for property `{property_name}` accepting "
+            f"multiple selectors, which is not allowed.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
+        )
+    return lineages
+
+
+def verify_lineages(step_name: str, detected_lineages: List[List[str]]) -> None:
     lineages_by_length = defaultdict(list)
-    for lineage in lineages:
+    for lineage in detected_lineages:
         lineages_by_length[len(lineage)].append(lineage)
     if len(lineages_by_length) > 2:
         raise StepInputLineageError(
@@ -1320,14 +1366,13 @@ def get_all_data_lineage(
             )
     if len(lineages_by_length[lineage_lengths[-1]]) > 1 and len(lineage_lengths) < 2:
         raise StepInputLineageError(
-            public_message=f"If lineage differ at the last level, then Execution Engine requires at least one higher-dimension "
-            f"input that will come with common lineage, but this is not the case for step {step_name}.",
+            public_message=f"If lineage differ at the last level, then Execution Engine requires at least one "
+            f"higher-dimension  input that will come with common lineage, but this is not the "
+            f"case for step {step_name}.",
             context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
-    print("lineages_by_length", lineages_by_length)
     if len(lineage_lengths) == 2:
         reference_lineage = lineages_by_length[lineage_lengths[0]][0]
-        print("diff", reference_lineage, lineages_by_length[lineage_lengths[1]][0][:-1])
         if reference_lineage != lineages_by_length[lineage_lengths[1]][0][:-1]:
             raise StepInputLineageError(
                 public_message=f"Step `{step_name}` inputs does not share common lineage. Differing element: "
@@ -1335,24 +1380,35 @@ def get_all_data_lineage(
                 f"reference lineage prefix: {reference_lineage}",
                 context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
             )
-    return lineages
+
+
+def establish_step_execution_dimensionality(
+    inputs_dimensionalities: Dict[str, Set[int]],
+    output_dimensionality_offset: int,
+) -> int:
+    step_execution_dimensionality = 0
+    non_zero_dimensionalities = {
+        dimensionality
+        for dimensionalities in inputs_dimensionalities.values()
+        for dimensionality in dimensionalities
+        if dimensionality > 0
+    }
+    if len(non_zero_dimensionalities) > 0:
+        step_execution_dimensionality = min(non_zero_dimensionalities)
+        if output_dimensionality_offset < 0:
+            step_execution_dimensionality -= 1
+    return step_execution_dimensionality
 
 
 def establish_batch_oriented_step_lineage(
     step_selector: str,
     all_lineages: List[List[str]],
-    input_data: Dict[
-        str,
-        Union[
-            DynamicStepInputDefinition,
-            StaticStepInputDefinition,
-            CompoundStepInputDefinition,
-        ],
-    ],
+    input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
     output_dimensionality_offset: int,
 ) -> List[str]:
     reference_lineage = get_reference_lineage(
+        step_selector=step_selector,
         all_lineages=all_lineages,
         input_data=input_data,
         dimensionality_reference_property=dimensionality_reference_property,
@@ -1374,22 +1430,21 @@ def establish_batch_oriented_step_lineage(
 
 
 def get_reference_lineage(
+    step_selector: str,
     all_lineages: List[List[str]],
-    input_data: Dict[
-        str,
-        Union[
-            DynamicStepInputDefinition,
-            StaticStepInputDefinition,
-            CompoundStepInputDefinition,
-        ],
-    ],
+    input_data: StepInputData,
     dimensionality_reference_property: Optional[str],
 ) -> List[str]:
     if len(all_lineages) == 1:
         return copy(all_lineages[0])
     if dimensionality_reference_property not in input_data:
-        raise ValueError(
-            "Dimensionality reference property not set and that should be picked up earlier"
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler for step: `{step_selector}` expected dimensionality_reference_property "
+            f"presence to be verified at earlier stages, which did not happen as expected. "
+            f"This is most likely the bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
         )
     property_data = input_data[dimensionality_reference_property]
     if property_data.is_compound_input():
@@ -1399,15 +1454,24 @@ def get_reference_lineage(
                 lineage = copy(nested_element.data_lineage)
                 return lineage
         if lineage is None:
-            raise ValueError(
-                "Property cannot be taken as linage reference and that should be picked up earlier"
+            raise CompilerAssumptionError(
+                public_message=f"Workflow Compiler for step: `{step_selector}` cannot establish output lineage. "
+                f"At this stage it is expected to succeed - lack of success indicates bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full "
+                f"context of the problem - including workflow definition you use.",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
             )
-    else:
-        if not property_data.is_batch_oriented():
-            raise ValueError(
-                "Property cannot be taken as linage reference and that should be picked up earlier"
-            )
-        return copy(property_data.data_lineage)
+    if not property_data.is_batch_oriented():
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler for step: `{step_selector}` cannot establish output lineage. "
+            f"At this stage it is expected to succeed - lack of success indicates bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+        )
+    return copy(property_data.data_lineage)
 
 
 def add_super_input_node_in_execution_graph(
