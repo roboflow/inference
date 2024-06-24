@@ -1,11 +1,13 @@
 import itertools
+import logging
 from collections import defaultdict
 from copy import copy
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
 
 import networkx as nx
 from networkx import DiGraph
 
+from inference.core import logger
 from inference.core.workflows.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
@@ -18,6 +20,7 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
     BlockInterfaceError,
+    CompilerAssumptionError,
     ControlFlowDefinitionError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -29,6 +32,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
     DictOfStepInputDefinitions,
     DynamicStepInputDefinition,
+    ExecutionGraphNode,
     InputNode,
     ListOfStepInputDefinitions,
     NodeCategory,
@@ -36,7 +40,10 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     OutputNode,
     ParameterSpecification,
     ParsedWorkflowDefinition,
+    PropertyPredecessorDefinition,
     StaticStepInputDefinition,
+    StepInputData,
+    StepInputDefinition,
     StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.graph_traversal import (
@@ -69,6 +76,8 @@ from inference.core.workflows.execution_engine.introspection.selectors_parser im
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
+NodeTypeVar = TypeVar("NodeTypeVar", bound=ExecutionGraphNode)
+
 NODE_DEFINITION_KEY = "definition"
 STEP_INPUT_SELECTOR_PROPERTY = "step_input_selector"
 EXCLUDED_FIELDS = {"type", "name"}
@@ -87,7 +96,10 @@ def prepare_execution_graph(
             f"never end if executed.",
             context="workflow_compilation | execution_graph_construction",
         )
-    return execution_graph
+    return denote_data_flow_in_workflow(
+        execution_graph=execution_graph,
+        parsed_workflow_definition=workflow_definition,
+    )
 
 
 def construct_graph(
@@ -236,14 +248,18 @@ def add_edge_for_step(
             execution_graph=execution_graph,
         )
     if is_input_selector(target_step_parsed_selector.value):
-        input_node_compilation_data: InputNode = execution_graph.nodes[
-            target_step_parsed_selector.value
-        ][NODE_COMPILATION_OUTPUT_PROPERTY]
+        input_node_compilation_data = node_as(
+            execution_graph=execution_graph,
+            node=target_step_parsed_selector.value,
+            expected_type=InputNode,
+        )
         actual_input_kind = input_node_compilation_data.input_manifest.kind
     else:
-        other_step_compilation_data: StepNode = execution_graph.nodes[
-            target_step_selector
-        ][NODE_COMPILATION_OUTPUT_PROPERTY]
+        other_step_compilation_data = node_as(
+            execution_graph=execution_graph,
+            node=target_step_selector,
+            expected_type=StepNode,
+        )
         actual_input_kind = get_kind_of_value_provided_in_step_output(
             step_manifest=other_step_compilation_data.step_manifest,
             step_property=get_last_chunk_of_selector(
@@ -292,12 +308,16 @@ def establish_flow_control_edge(
     target_step_selector = get_step_selector_from_its_output(
         step_output_selector=target_step_parsed_selector.value
     )
-    source_compilation_data: StepNode = execution_graph.nodes[source_step_selector][
-        NODE_COMPILATION_OUTPUT_PROPERTY
-    ]
-    target_compilation_data: StepNode = execution_graph.nodes[target_step_selector][
-        NODE_COMPILATION_OUTPUT_PROPERTY
-    ]
+    source_compilation_data = node_as(
+        execution_graph=execution_graph,
+        node=source_step_selector,
+        expected_type=StepNode,
+    )
+    target_compilation_data = node_as(
+        execution_graph=execution_graph,
+        node=target_step_selector,
+        expected_type=StepNode,
+    )
     nodes_categories = {
         source_compilation_data.node_category,
         target_compilation_data.node_category,
@@ -441,7 +461,7 @@ def verify_output_selector_points_to_valid_output(
         )
 
 
-def denote_workflow_data_lineage(
+def denote_data_flow_in_workflow(
     execution_graph: DiGraph,
     parsed_workflow_definition: ParsedWorkflowDefinition,
 ) -> nx.DiGraph:
@@ -466,66 +486,107 @@ def denote_workflow_data_lineage(
         graph=execution_graph,
         start_node=super_input_node,
     ):
-        if is_input_node(execution_graph=execution_graph, node=node):
-            # everything already set there
-            continue
-        elif is_step_node(execution_graph=execution_graph, node=node):
-            execution_graph = set_dimensionality_for_step(
-                execution_graph=execution_graph,
-                node=node,
-                block_manifest_by_step_name=block_manifest_by_step_name,
-            )
-        elif is_output_node(execution_graph=execution_graph, node=node):
-            # output is allowed to have exactly one predecessor
-            predecessor_node = list(execution_graph.predecessors(node))[0]
-            predecessor_node_data: Union[StepNode, InputNode] = execution_graph.nodes[
-                predecessor_node
-            ][NODE_COMPILATION_OUTPUT_PROPERTY]
-            predecessor_node_lineage = predecessor_node_data.data_lineage
-            output_node_data: OutputNode = execution_graph.nodes[node][
-                NODE_COMPILATION_OUTPUT_PROPERTY
-            ]
-            output_node_data.data_lineage = predecessor_node_lineage
+        execution_graph = denote_data_flow_for_node(
+            execution_graph=execution_graph,
+            node=node,
+            block_manifest_by_step_name=block_manifest_by_step_name,
+        )
     execution_graph.remove_node(super_input_node)
     return execution_graph
 
 
-def set_dimensionality_for_step(
+def denote_data_flow_for_node(
     execution_graph: DiGraph,
     node: str,
     block_manifest_by_step_name: Dict[str, WorkflowBlockManifest],
 ) -> DiGraph:
-    all_predecessors = list(execution_graph.predecessors(node))
-    all_control_flow_predecessors = [
-        predecessor
-        for predecessor in all_predecessors
-        if is_flow_control_step(execution_graph=execution_graph, node=predecessor)
-    ]
-    all_non_control_flow_predecessors = [
-        predecessor
-        for predecessor in all_predecessors
-        if not is_flow_control_step(execution_graph=execution_graph, node=predecessor)
-    ]
-    input_data = collect_input_data(
-        manifest=block_manifest_by_step_name[get_last_chunk_of_selector(selector=node)],
+    if is_input_node(execution_graph=execution_graph, node=node):
+        # everything already set there, in the previous stage of compilation
+        return execution_graph
+    if is_step_node(execution_graph=execution_graph, node=node):
+        step_name = get_last_chunk_of_selector(selector=node)
+        if step_name not in block_manifest_by_step_name:
+            raise CompilerAssumptionError(
+                public_message=f"Workflow Compiler expected manifest for the step: {step_name} to be registered "
+                f"but this condition is not met. This is most likely the bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full "
+                f"context of the problem - including workflow definition you use.",
+                context="workflow_compilation | execution_graph_construction | retrieving_predecessors_for_output",
+            )
+        manifest = block_manifest_by_step_name[step_name]
+        return denote_data_flow_for_step(
+            execution_graph=execution_graph,
+            node=node,
+            manifest=manifest,
+        )
+    if is_output_node(execution_graph=execution_graph, node=node):
+        # output is allowed to have exactly one predecessor
+        output_predecessors = list(execution_graph.predecessors(node))
+        if len(output_predecessors) != 1:
+            raise CompilerAssumptionError(
+                public_message=f"Workflow Compiler expected each output in compiled graph to have one predecessor, "
+                f"but this condition is not met for node {node}. This is most likely the bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full "
+                f"context of the problem - including workflow definition you use.",
+                context="workflow_compilation | execution_graph_construction | retrieving_predecessors_for_output",
+            )
+        predecessor_node = output_predecessors[0]
+        predecessor_node_data = node_as(
+            execution_graph=execution_graph,
+            node=predecessor_node,
+            expected_type=ExecutionGraphNode,
+        )
+        predecessor_node_lineage = predecessor_node_data.data_lineage
+        output_node_data = node_as(
+            execution_graph=execution_graph,
+            node=node,
+            expected_type=OutputNode,
+        )
+        output_node_data.data_lineage = predecessor_node_lineage
+        return execution_graph
+    raise CompilerAssumptionError(
+        f"Workflow Compiler encountered node: {node} which cannot be classified as known node type. "
+        f"This is most likely the bug. Contact Roboflow team through github issues "
+        f"(https://github.com/roboflow/inference/issues) providing full "
+        f"context of the problem - including workflow definition you use.",
+        context="workflow_compilation | execution_graph_construction | denoting_data_flow_for_step",
+    )
+
+
+def denote_data_flow_for_step(
+    execution_graph: DiGraph,
+    node: str,
+    manifest: WorkflowBlockManifest,
+) -> DiGraph:
+    all_control_flow_predecessors, all_non_control_flow_predecessors = (
+        separate_flow_control_predecessors_from_data_providers(
+            execution_graph=execution_graph, node=node
+        )
+    )
+    input_data = build_input_data_for_step(
+        manifest=manifest,
         step_node=node,
-        all_non_control_flow_predecessors=all_non_control_flow_predecessors,
+        data_providing_predecessors=all_non_control_flow_predecessors,
         execution_graph=execution_graph,
     )
     step_name = get_last_chunk_of_selector(node)
-    step_node_data: StepNode = execution_graph.nodes[node][
-        NODE_COMPILATION_OUTPUT_PROPERTY
-    ]
-    print(f"input_data - {node}", input_data)
+    step_node_data = node_as(
+        execution_graph=execution_graph,
+        node=node,
+        expected_type=StepNode,
+    )
     inputs_dimensionalities = get_inputs_dimensionalities(
         step_name=step_name,
         input_data=input_data,
     )
-    print("inputs_dimensionalities", inputs_dimensionalities)
+    logger.debug(
+        f"For step: {node}, detected the following input dimensionalities: {inputs_dimensionalities}"
+    )
     parameters_with_batch_inputs = grab_parameters_defining_batch_inputs(
         inputs_dimensionalities=inputs_dimensionalities,
     )
-    manifest = block_manifest_by_step_name[step_name]
     dimensionality_reference_property = manifest.get_dimensionality_reference_property()
     input_dimensionality_offsets = manifest.get_input_dimensionality_offsets()
     output_dimensionality_offset = manifest.get_output_dimensionality_offset()
@@ -581,161 +642,252 @@ def set_dimensionality_for_step(
     return execution_graph
 
 
-def collect_input_data(
+def separate_flow_control_predecessors_from_data_providers(
+    execution_graph: DiGraph,
+    node: str,
+) -> Tuple[List[str], List[str]]:
+    all_predecessors = list(execution_graph.predecessors(node))
+    all_control_flow_predecessors = [
+        predecessor
+        for predecessor in all_predecessors
+        if is_flow_control_step(execution_graph=execution_graph, node=predecessor)
+    ]
+    all_non_control_flow_predecessors = [
+        predecessor
+        for predecessor in all_predecessors
+        if not is_flow_control_step(execution_graph=execution_graph, node=predecessor)
+    ]
+    return all_control_flow_predecessors, all_non_control_flow_predecessors
+
+
+def build_input_data_for_step(
     manifest: WorkflowBlockManifest,
     step_node: str,
-    all_non_control_flow_predecessors: List[str],
+    data_providing_predecessors: List[str],
     execution_graph: DiGraph,
-) -> Dict[
-    str,
-    Union[
-        DynamicStepInputDefinition,
-        StaticStepInputDefinition,
-        CompoundStepInputDefinition,
-    ],
-]:
-    print("manifest.name", manifest.name, all_non_control_flow_predecessors)
+) -> StepInputData:
+    predecessors_by_property_name = get_predecessors_for_step_manifest_properties(
+        execution_graph=execution_graph,
+        step_node=step_node,
+        data_providing_predecessors=data_providing_predecessors,
+    )
+    manifest_fields_values = get_manifest_fields_values(step_manifest=manifest)
+    result = {}
+    for name, value in manifest_fields_values.items():
+        result[name] = build_input_property(
+            step_node=step_node,
+            manifest_property_name=name,
+            manifest_property_value=value,
+            predecessors_by_property_name=predecessors_by_property_name,
+            execution_graph=execution_graph,
+        )
+    return result
+
+
+def get_predecessors_for_step_manifest_properties(
+    execution_graph: DiGraph, step_node: str, data_providing_predecessors: List[str]
+) -> Dict[str, List[PropertyPredecessorDefinition]]:
     predecessors_by_property_name = defaultdict(list)
-    for predecessor in all_non_control_flow_predecessors:
+    for predecessor in data_providing_predecessors:
         edge_data = execution_graph.edges[(predecessor, step_node)]
         if STEP_INPUT_SELECTOR_PROPERTY not in edge_data:
+            # this is needed, as special <super-input> node may be directly
+            # connected to step
             continue
         selector_associated_to_edge: ParsedSelector = edge_data[
             STEP_INPUT_SELECTOR_PROPERTY
         ]
+        definition = PropertyPredecessorDefinition(
+            predecessor_selector=predecessor,
+            parsed_selector=selector_associated_to_edge,
+        )
         predecessors_by_property_name[
             selector_associated_to_edge.definition.property_name
-        ].append((predecessor, selector_associated_to_edge))
-    manifest_fields_values = get_manifest_fields_values(step_manifest=manifest)
-    result = {}
-    for name, value in manifest_fields_values.items():
-        if isinstance(value, dict) and name in predecessors_by_property_name:
-            result[name] = build_nested_dict_of_input_data(
-                property_name=name,
-                value=value,
-                predecessors_by_property_name=predecessors_by_property_name,
-                execution_graph=execution_graph,
-            )
-        elif isinstance(value, list) and name in predecessors_by_property_name:
-            result[name] = build_nested_list_of_input_data(
-                property_name=name,
-                value=value,
-                predecessors_by_property_name=predecessors_by_property_name,
-                execution_graph=execution_graph,
-            )
-        else:
-            if name not in predecessors_by_property_name:
-                result[name] = StaticStepInputDefinition(
-                    parameter_specification=ParameterSpecification(
-                        parameter_name=name,
-                    ),
-                    category=NodeInputCategory.STATIC_VALUE,
-                    value=value,
-                )
-            else:
-                if len(predecessors_by_property_name[name]) != 1:
-                    raise ValueError("Should not meet more than one predecessor here")
-                predecessor_selector, predecessor_parsed_selector = (
-                    predecessors_by_property_name[name][0]
-                )
-                predecessor_node_data = execution_graph.nodes[predecessor_selector][
-                    NODE_COMPILATION_OUTPUT_PROPERTY
-                ]
-                if is_input_node(
-                    execution_graph=execution_graph, node=predecessor_selector
-                ):
-                    category = (
-                        NodeInputCategory.BATCH_INPUT_PARAMETER
-                        if predecessor_node_data.is_batch_oriented()
-                        else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
-                    )
-                    result[name] = DynamicStepInputDefinition(
-                        parameter_specification=ParameterSpecification(
-                            parameter_name=name,
-                        ),
-                        category=category,
-                        data_lineage=predecessor_node_data.data_lineage,
-                        selector=predecessor_node_data.selector,
-                    )
-                elif is_step_node(
-                    execution_graph=execution_graph, node=predecessor_selector
-                ):
-                    category = (
-                        NodeInputCategory.BATCH_STEP_OUTPUT
-                        if predecessor_node_data.output_dimensionality > 0
-                        else NodeInputCategory.NON_BATCH_STEP_OUTPUT
-                    )
-                    result[name] = DynamicStepInputDefinition(
-                        parameter_specification=ParameterSpecification(
-                            parameter_name=name,
-                        ),
-                        category=category,
-                        data_lineage=predecessor_node_data.data_lineage,
-                        selector=predecessor_parsed_selector.value,
-                    )
-                else:
-                    raise ValueError("Should not reach here")
-    return result
+        ].append(definition)
+    return predecessors_by_property_name
 
 
-def build_nested_dict_of_input_data(
-    property_name: str,
-    value: dict,
-    predecessors_by_property_name: Dict[str, List[Tuple[str, ParsedSelector]]],
+def build_input_property(
+    step_node: str,
+    manifest_property_name: str,
+    manifest_property_value: Any,
+    predecessors_by_property_name: Dict[str, List[PropertyPredecessorDefinition]],
     execution_graph: DiGraph,
-) -> DictOfStepInputDefinitions:
-    nested_property_name2data = {
-        e[1].key: e for e in predecessors_by_property_name[property_name]
-    }
-    result = {}
-    for k, v in value.items():
-        if k not in nested_property_name2data:
-            result[k] = StaticStepInputDefinition(
-                parameter_specification=ParameterSpecification(
-                    parameter_name=property_name,
-                    nested_element_key=k,
-                ),
-                category=NodeInputCategory.STATIC_VALUE,
-                value=v,
-            )
-            continue
-        referred_node_selector = nested_property_name2data[k][0]
-        referred_node_parsed_selector = nested_property_name2data[k][1]
-        referred_node_data = execution_graph.nodes[referred_node_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
-        if is_input_node(execution_graph=execution_graph, node=referred_node_selector):
-            category = (
-                NodeInputCategory.BATCH_INPUT_PARAMETER
-                if referred_node_data.is_batch_oriented()
-                else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
-            )
-            result[k] = DynamicStepInputDefinition(
-                parameter_specification=ParameterSpecification(
-                    parameter_name=property_name,
-                    nested_element_key=k,
-                ),
-                category=category,
-                data_lineage=referred_node_data.data_lineage,
-                selector=referred_node_data.selector,
-            )
-            continue
-        category = (
-            NodeInputCategory.BATCH_STEP_OUTPUT
-            if referred_node_data.output_dimensionality > 0
-            else NodeInputCategory.NON_BATCH_STEP_OUTPUT
-        )
-        result[k] = DynamicStepInputDefinition(
+) -> Union[StepInputDefinition, CompoundStepInputDefinition]:
+    if manifest_property_name not in predecessors_by_property_name:
+        return StaticStepInputDefinition(
             parameter_specification=ParameterSpecification(
-                parameter_name=property_name,
-                nested_element_key=k,
+                parameter_name=manifest_property_name,
+            ),
+            category=NodeInputCategory.STATIC_VALUE,
+            value=manifest_property_value,
+        )
+    if isinstance(manifest_property_value, dict):
+        return build_nested_dictionary_for_input_property(
+            step_node=step_node,
+            manifest_property_name=manifest_property_name,
+            manifest_property_value=manifest_property_value,
+            predecessors_definitions=predecessors_by_property_name[
+                manifest_property_name
+            ],
+            execution_graph=execution_graph,
+        )
+    if isinstance(manifest_property_value, list):
+        return build_nested_list_for_input_property(
+            step_node=step_node,
+            manifest_property_name=manifest_property_name,
+            manifest_property_value=manifest_property_value,
+            predecessors_definitions=predecessors_by_property_name[
+                manifest_property_name
+            ],
+            execution_graph=execution_graph,
+        )
+    matching_predecessors_data = predecessors_by_property_name[manifest_property_name]
+    if len(matching_predecessors_data) != 1:
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler deduced that property `{manifest_property_name}` of step `{step_node}` "
+            f"should be fed with data coming from exactly one execution graph node, but found "
+            f"{len(matching_predecessors_data)} data sources. This is most likely the bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+        )
+    predecessor_selector, predecessor_parsed_selector = (
+        matching_predecessors_data[0].predecessor_selector,
+        matching_predecessors_data[0].parsed_selector,
+    )
+    if is_input_node(execution_graph=execution_graph, node=predecessor_selector):
+        predecessor_node_data = node_as(
+            execution_graph=execution_graph,
+            node=matching_predecessors_data[0].predecessor_selector,
+            expected_type=InputNode,
+        )
+        category = (
+            NodeInputCategory.BATCH_INPUT_PARAMETER
+            if predecessor_node_data.is_batch_oriented()
+            else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
+        )
+        return DynamicStepInputDefinition(
+            parameter_specification=ParameterSpecification(
+                parameter_name=manifest_property_name,
             ),
             category=category,
-            data_lineage=referred_node_data.data_lineage,
-            selector=referred_node_parsed_selector.value,
+            data_lineage=predecessor_node_data.data_lineage,
+            selector=predecessor_node_data.selector,
+        )
+    if is_step_node(execution_graph=execution_graph, node=predecessor_selector):
+        predecessor_node_data = node_as(
+            execution_graph=execution_graph,
+            node=matching_predecessors_data[0].predecessor_selector,
+            expected_type=StepNode,
+        )
+        category = (
+            NodeInputCategory.BATCH_STEP_OUTPUT
+            if predecessor_node_data.output_dimensionality > 0
+            else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+        )
+        return DynamicStepInputDefinition(
+            parameter_specification=ParameterSpecification(
+                parameter_name=manifest_property_name,
+            ),
+            category=category,
+            data_lineage=predecessor_node_data.data_lineage,
+            selector=predecessor_parsed_selector.value,
+        )
+    raise CompilerAssumptionError(
+        public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
+        f"found data providing predecessor `{predecessor_selector}` which has unsupported step type."
+        f"This is most likely the bug. "
+        f"Contact Roboflow team through github issues "
+        f"(https://github.com/roboflow/inference/issues) providing full "
+        f"context of the problem - including workflow definition you use.",
+        context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+    )
+
+
+def build_nested_dictionary_for_input_property(
+    step_node: str,
+    manifest_property_name: str,
+    manifest_property_value: dict,
+    predecessors_definitions: List[PropertyPredecessorDefinition],
+    execution_graph: DiGraph,
+) -> DictOfStepInputDefinitions:
+    nested_property_name2data: Dict[Optional[str], PropertyPredecessorDefinition] = {
+        predecessor_definition.parsed_selector.key: predecessor_definition
+        for predecessor_definition in predecessors_definitions
+    }
+    result = {}
+    for nested_dict_key, nested_dict_value in manifest_property_value.items():
+        if nested_dict_key not in nested_property_name2data:
+            result[nested_dict_key] = StaticStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name=manifest_property_name,
+                    nested_element_key=nested_dict_key,
+                ),
+                category=NodeInputCategory.STATIC_VALUE,
+                value=nested_dict_value,
+            )
+            continue
+        referred_node_selector = nested_property_name2data[
+            nested_dict_key
+        ].predecessor_selector
+        referred_node_parsed_selector = nested_property_name2data[
+            nested_dict_key
+        ].parsed_selector
+        if is_input_node(execution_graph=execution_graph, node=referred_node_selector):
+            predecessor_node_data = node_as(
+                execution_graph=execution_graph,
+                node=referred_node_selector,
+                expected_type=InputNode,
+            )
+            category = (
+                NodeInputCategory.BATCH_INPUT_PARAMETER
+                if predecessor_node_data.is_batch_oriented()
+                else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
+            )
+            result[nested_dict_key] = DynamicStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name=manifest_property_name,
+                    nested_element_key=nested_dict_key,
+                ),
+                category=category,
+                data_lineage=predecessor_node_data.data_lineage,
+                selector=predecessor_node_data.selector,
+            )
+            continue
+        if is_step_node(execution_graph=execution_graph, node=referred_node_selector):
+            predecessor_node_data = node_as(
+                execution_graph=execution_graph,
+                node=referred_node_selector,
+                expected_type=StepNode,
+            )
+            category = (
+                NodeInputCategory.BATCH_STEP_OUTPUT
+                if predecessor_node_data.output_dimensionality > 0
+                else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+            )
+            result[nested_dict_key] = DynamicStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name=manifest_property_name,
+                    nested_element_key=nested_dict_key,
+                ),
+                category=category,
+                data_lineage=predecessor_node_data.data_lineage,
+                selector=referred_node_parsed_selector.value,
+            )
+            continue
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
+            f"found data providing predecessor `{referred_node_selector}` which has "
+            f"unsupported step type (key: {nested_dict_key} of nested data dictionary). "
+            f"This is most likely the bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
         )
     return DictOfStepInputDefinitions(
-        name=property_name,
+        name=manifest_property_name,
         nested_definitions=result,
     )
 
@@ -749,22 +901,23 @@ def get_manifest_fields_values(step_manifest: WorkflowBlockManifest) -> Dict[str
     return result
 
 
-def build_nested_list_of_input_data(
-    property_name: str,
-    value: list,
-    predecessors_by_property_name: Dict[str, List[Tuple[str, ParsedSelector]]],
+def build_nested_list_for_input_property(
+    step_node: str,
+    manifest_property_name: str,
+    manifest_property_value: list,
+    predecessors_definitions: List[PropertyPredecessorDefinition],
     execution_graph: DiGraph,
 ) -> ListOfStepInputDefinitions:
-    nested_index2data = {
-        e[1].index: e for e in predecessors_by_property_name[property_name]
+    nested_index2data: Dict[Optional[int], PropertyPredecessorDefinition] = {
+        e.parsed_selector.index: e for e in predecessors_definitions
     }
     result = []
-    for index, element in enumerate(value):
+    for index, element in enumerate(manifest_property_value):
         if index not in nested_index2data:
             result.append(
                 StaticStepInputDefinition(
                     parameter_specification=ParameterSpecification(
-                        parameter_name=property_name,
+                        parameter_name=manifest_property_name,
                         nested_element_index=index,
                     ),
                     category=NodeInputCategory.STATIC_VALUE,
@@ -772,47 +925,65 @@ def build_nested_list_of_input_data(
                 )
             )
             continue
-        referred_node_selector = nested_index2data[index][0]
-        referred_node_parsed_selector = nested_index2data[index][1]
-        referred_node_data = execution_graph.nodes[referred_node_selector][
-            NODE_COMPILATION_OUTPUT_PROPERTY
-        ]
+        referred_node_selector = nested_index2data[index].predecessor_selector
+        referred_node_parsed_selector = nested_index2data[index].parsed_selector
         if is_input_node(execution_graph=execution_graph, node=referred_node_selector):
+            predecessor_node_data = node_as(
+                execution_graph=execution_graph,
+                node=referred_node_selector,
+                expected_type=InputNode,
+            )
             category = (
                 NodeInputCategory.BATCH_INPUT_PARAMETER
-                if referred_node_data.is_batch_oriented()
+                if predecessor_node_data.is_batch_oriented()
                 else NodeInputCategory.NON_BATCH_INPUT_PARAMETER
             )
             result.append(
                 DynamicStepInputDefinition(
                     parameter_specification=ParameterSpecification(
-                        parameter_name=property_name,
+                        parameter_name=manifest_property_name,
                         nested_element_index=index,
                     ),
                     category=category,
-                    data_lineage=referred_node_data.data_lineage,
-                    selector=referred_node_data.selector,
+                    data_lineage=predecessor_node_data.data_lineage,
+                    selector=predecessor_node_data.selector,
                 )
             )
             continue
-        category = (
-            NodeInputCategory.BATCH_STEP_OUTPUT
-            if referred_node_data.output_dimensionality > 0
-            else NodeInputCategory.NON_BATCH_STEP_OUTPUT
-        )
-        result.append(
-            DynamicStepInputDefinition(
-                parameter_specification=ParameterSpecification(
-                    parameter_name=property_name,
-                    nested_element_index=index,
-                ),
-                category=category,
-                data_lineage=referred_node_data.data_lineage,
-                selector=referred_node_parsed_selector.value,
+        if is_step_node(execution_graph=execution_graph, node=referred_node_selector):
+            predecessor_node_data = node_as(
+                execution_graph=execution_graph,
+                node=referred_node_selector,
+                expected_type=StepNode,
             )
+            category = (
+                NodeInputCategory.BATCH_STEP_OUTPUT
+                if predecessor_node_data.output_dimensionality > 0
+                else NodeInputCategory.NON_BATCH_STEP_OUTPUT
+            )
+            result.append(
+                DynamicStepInputDefinition(
+                    parameter_specification=ParameterSpecification(
+                        parameter_name=manifest_property_name,
+                        nested_element_index=index,
+                    ),
+                    category=category,
+                    data_lineage=predecessor_node_data.data_lineage,
+                    selector=referred_node_parsed_selector.value,
+                )
+            )
+            continue
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler for property `{manifest_property_name}` of step `{step_node}` "
+            f"found data providing predecessor `{referred_node_selector}` which has "
+            f"unsupported step type (index: {index} of nested data list). "
+            f"This is most likely the bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
         )
     return ListOfStepInputDefinitions(
-        name=property_name,
+        name=manifest_property_name,
         nested_definitions=result,
     )
 
@@ -851,8 +1022,8 @@ def verify_output_offset(
 ) -> None:
     if not parameters_with_batch_inputs and output_dimensionality_offset != 0:
         raise BlockInterfaceError(
-            public_message=f"Block defining step {step_name} defines dimensionality offset different than zero while taking "
-            f"only non-batch parameters, which is not allowed.",
+            public_message=f"Block defining step {step_name} defines dimensionality offset different "
+            f"than zero while taking only non-batch parameters, which is not allowed.",
             context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if (
@@ -860,9 +1031,9 @@ def verify_output_offset(
         and dimensionality_reference_property not in parameters_with_batch_inputs
     ):
         raise BlockInterfaceError(
-            public_message=f"Block defining step {step_name} defines dimensionality reference property which is not in scope of "
-            f"parameters bring batch-oriented input, which makes it impossible to use as reference for output "
-            f"dimensionality.",
+            public_message=f"Block defining step {step_name} defines dimensionality reference property "
+            f"which is not in scope of parameters bring batch-oriented input, which makes it impossible "
+            f"to use as reference for output dimensionality.",
             context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if output_dimensionality_offset not in {-1, 0, 1}:
@@ -874,6 +1045,8 @@ def verify_output_offset(
         )
     different_offsets = {o for o in input_dimensionality_offsets.values()}
     if len(parameters_with_batch_inputs) != len(input_dimensionality_offsets):
+        # assumption of default offset being zero - and this one does not need to be manifested
+        # by block
         different_offsets.add(0)
     if 0 not in different_offsets and parameters_with_batch_inputs:
         raise BlockInterfaceError(
@@ -905,11 +1078,9 @@ def verify_input_data_dimensionality(
     inputs_dimensionalities: Dict[str, Set[int]],
     dimensionality_offstes: Dict[str, int],
 ) -> None:
-    print("inputs_dimensionalities", inputs_dimensionalities)
     parameter2offset_and_non_zero_dimensionality = {}
     for parameter_name, dimensionality in inputs_dimensionalities.items():
         parameter_offset = dimensionality_offstes.get(parameter_name, 0)
-        print("offset for parameter", parameter_name, parameter_offset)
         non_zero_dims = {d for d in dimensionality if d > 0}
         if len(non_zero_dims) > 1:
             raise ValueError("Should not be possible here")
@@ -1032,15 +1203,7 @@ def get_lineage_prefixes(lineage: List[str]) -> List[List[str]]:
 
 
 def get_inputs_dimensionalities(
-    step_name: str,
-    input_data: Dict[
-        str,
-        Union[
-            DynamicStepInputDefinition,
-            StaticStepInputDefinition,
-            CompoundStepInputDefinition,
-        ],
-    ],
+    step_name: str, input_data: StepInputData
 ) -> Dict[str, Set[int]]:
     result = defaultdict(set)
     dimensionalities_spotted = set()
@@ -1265,3 +1428,39 @@ def add_super_input_node_in_execution_graph(
     for node in nodes_to_attach_super_input_into:
         execution_graph.add_edge(super_input_node, node)
     return execution_graph
+
+
+def node_as(
+    execution_graph: DiGraph, node: str, expected_type: Type[NodeTypeVar]
+) -> NodeTypeVar:
+    if node not in execution_graph.nodes:
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler expected node: {node} to be present in execution graph, "
+            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    if NODE_COMPILATION_OUTPUT_PROPERTY not in execution_graph.nodes[node]:
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler expected key: {NODE_COMPILATION_OUTPUT_PROPERTY} to be present "
+            f"for node {node} in execution graph, "
+            f"but condition failed to be met. This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    node_data: ExecutionGraphNode = execution_graph.nodes[node][
+        NODE_COMPILATION_OUTPUT_PROPERTY
+    ]
+    if not isinstance(node_data, expected_type):
+        node_data_type = type(node_data)
+        raise CompilerAssumptionError(
+            public_message=f"Workflow Compiler expected compilation output for node {node}"
+            f"to be {expected_type}, but found: {node_data_type}. "
+            f"This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_compilation | execution_graph_construction | retrieving_compiled_node",
+        )
+    return node_data

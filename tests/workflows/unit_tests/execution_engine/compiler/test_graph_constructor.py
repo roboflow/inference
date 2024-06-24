@@ -13,18 +13,18 @@ from inference.core.workflows.errors import (
     ReferenceTypeError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
+    DynamicStepInputDefinition,
     InputNode,
     NodeCategory,
+    NodeInputCategory,
     OutputNode,
+    ParameterSpecification,
     ParsedWorkflowDefinition,
+    StaticStepInputDefinition,
     StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
-    add_input_nodes_for_graph,
     prepare_execution_graph,
-)
-from inference.core.workflows.execution_engine.compiler.utils import (
-    FLOW_CONTROL_NODE_KEY,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (
     ExampleFlowControlBlockManifest,
@@ -41,7 +41,7 @@ def test_execution_graph_construction_for_trivial_workflow() -> None:
     step_manifest = ExampleModelBlockManifest(
         type="ExampleModel",
         name="model_1",
-        image="$inputs.image",
+        images="$inputs.image",
         model_id="my_model",
     )
     output_manifest = JsonField(
@@ -78,15 +78,47 @@ def test_execution_graph_construction_for_trivial_workflow() -> None:
         node_category=NodeCategory.STEP_NODE,
         name="model_1",
         selector="$steps.model_1",
-        data_lineage=[],  # lineage is set later in code
+        data_lineage=["<workflow_input>"],
         step_manifest=step_manifest,
+        input_data={
+            "images": DynamicStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name="images",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.BATCH_INPUT_PARAMETER,
+                data_lineage=["<workflow_input>"],
+                selector="$inputs.image",
+            ),
+            "model_id": StaticStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name="model_id",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.STATIC_VALUE,
+                value="my_model",
+            ),
+            "string_value": StaticStepInputDefinition(  # default value provided at step level
+                parameter_specification=ParameterSpecification(
+                    parameter_name="string_value",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.STATIC_VALUE,
+                value=None,
+            ),
+        },
+        batch_oriented_parameters={"images"},
+        step_execution_dimensionality=1,
     ), "Model node must be created correctly"
     output_node = result.nodes["$outputs.predictions"]["node_compilation_output"]
     assert output_node == OutputNode(
         node_category=NodeCategory.OUTPUT_NODE,
         name="predictions",
         selector="$outputs.predictions",
-        data_lineage=[],  # lineage is set later in code
+        data_lineage=["<workflow_input>"],
         output_manifest=output_manifest,
     ), "Output node must be created correctly"
     assert result.has_edge(

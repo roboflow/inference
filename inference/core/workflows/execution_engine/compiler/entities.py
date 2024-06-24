@@ -6,6 +6,9 @@ from typing import Any, Dict, Generator, List, Optional, Set, Type, Union
 import networkx as nx
 
 from inference.core.workflows.entities.base import InputType, JsonField
+from inference.core.workflows.execution_engine.introspection.entities import (
+    ParsedSelector,
+)
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -198,17 +201,13 @@ class DictOfStepInputDefinitions(CompoundStepInputDefinition):
             yield definition
 
 
+StepInputData = Dict[str, Union[StepInputDefinition, CompoundStepInputDefinition]]
+
+
 @dataclass
 class StepNode(ExecutionGraphNode):
     step_manifest: WorkflowBlockManifest
-    input_data: Dict[
-        str,
-        Union[
-            DynamicStepInputDefinition,
-            StaticStepInputDefinition,
-            CompoundStepInputDefinition,
-        ],
-    ] = field(default_factory=dict)
+    input_data: StepInputData = field(default_factory=dict)
     dimensionality_reference_property: Optional[str] = None
     child_execution_branches: Dict[str, str] = field(default_factory=dict)
     execution_branches_impacting_inputs: Set[str] = field(default_factory=set)
@@ -226,3 +225,9 @@ class StepNode(ExecutionGraphNode):
 
     def is_batch_oriented(self) -> bool:
         return len(self.batch_oriented_parameters) > 0
+
+
+@dataclass(frozen=True)
+class PropertyPredecessorDefinition:
+    predecessor_selector: str
+    parsed_selector: ParsedSelector

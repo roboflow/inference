@@ -37,6 +37,10 @@ class WorkflowCompilerError(WorkflowError):
     pass
 
 
+class CompilerAssumptionError(WorkflowCompilerError):
+    pass
+
+
 class PluginLoadingError(WorkflowCompilerError):
     pass
 
