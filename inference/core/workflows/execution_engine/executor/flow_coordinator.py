@@ -21,9 +21,7 @@ class StepExecutionCoordinator(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def get_steps_to_execute_next(
-        self
-    ) -> Optional[List[str]]:
+    def get_steps_to_execute_next(self) -> Optional[List[str]]:
         pass
 
 
@@ -38,9 +36,7 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
         self.__execution_order: Optional[List[List[str]]] = None
         self.__execution_pointer = 0
 
-    def get_steps_to_execute_next(
-        self
-    ) -> Optional[List[str]]:
+    def get_steps_to_execute_next(self) -> Optional[List[str]]:
         if self.__execution_order is None:
             self.__execution_order = establish_execution_order(
                 execution_graph=self._execution_graph
@@ -49,8 +45,7 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
         next_step = None
         while self.__execution_pointer < len(self.__execution_order):
             candidate_steps = [
-                e
-                for e in self.__execution_order[self.__execution_pointer]
+                e for e in self.__execution_order[self.__execution_pointer]
             ]
             self.__execution_pointer += 1
             if len(candidate_steps) == 0:

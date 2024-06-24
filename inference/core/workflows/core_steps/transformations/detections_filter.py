@@ -1,20 +1,11 @@
-from copy import copy
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    DEFAULT_OPERAND_NAME,
     AllOperationsType,
     OperationDefinition,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.core import (
-    build_operations_chain,
-)
-from inference.core.workflows.core_steps.common.utils import (
-    grab_batch_parameters,
-    grab_non_batch_parameters,
 )
 from inference.core.workflows.core_steps.transformations.detections_transformation import (
     execute_transformation,
@@ -24,7 +15,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,

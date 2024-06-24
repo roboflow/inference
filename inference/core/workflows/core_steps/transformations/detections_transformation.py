@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -21,7 +21,6 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,

@@ -377,7 +377,7 @@ def get_non_compound_parameter_value(
         data=batch_input,
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
-    return result, result._indices
+    return result, result.indices
 
 
 def reduce_batch_dimensionality(
@@ -437,13 +437,12 @@ def get_empty_indices(value: Any) -> Set[DynamicBatchIndex]:
             value_result = get_empty_indices(v)
             result = result.union(value_result)
     if isinstance(value, Batch):
-        indices = value._indices
-        for i, v in zip(indices, value):
-            if isinstance(v, Batch):
-                value_result = get_empty_indices(v)
+        for index, value_element in value.iter_with_indices():
+            if isinstance(value_element, Batch):
+                value_result = get_empty_indices(value=value_element)
                 result = result.union(value_result)
-            elif v is None:
-                result.add(i)
+            elif value_element is None:
+                result.add(index)
     return result
 
 
@@ -456,7 +455,7 @@ def filter_parameters(value: Any, empty_indices: Set[DynamicBatchIndex]) -> Any:
     if isinstance(value, list):
         return [filter_parameters(value=v, empty_indices=empty_indices) for v in value]
     if isinstance(value, Batch):
-        return value.filter_by_indices(indices_to_remove=empty_indices)
+        return value.remove_by_indices(indices_to_remove=empty_indices)
     return value
 
 
