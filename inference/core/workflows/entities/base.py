@@ -130,7 +130,7 @@ class Batch(Generic[B]):
         for index, element in self.iter_with_indices():
             if index in indices_to_remove:
                 continue
-            content.append(content)
+            content.append(element)
             new_indices.append(index)
         return Batch(content=content, indices=new_indices)
 
