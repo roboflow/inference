@@ -21,7 +21,7 @@ class BranchingManager:
     def register_batch_oriented_mask(
         self,
         execution_branch: str,
-        mask: set[DynamicBatchIndex],
+        mask: Set[DynamicBatchIndex],
     ) -> None:
         if execution_branch in self._masks:
             raise ValueError(
