@@ -132,7 +132,10 @@ class Batch(Generic[B]):
                 continue
             content.append(element)
             new_indices.append(index)
-        return Batch(content=content, indices=new_indices)
+        return Batch(
+            content=content,
+            indices=new_indices,
+        )
 
     def iter_with_indices(self) -> Iterator[Tuple[Tuple[int, ...], B]]:
         for index, element in zip(self._indices, self._content):
