@@ -22,7 +22,7 @@ class StepExecutionCoordinator(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_steps_to_execute_next(
-        self, steps_to_discard: Set[str]
+        self
     ) -> Optional[List[str]]:
         pass
 
@@ -35,25 +35,22 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
 
     def __init__(self, execution_graph: nx.DiGraph):
         self._execution_graph = execution_graph.copy()
-        self._discarded_steps: Set[str] = set()
         self.__execution_order: Optional[List[List[str]]] = None
         self.__execution_pointer = 0
 
     def get_steps_to_execute_next(
-        self, steps_to_discard: Set[str]
+        self
     ) -> Optional[List[str]]:
         if self.__execution_order is None:
             self.__execution_order = establish_execution_order(
                 execution_graph=self._execution_graph
             )
             self.__execution_pointer = 0
-        self._discarded_steps.update(steps_to_discard)
         next_step = None
         while self.__execution_pointer < len(self.__execution_order):
             candidate_steps = [
                 e
                 for e in self.__execution_order[self.__execution_pointer]
-                if e not in self._discarded_steps
             ]
             self.__execution_pointer += 1
             if len(candidate_steps) == 0:

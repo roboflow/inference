@@ -33,7 +33,7 @@ async def run_workflow(
     execution_coordinator = ParallelStepExecutionCoordinator.init(
         execution_graph=workflow.execution_graph,
     )
-    next_steps = execution_coordinator.get_steps_to_execute_next(steps_to_discard=set())
+    next_steps = execution_coordinator.get_steps_to_execute_next()
     while next_steps is not None:
         await execute_steps(
             next_steps=next_steps,
@@ -41,9 +41,7 @@ async def run_workflow(
             execution_data_manager=execution_data_manager,
             max_concurrent_steps=max_concurrent_steps,
         )
-        next_steps = execution_coordinator.get_steps_to_execute_next(
-            steps_to_discard=set()
-        )
+        next_steps = execution_coordinator.get_steps_to_execute_next()
     return construct_workflow_output(
         workflow_outputs=workflow.workflow_definition.outputs,
         execution_data_manager=execution_data_manager,
