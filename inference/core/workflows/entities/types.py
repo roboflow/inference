@@ -673,5 +673,4 @@ FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class FlowControl(BaseModel):
-    mode: Literal["pass", "terminate_branch", "select_step"]
     context: Optional[Union[str, List[str]]] = Field(default=None)
