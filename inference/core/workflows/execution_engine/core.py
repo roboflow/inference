@@ -2,6 +2,7 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
+from inference.core.env import API_KEY
 from inference.core.workflows.entities.base import StepExecutionMode
 from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
@@ -24,7 +25,11 @@ class ExecutionEngine:
         max_concurrent_steps: int = 1,
         step_execution_mode: StepExecutionMode = StepExecutionMode.LOCAL,
         prevent_local_images_loading: bool = False,
+        api_key: Optional[str] = "",
+        workflow_id: Optional[str] = "",
     ) -> "ExecutionEngine":
+        if api_key is None:
+            api_key = API_KEY
         if init_parameters is None:
             init_parameters = {}
         compiled_workflow = compile_workflow(
@@ -36,6 +41,8 @@ class ExecutionEngine:
             max_concurrent_steps=max_concurrent_steps,
             step_execution_mode=step_execution_mode,
             prevent_local_images_loading=prevent_local_images_loading,
+            api_key=api_key,
+            workflow_id=workflow_id,
         )
 
     def __init__(
@@ -44,16 +51,21 @@ class ExecutionEngine:
         max_concurrent_steps: int,
         step_execution_mode: StepExecutionMode,
         prevent_local_images_loading: bool,
+        api_key: Optional[str] = "",
+        workflow_id: Optional[str] = "",
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
         self._step_execution_mode = step_execution_mode
         self._prevent_local_images_loading = prevent_local_images_loading
+        self._api_key = api_key
+        self._workflow_id = workflow_id
 
     def run(
         self,
         runtime_parameters: Dict[str, Any],
         event_loop: Optional[AbstractEventLoop] = None,
+        fps: Optional[float] = 0,
     ) -> Dict[str, Any]:
         if event_loop is None:
             try:
@@ -61,11 +73,11 @@ class ExecutionEngine:
             except:
                 event_loop = asyncio.new_event_loop()
         return event_loop.run_until_complete(
-            self.run_async(runtime_parameters=runtime_parameters)
+            self.run_async(runtime_parameters=runtime_parameters, fps=fps)
         )
 
     async def run_async(
-        self, runtime_parameters: Dict[str, Any]
+        self, runtime_parameters: Dict[str, Any], fps: Optional[float] = 0
     ) -> Dict[str, List[Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
@@ -81,4 +93,7 @@ class ExecutionEngine:
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
             step_execution_mode=self._step_execution_mode,
+            usage_fps=fps,
+            usage_api_key=self._api_key,
+            usage_workflow_id=self._workflow_id,
         )

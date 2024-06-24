@@ -23,9 +23,11 @@ from inference.core.workflows.execution_engine.executor.output_constructor impor
 from inference.core.workflows.execution_engine.executor.parameters_assembler import (
     assembly_step_parameters,
 )
+from inference.usage_tracking.collector import usage_collector
 from inference_sdk.http.utils.iterables import make_batches
 
 
+@usage_collector
 async def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
