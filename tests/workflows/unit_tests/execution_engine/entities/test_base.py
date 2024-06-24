@@ -16,9 +16,21 @@ from inference.core.workflows.entities.base import (
 )
 
 
+def test_initialising_batch_with_misaligned_indices() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = Batch.init(
+            content=[1, "2", None, 3.0],
+            indices=[(0,), (3,)],
+        )
+
+
 def test_standard_iteration_through_batch() -> None:
     # given
-    batch = Batch(content=[1, "2", None, 3.0])
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0, ), (1, ), (2, ), (3, )],
+    )
 
     # when
     result = list(batch)
@@ -27,9 +39,26 @@ def test_standard_iteration_through_batch() -> None:
     assert result == [1, "2", None, 3.0]
 
 
+def test_standard_iteration_through_batch_with_indices() -> None:
+    # given
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0, ), (1, ), (2, ), (3, )],
+    )
+
+    # when
+    result = list(batch.iter_with_indices())
+
+    # then
+    assert result == [((0, ), 1), ((1,), "2"), ((2, ), None), ((3, ), 3.0)]
+
+
 def test_getting_batch_length() -> None:
     # given
-    batch = Batch(content=[1, "2", None, 3.0])
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0,), (1,), (2,), (3,)],
+    )
 
     # when
     result = len(batch)
@@ -38,9 +67,12 @@ def test_getting_batch_length() -> None:
     assert result == 4
 
 
-def test_getting_batch_element_when_single_element_chosen() -> None:
+def test_getting_batch_element_when_valid_element_is_chosen() -> None:
     # given
-    batch = Batch(content=[1, "2", None, 3.0])
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0,), (1,), (2,), (3,)],
+    )
 
     # when
     result = batch[1]
@@ -49,9 +81,24 @@ def test_getting_batch_element_when_single_element_chosen() -> None:
     assert result == "2"
 
 
+def test_getting_batch_element_when_valid_invalid_element_is_chosen() -> None:
+    # given
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0,), (1,), (2,), (3,)],
+    )
+
+    # when
+    with pytest.raises(IndexError):
+        _ = batch[5]
+
+
 def test_broadcast_batch_when_requested_size_is_equal_to_batch_size() -> None:
     # given
-    batch = Batch(content=[1, "2", None, 3.0])
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0,), (1,), (2,), (3,)],
+    )
 
     # when
     result = batch.broadcast(n=4)
@@ -62,7 +109,10 @@ def test_broadcast_batch_when_requested_size_is_equal_to_batch_size() -> None:
 
 def test_broadcast_batch_when_requested_size_is_valid_and_batch_size_is_one() -> None:
     # given
-    batch = Batch(content=[1])
+    batch = Batch.init(
+        content=[1],
+        indices=[(0, )]
+    )
 
     # when
     result = batch.broadcast(n=4)
@@ -75,7 +125,7 @@ def test_broadcast_batch_when_requested_size_is_valid_and_batch_size_is_not_matc
     None
 ):
     # given
-    batch = Batch(content=[1, 2])
+    batch = Batch.init(content=[1, 2], indices=[(0, ), (1, )])
 
     # when
     with pytest.raises(ValueError):
@@ -84,7 +134,7 @@ def test_broadcast_batch_when_requested_size_is_valid_and_batch_size_is_not_matc
 
 def test_broadcast_batch_when_requested_size_is_invalid() -> None:
     # given
-    batch = Batch(content=[1, 2])
+    batch = Batch.init(content=[1, 2], indices=[(0,), (1,)])
 
     # when
     with pytest.raises(ValueError):

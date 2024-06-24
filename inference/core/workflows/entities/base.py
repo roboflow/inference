@@ -104,7 +104,7 @@ class Batch(Generic[B]):
     def __init__(
         self,
         content: List[B],
-        indices: Optional[List[Tuple[int, ...]]] = None,
+        indices: Optional[List[Tuple[int, ...]]],
     ):
         self._content = content
         self._indices = indices
@@ -141,15 +141,15 @@ class Batch(Generic[B]):
         for index, element in zip(self._indices, self._content):
             yield index, element
 
-    def broadcast(self, n: int) -> List[B]:
+    def broadcast(self, n: int) -> "Batch":
         if n <= 0:
             raise ValueError(
                 f"Broadcast to size {n} requested which is invalid operation."
             )
         if len(self._content) == n:
-            return self._content
+            return self
         if len(self._content) == 1:
-            return [self._content[0]] * n
+            return Batch(content=[self._content[0]] * n, indices=[self._indices[0]] * n)
         raise ValueError(
             f"Could not broadcast batch of size {len(self._content)} to size {n}"
         )

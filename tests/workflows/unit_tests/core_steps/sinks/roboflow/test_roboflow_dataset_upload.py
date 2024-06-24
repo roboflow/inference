@@ -575,8 +575,8 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
     # when
     with pytest.raises(ValueError):
         _ = await data_collector_block.run(
-            images=Batch(content=[]),
-            predictions=Batch(content=[]),
+            images=Batch(content=[], indices=[]),
+            predictions=Batch(content=[], indices=[]),
             target_project="my_project",
             usage_quota_name="my_quota",
             persist_predictions=True,
@@ -612,11 +612,12 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
             {"class": "truck", "confidence": 0.3},
         ],
     }
+    indices = [(0, ), (1, ), (2, )]
 
     # when
     result = await data_collector_block.run(
-        images=Batch(content=[image, image, image]),
-        predictions=Batch(content=[prediction, prediction, prediction]),
+        images=Batch(content=[image, image, image], indices=indices),
+        predictions=Batch(content=[prediction, prediction, prediction], indices=indices),
         target_project="my_project",
         usage_quota_name="my_quota",
         persist_predictions=True,
@@ -666,11 +667,12 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
             {"class": "truck", "confidence": 0.3},
         ],
     }
+    indices = [(0,), (1,), (2,)]
 
     # when
     result = await data_collector_block.run(
-        images=Batch(content=[image, image, image]),
-        predictions=Batch(content=[prediction, prediction, prediction]),
+        images=Batch(content=[image, image, image], indices=indices),
+        predictions=Batch(content=[prediction, prediction, prediction], indices=indices),
         target_project="my_project",
         usage_quota_name="my_quota",
         persist_predictions=True,
@@ -725,11 +727,12 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
         ],
     }
     execute_registration_mock.return_value = False, "OK"
+    indices = [(0, ), (1, ), (2, )]
 
     # when
     result = await data_collector_block.run(
-        images=Batch(content=[image, image, image]),
-        predictions=Batch(content=[prediction, prediction, prediction]),
+        images=Batch(content=[image, image, image], indices=indices),
+        predictions=Batch(content=[prediction, prediction, prediction], indices=indices),
         target_project="my_project",
         usage_quota_name="my_quota",
         persist_predictions=True,

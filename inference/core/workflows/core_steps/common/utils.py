@@ -321,7 +321,7 @@ def grab_batch_parameters(
     main_batch_size: int,
 ) -> Dict[str, Any]:
     return {
-        key: Batch(value.broadcast(n=main_batch_size))
+        key: value.broadcast(n=main_batch_size)
         for key, value in operations_parameters.items()
         if isinstance(value, Batch)
     }

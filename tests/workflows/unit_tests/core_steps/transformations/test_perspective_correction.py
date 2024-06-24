@@ -33,7 +33,7 @@ def test_pick_largest_perspective_polygons_raises_on_unexpected_type_of_batch_el
         pick_largest_perspective_polygons(perspective_polygons_batch=broken_input)
 
 
-@pytest.mark.parametrize("empty_batch", [[], Batch([])])
+@pytest.mark.parametrize("empty_batch", [[], Batch(content=[], indices=[])])
 def test_pick_largest_perspective_polygons_raises_on_empty_batch(empty_batch):
     with pytest.raises(ValueError, match="Unexpected empty batch"):
         pick_largest_perspective_polygons(perspective_polygons_batch=empty_batch)

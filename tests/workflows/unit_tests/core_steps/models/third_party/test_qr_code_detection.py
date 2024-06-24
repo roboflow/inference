@@ -54,12 +54,13 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
     step = QRCodeDetectorBlock()
     images = Batch(
-        [
+        content=[
             WorkflowImageData(
                 parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=qr_codes_image,
             )
-        ]
+        ],
+        indices=[(0, )]
     )
 
     # when

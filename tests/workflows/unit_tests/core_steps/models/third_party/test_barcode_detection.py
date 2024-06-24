@@ -54,12 +54,13 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     # given
     step = BarcodeDetectorBlock()
     images = Batch(
-        [
+        content=[
             WorkflowImageData(
                 parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=barcode_image,
             )
-        ]
+        ],
+        indices=[(0, )]
     )
 
     # when
