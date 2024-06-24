@@ -22,13 +22,17 @@ def assembly_runtime_parameters(
     defined_inputs: List[InputType],
     prevent_local_images_loading: bool = False,
 ) -> Dict[str, Any]:
+    batch_input_size: Optional[int] = None
     for defined_input in defined_inputs:
         if isinstance(defined_input, WorkflowImage):
             runtime_parameters[defined_input.name] = assembly_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),
+                batch_input_size=batch_input_size,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
+            print("NAME", defined_input.name)
+            batch_input_size = len(runtime_parameters[defined_input.name])
         else:
             runtime_parameters[defined_input.name] = assembly_inference_parameter(
                 parameter=defined_input.name,
@@ -41,6 +45,7 @@ def assembly_runtime_parameters(
 def assembly_input_image(
     parameter: str,
     image: Any,
+    batch_input_size: Optional[int],
     prevent_local_images_loading: bool = False,
 ) -> List[WorkflowImageData]:
     if image is None:
@@ -50,14 +55,15 @@ def assembly_input_image(
             context="workflow_execution | runtime_input_validation",
         )
     if not isinstance(image, list):
+        expected_input_length = 1 if batch_input_size is None else batch_input_size
         return [
             _assembly_input_image(
                 parameter=parameter,
                 image=image,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
-        ]
-    return [
+        ] * expected_input_length
+    result = [
         _assembly_input_image(
             parameter=parameter,
             image=element,
@@ -66,6 +72,17 @@ def assembly_input_image(
         )
         for idx, element in enumerate(image)
     ]
+    expected_input_length = (
+        len(result) if batch_input_size is None else batch_input_size
+    )
+    if len(result) != expected_input_length:
+        raise RuntimeInputError(
+            public_message="Expected all batch-oriented workflow inputs be the same length, or of length 1 - "
+            f"but parameter: {parameter} provided with batch size {len(result)}, where expected "
+            f"batch size based on remaining parameters is: {expected_input_length}.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return result
 
 
 def _assembly_input_image(
