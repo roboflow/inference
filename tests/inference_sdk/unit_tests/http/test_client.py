@@ -167,7 +167,6 @@ async def test_wrap_errors_async_when_http_error_occurs() -> None:
     # given
     @wrap_errors_async
     async def example() -> None:
-
         raise ClientResponseError(
             request_info=RequestInfo(
                 url=URL("https://some.com"),
@@ -1420,6 +1419,64 @@ async def test_infer_from_api_v0_async_when_request_succeed_for_object_detection
                 ],
             },
         ]
+
+
+@mock.patch.object(client, "load_static_inference_input")
+def test_infer_from_api_v0_when_request_succeed_for_object_detection_with_visualisation_and_json(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
+    configuration = InferenceConfiguration(
+        confidence_threshold=0.5, format="image_and_json"
+    )
+    http_client.configure(inference_configuration=configuration)
+    requests_mock.post(
+        f"{api_url}/some/1",
+        json={
+            "image": {"height": 480, "width": 640},
+            "predictions": [
+                {
+                    "x": 100.0,
+                    "y": 200.0,
+                    "width": 200.0,
+                    "height": 300.0,
+                    "confidence": 0.9,
+                    "class": "A",
+                }
+            ],
+            "visualization": "aGVsbG8=",
+        },
+        headers={"content-type": "application/json"},
+    )
+
+    # when
+    result = http_client.infer_from_api_v0(
+        inference_input="https://some/image.jpg", model_id="some/1"
+    )
+
+    # then
+    assert result == {
+        "visualization": "aGVsbG8=",
+        "image": {"height": 960, "width": 1280},
+        "predictions": [
+            {
+                "x": 200.0,
+                "y": 400.0,
+                "width": 400.0,
+                "height": 600.0,
+                "confidence": 0.9,
+                "class": "A",
+            }
+        ],
+    }
+    assert (
+        requests_mock.last_request.query
+        == "api_key=my-api-key&confidence=0.5&format=image_and_json&disable_active_learning=false"
+    )
 
 
 @mock.patch.object(client, "load_static_inference_input")
