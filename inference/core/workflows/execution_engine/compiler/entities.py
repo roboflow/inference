@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Type
+from typing import Any, Dict, List, Type
 
 import networkx as nx
 
@@ -46,3 +46,4 @@ class CompiledWorkflow:
     execution_graph: nx.DiGraph
     steps: Dict[str, InitialisedStep]
     input_substitutions: List[InputSubstitution]
+    workflow_json: Dict[str, Any]

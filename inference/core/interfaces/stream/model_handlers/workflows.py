@@ -32,8 +32,11 @@ class WorkflowRunner:
         if workflows_parameters is None:
             workflows_parameters = {}
         workflows_parameters[image_input_name] = video_frames[0].image
+        fps = video_frames[0].fps
         return [
             execution_engine.run(
-                runtime_parameters=workflows_parameters, event_loop=self._event_loop
+                runtime_parameters=workflows_parameters,
+                event_loop=self._event_loop,
+                fps=fps,
             )
         ]
