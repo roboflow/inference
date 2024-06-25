@@ -167,6 +167,7 @@ class LoRAPaliGemma(PaliGemma):
         super().__init__(model_id, *args, **kwargs)
 
     def initialize_model(self):
+        print("INITING THE HECK OUT OF THE LORA")
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision

@@ -149,7 +149,7 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models import PaliGemma
+    from inference.models import PaliGemma, LoRAPaliGemma
 
     paligemma_models = {
         (
@@ -164,6 +164,18 @@ try:
         ): PaliGemma,  # TODO: change when we have a new project type
         ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
         ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+        (
+            "object-detection",
+            "paligemma-3b-pt-224-peft",
+        ): LoRAPaliGemma,  # TODO: change when we have a new project type
+        ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+        ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+        (
+            "instance-segmentation",
+            "paligemma-3b-pt-224-peft",
+        ): LoRAPaliGemma,  # TODO: change when we have a new project type
+        ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+        ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
