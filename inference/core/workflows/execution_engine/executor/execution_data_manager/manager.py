@@ -514,7 +514,7 @@ def is_dynamic_step_input_registered(
     if is_step_output_selector(selector_or_value=selector):
         step_selector = get_step_selector_from_its_output(step_output_selector=selector)
         step_name = get_last_chunk_of_selector(selector=step_selector)
-        return execution_cache.is_step_output_registered(step_name=step_name)
+        return execution_cache.is_step_output_data_registered(step_name=step_name)
     raise ExecutionEngineRuntimeError(
         public_message=f"Error in execution engine. Not recognised type of selector: {selector}. "
         f"This is most likely bug. "

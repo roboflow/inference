@@ -93,6 +93,27 @@ def test_getting_batch_element_when_valid_invalid_element_is_chosen() -> None:
         _ = batch[5]
 
 
+def test_filtering_out_batch_elements() -> None:
+    # given
+    batch = Batch.init(
+        content=[1, "2", None, 3.0],
+        indices=[(0,), (1,), (2,), (3,)],
+    )
+
+    # when
+    result = batch.remove_by_indices(indices_to_remove={(1,), (2,), (5,)})
+
+    # then
+    assert result.indices == [
+        (0,),
+        (3,),
+    ], "Expected to see only first and last original index"
+    assert list(result) == [
+        1,
+        3.0,
+    ], "Expected to see only first and last elements of original content"
+
+
 def test_broadcast_batch_when_requested_size_is_equal_to_batch_size() -> None:
     # given
     batch = Batch.init(
