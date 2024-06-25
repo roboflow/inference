@@ -675,6 +675,72 @@ def test_registration_of_batch_output_when_registration_should_succeed() -> None
     ) == [0, 1], "Expected to be able to retrieve selected data element"
 
 
+def test_registration_of_batch_output_when_registration_should_succeed_and_retrieval_is_performed_with_modified_indices_set() -> (
+    None
+):
+    # given
+    execution_graph = prepare_execution_graph(
+        steps_names=["non_simd_step", "simd_step"],
+        are_batch_oriented=[False, True],
+        steps_outputs=[
+            [OutputDefinition(name="a"), OutputDefinition(name="b")],
+            [OutputDefinition(name="c")],
+        ],
+    )
+    cache = ExecutionCache.init(execution_graph=execution_graph)
+
+    # when
+    cache.register_batch_of_step_outputs(
+        step_name="simd_step",
+        indices=[(0,), (1,)],
+        outputs=[{"c": 0}, {"c": 1}],
+    )
+
+    # then
+    assert cache.get_batch_output(
+        selector="$steps.simd_step.c", batch_elements_indices=[(1,), (0,), (0,), (3,)]
+    ) == [
+        1,
+        0,
+        0,
+        None,
+    ], "Expected to be able to retrieve selected data elements: [second, first, first, non existing]"
+
+
+def test_registration_of_batch_output_when_registration_should_succeed_and_retrieval_is_performed_with_masking() -> (
+    None
+):
+    # given
+    execution_graph = prepare_execution_graph(
+        steps_names=["non_simd_step", "simd_step"],
+        are_batch_oriented=[False, True],
+        steps_outputs=[
+            [OutputDefinition(name="a"), OutputDefinition(name="b")],
+            [OutputDefinition(name="c")],
+        ],
+    )
+    cache = ExecutionCache.init(execution_graph=execution_graph)
+
+    # when
+    cache.register_batch_of_step_outputs(
+        step_name="simd_step",
+        indices=[(0,), (1,)],
+        outputs=[{"c": 0}, {"c": 1}],
+    )
+
+    # then
+    assert cache.get_batch_output(
+        selector="$steps.simd_step.c",
+        batch_elements_indices=[(1,), (0,), (0,), (3,)],
+        mask={(1,)},
+    ) == [
+        1,
+        None,
+        None,
+        None,
+    ], "Expected to be able to retrieve selected data elements: [second, masked, masked, non existing]"
+
+
 def prepare_execution_graph(
     steps_names: List[str],
     are_batch_oriented: List[bool],

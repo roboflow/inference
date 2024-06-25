@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
 from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.errors import ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
@@ -45,7 +46,13 @@ def construct_non_simd_step_input(
     branching_manager: BranchingManager,
 ) -> Optional[Dict[str, Any]]:
     if step_node.batch_oriented_parameters:
-        raise ValueError("SIMD input detected!")
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Attempted to get non-SIMD input for SIMD step: {step_node.name}."
+            f"This is most likely a bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
     masks = set()
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
@@ -56,8 +63,13 @@ def construct_non_simd_step_input(
         if branching_manager.is_execution_branch_batch_oriented(
             execution_branch=execution_branch
         ):
-            raise ValueError(
-                "Should not let batch oriented condition statement influence non-simd step"
+            raise ExecutionEngineRuntimeError(
+                public_message=f"For step: {step_node.name}, detected batch-oriented condition statements "
+                f"impacting non-SIMD step, which should be prevented by Workflows Compiler. "
+                f"This is most likely a bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
             )
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
@@ -67,7 +79,13 @@ def construct_non_simd_step_input(
     result = {}
     for parameter_name, parameter_spec in step_node.input_data.items():
         if parameter_spec.is_batch_oriented():
-            raise ValueError("Not expected to spot batch oriented parameter here")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Encountered batch-oriented input for non-SIMD step: {step_node.name}."
+                f"This is most likely a bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
         if parameter_spec.points_to_input():
             input_name = get_last_chunk_of_selector(selector=parameter_spec.selector)
             result[parameter_name] = runtime_parameters[input_name]
@@ -198,7 +216,15 @@ class GuardForIndicesWrapping:
         if self._registered_wrapping is None:
             self._registered_wrapping = indices_before_wrapping
         elif self._registered_wrapping != indices_before_wrapping:
-            raise ValueError("Batches missmatch")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Detected a situation when step requires dimensionality wrapping, but"
+                f"different inputs register different elements indices to wrap which is illegal "
+                f"and should be detected earlier by Workflows compiler. This is most likely a bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
 
 
 def prepare_parameters(
@@ -241,12 +267,19 @@ def prepare_parameters(
     ]
     ensure_compound_input_indices_match(indices=batch_parameters_indices)
     if not batch_parameters_indices:
-        raise ValueError("Should be non simd input!")
+        raise ExecutionEngineRuntimeError(
+            public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
+            f"SIMD step Execution Engine cannot detect batch inputs. "
+            f"This is most likely a bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
     indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
-        empty_indices = get_empty_indices(value=result)
+        empty_indices = get_empty_batch_elements_indices(value=result)
         indices = [e for e in indices if e not in empty_indices]
-        result = filter_parameters(value=result, empty_indices=empty_indices)
+        result = remove_indices(value=result, indices=empty_indices)
     return BatchModeSIMDStepInput(
         indices=indices,
         parameters=result,
@@ -335,7 +368,17 @@ def get_non_compound_parameter_value(
         batch_input = runtime_parameters[input_name]
         if mask_for_dimension is not None:
             if len(lineage_indices) != len(batch_input):
-                raise ValueError("Input dimensions missmatch")
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Detected a situation when input parameter: "
+                    f"{input_name}"
+                    f"size is mismatched compared to mask requested for that input. "
+                    f"Input length: {len(batch_input)}, mask size: {len(lineage_indices)}. "
+                    f"This is most likely a bug. "
+                    f"Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | step_input_assembling",
+                )
             batch_input = [
                 input_element if element_index in mask_for_dimension else None
                 for element_index, input_element in zip(lineage_indices, batch_input)
@@ -349,9 +392,29 @@ def get_non_compound_parameter_value(
     if step_execution_dimensionality == parameter_dimensionality:
         return Batch(batch_input, lineage_indices), lineage_indices
     if step_execution_dimensionality > parameter_dimensionality:
-        raise ValueError("Not expected!")
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Detected a situation when parameter: "
+            f"{parameter.parameter_specification.parameter_name}"
+            f"has a dimensionality {parameter_dimensionality} larger "
+            f"than step execution dimensionality: {step_execution_dimensionality}. "
+            f"This is most likely a bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
     if abs(parameter_dimensionality - step_execution_dimensionality) > 1:
-        raise ValueError("Unexpected diff in dimension!")
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Detected a situation when parameter: "
+            f"{parameter.parameter_specification.parameter_name}"
+            f"has a dimensionality {parameter_dimensionality} differing more than one level "
+            f"from step execution dimensionality: {step_execution_dimensionality}. "
+            f"This is most likely a bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
     result = reduce_batch_dimensionality(
         indices=lineage_indices,
         data=batch_input,
@@ -388,45 +451,49 @@ def reduce_batch_dimensionality(
 
 
 def ensure_compound_input_indices_match(indices: List[List[DynamicBatchIndex]]) -> None:
-    if not indices:
+    if len(indices) < 2:
         return None
     reference_set = set(indices[0])
     for index in indices[1:]:
         other_set = set(index)
         if reference_set != other_set:
-            raise ValueError("Indices missmatch")
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Detected a situation when step input parameters cannot be created "
+                f"due to missmatch in batch element indices. This is most likely a bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
 
 
-def get_empty_indices(value: Any) -> Set[DynamicBatchIndex]:
+def get_empty_batch_elements_indices(value: Any) -> Set[DynamicBatchIndex]:
     result = set()
     if isinstance(value, dict):
         for v in value.values():
-            value_result = get_empty_indices(v)
+            value_result = get_empty_batch_elements_indices(v)
             result = result.union(value_result)
     if isinstance(value, list):
         for v in value:
-            value_result = get_empty_indices(v)
+            value_result = get_empty_batch_elements_indices(v)
             result = result.union(value_result)
     if isinstance(value, Batch):
         for index, value_element in value.iter_with_indices():
             if isinstance(value_element, Batch):
-                value_result = get_empty_indices(value=value_element)
+                value_result = get_empty_batch_elements_indices(value=value_element)
                 result = result.union(value_result)
             elif value_element is None:
                 result.add(index)
     return result
 
 
-def filter_parameters(value: Any, empty_indices: Set[DynamicBatchIndex]) -> Any:
+def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
     if isinstance(value, dict):
-        return {
-            k: filter_parameters(value=v, empty_indices=empty_indices)
-            for k, v in value.items()
-        }
+        return {k: remove_indices(value=v, indices=indices) for k, v in value.items()}
     if isinstance(value, list):
-        return [filter_parameters(value=v, empty_indices=empty_indices) for v in value]
+        return [remove_indices(value=v, indices=indices) for v in value]
     if isinstance(value, Batch):
-        return value.remove_by_indices(indices_to_remove=empty_indices)
+        return value.remove_by_indices(indices_to_remove=indices)
     return value
 
 
@@ -478,10 +545,13 @@ def iterate_over_batches(
             elif isinstance(value, list):
                 to_yield = []
                 for element in value:
-                    if len(element) <= index:
-                        end = True
-                        break
-                    to_yield.append(element[index])
+                    if isinstance(element, Batch):
+                        if len(element) <= index:
+                            end = True
+                            break
+                        to_yield.append(element[index])
+                    else:
+                        to_yield.append(element)
                 result[name] = to_yield
             elif isinstance(value, dict):
                 to_yield = {}
