@@ -40,7 +40,9 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["ContinueIf"]
-    condition_statement: StatementGroup
+    condition_statement: StatementGroup = Field(
+        description="Workflows UQL definition of conditional logic.",
+    )
     evaluation_parameters: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
