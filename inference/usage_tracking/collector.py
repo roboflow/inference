@@ -26,8 +26,8 @@ Source = str
 UsagePayload = DefaultDict[Source, Any]
 WorkflowID = str
 WorkflowUsage = DefaultDict[WorkflowID, UsagePayload]
-ApiKey = str
-APIKeyUsage = DefaultDict[ApiKey, WorkflowUsage]
+APIKey = str
+APIKeyUsage = DefaultDict[APIKey, WorkflowUsage]
 
 
 class UsageCollector:
@@ -41,12 +41,14 @@ class UsageCollector:
                 cls._instance._queue = None
         return cls._instance
 
-    def __init__(self, workflow_specification: Optional[Dict[str, Any]] = None):
+    def __init__(self):
         with UsageCollector._lock:
             if self._queue:
                 return
 
-        self._workflow_specification: Optional[Dict[str, Any]] = workflow_specification
+        self._workflow_specifications: DefaultDict[
+            APIKey, Dict[WorkflowID[Dict[str, Any]]]
+        ] = defaultdict(dict)
 
         self._settings: TelemetrySettings = get_telemetry_settings()
         self._usage: APIKeyUsage = self._get_empty_usage_dict()
@@ -55,15 +57,14 @@ class UsageCollector:
         self._queue = Queue(maxsize=self._settings.queue_size)
 
         _ip_address: str = socket.gethostbyname(socket.gethostname())
-        _ip_address_hash = hashlib.sha256()
-        _ip_address_hash.update(_ip_address.encode())
-        self._ip_address_hash = _ip_address_hash.hexdigest()
+        self._ip_address_hash_hex = UsageCollector._hash(_ip_address)
         self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
         self._gpu_available: bool = torch.cuda.is_available()
         try:
             self._inference_version: str = importlib_metadata.version("inference")
         except importlib_metadata.PackageNotFoundError:
             self._inference_version: str = "dev"
+        self._execution_details_sent: bool = False
 
         self._terminate_scheduler = Event()
         self._scheduler_thread = Thread(target=self._scheduler, daemon=True)
@@ -71,17 +72,74 @@ class UsageCollector:
 
         atexit.register(self._cleanup)
 
-    @property
-    def workflow_specification(self) -> Dict[str, Any]:
-        return self._workflow_specification
+    @staticmethod
+    def _hash(payload: str, length=5):
+        payload_hash = hashlib.sha256(payload.encode())
+        return payload_hash.hexdigest()[:5]
 
-    @workflow_specification.setter
-    def workflow_specification(self, workflow_specification: Dict[str, Any]):
-        # same workflow specification is expected to be used across whole execution session
-        if self._workflow_specification:
+    def _enqueue_usage_payload(self, payload: Dict[str, Any]):
+        if not self._queue.full():
+            self._queue.put(payload)
+        else:
+            # TODO: aggregate
+            self._queue.get()
+            self._queue.put(payload)
+
+    def _record_workflow_specification(
+        self,
+        workflow_specification: Dict[str, Any],
+        workflow_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        if not api_key:
+            api_key = API_KEY
+        if not workflow_specification and not workflow_id:
             return
+        if not workflow_id:
+            workflow_id = UsageCollector._calculate_workflow_hash(
+                workflow=workflow_specification
+            )
+        api_key_specifications = self._workflow_specifications[api_key]
+        if workflow_id in api_key_specifications:
+            logger.debug("Attempt to add workflow specification multiple times.")
+            return
+        api_key_specifications[workflow_id] = workflow_specification
+        workflow_specification_payload = {
+            "timestamp": time.time(),
+            "workflow_id": workflow_id,
+            "workflow": workflow_specification,
+            "api_key": api_key,
+        }
+        logger.debug(
+            "Usage (workflow specification): %s", workflow_specification_payload
+        )
+        self._enqueue_usage_payload(payload=workflow_specification_payload)
+
+    def record_workflow_specification(
+        self,
+        workflow_specification: Dict[str, Any],
+        workflow_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         with UsageCollector._lock:
-            self._workflow_specification = workflow_specification
+            self._record_workflow_specification(
+                workflow_specification=workflow_specification,
+                workflow_id=workflow_id,
+                api_key=api_key,
+            )
+
+    async def async_record_workflow_specification(
+        self,
+        workflow_specification: Dict[str, Any],
+        workflow_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        async with UsageCollector._async_lock:
+            self._record_workflow_specification(
+                workflow_specification=workflow_specification,
+                workflow_id=workflow_id,
+                api_key=api_key,
+            )
 
     def _scheduler(self):
         while True:
@@ -97,15 +155,15 @@ class UsageCollector:
                 return
             # TODO: aggregate last element of the queue if maxsize is reached
             #       system info and workflow should remain in the queue
-            self._queue.put(self._usage)
-            logger.debug("Usage: %s", self._usage)
+            self._enqueue_usage_payload(payload=self._usage)
+            logger.debug("Usage: %s", json.dumps(self._usage))
             self._usage = self._get_empty_usage_dict()
 
     @staticmethod
     def _guess_source_type(source: str) -> str:
         mime_type, _ = mimetypes.guess_type(source)
         stream_schemes = ["rtsp", "rtmp"]
-        source_type = "unknown"
+        source_type = None
         if mime_type and mime_type.startswith("video"):
             source_type = "video"
         elif mime_type and mime_type.startswith("image"):
@@ -123,9 +181,61 @@ class UsageCollector:
 
     @staticmethod
     def _calculate_workflow_hash(workflow: Dict[str, Any]) -> str:
-        workflow_hash = hashlib.sha256()
-        workflow_hash.update(json.dumps(workflow, sort_keys=True).encode())
-        return workflow_hash.hexdigest()
+        return UsageCollector._hash(json.dumps(workflow, sort_keys=True))
+
+    def _get_system_info(
+        self, api_key: Optional[str] = None, ip_address: Optional[str] = None
+    ):
+        if ip_address:
+            ip_address_hash_hex = UsageCollector._hash(ip_address)
+        else:
+            ip_address_hash_hex = self._ip_address_hash_hex
+
+        if not api_key:
+            api_key = API_KEY
+        return {
+            "timestamp": time.time(),
+            "exec_session_id": self._exec_session_id,
+            "ip_address_hash": ip_address_hash_hex,
+            "api_key": api_key,
+            "is_gpu_available": self._gpu_available,
+            "python_version": sys.version.split()[0],
+            "inference_version": self._inference_version,
+        }
+
+    def _record_execution_details(
+        self,
+        api_key: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ):
+        if self._execution_details_sent:
+            return
+        if not api_key:
+            api_key = API_KEY
+        execution_details_payload = self._get_system_info(
+            api_key=api_key, ip_address=ip_address
+        )
+        logger.debug("Usage (execution details): %s", execution_details_payload)
+        self._enqueue_usage_payload(payload=execution_details_payload)
+        self._execution_details_sent = True
+
+    def record_execution_details(
+        self, api_key: Optional[str] = None, ip_address: Optional[str] = None
+    ):
+        with UsageCollector._lock:
+            self._record_execution_details(
+                api_key=api_key,
+                ip_address=ip_address,
+            )
+
+    async def async_record_execution_details(
+        self, api_key: Optional[str] = None, ip_address: Optional[str] = None
+    ):
+        async with UsageCollector._async_lock:
+            self._record_execution_details(
+                api_key=api_key,
+                ip_address=ip_address,
+            )
 
     def _get_empty_usage_dict(self) -> APIKeyUsage:
         return defaultdict(  # API key
@@ -139,7 +249,8 @@ class UsageCollector:
                         "processed_frames": 0,
                         "fps": 0,
                         "source_duration": 0,
-                        "with_workflow": False,
+                        "workflow_id": False,
+                        "api_key": None,
                     }
                 )
             )
@@ -156,26 +267,26 @@ class UsageCollector:
     ):
         source = str(source) if source else ""
         source_type = UsageCollector._guess_source_type(source=source)
-        source_hash = hashlib.sha256()
-        source_hash.update(source.encode())
+        source_hash_hex = UsageCollector._hash(source)
         if not api_key:
             api_key = API_KEY
         if not workflow:
-            workflow = self._workflow_specification
+            workflow = self._workflow_specifications[api_key].get(workflow_id)
         if not workflow_id:
             workflow_id = (
-                self._calculate_workflow_hash(workflow) if workflow else "No Workflow"
+                UsageCollector._calculate_workflow_hash(workflow) if workflow else None
             )
         source_usage = self._usage[api_key][workflow_id][
-            source_hash.hexdigest()
+            source_hash_hex
         ]  # TODO: same source can be processed multiple times
-        source_usage["timestamp"] = time.time()
-        source_usage["source_hash"] = source_hash
+        source_usage["timestamp"] = time.time_ns()
+        source_usage["source_hash"] = source_hash_hex
         source_usage["source_type"] = source_type
         source_usage["processed_frames"] += frames
         source_usage["fps"] = round(fps, 2)
-        source_usage["source_duration"] += round(frames / fps, 2) if fps else 0
-        source_usage["with_workflow"] = workflow is not None
+        source_usage["source_duration"] += frames / fps if fps else 0
+        source_usage["workflow_id"] = workflow_id
+        source_usage["api_key"] = api_key
 
     def record_usage(
         self,
@@ -186,6 +297,14 @@ class UsageCollector:
         workflow_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
+        self.record_execution_details(
+            api_key=api_key,
+        )
+        self.record_workflow_specification(
+            workflow_specification=workflow,
+            workflow_id=workflow_id,
+            api_key=api_key,
+        )
         with UsageCollector._lock:
             self._create_usage_payload(
                 source=source,
@@ -205,6 +324,14 @@ class UsageCollector:
         workflow_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
+        await self.async_record_execution_details(
+            api_key=api_key,
+        )
+        await self.async_record_workflow_specification(
+            workflow_specification=workflow,
+            workflow_id=workflow_id,
+            api_key=api_key,
+        )
         async with UsageCollector._async_lock:
             self._create_usage_payload(
                 source=source,
@@ -213,57 +340,6 @@ class UsageCollector:
                 workflow=workflow,
                 workflow_id=workflow_id,
                 fps=fps,
-            )
-
-    def _get_system_info(
-        self, api_key: Optional[str] = None, ip_address_hash: Optional[str] = None
-    ):
-        if not ip_address_hash:
-            ip_address_hash = self._ip_address_hash
-        if not api_key:
-            api_key = API_KEY
-        return {
-            "timestamp": time.time(),
-            "exec_session_id": self._exec_session_id,
-            "ip_address_hash": ip_address_hash,
-            "api_key": api_key,
-            "is_gpu_available": self._gpu_available,
-            "python_version": sys.version.split()[0],
-            "inference_version": self._inference_version,
-        }
-
-    def record_workflow_details(
-        self,
-        workflow: Optional[Dict[str, Any]] = None,
-        api_key: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-    ):
-        if not api_key:
-            api_key = API_KEY
-        if not workflow:
-            workflow = self._workflow_specification
-        if not workflow_id:
-            workflow_id = self._calculate_workflow_hash(workflow)
-        if workflow:
-            with UsageCollector._lock:
-                self._queue.put(
-                    {
-                        "workflow_id": workflow_id,
-                        "workflow": workflow,
-                        "api_key": api_key,
-                    }
-                )
-
-    def record_execution_details(
-        self, api_key: Optional[str] = None, ip_address_hash: Optional[str] = None
-    ):
-        if not api_key:
-            api_key = API_KEY
-        if not ip_address_hash:
-            ip_address_hash = self._ip_address_hash
-        with UsageCollector._lock:
-            self._queue.put(
-                self._get_system_info(api_key=api_key, ip_address_hash=ip_address_hash)
             )
 
     @staticmethod
@@ -285,6 +361,10 @@ class UsageCollector:
                 # TODO: handle enterprise blocks here
             if hasattr(func_kwargs["workflow"], "workflow_json"):
                 workflow_json = func_kwargs["workflow"].workflow_json
+        if not usage_workflow_id and workflow_json:
+            usage_workflow_id = UsageCollector._calculate_workflow_hash(
+                workflow=workflow_json
+            )
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
         if (

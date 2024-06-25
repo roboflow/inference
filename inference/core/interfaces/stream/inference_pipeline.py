@@ -563,11 +563,6 @@ class InferencePipeline:
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
             )
-            usage_collector.record_workflow_details(
-                api_key=api_key,
-                workflow=workflow_specification,
-                workflow_id=workflow_id,
-            )
         except ImportError as error:
             raise CannotInitialiseModelError(
                 f"Could not initialise workflow processing due to lack of dependencies required. "
@@ -734,7 +729,6 @@ class InferencePipeline:
         self._on_pipeline_end = on_pipeline_end
         self._batch_collection_timeout = batch_collection_timeout
         self._sink_mode = sink_mode
-        usage_collector.record_execution_details()
 
     def start(self, use_main_thread: bool = True) -> None:
         self._stop = False

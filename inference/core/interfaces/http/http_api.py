@@ -464,10 +464,6 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
             step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
-            usage_collector.record_workflow_details(
-                workflow=workflow_specification,
-                api_key=workflow_request.api_key,
-            )
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
@@ -482,7 +478,7 @@ class HttpInterface(BaseInterface):
                 prevent_local_images_loading=True,
             )
             result = await execution_engine.run_async(
-                runtime_parameters=workflow_request.inputs
+                runtime_parameters=workflow_request.inputs,
             )
             outputs = serialise_workflow_result(
                 result=result,

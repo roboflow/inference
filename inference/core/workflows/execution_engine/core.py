@@ -77,7 +77,9 @@ class ExecutionEngine:
         )
 
     async def run_async(
-        self, runtime_parameters: Dict[str, Any], fps: Optional[float] = 0
+        self,
+        runtime_parameters: Dict[str, Any],
+        fps: Optional[float] = 0,
     ) -> Dict[str, List[Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
