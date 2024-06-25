@@ -1089,7 +1089,7 @@ class InferenceHTTPClient:
         if not (named_workflow_specified != (specification is not None)):
             raise InvalidParameterError(
                 "Parameters (`workspace_name`, `workflow_id` / `workflow_name`) can be used mutually exclusive with "
-                "`workflow_specification`, but at least one must be set."
+                "`specification`, but at least one must be set."
             )
         if images is None:
             images = {}

@@ -4,8 +4,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 import supervision as sv
+from networkx import DiGraph
 
 from inference.core.workflows.entities.base import JsonField
+from inference.core.workflows.execution_engine.compiler.entities import (
+    NodeCategory,
+    OutputNode,
+)
 from inference.core.workflows.execution_engine.executor.output_constructor import (
     construct_workflow_output,
     convert_sv_detections_coordinates,
@@ -372,6 +377,27 @@ def test_construct_workflow_output_when_no_batch_outputs_present() -> None:
         JsonField(type="JsonField", name="a", selector="$steps.some.a"),
         JsonField(type="JsonField", name="b", selector="$inputs.b"),
     ]
+    execution_graph = DiGraph()
+    execution_graph.add_node(
+        "$outputs.a",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[0].name,
+            selector=workflow_outputs[0].selector,
+            data_lineage=[],
+            output_manifest=workflow_outputs[0],
+        ),
+    )
+    execution_graph.add_node(
+        "$outputs.b",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[1].name,
+            selector=workflow_outputs[1].selector,
+            data_lineage=[],
+            output_manifest=workflow_outputs[1],
+        ),
+    )
     data_lookup = {
         "$steps.some.a": "a_value",
         "$inputs.b": "b_value",
@@ -385,6 +411,7 @@ def test_construct_workflow_output_when_no_batch_outputs_present() -> None:
     # when
     result = construct_workflow_output(
         workflow_outputs=workflow_outputs,
+        execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
     )
 
@@ -398,8 +425,65 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
     workflow_outputs = [
         JsonField(type="JsonField", name="a", selector="$steps.some.a"),
         JsonField(type="JsonField", name="b", selector="$steps.some.b"),
+        JsonField(type="JsonField", name="b_empty", selector="$steps.some.b_empty"),
+        JsonField(
+            type="JsonField",
+            name="b_empty_nested",
+            selector="$steps.some.b_empty_nested",
+        ),
         JsonField(type="JsonField", name="c", selector="$steps.other.c"),
     ]
+    execution_graph = DiGraph()
+    execution_graph.add_node(
+        "$outputs.a",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[0].name,
+            selector=workflow_outputs[0].selector,
+            data_lineage=["<workflow_input>"],
+            output_manifest=workflow_outputs[0],
+        ),
+    )
+    execution_graph.add_node(
+        "$outputs.b",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[1].name,
+            selector=workflow_outputs[1].selector,
+            data_lineage=["<workflow_input>", "some"],
+            output_manifest=workflow_outputs[1],
+        ),
+    )
+    execution_graph.add_node(
+        "$outputs.b_empty",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[2].name,
+            selector=workflow_outputs[2].selector,
+            data_lineage=["<workflow_input>"],
+            output_manifest=workflow_outputs[2],
+        ),
+    )
+    execution_graph.add_node(
+        "$outputs.b_empty_nested",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[3].name,
+            selector=workflow_outputs[3].selector,
+            data_lineage=["<workflow_input>", "other", "yet_another"],
+            output_manifest=workflow_outputs[3],
+        ),
+    )
+    execution_graph.add_node(
+        "$outputs.c",
+        node_compilation_output=OutputNode(
+            node_category=NodeCategory.OUTPUT_NODE,
+            name=workflow_outputs[4].name,
+            selector=workflow_outputs[4].selector,
+            data_lineage=[],
+            output_manifest=workflow_outputs[4],
+        ),
+    )
     data_lookup = {
         "$steps.other.c": "c_value",
     }
@@ -412,6 +496,8 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
     indices_lookup = {
         "$steps.some.a": [(0,), (2,)],
         "$steps.some.b": [(0, 0), (0, 1), (1, 0), (2, 3)],
+        "$steps.some.b_empty": [],
+        "$steps.some.b_empty_nested": [],
         "$steps.other.c": None,
     }
 
@@ -428,6 +514,8 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
             (1, 0): "b3",
             (2, 3): "b4",
         },
+        "$steps.some.b_empty": {},
+        "$steps.some.b_empty_nested": {},
     }
 
     def get_batch_data(selector: str, indices: List[tuple]) -> List[Any]:
@@ -438,6 +526,7 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
     # when
     result = construct_workflow_output(
         workflow_outputs=workflow_outputs,
+        execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
     )
 
@@ -445,6 +534,24 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
     assert (
         len(result) == 3
     ), "Expected 3 results, as that the highest size of 1-dim batch"
-    assert result[0] == {"a": "a1", "b": ["b1", "b2"], "c": "c_value"}
-    assert result[1] == {"a": None, "b": ["b3"], "c": "c_value"}
-    assert result[2] == {"a": "a2", "b": [None, None, None, "b4"], "c": "c_value"}
+    assert result[0] == {
+        "a": "a1",
+        "b": ["b1", "b2"],
+        "c": "c_value",
+        "b_empty": None,
+        "b_empty_nested": [[]],
+    }
+    assert result[1] == {
+        "a": None,
+        "b": ["b3"],
+        "c": "c_value",
+        "b_empty": None,
+        "b_empty_nested": [[]],
+    }
+    assert result[2] == {
+        "a": "a2",
+        "b": [None, None, None, "b4"],
+        "c": "c_value",
+        "b_empty": None,
+        "b_empty_nested": [[]],
+    }

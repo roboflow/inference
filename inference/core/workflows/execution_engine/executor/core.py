@@ -48,6 +48,7 @@ async def run_workflow(
         next_steps = execution_coordinator.get_steps_to_execute_next()
     return construct_workflow_output(
         workflow_outputs=workflow.workflow_definition.outputs,
+        execution_graph=workflow.execution_graph,
         execution_data_manager=execution_data_manager,
     )
 

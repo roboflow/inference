@@ -2,12 +2,18 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import supervision as sv
+from networkx import DiGraph
 
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
 from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.execution_engine.compiler.entities import OutputNode
+from inference.core.workflows.execution_engine.compiler.utils import (
+    construct_output_selector,
+    node_as,
+)
 from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchIndex,
 )
@@ -18,6 +24,7 @@ from inference.core.workflows.execution_engine.executor.execution_data_manager.m
 
 def construct_workflow_output(
     workflow_outputs: List[JsonField],
+    execution_graph: DiGraph,
     execution_data_manager: ExecutionDataManager,
 ) -> List[Dict[str, Any]]:
     # Maybe we should make blocks to change coordinates systems:
@@ -37,7 +44,15 @@ def construct_workflow_output(
     }
     if not batch_oriented_outputs:
         return [non_batch_outputs]
-    outputs_arrays = {
+    dimensionality_for_output_nodes = {
+        output.name: node_as(
+            execution_graph=execution_graph,
+            node=construct_output_selector(name=output.name),
+            expected_type=OutputNode,
+        ).dimensionality
+        for output in workflow_outputs
+    }
+    outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
         for name, indices in output_name2indices.items()
         if name in batch_oriented_outputs
@@ -51,7 +66,7 @@ def construct_workflow_output(
     major_batch_size = 0
     for name in batch_oriented_outputs:
         array = outputs_arrays[name]
-        major_batch_size = max(len(array), major_batch_size)
+        major_batch_size = max(len(array) if array else 0, major_batch_size)
         indices = output_name2indices[name]
         data = execution_data_manager.get_batch_data(
             selector=name2selector[name],
@@ -84,7 +99,18 @@ def construct_workflow_output(
         for name, value in non_batch_outputs.items():
             single_result[name] = value
         for name, array in outputs_arrays.items():
-            single_result[name] = array[i]
+            if array is None:
+                level = dimensionality_for_output_nodes[name] - 1
+                if level > 0:
+                    element = create_empty_index_array(
+                        level=level,
+                        accumulator=[],
+                    )
+                else:
+                    element = None
+            else:
+                element = array[i]
+            single_result[name] = element
         results.append(single_result)
     return results
 
