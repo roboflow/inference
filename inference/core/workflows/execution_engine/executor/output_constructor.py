@@ -71,8 +71,8 @@ def construct_workflow_output(
                 )
             except (TypeError, IndexError):
                 raise ExecutionEngineRuntimeError(
-                    public_message=f"Could not produce output {name} die to mismatch in declared output "
-                    f"dimensions versus actual ones."
+                    public_message=f"Could not produce output {name} die to mismatch in "
+                    f"declared output dimensions versus actual ones."
                     f"This is most likely a bug. Contact Roboflow team through github issues "
                     f"(https://github.com/roboflow/inference/issues) providing full context of"
                     f"the problem - including workflow definition you use.",
