@@ -149,7 +149,7 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models import PaliGemma, LoRAPaliGemma
+    from inference.models import LoRAPaliGemma, PaliGemma
 
     paligemma_models = {
         (
