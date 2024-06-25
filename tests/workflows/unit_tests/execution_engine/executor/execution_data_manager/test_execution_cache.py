@@ -1,29 +1,18 @@
-from typing import List
-from unittest.mock import MagicMock
-
 import pytest
-from networkx import DiGraph
 
-from inference.core.workflows.entities.base import (
-    JsonField,
-    OutputDefinition,
-    WorkflowImage,
-)
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.compiler.entities import (
-    InputNode,
-    NodeCategory,
-    OutputNode,
-    StepNode,
-)
 from inference.core.workflows.execution_engine.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
+)
+from tests.workflows.unit_tests.execution_engine.executor.execution_data_manager.common import (
+    prepare_execution_graph_for_tests,
 )
 
 
 def test_execution_cache_contains_steps_after_declaration_of_workflow_steps() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -46,7 +35,7 @@ def test_execution_cache_contains_steps_after_declaration_of_workflow_steps() ->
 
 def test_execution_cache_does_not_contain_not_registered_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -66,7 +55,7 @@ def test_execution_cache_does_not_contain_not_registered_step() -> None:
 
 def test_execution_cache_does_not_contain_non_step_graph_nodes() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -88,7 +77,7 @@ def test_execution_cache_correctly_recognised_data_modes_after_declaration_of_wo
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -113,7 +102,7 @@ def test_execution_cache_correctly_recognised_steps_outputs_after_declaration_of
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -144,7 +133,7 @@ def test_execution_cache_correctly_returns_data_registration_status_for_declared
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -167,7 +156,7 @@ def test_execution_cache_correctly_returns_data_registration_status_for_declared
 
 def test_is_step_output_data_registered_method_for_not_declared_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[], are_batch_oriented=[], steps_outputs=[]
     )
 
@@ -181,7 +170,7 @@ def test_is_step_output_data_registered_method_for_not_declared_step() -> None:
 
 def test_is_step_output_declared_method_for_invalid_selector() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[], are_batch_oriented=[], steps_outputs=[]
     )
 
@@ -194,7 +183,7 @@ def test_is_step_output_declared_method_for_invalid_selector() -> None:
 
 def test_is_step_output_declared_method_for_input_selector() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[], are_batch_oriented=[], steps_outputs=[]
     )
 
@@ -207,7 +196,7 @@ def test_is_step_output_declared_method_for_input_selector() -> None:
 
 def test_is_step_output_declared_method_for_not_registered_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[], are_batch_oriented=[], steps_outputs=[]
     )
 
@@ -222,7 +211,7 @@ def test_execution_cache_correctly_returns_all_data_for_declared_steps_when_outp
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -256,7 +245,7 @@ def test_execution_cache_raises_error_when_trying_to_get_non_batch_outputs_in_ba
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -279,7 +268,7 @@ def test_execution_cache_raises_error_when_trying_to_get_batch_outputs_in_non_ba
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -302,7 +291,7 @@ def test_execution_cache_correctly_returns_selected_data_for_declared_steps_when
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -335,7 +324,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_non_decla
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -359,7 +348,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_non_decla
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -382,7 +371,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_simd_step
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -405,7 +394,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_non_simd_
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -428,7 +417,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_data_of_n
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -452,7 +441,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_data_of_n
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -473,7 +462,7 @@ def test_execution_cache_correctly_raises_error_when_attempting_to_get_data_of_n
 
 def test_registration_of_non_batch_output_for_non_declared_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[],
         are_batch_oriented=[],
         steps_outputs=[],
@@ -490,7 +479,7 @@ def test_registration_of_non_batch_output_for_non_declared_step() -> None:
 
 def test_registration_of_batch_output_for_non_declared_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=[],
         are_batch_oriented=[],
         steps_outputs=[],
@@ -508,7 +497,7 @@ def test_registration_of_batch_output_for_non_declared_step() -> None:
 
 def test_registration_of_non_batch_output_for_batch_oriented_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -528,7 +517,7 @@ def test_registration_of_non_batch_output_for_batch_oriented_step() -> None:
 
 def test_registration_of_batch_output_for_non_batch_oriented_step() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -549,7 +538,7 @@ def test_registration_of_batch_output_for_non_batch_oriented_step() -> None:
 
 def test_registration_of_non_batch_output_when_not_all_data_fields_provided() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -569,7 +558,7 @@ def test_registration_of_non_batch_output_when_not_all_data_fields_provided() ->
 
 def test_registration_of_non_batch_output_when_registration_should_succeed() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -602,7 +591,7 @@ def test_registration_of_batch_output_when_registration_should_fail_due_to_keys_
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -625,7 +614,7 @@ def test_registration_of_batch_output_when_registration_should_fail_due_to_indic
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -646,7 +635,7 @@ def test_registration_of_batch_output_when_registration_should_fail_due_to_indic
 
 def test_registration_of_batch_output_when_registration_should_succeed() -> None:
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -679,7 +668,7 @@ def test_registration_of_batch_output_when_registration_should_succeed_and_retri
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -711,7 +700,7 @@ def test_registration_of_batch_output_when_registration_should_succeed_and_retri
     None
 ):
     # given
-    execution_graph = prepare_execution_graph(
+    execution_graph = prepare_execution_graph_for_tests(
         steps_names=["non_simd_step", "simd_step"],
         are_batch_oriented=[False, True],
         steps_outputs=[
@@ -739,54 +728,3 @@ def test_registration_of_batch_output_when_registration_should_succeed_and_retri
         None,
         None,
     ], "Expected to be able to retrieve selected data elements: [second, masked, masked, non existing]"
-
-
-def prepare_execution_graph(
-    steps_names: List[str],
-    are_batch_oriented: List[bool],
-    steps_outputs: List[List[OutputDefinition]],
-) -> DiGraph:
-    execution_graph = DiGraph()
-    execution_graph.add_node(
-        "$inputs.image",
-        node_compilation_output=InputNode(
-            node_category=NodeCategory.INPUT_NODE,
-            name="image",
-            selector="$inputs.image",
-            data_lineage=["<workflow_input>"],
-            input_manifest=WorkflowImage(type="WorkflowImage", name="image"),
-        ),
-    )
-    for step_name, is_batch_oriented, outputs in zip(
-        steps_names, are_batch_oriented, steps_outputs
-    ):
-        step_selector = f"$steps.{step_name}"
-        data_lineage = [] if not is_batch_oriented else ["<workflow_input>"]
-        batch_oriented_parameters = set() if not is_batch_oriented else {"some_param"}
-        manifest = MagicMock()
-        manifest.get_actual_outputs.return_value = outputs
-        manifest.name = step_name
-        execution_graph.add_node(
-            step_selector,
-            node_compilation_output=StepNode(
-                node_category=NodeCategory.STEP_NODE,
-                name=step_name,
-                selector=step_selector,
-                data_lineage=data_lineage,
-                step_manifest=manifest,
-                batch_oriented_parameters=batch_oriented_parameters,
-            ),
-        )
-    execution_graph.add_node(
-        "$outputs.some",
-        node_compilation_output=OutputNode(
-            node_category=NodeCategory.OUTPUT_NODE,
-            name="some",
-            selector="$outputs.some",
-            data_lineage=["<workflow_input>"],
-            output_manifest=JsonField(
-                type="JsonField", name="some", selector="$steps.dummy"
-            ),
-        ),
-    )
-    return execution_graph
