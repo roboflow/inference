@@ -33,6 +33,16 @@ COPY requirements/requirements.clip.txt \
 
 RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
+# We needed to take statically compiled library for last known stable build and put it into hosting
+# That was due to faulty builds started 26.06.2024, probably due to release of new version
+# of pybind11, which gets automatically pulled while build of zxing_cpp library making
+# cmake to fail
+RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
+    && tar -xvzf zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
+    && mv zxing_cpp-2.2.0.dist-info /usr/local/lib/python3.9/dist-packages/zxing_cpp-2.2.0.dist-info \
+    && mv zxingcpp.cpython-39-aarch64-linux-gnu.so /usr/local/lib/python3.9/dist-packages/ \
+    && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
+
 RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     git+https://github.com/pypdfium2-team/pypdfium2 \
     -r _requirements.txt \
