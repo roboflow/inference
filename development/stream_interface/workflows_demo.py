@@ -1,5 +1,6 @@
 import os
 from threading import Thread
+from typing import List, Optional
 
 import cv2
 import supervision as sv
@@ -7,6 +8,7 @@ import supervision as sv
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.watchdog import PipelineWatchDog, BasePipelineWatchDog
+from inference.core.utils.drawing import create_tiles
 
 STOP = False
 ANNOTATOR = sv.BoundingBoxAnnotator()
@@ -34,7 +36,7 @@ def main() -> None:
         ],
     }
     pipeline = InferencePipeline.init_with_workflow(
-        video_reference=os.environ["VIDEO_REFERENCE"],
+        video_reference=[os.environ["VIDEO_REFERENCE"]] * 2,
         workflow_specification=workflow_specification,
         watchdog=watchdog,
         on_prediction=workflows_sink,
@@ -64,12 +66,18 @@ def command_thread(pipeline: InferencePipeline, watchdog: PipelineWatchDog) -> N
 
 
 def workflows_sink(
-    predictions: dict,
-    video_frame: VideoFrame,
+    predictions: List[Optional[dict]],
+    video_frames: List[Optional[VideoFrame]],
 ) -> None:
-    detections: sv.Detections = predictions["predictions"]
-    visualised = ANNOTATOR.annotate(video_frame.image.copy(), detections)
-    cv2.imshow(f"Predictions", visualised)
+    images_to_show = []
+    for prediction, frame in zip(predictions, video_frames):
+        if prediction is None or frame is None:
+            continue
+        detections: sv.Detections = prediction["predictions"]
+        visualised = ANNOTATOR.annotate(frame.image.copy(), detections)
+        images_to_show.append(visualised)
+    tiles = create_tiles(images=images_to_show)
+    cv2.imshow(f"Predictions", tiles)
     cv2.waitKey(1)
 
 

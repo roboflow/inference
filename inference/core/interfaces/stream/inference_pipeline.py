@@ -427,7 +427,7 @@ class InferencePipeline:
     )
     def init_with_workflow(
         cls,
-        video_reference: Union[str, int],
+        video_reference: Union[str, int, List[Union[str, int]]],
         workflow_specification: Optional[dict] = None,
         workspace_name: Optional[str] = None,
         workflow_id: Optional[str] = None,
@@ -449,8 +449,11 @@ class InferencePipeline:
         method.
 
         Args:
-            video_reference (Union[str, int]): Reference of source to be used to make predictions against.
-                It can be video file path, stream URL and device (like camera) id (we handle whatever cv2 handles).
+            video_reference (Union[str, int, List[Union[str, int]]]): Reference of source to be used to make predictions
+                against. It can be video file path, stream URL and device (like camera) id
+                (we handle whatever cv2 handles). It can also be a list of references (since v0.13.0) - and then
+                it will trigger parallel processing of multiple sources. It has some implication on sinks. See:
+                `sink_mode` parameter comments.
             workflow_specification (Optional[dict]): Valid specification of workflow. See [workflow docs](https://github.com/roboflow/inference/tree/main/inference/enterprise/workflows).
                 It can be provided optionally, but if not given, both `workspace_name` and `workflow_id`
                 must be provided.
@@ -513,11 +516,6 @@ class InferencePipeline:
             raise ValueError(
                 "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
                 "`workflow_specification`, but at least one must be set."
-            )
-        if issubclass(type(video_reference), list) and len(list) > 1:
-            raise NotImplementedError(
-                "Usage of workflows and `InferencePipeline` is experimental feature for now. We do not support "
-                "multiple video sources yet."
             )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (

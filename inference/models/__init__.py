@@ -29,7 +29,7 @@ except:
     pass
 
 try:
-    from inference.models.paligemma import PaliGemma, LoRAPaliGemma
+    from inference.models.paligemma import LoRAPaliGemma, PaliGemma
 except:
     pass
 
