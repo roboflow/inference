@@ -10,6 +10,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier import
     LMMForClassificationBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
+from inference.core.workflows.core_steps.models.foundation.paligemma import (
+    PaliGemmaModelBlock,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
 )
@@ -74,4 +77,5 @@ def load_blocks() -> list:
         DetectionFilterBlock,
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
+        PaliGemmaModelBlock,
     ]
