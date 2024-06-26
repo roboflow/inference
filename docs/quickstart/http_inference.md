@@ -145,7 +145,7 @@ There are two generations of routes in a Roboflow inference server To see what r
 
     === "Batch Inference"
 
-        Roboflow object detection models support batching. Utilize batch inference by passing a list of image objects in a request payload:
+        Object detection models support batching. Utilize batch inference by passing a list of image objects in a request payload:
 
         ```python
         import requests

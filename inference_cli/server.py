@@ -65,7 +65,7 @@ def start(
             "--tunnel",
             help="Start a tunnel to expose inference to external requests on a TLS-enabled "
             "https://<subdomain>.roboflow.run endpoint",
-        )
+        ),
     ] = False,
 ) -> None:
 

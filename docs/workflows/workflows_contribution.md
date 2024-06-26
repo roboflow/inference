@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["Crop"]
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference at image to be used as input for step processing",
+        description="The image to infer on",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     predictions: StepOutputSelector(
@@ -111,7 +111,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-class CropBlock(WorkflowBlock):
+class DynamicCropBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -131,7 +131,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
-class CropBlock(WorkflowBlock):
+class DynamicCropBlock(WorkflowBlock):
 
     async def run_locally(
             self,

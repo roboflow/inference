@@ -30,6 +30,13 @@ def get_step_selectors(
                 selector_definition=selector_definition,
             )
             result.extend(selectors)
+        elif selector_definition.is_dict_element:
+            selectors = retrieve_selectors_from_dictionary(
+                step_name=step_manifest.name,
+                property_value=property_value,
+                selector_definition=selector_definition,
+            )
+            result.extend(selectors)
         else:
             selector = retrieve_selector_from_simple_property(
                 step_name=step_manifest.name,
@@ -74,11 +81,32 @@ def retrieve_selectors_from_array(
     return result
 
 
+def retrieve_selectors_from_dictionary(
+    step_name: str,
+    property_value: Any,
+    selector_definition: SelectorDefinition,
+) -> List[ParsedSelector]:
+    if not isinstance(property_value, dict):
+        return []
+    result = []
+    for key, element in property_value.items():
+        selector = retrieve_selector_from_simple_property(
+            step_name=step_name,
+            property_value=element,
+            selector_definition=selector_definition,
+            key=key,
+        )
+        if selector is not None:
+            result.append(selector)
+    return result
+
+
 def retrieve_selector_from_simple_property(
     step_name: str,
     property_value: Any,
     selector_definition: SelectorDefinition,
     index: Optional[int] = None,
+    key: Optional[str] = None,
 ) -> Optional[ParsedSelector]:
     if not is_selector(property_value):
         return None
@@ -87,4 +115,5 @@ def retrieve_selector_from_simple_property(
         step_name=step_name,
         value=property_value,
         index=index,
+        key=key,
     )

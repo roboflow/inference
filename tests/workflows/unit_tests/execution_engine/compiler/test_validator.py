@@ -1,7 +1,7 @@
 import pytest
 
 from inference.core.workflows.core_steps.models.roboflow import object_detection
-from inference.core.workflows.core_steps.transformations import crop
+from inference.core.workflows.core_steps.transformations import dynamic_crop
 from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,
@@ -45,7 +45,7 @@ def test_validate_inputs_names_are_unique_when_input_is_invalid() -> None:
 def test_validate_steps_names_are_unique_when_input_is_valid() -> None:
     # given
     steps = [
-        crop.BlockManifest(
+        dynamic_crop.BlockManifest(
             type="Crop",
             name="my_crop",
             image="$inputs.image",
@@ -69,7 +69,7 @@ def test_validate_steps_names_are_unique_when_input_is_valid() -> None:
 def test_validate_steps_names_are_unique_when_input_is_invalid() -> None:
     # given
     steps = [
-        crop.BlockManifest(
+        dynamic_crop.BlockManifest(
             type="Crop",
             name="my_crop",
             image="$inputs.image",

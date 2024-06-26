@@ -3361,7 +3361,7 @@ def test_infer_from_workflow_when_v0_mode_used(
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
         json={
-            "outputs": {"some": 3},
+            "outputs": [{"some": 3, "other": [1, {"a": "b"}]}],
         },
     )
     method = (
@@ -3377,7 +3377,9 @@ def test_infer_from_workflow_when_v0_mode_used(
     )
 
     # then
-    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert result == [
+        {"some": 3, "other": [1, {"a": "b"}]}
+    ], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {},
@@ -3403,7 +3405,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
         json={
-            "outputs": {"some": 3},
+            "outputs": [{"some": 3}],
         },
     )
     method = (
@@ -3419,7 +3421,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     )
 
     # then
-    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {},
@@ -3447,7 +3449,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
         json={
-            "outputs": {"some": 3},
+            "outputs": [{"some": 3}],
         },
     )
     load_static_inference_input_mock.side_effect = [
@@ -3472,7 +3474,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     )
 
     # then
-    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {
@@ -3572,7 +3574,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
         json={
-            "outputs": {"some": 3},
+            "outputs": [{"some": 3}],
         },
     )
     load_static_inference_input_mock.side_effect = [
@@ -3596,7 +3598,7 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
     )
 
     # then
-    assert result == {"some": 3}, "Response from API must be properly decoded"
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "specification": {"my": "specification"},

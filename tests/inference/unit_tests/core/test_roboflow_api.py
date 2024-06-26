@@ -1870,24 +1870,21 @@ def test_get_workflow_specification_when_valid_response_given(
         requests_mock.last_request.query == "api_key=my_api_key"
     ), "API key must be given in query"
     assert result == {
-        "specification": {
-            "version": "1.0",
-            "inputs": [{"type": "InferenceImage", "name": "image"}],
-            "steps": [
-                {
-                    "type": "CVModel",
-                    "name": "step_1",
-                    "image": "$inputs.image",
-                    "model_id": "thermal dogs and people/18",
-                }
-            ],
-            "outputs": [
-                {
-                    "type": "JsonField",
-                    "name": "a",
-                    "selector": "$steps.step_1.predictions",
-                }
-            ],
-        },
-        "preset": "single-model",
+        "version": "1.0",
+        "inputs": [{"type": "InferenceImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "CVModel",
+                "name": "step_1",
+                "image": "$inputs.image",
+                "model_id": "thermal dogs and people/18",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "a",
+                "selector": "$steps.step_1.predictions",
+            }
+        ],
     }

@@ -3,7 +3,7 @@ dataclasses-json>=0.6.0
 opencv-python>=4.8.0.0
 pillow>=9.0.0
 requests>=2.27.0
-supervision<1.0.0
+supervision>=0.20.0,<1.0.0
 numpy<=1.26.4
 aiohttp>=3.9.0
 backoff>=2.2.0
