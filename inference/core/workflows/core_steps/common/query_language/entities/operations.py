@@ -5,6 +5,7 @@ from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
+    DetectionsSelectionMode,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -201,6 +202,27 @@ class DetectionsPropertyExtract(OperationDefinition):
     )
     type: Literal["DetectionsPropertyExtract"]
     property_name: DetectionsProperty
+
+
+class DetectionsSelection(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Selects bounding boxes based on predefined criterias",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["DetectionsSelection"]
+    mode: DetectionsSelectionMode
 
 
 class ExtractDetectionProperty(OperationDefinition):
@@ -412,6 +434,7 @@ AllOperationsType = Annotated[
         SequenceLength,
         Multiply,
         Divide,
+        DetectionsSelection,
     ],
     Field(discriminator="type"),
 ]

@@ -1,6 +1,6 @@
 import math
 import statistics
-from collections import Counter, defaultdict
+from collections import Counter
 from enum import Enum
 from typing import (
     Any,
@@ -44,11 +44,11 @@ from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     FloatZeroToOne,
-    FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -160,6 +160,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -181,9 +185,9 @@ class DetectionsConsensusBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions_batches: List[Batch[Optional[sv.Detections]]],
+        predictions_batches: List[Batch[sv.Detections]],
         required_votes: int,
         class_aware: bool,
         iou_threshold: float,
@@ -193,16 +197,13 @@ class DetectionsConsensusBlock(WorkflowBlock):
         presence_confidence_aggregation: AggregationMode,
         detections_merge_confidence_aggregation: AggregationMode,
         detections_merge_coordinates_aggregation: AggregationMode,
-    ) -> Union[
-        List[Dict[str, Union[sv.Detections, Any]]],
-        Tuple[List[Dict[str, Union[sv.Detections, Any]]], FlowControl],
-    ]:
+    ) -> BlockResult:
         if len(predictions_batches) < 1:
             raise ValueError(
                 f"Consensus step requires at least one source of predictions."
             )
         results = []
-        for detections_from_sources in Batch.zip_nonempty(batches=predictions_batches):
+        for detections_from_sources in zip(*predictions_batches):
             (
                 parent_id,
                 object_present,
@@ -227,15 +228,7 @@ class DetectionsConsensusBlock(WorkflowBlock):
                     "presence_confidence": presence_confidence,
                 }
             )
-        return Batch.align_batches_results(
-            batches=predictions_batches,
-            results=results,
-            null_element={
-                "predictions": None,
-                "object_present": None,
-                "presence_confidence": None,
-            },
-        )
+        return results
 
 
 def does_not_detect_objects_in_any_source(

@@ -1,7 +1,6 @@
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
-import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.env import (
@@ -17,6 +16,7 @@ from inference.core.workflows.constants import (
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_ID_KEY,
 )
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.entities.base import (
     Batch,
@@ -25,12 +25,14 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
+    BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -65,10 +67,18 @@ class BlockManifest(WorkflowBlockManifest):
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(
+                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
+            ),
         ]
 
 
@@ -79,25 +89,39 @@ class OCRModelBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    async def run(
+        self,
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(images=images)
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(images=images)
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
     async def run_locally(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
         predictions = []
-        non_empty_images = [i for i in images.iter_nonempty()]
-        for single_image in non_empty_images:
+        for single_image in images:
             inference_request = DoctrOCRInferenceRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
@@ -111,23 +135,15 @@ class OCRModelBlock(WorkflowBlock):
                 doctr_model_id, inference_request
             )
             predictions.append(result.model_dump())
-        results = self._post_process_result(
+        return self._post_process_result(
             predictions=predictions,
-            images=non_empty_images,
-        )
-        return images.align_batch_results(
-            results=results,
-            null_element={
-                PARENT_ID_KEY: None,
-                ROOT_PARENT_ID_KEY: None,
-                "result": None,
-            },
+            images=images,
         )
 
     async def run_remotely(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -144,35 +160,28 @@ class OCRModelBlock(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
+        non_empty_inference_images = [i.numpy_image for i in images]
         predictions = await client.ocr_image_async(
             inference_input=non_empty_inference_images,
         )
         if len(images) == 1:
             predictions = [predictions]
-        results = self._post_process_result(
+        return self._post_process_result(
             predictions=predictions,
-            images=non_empty_images,
-        )
-        return images.align_batch_results(
-            results=results,
-            null_element={
-                PARENT_ID_KEY: None,
-                ROOT_PARENT_ID_KEY: None,
-                "result": None,
-            },
+            images=images,
         )
 
     def _post_process_result(
         self,
-        images: List[WorkflowImageData],
+        images: Batch[WorkflowImageData],
         predictions: List[dict],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
         for prediction, image in zip(predictions, images):
             prediction[PREDICTION_TYPE_KEY] = "ocr"
             prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
+            if "time" in prediction:
+                del prediction["time"]
         return predictions

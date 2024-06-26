@@ -777,8 +777,10 @@ def test_grab_batch_parameters() -> None:
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,), (1,)]),
     }
 
     # when
@@ -826,8 +828,12 @@ def test_grab_batch_parameters_when_non_broadcastable_parameter_spotted() -> Non
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A", "B", "C"]),  # cannot be broadcast
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(
+            content=["A", "B", "C"], indices=[(0,), (1,), (2,)]
+        ),  # cannot be broadcast
     }
 
     # when
@@ -857,8 +863,10 @@ def test_grab_non_batch_parameters_when_non_batch_parameters_to_be_found() -> No
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,)]),
     }
 
     # when
@@ -879,8 +887,10 @@ def test_grab_non_batch_parameters_when_non_batch_parameters_to_be_found() -> No
 def test_grab_non_batch_parameters_when_non_batch_parameters_not_to_be_found() -> None:
     # given
     operations_parameters = {
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,)]),
     }
 
     # when

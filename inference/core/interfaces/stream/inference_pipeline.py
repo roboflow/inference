@@ -51,6 +51,8 @@ from inference.core.interfaces.stream.watchdog import (
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.core.utils.function import experimental
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
@@ -419,6 +421,10 @@ class InferencePipeline:
         )
 
     @classmethod
+    @experimental(
+        reason="Usage of workflows with `InferencePipeline` is an experimental feature. Please report any issues "
+        "here: https://github.com/roboflow/inference/issues"
+    )
     def init_with_workflow(
         cls,
         video_reference: Union[str, int],
@@ -479,6 +485,9 @@ class InferencePipeline:
                 corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
                 will be used.
                 Example valid properties are: {"frame_width": 1920, "frame_height": 1080, "fps": 30.0}
+            workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
+                workflows Execution Engine to init steps of your workflow - may be required when running workflows
+                with custom plugins.
 
 
         Other ENV variables involved in low-level configuration:
@@ -549,6 +558,9 @@ class InferencePipeline:
                 background_tasks
             )
             workflow_init_parameters["workflows_core.cache"] = cache
+            workflow_init_parameters["workflows_core.step_execution_mode"] = (
+                StepExecutionMode.LOCAL
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,

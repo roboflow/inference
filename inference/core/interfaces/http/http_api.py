@@ -135,6 +135,7 @@ from inference.core.interfaces.http.orjson_utils import (
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.notebooks import start_notebook
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
@@ -143,7 +144,7 @@ from inference.core.workflows.core_steps.common.query_language.introspection.cor
     prepare_operations_descriptions,
     prepare_operators_descriptions,
 )
-from inference.core.workflows.entities.base import OutputDefinition, StepExecutionMode
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -466,12 +467,12 @@ class HttpInterface(BaseInterface):
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
                 "workflows_core.cache": cache,
+                "workflows_core.step_execution_mode": step_execution_mode,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                step_execution_mode=step_execution_mode,
                 prevent_local_images_loading=True,
             )
             result = await execution_engine.run_async(
@@ -979,12 +980,12 @@ class HttpInterface(BaseInterface):
                     "workflows_core.model_manager": model_manager,
                     "workflows_core.api_key": None,
                     "workflows_core.background_tasks": None,
+                    "workflows_core.step_execution_mode": step_execution_mode,
                 }
                 _ = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                    step_execution_mode=step_execution_mode,
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
@@ -1404,6 +1405,46 @@ class HttpInterface(BaseInterface):
                         trackUsage(cog_model_id, actor)
                     return response
 
+        if not LAMBDA:
+
+            @app.get(
+                "/notebook/start",
+                summary="Jupyter Lab Server Start",
+                description="Starts a jupyter lab server for running development code",
+            )
+            @with_route_exceptions
+            async def notebook_start(browserless: bool = False):
+                """Starts a jupyter lab server for running development code.
+
+                Args:
+                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
+                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
+
+                Returns:
+                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
+                """
+                logger.debug(f"Reached /notebook/start")
+                if NOTEBOOK_ENABLED:
+                    start_notebook()
+                    if browserless:
+                        return {
+                            "success": True,
+                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
+                        }
+                    else:
+                        sleep(2)
+                        return RedirectResponse(
+                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
+                        )
+                else:
+                    if browserless:
+                        return {
+                            "success": False,
+                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
+                        }
+                    else:
+                        return RedirectResponse(f"/notebook-instructions.html")
+
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatability
             @app.get(
@@ -1707,46 +1748,6 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
-
-        if not LAMBDA:
-
-            @app.get(
-                "/notebook/start",
-                summary="Jupyter Lab Server Start",
-                description="Starts a jupyter lab server for running development code",
-            )
-            @with_route_exceptions
-            async def notebook_start(browserless: bool = False):
-                """Starts a jupyter lab server for running development code.
-
-                Args:
-                    inference_request (NotebookStartRequest): The request containing the necessary details for starting a jupyter lab server.
-                    background_tasks: (BackgroundTasks) pool of fastapi background tasks
-
-                Returns:
-                    NotebookStartResponse: The response containing the URL of the jupyter lab server.
-                """
-                logger.debug(f"Reached /notebook/start")
-                if NOTEBOOK_ENABLED:
-                    start_notebook()
-                    if browserless:
-                        return {
-                            "success": True,
-                            "message": f"Jupyter Lab server started at http://localhost:{NOTEBOOK_PORT}?token={NOTEBOOK_PASSWORD}",
-                        }
-                    else:
-                        sleep(2)
-                        return RedirectResponse(
-                            f"http://localhost:{NOTEBOOK_PORT}/lab/tree/quickstart.ipynb?token={NOTEBOOK_PASSWORD}"
-                        )
-                else:
-                    if browserless:
-                        return {
-                            "success": False,
-                            "message": "Notebook server is not enabled. Enable notebooks via the NOTEBOOK_ENABLED environment variable.",
-                        }
-                    else:
-                        return RedirectResponse(f"/notebook-instructions.html")
 
         app.mount(
             "/",

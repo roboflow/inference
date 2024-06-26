@@ -25,6 +25,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     extract_detections_property,
     filter_detections,
     offset_detections,
+    select_detections,
     shift_detections,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
@@ -179,6 +180,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "ExtractImageProperty": extract_image_property,
     "Multiply": multiply,
     "Divide": divide,
+    "DetectionsSelection": select_detections,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

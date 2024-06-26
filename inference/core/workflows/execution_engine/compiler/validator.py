@@ -7,7 +7,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
 )
 from inference.core.workflows.execution_engine.compiler.utils import (
     get_input_parameters_selectors,
-    get_output_names,
+    get_output_selectors,
     get_steps_selectors,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
@@ -40,7 +40,7 @@ def validate_steps_names_are_unique(steps: List[WorkflowBlockManifest]) -> None:
 
 
 def validate_outputs_names_are_unique(outputs: List[JsonField]) -> None:
-    output_names = get_output_names(outputs=outputs)
+    output_names = get_output_selectors(outputs=outputs)
     if len(output_names) != len(outputs):
         raise DuplicatedNameError(
             public_message="Found duplicated input outputs names",

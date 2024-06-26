@@ -22,6 +22,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -73,6 +74,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
@@ -85,15 +90,15 @@ class RelativeStaticCropBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[BaseModel]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         x_center: float,
         y_center: float,
         width: float,
         height: float,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        results = [
+    ) -> BlockResult:
+        return [
             {
                 "crops": take_static_crop(
                     image=image,
@@ -103,9 +108,8 @@ class RelativeStaticCropBlock(WorkflowBlock):
                     height=height,
                 )
             }
-            for image in images.iter_nonempty()
+            for image in images
         ]
-        return images.align_batch_results(results=results, null_element={"crops": None})
 
 
 def take_static_crop(

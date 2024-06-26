@@ -13,7 +13,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 
 
 class WorkflowInferenceResponse(BaseModel):
-    outputs: Dict[str, Any] = Field(
+    outputs: List[Dict[str, Any]] = Field(
         description="Dictionary with keys defined in workflow output and serialised values"
     )
 

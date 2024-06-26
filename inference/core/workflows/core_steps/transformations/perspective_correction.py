@@ -1,5 +1,5 @@
 import math
-from typing import Any, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
@@ -15,11 +15,11 @@ from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -72,6 +72,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -301,14 +305,14 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return PerspectiveCorrectionManifest
 
-    async def run_locally(
+    async def run(
         self,
         predictions: Batch[sv.Detections],
         perspective_polygons: Batch[List[np.ndarray]],
         transformed_rect_width: int,
         transformed_rect_height: int,
         extend_perspective_polygon_by_detections_anchor: Optional[str],
-    ) -> Tuple[List[Any], FlowControl]:
+    ) -> BlockResult:
         if not self.perspective_transformers:
             try:
                 largest_perspective_polygons = pick_largest_perspective_polygons(
@@ -344,4 +348,4 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 perspective_transformer=perspective_transformer,
             )
             result.append({OUTPUT_KEY: corrected_detections})
-        return result, FlowControl(mode="pass")
+        return result

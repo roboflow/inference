@@ -1,9 +1,9 @@
 import time
 from typing import Optional
 
-import docker
 from docker.models.containers import Container
 
+import docker
 from inference_cli.lib import container_adapter
 
 docker_image = "us-central1-docker.pkg.dev/roboflow-proxy-425409/inference/tunnel"
@@ -13,7 +13,7 @@ def start_tunnel(api_key: str, inference_port: int = 9001) -> str:
     container = find_running_tunnel_container()
     if not container:
         container = start_tunnel_container(api_key, inference_port)
-    
+
     return extract_tunnel_url(container)
 
 
@@ -39,7 +39,7 @@ def start_tunnel_container(api_key, inference_port: int = 9001) -> Container:
             # inference from there. Later we can run both containers in the same
             # network.
             upstream: "host-gateway",
-        }
+        },
     )
 
 

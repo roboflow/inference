@@ -1,4 +1,6 @@
-from inference.core.workflows.core_steps.flow_control.condition import ConditionBlock
+from typing import List, Type
+
+from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
 )
@@ -34,9 +36,6 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
-from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
-    DetectionsRateLimiterBlock,
-)
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
 )
@@ -64,9 +63,10 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
-def load_blocks() -> list:
+def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         DetectionsConsensusBlock,
         ClipComparisonBlock,
@@ -87,9 +87,8 @@ def load_blocks() -> list:
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
-        DetectionsRateLimiterBlock,
-        ConditionBlock,
         RoboflowDatasetUploadBlock,
+        ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,
     ]

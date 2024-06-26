@@ -28,6 +28,7 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -54,6 +55,10 @@ class BlockManifest(WorkflowBlockManifest):
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -68,17 +73,15 @@ class QRCodeDetectorBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
         results = []
-        for image in images.iter_nonempty():
+        for image in images:
             qr_code_detections = detect_qr_codes(image=image)
             results.append({"predictions": qr_code_detections})
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
-        )
+        return results
 
 
 def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:

@@ -1,20 +1,11 @@
-from copy import copy
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    DEFAULT_OPERAND_NAME,
     AllOperationsType,
     OperationDefinition,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.core import (
-    build_operations_chain,
-)
-from inference.core.workflows.core_steps.common.utils import (
-    grab_batch_parameters,
-    grab_non_batch_parameters,
 )
 from inference.core.workflows.core_steps.transformations.detections_transformation import (
     execute_transformation,
@@ -24,12 +15,12 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -68,6 +59,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -87,12 +82,12 @@ class DetectionsFilterBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions: Batch[Optional[sv.Detections]],
+        predictions: Batch[sv.Detections],
         operations: List[OperationDefinition],
         operations_parameters: Dict[str, Any],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         return execute_transformation(
             predictions=predictions,
             operations=operations,

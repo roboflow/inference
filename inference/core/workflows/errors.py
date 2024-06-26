@@ -37,6 +37,10 @@ class WorkflowCompilerError(WorkflowError):
     pass
 
 
+class AssumptionError(WorkflowError):
+    pass
+
+
 class PluginLoadingError(WorkflowCompilerError):
     pass
 
@@ -73,15 +77,27 @@ class InvalidReferenceTargetError(WorkflowCompilerError):
     pass
 
 
-class ConditionalBranchesCollapseError(ExecutionGraphStructureError):
-    pass
-
-
 class UnknownManifestType(WorkflowCompilerError):
     pass
 
 
 class BlockInitParameterNotProvidedError(WorkflowCompilerError):
+    pass
+
+
+class StepInputDimensionalityError(WorkflowCompilerError):
+    pass
+
+
+class StepInputLineageError(WorkflowCompilerError):
+    pass
+
+
+class StepOutputLineageError(WorkflowCompilerError):
+    pass
+
+
+class ControlFlowDefinitionError(WorkflowCompilerError):
     pass
 
 
