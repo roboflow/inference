@@ -31,7 +31,7 @@ Sets the default non-maximal suppression (NMS) behavior for detection type model
 
 Variable: **ALLOW_ORIGINS**
 
-Type: String (default = "")
+Type: String (default = "*")
 
 Sets the allow_origins property on the CORSMiddleware used with FastAPI for HTTP interfaces. Multiple values can be provided separated by a comma (ex. ALLOW_ORIGINS=orig1.com,orig2.com).
 
