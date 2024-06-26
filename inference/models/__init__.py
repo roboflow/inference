@@ -34,6 +34,11 @@ except:
     pass
 
 try:
+    from inference.models.florence2 import Florence2, LoRAFlorence2
+except:
+    pass
+
+try:
     from inference.models.yolo_world import YOLOWorld
 except:
     pass

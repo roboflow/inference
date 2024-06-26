@@ -4,7 +4,7 @@ import re
 import numpy as np
 from peft import LoraConfig, get_peft_model
 from PIL import Image
-from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+from transformers import AutoModel, AutoProcessor, PaliGemmaForConditionalGeneration
 
 from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 
@@ -38,13 +38,21 @@ from inference.core.utils.image_utils import load_image_rgb
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PaliGemma(RoboflowInferenceModel):
+class TransformerModel(RoboflowInferenceModel):
     """By using you agree to the terms listed at https://ai.google.dev/gemma/terms"""
 
+    # TODO
+    hf_args = {}
     task_type = "lmm"
+    transformers_class = AutoModel
+    default_dtype = torch.float16
+    generation_includes_input = False
 
-    def __init__(self, model_id, *args, **kwargs):
+    def __init__(self, model_id, *args, dtype=None, **kwargs):
         super().__init__(model_id, *args, **kwargs)
+        self.dtype = dtype
+        if self.dtype is None:
+            self.dtype = self.default_dtype
         self.cache_model_artefacts()
 
         self.api_key = API_KEY
@@ -52,19 +60,15 @@ class PaliGemma(RoboflowInferenceModel):
         self.initialize_model()
 
     def initialize_model(self):
-        self.dtype = torch.float16
         self.model = (
-            PaliGemmaForConditionalGeneration.from_pretrained(
-                self.cache_dir,
-                device_map=DEVICE,
+            self.transformers_class.from_pretrained(
+                self.cache_dir, device_map=DEVICE, **self.hf_args
             )
             .eval()
             .to(self.dtype)
         )
 
-        self.processor = AutoProcessor.from_pretrained(
-            self.cache_dir,
-        )
+        self.processor = AutoProcessor.from_pretrained(self.cache_dir, **self.hf_args)
 
     def preprocess(
         self, image: Any, **kwargs
@@ -98,7 +102,9 @@ class PaliGemma(RoboflowInferenceModel):
             generation = self.model.generate(
                 **model_inputs, max_new_tokens=100, do_sample=False
             )
-            generation = generation[0][input_len:]
+            generation = generation[0]
+            if self.generation_includes_input:
+                generation = generation[input_len:]
             decoded = self.processor.decode(generation, skip_special_tokens=True)
 
         return (decoded,)
@@ -161,7 +167,7 @@ class PaliGemma(RoboflowInferenceModel):
         raise NotImplementedError()
 
 
-class LoRAPaliGemma(PaliGemma):
+class LoRATransformerModel(TransformerModel):
     def __init__(self, model_id, *args, huggingface_token=HUGGINGFACE_TOKEN, **kwargs):
         self.huggingface_token = huggingface_token
         super().__init__(model_id, *args, **kwargs)
@@ -170,22 +176,40 @@ class LoRAPaliGemma(PaliGemma):
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision
-        self.dtype = torch.float16
         if revision is not None:
-            self.dtype = getattr(torch, revision)
+            try:
+                self.dtype = getattr(torch, revision)
+            except AttributeError:
+                pass
         base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
         if self.huggingface_token is None:
             raise RuntimeError(
                 "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
                 "(or pass huggingface_token to this __init__)"
             )
-        self.base_model = PaliGemmaForConditionalGeneration.from_pretrained(
+        self.base_model = self.transformers_class.from_pretrained(
             model_id,
             revision=revision,
             device_map=DEVICE,
             cache_dir=base_cache_dir,
             token=self.huggingface_token,
+            **self.hf_args,
         ).to(self.dtype)
         self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
-        self.processor = AutoProcessor.from_pretrained(self.cache_dir)
+        self.processor = AutoProcessor.from_pretrained(self.cache_dir, **self.hf_args)
+
+    def get_infer_bucket_file_list(self) -> list:
+        """Get the list of required files for inference.
+
+        Returns:
+            list: A list of required files for inference, e.g., ["model.pt"].
+        """
+        return [
+            "adapter_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer.model",
+            "adapter_model.safetensors" "preprocessor_config.json",
+            "tokenizer_config.json",
+        ]
