@@ -4,7 +4,7 @@ import re
 import numpy as np
 from peft import LoraConfig, get_peft_model
 from PIL import Image
-from transformers import AutoModel, AutoProcessor, PaliGemmaForConditionalGeneration
+from transformers import AutoProcessor, PaliGemmaForConditionalGeneration, AutoModel
 
 from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 
@@ -39,9 +39,6 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class TransformerModel(RoboflowInferenceModel):
-    """By using you agree to the terms listed at https://ai.google.dev/gemma/terms"""
-
-    # TODO
     hf_args = {}
     task_type = "lmm"
     transformers_class = AutoModel
@@ -62,13 +59,18 @@ class TransformerModel(RoboflowInferenceModel):
     def initialize_model(self):
         self.model = (
             self.transformers_class.from_pretrained(
-                self.cache_dir, device_map=DEVICE, **self.hf_args
+                self.cache_dir,
+                device_map=DEVICE,
+                **self.hf_args
             )
             .eval()
             .to(self.dtype)
         )
 
-        self.processor = AutoProcessor.from_pretrained(self.cache_dir, **self.hf_args)
+        self.processor = AutoProcessor.from_pretrained(
+            self.cache_dir,
+            **self.hf_args
+        )
 
     def preprocess(
         self, image: Any, **kwargs
@@ -193,7 +195,7 @@ class LoRATransformerModel(TransformerModel):
             device_map=DEVICE,
             cache_dir=base_cache_dir,
             token=self.huggingface_token,
-            **self.hf_args,
+            **self.hf_args
         ).to(self.dtype)
         self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
@@ -210,6 +212,7 @@ class LoRATransformerModel(TransformerModel):
             "special_tokens_map.json",
             "tokenizer.json",
             "tokenizer.model",
-            "adapter_model.safetensors" "preprocessor_config.json",
+            "adapter_model.safetensors"
+            "preprocessor_config.json",
             "tokenizer_config.json",
         ]
