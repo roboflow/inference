@@ -27,6 +27,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     offset_detections,
     select_detections,
     shift_detections,
+    sort_detections,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
@@ -181,6 +182,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "Multiply": multiply,
     "Divide": divide,
     "DetectionsSelection": select_detections,
+    "SortDetections": sort_detections,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

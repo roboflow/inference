@@ -34,6 +34,17 @@ class DetectionsProperty(Enum):
     BOTTOM_RIGHT = "bottom_right"
 
 
+class DetectionsSortProperties(Enum):
+    CONFIDENCE = "confidence"
+    X_MIN = "x_min"
+    X_MAX = "x_max"
+    Y_MIN = "y_min"
+    Y_MAX = "y_max"
+    SIZE = "size"
+    CENTER_X = "center_x"
+    CENTER_Y = "center_y"
+
+
 class StatementsGroupsOperator(Enum):
     AND = "and"
     OR = "or"

@@ -8,6 +8,7 @@ from supervision import Position
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
     DetectionsSelectionMode,
+    DetectionsSortProperties,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     DEFAULT_OPERAND_NAME,
@@ -139,3 +140,51 @@ def select_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     return DETECTIONS_SELECTORS[mode](value)
+
+
+def extract_x_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
+    return detections.xyxy[:, 0] + (detections.xyxy[:, 2] - detections.xyxy[:, 0]) / 2
+
+
+def extract_y_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
+    return detections.xyxy[:, 1] + (detections.xyxy[:, 3] - detections.xyxy[:, 1]) / 2
+
+
+SORT_PROPERTIES_EXTRACT = {
+    DetectionsSortProperties.CONFIDENCE: lambda detections: detections.confidence,
+    DetectionsSortProperties.X_MIN: lambda detections: detections.xyxy[:, 0],
+    DetectionsSortProperties.X_MAX: lambda detections: detections.xyxy[:, 2],
+    DetectionsSortProperties.Y_MIN: lambda detections: detections.xyxy[:, 1],
+    DetectionsSortProperties.Y_MAX: lambda detections: detections.xyxy[:, 3],
+    DetectionsSortProperties.SIZE: lambda detections: detections.box_area,
+    DetectionsSortProperties.CENTER_X: extract_x_coordinate_of_detections_center,
+    DetectionsSortProperties.CENTER_Y: extract_y_coordinate_of_detections_center,
+}
+
+
+def sort_detections(
+    value: Any, mode: DetectionsSortProperties, ascending: bool, **kwargs
+) -> sv.Detections:
+    if not isinstance(value, sv.Detections):
+        value_as_str = safe_stringify(value=value)
+        raise InvalidInputTypeError(
+            public_message=f"Executing sort_detections(...), expected sv.Detections object as value, "
+            f"got {value_as_str} of type {type(value)}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    if mode not in SORT_PROPERTIES_EXTRACT:
+        InvalidInputTypeError(
+            public_message=f"Executing sort_detections(...), expected mode to be one of "
+            f"{SORT_PROPERTIES_EXTRACT.values()}, got {mode}.",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    if len(value) == 0:
+        return value
+    extracted_property = SORT_PROPERTIES_EXTRACT[mode](value)
+    if extracted_property is None:
+        # property may not be set, as sv.Detections declares Optional[...]
+        return value
+    sorted_indices = np.argsort(extracted_property)
+    if not ascending:
+        sorted_indices = sorted_indices[::-1]
+    return value[sorted_indices]

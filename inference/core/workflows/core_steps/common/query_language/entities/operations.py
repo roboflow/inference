@@ -6,6 +6,7 @@ from typing_extensions import Annotated
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
     DetectionsSelectionMode,
+    DetectionsSortProperties,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -262,6 +263,28 @@ class DetectionsFilter(OperationDefinition):
     filter_operation: "StatementGroup"
 
 
+class SortDetections(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes the order of detected bounding boxes.",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["SortDetections"]
+    mode: DetectionsSortProperties
+    ascending: bool = Field(default=True)
+
+
 class DetectionsOffset(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -435,6 +458,7 @@ AllOperationsType = Annotated[
         Multiply,
         Divide,
         DetectionsSelection,
+        SortDetections,
     ],
     Field(discriminator="type"),
 ]
