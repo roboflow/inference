@@ -508,10 +508,7 @@ def test_decode_workflow_output_image_image_when_base64_image_expected() -> None
     )
 
     # then
-    assert result == {
-        "type": "base64",
-        "value": "base64_image_here",
-    }, "Input value should not be changed"
+    assert result == "base64_image_here", "Input value should not be changed"
 
 
 @mock.patch.object(post_processing, "transform_base64_visualisation")
@@ -520,6 +517,9 @@ def test_decode_workflow_output_image_when_numpy_image_expected(
 ) -> None:
     # given
     value = {"type": "base64", "value": "base64_image_here"}
+    transform_base64_visualisation_mock.return_value = np.zeros(
+        (192, 168, 3), dtype=np.uint8
+    )
 
     # when
     result = decode_workflow_output_image(
@@ -528,7 +528,7 @@ def test_decode_workflow_output_image_when_numpy_image_expected(
     )
 
     # then
-    assert result["type"] == "numpy_object", "Numpy object type should be output"
+    assert isinstance(result, np.ndarray), "Numpy object type should be output"
     transform_base64_visualisation_mock.assert_called_once_with(
         visualisation="base64_image_here",
         expected_format=VisualisationResponseFormat.NUMPY,
@@ -540,6 +540,9 @@ def test_decode_workflow_output_image_when_pil_image_expected(
     transform_base64_visualisation_mock: MagicMock,
 ) -> None:
     # given
+    transform_base64_visualisation_mock.return_value = Image.fromarray(
+        np.zeros((192, 168, 3), dtype=np.uint8)
+    )
     value = {"type": "base64", "value": "base64_image_here"}
 
     # when
@@ -549,25 +552,32 @@ def test_decode_workflow_output_image_when_pil_image_expected(
     )
 
     # then
-    assert result["type"] == "pil", "Pillow object type should be output"
+    assert isinstance(result, Image.Image), "Pillow object type should be output"
     transform_base64_visualisation_mock.assert_called_once_with(
         visualisation="base64_image_here",
         expected_format=VisualisationResponseFormat.PILLOW,
     )
 
 
-@mock.patch.object(post_processing, "transform_base64_visualisation", MagicMock())
-def test_decode_workflow_outputs() -> None:
+@mock.patch.object(post_processing, "transform_base64_visualisation")
+def test_decode_workflow_outputs(
+    transform_base64_visualisation_mock: MagicMock,
+) -> None:
     # given
-    workflow_outputs = {
-        "some": "value",
-        "other": {"type": "base64", "value": "base64_image_here"},
-        "third": [1, {"type": "base64", "value": "base64_image_here"}],
-        "fourth": [
-            1,
-            [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}],
-        ],
-    }
+    transform_base64_visualisation_mock.return_value = np.zeros(
+        (192, 168, 3), dtype=np.uint8
+    )
+    workflow_outputs = [
+        {
+            "some": "value",
+            "other": {"type": "base64", "value": "base64_image_here"},
+            "third": [1, {"type": "base64", "value": "base64_image_here"}],
+            "fourth": [
+                1,
+                [{"a": 2, "b": {"type": "base64", "value": "base64_image_here"}}],
+            ],
+        }
+    ]
 
     # when
     result = decode_workflow_outputs(
@@ -576,20 +586,26 @@ def test_decode_workflow_outputs() -> None:
     )
 
     # then
-    assert len(result) == 4, "Number of elements in dict cannot be altered"
-    assert result["some"] == "value", "This value must not be changed"
+    assert len(result) == 1, "Expected one output element"
+    result_element = result[0]
+    assert len(result_element) == 4, "Number of elements in dict cannot be altered"
+    assert result_element["some"] == "value", "This value must not be changed"
+    assert isinstance(
+        result_element["other"], np.ndarray
+    ), "This element must be deserialized to numpy"
+    assert result_element["third"][0] == 1, "This object cannot be mutated"
+    assert isinstance(
+        result_element["third"][1], np.ndarray
+    ), "This element must be deserialized to numpy"
     assert (
-        result["other"]["type"] == "numpy_object"
-    ), "This element must be deserialized"
-    assert result["third"][0] == 1, "This object cannot be mutated"
+        result_element["fourth"][0] == 1
+    ), "First element of `fourth` key not to be changed"
     assert (
-        result["third"][1]["type"] == "numpy_object"
-    ), "This element must be deserialize"
-    assert result["fourth"][0] == 1, "First element of `fourth` key not to be changed"
-    assert result["fourth"][1][0]["a"] == 2, "Nested dict key `a` not to be changed"
-    assert (
-        result["fourth"][1][0]["b"]["type"] == "numpy_object"
-    ), "This element must be deserialized"
+        result_element["fourth"][1][0]["a"] == 2
+    ), "Nested dict key `a` not to be changed"
+    assert isinstance(
+        result_element["fourth"][1][0]["b"], np.ndarray
+    ), "This element must be deserialized to numpy"
 
 
 def test_combine_gaze_detections_when_single_detections_given() -> None:

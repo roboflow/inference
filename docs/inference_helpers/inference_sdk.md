@@ -555,7 +555,7 @@ The following fields are passed to API
 - `confidence_threshold` (as `confidence`) - to alter model thresholding
 - `keypoint_confidence_threshold` as (`keypoint_confidence`) - to filter out detected keypoints
   based on model confidence
-- `format`: to visualise on server side - use `image` (but then you loose prediction details from response)
+- `format`: to visualise on server side - use `image` (just the image) or `image_and_json` (prediction details and image base64)
 - `visualize_labels` (as `labels`) - used in visualisation to show / hide labels for classes
 - `mask_decode_mode`
 - `tradeoff_factor`

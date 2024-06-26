@@ -1,30 +1,23 @@
+import uuid
 from copy import deepcopy
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
-from uuid import uuid4
+from typing import Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
-from typing_extensions import Annotated
 
-from inference.core.workflows.constants import (
-    DETECTION_ID_KEY,
-    HEIGHT_KEY,
-    PARENT_ID_KEY,
-    WIDTH_KEY,
-)
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     INTEGER_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -50,7 +43,6 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["DetectionOffset"]
-    name: str = Field(description="Unique name of step in workflows")
     predictions: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -75,20 +67,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
-    image_metadata: Annotated[
-        StepOutputSelector(kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-        Field(
-            description="Metadata of image used to create `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.image"],
-        ),
-    ]
-    prediction_type: Annotated[
-        StepOutputSelector(kind=[BATCH_OF_PREDICTION_TYPE_KIND]),
-        Field(
-            description="Type of `predictions`. Must be output from the step referred in `predictions` field",
-            examples=["$steps.detection.prediction_type"],
-        ),
-    ]
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -101,11 +83,6 @@ class BlockManifest(WorkflowBlockManifest):
                     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
             ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
         ]
 
 
@@ -117,47 +94,43 @@ class DetectionOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions: List[List[dict]],
+        predictions: Batch[sv.Detections],
         offset_width: int,
         offset_height: int,
-        image_metadata: List[dict],
-        prediction_type: List[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        result_predictions, result_parent_id = [], []
-        for detections in predictions:
-            offset_detections = [
-                offset_detection(
-                    detection=detection,
+    ) -> BlockResult:
+        return [
+            {
+                "predictions": offset_detections(
+                    detections=detections,
                     offset_width=offset_width,
                     offset_height=offset_height,
                 )
-                for detection in detections
-            ]
-            result_predictions.append(offset_detections)
-            result_parent_id.append(
-                [detection[PARENT_ID_KEY] for detection in offset_detections]
-            )
-        return [
-            {
-                "predictions": prediction,
-                PARENT_ID_KEY: parent_id,
-                "image": image,
-                "prediction_type": single_prediction_type,
             }
-            for prediction, parent_id, image, single_prediction_type in zip(
-                result_predictions, result_parent_id, image_metadata, prediction_type
-            )
+            for detections in predictions
         ]
 
 
-def offset_detection(
-    detection: Dict[str, Any], offset_width: int, offset_height: int
-) -> Dict[str, Any]:
-    detection_copy = deepcopy(detection)
-    detection_copy[WIDTH_KEY] += round(offset_width)
-    detection_copy[HEIGHT_KEY] += round(offset_height)
-    detection_copy[PARENT_ID_KEY] = detection_copy[DETECTION_ID_KEY]
-    detection_copy[DETECTION_ID_KEY] = str(uuid4())
-    return detection_copy
+def offset_detections(
+    detections: sv.Detections,
+    offset_width: int,
+    offset_height: int,
+    parent_id_key: str = PARENT_ID_KEY,
+    detection_id_key: str = DETECTION_ID_KEY,
+) -> sv.Detections:
+    _detections = deepcopy(detections)
+    _detections.xyxy = np.array(
+        [
+            (
+                x1 - offset_width // 2,
+                y1 - offset_height // 2,
+                x2 + offset_width // 2,
+                y2 + offset_height // 2,
+            )
+            for (x1, y1, x2, y2) in _detections.xyxy
+        ]
+    )
+    _detections[parent_id_key] = detections[detection_id_key].copy()
+    _detections[detection_id_key] = [str(uuid.uuid4()) for _ in detections]
+    return _detections

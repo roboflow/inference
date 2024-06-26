@@ -1,6 +1,6 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.env import (
@@ -11,21 +11,28 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    attach_prediction_type_info,
-    load_core_model,
+from inference.core.workflows.constants import (
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
 )
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
     BATCH_OF_STRING_KIND,
-    FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -39,7 +46,7 @@ This block returns the text within an image.
 You may want to use this block in combination with a detections-based block (i.e. 
 ObjectDetectionBlock). An object detection model could isolate specific regions from an 
 image (i.e. a shipping container ID in a logistics use case) for further processing. 
-You can then use a CropBlock to crop the region of interest before running OCR.
+You can then use a DynamicCropBlock to crop the region of interest before running OCR.
 
 Using a detections model then cropping detections allows you to isolate your analysis 
 on particular regions of an image.
@@ -57,17 +64,18 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[BATCH_OF_STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(
                 name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
@@ -75,31 +83,47 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class OCRModelBlock(WorkflowBlock):
+    # TODO: we need data model for OCR predictions
 
     def __init__(
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    async def run(
+        self,
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(images=images)
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(images=images)
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
     async def run_locally(
         self,
-        images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        serialised_result = []
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
+        predictions = []
         for single_image in images:
             inference_request = DoctrOCRInferenceRequest(
-                image=single_image,
+                image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
             )
             doctr_model_id = load_core_model(
@@ -110,16 +134,16 @@ class OCRModelBlock(WorkflowBlock):
             result = await self._model_manager.infer_from_request(
                 doctr_model_id, inference_request
             )
-            serialised_result.append(result.dict())
+            predictions.append(result.model_dump())
         return self._post_process_result(
-            predictions=serialised_result,
-            image=images,
+            predictions=predictions,
+            images=images,
         )
 
     async def run_remotely(
         self,
-        images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -136,24 +160,28 @@ class OCRModelBlock(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
+        non_empty_inference_images = [i.numpy_image for i in images]
         predictions = await client.ocr_image_async(
-            inference_input=[i["value"] for i in images],
+            inference_input=non_empty_inference_images,
         )
         if len(images) == 1:
             predictions = [predictions]
-        return self._post_process_result(image=images, predictions=predictions)
+        return self._post_process_result(
+            predictions=predictions,
+            images=images,
+        )
 
     def _post_process_result(
         self,
-        image: List[dict],
+        images: Batch[WorkflowImageData],
         predictions: List[dict],
-    ) -> List[dict]:
-        predictions = attach_parent_info(
-            images=image,
-            predictions=predictions,
-            nested_key=None,
-        )
-        return attach_prediction_type_info(
-            predictions=predictions,
-            prediction_type="ocr",
-        )
+    ) -> BlockResult:
+        for prediction, image in zip(predictions, images):
+            prediction[PREDICTION_TYPE_KEY] = "ocr"
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+            if "time" in prediction:
+                del prediction["time"]
+        return predictions

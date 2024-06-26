@@ -13,10 +13,10 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
-    SelectorDefinition, BlockDescription,
+    SelectorDefinition, BlockDescription, BlockManifestMetadata,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
-    parse_block_manifest_schema,
+    parse_block_manifest,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -165,11 +165,12 @@ def main() -> None:
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name
         )
         example_definition = generate_example_step_definition(block=block)
+        parsed_manifest = parse_block_manifest(manifest_type=block.manifest_class)
         documentation_content = BLOCK_DOCUMENTATION_TEMPLATE.format(
             class_name=block.manifest_type_identifier,
             description=long_description,
-            block_inputs=format_block_inputs(block.block_schema),
-            block_input_bindings=format_input_bindings(block.block_schema),
+            block_inputs=format_block_inputs(parsed_manifest),
+            block_input_bindings=format_input_bindings(parsed_manifest),
             block_output_bindings=format_block_outputs(block.outputs_manifest),
             input_connections=format_block_connections(
                 connections=blocks_connections.input_connections.block_wise[
@@ -245,11 +246,10 @@ def camel_to_snake(name: str) -> str:
     return name.lower()
 
 
-def format_block_inputs(block_schema: dict) -> str:
-    parsed_schema = parse_block_manifest_schema(schema=block_schema)
+def format_block_inputs(parsed_manifest: BlockManifestMetadata) -> str:
     rows = []
-    for input_description in parsed_schema.primitive_types.values():
-        ref_appear = input_description.property_name in parsed_schema.selectors
+    for input_description in parsed_manifest.primitive_types.values():
+        ref_appear = input_description.property_name in parsed_manifest.selectors
         rows.append(
             f"| `{input_description.property_name}` | `{input_description.type_annotation}` | "
             f"{input_description.property_description}. | {'✅' if ref_appear else '❌'} |"
@@ -257,10 +257,9 @@ def format_block_inputs(block_schema: dict) -> str:
     return "\n".join(USER_CONFIGURATION_HEADER + rows)
 
 
-def format_input_bindings(block_schema: dict) -> str:
-    parsed_schema = parse_block_manifest_schema(schema=block_schema)
+def format_input_bindings(parsed_manifest: BlockManifestMetadata) -> str:
     rows = []
-    for selector in parsed_schema.selectors.values():
+    for selector in parsed_manifest.selectors.values():
         kinds_annotation = prepare_selector_kinds_annotation(selector=selector)
         rows.append(
             f"        - `{selector.property_name}` (*{kinds_annotation}*): {selector.property_description}."

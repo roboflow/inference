@@ -1,3 +1,4 @@
+import networkx as nx
 import pytest
 
 from inference.core.workflows.entities.base import (
@@ -7,49 +8,52 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import INTEGER_KIND, ROBOFLOW_MODEL_ID_KIND
 from inference.core.workflows.errors import (
-    ConditionalBranchesCollapseError,
-    DanglingExecutionBranchError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
 )
 from inference.core.workflows.execution_engine.compiler.entities import (
+    DynamicStepInputDefinition,
+    InputNode,
+    NodeCategory,
+    NodeInputCategory,
+    OutputNode,
+    ParameterSpecification,
     ParsedWorkflowDefinition,
+    StaticStepInputDefinition,
+    StepNode,
 )
 from inference.core.workflows.execution_engine.compiler.graph_constructor import (
     prepare_execution_graph,
-)
-from inference.core.workflows.execution_engine.compiler.utils import (
-    FLOW_CONTROL_NODE_KEY,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (
     ExampleFlowControlBlockManifest,
     ExampleFusionBlockManifest,
     ExampleModelBlockManifest,
+    ExampleNonBatchFlowControlBlockManifest,
     ExampleTransformationBlockManifest,
 )
 
 
 def test_execution_graph_construction_for_trivial_workflow() -> None:
     # given
+    input_manifest = WorkflowImage(type="WorkflowImage", name="image")
+    step_manifest = ExampleModelBlockManifest(
+        type="ExampleModel",
+        name="model_1",
+        images="$inputs.image",
+        model_id="my_model",
+    )
+    output_manifest = JsonField(
+        type="JsonField",
+        name="predictions",
+        selector="$steps.model_1.predictions",
+    )
     workflow_definition = ParsedWorkflowDefinition(
         version="1.0",
-        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
-        steps=[
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1",
-                image="$inputs.image",
-                model_id="my_model",
-            )
-        ],
-        outputs=[
-            JsonField(
-                type="JsonField",
-                name="predictions",
-                selector="$steps.model_1.predictions",
-            )
-        ],
+        inputs=[input_manifest],
+        steps=[step_manifest],
+        outputs=[output_manifest],
     )
 
     # when
@@ -61,15 +65,62 @@ def test_execution_graph_construction_for_trivial_workflow() -> None:
     assert (
         len(result.nodes) == 3
     ), "Expected 1 input node, 1 step node and one output node"
-    assert (
-        result.nodes["$inputs.image"]["definition"].name == "image"
-    ), "Image node must be named correctly"
-    assert (
-        result.nodes["$steps.model_1"]["definition"].name == "model_1"
-    ), "Model node must be named correctly"
-    assert (
-        result.nodes["$outputs.predictions"]["definition"].name == "predictions"
-    ), "Output node must be named correctly"
+    input_node = result.nodes["$inputs.image"]["node_compilation_output"]
+    assert input_node == InputNode(
+        node_category=NodeCategory.INPUT_NODE,
+        name="image",
+        selector="$inputs.image",
+        data_lineage=["<workflow_input>"],
+        input_manifest=input_manifest,
+    ), "Image node must be created correctly"
+    step_node = result.nodes["$steps.model_1"]["node_compilation_output"]
+    assert step_node == StepNode(
+        node_category=NodeCategory.STEP_NODE,
+        name="model_1",
+        selector="$steps.model_1",
+        data_lineage=["<workflow_input>"],
+        step_manifest=step_manifest,
+        input_data={
+            "images": DynamicStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name="images",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.BATCH_INPUT_PARAMETER,
+                data_lineage=["<workflow_input>"],
+                selector="$inputs.image",
+            ),
+            "model_id": StaticStepInputDefinition(
+                parameter_specification=ParameterSpecification(
+                    parameter_name="model_id",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.STATIC_VALUE,
+                value="my_model",
+            ),
+            "string_value": StaticStepInputDefinition(  # default value provided at step level
+                parameter_specification=ParameterSpecification(
+                    parameter_name="string_value",
+                    nested_element_key=None,
+                    nested_element_index=None,
+                ),
+                category=NodeInputCategory.STATIC_VALUE,
+                value=None,
+            ),
+        },
+        batch_oriented_parameters={"images"},
+        step_execution_dimensionality=1,
+    ), "Model node must be created correctly"
+    output_node = result.nodes["$outputs.predictions"]["node_compilation_output"]
+    assert output_node == OutputNode(
+        node_category=NodeCategory.OUTPUT_NODE,
+        name="predictions",
+        selector="$outputs.predictions",
+        data_lineage=["<workflow_input>"],
+        output_manifest=output_manifest,
+    ), "Output node must be created correctly"
     assert result.has_edge(
         "$inputs.image", "$steps.model_1"
     ), "Input image must be connected to model step"
@@ -164,30 +215,6 @@ def test_execution_graph_construction_when_output_defines_non_existing_output() 
 
     # when
     with pytest.raises(InvalidReferenceTargetError):
-        _ = prepare_execution_graph(
-            workflow_definition=workflow_definition,
-        )
-
-
-def test_execution_graph_construction_when_there_is_a_dangling_output() -> None:
-    # given
-    workflow_definition = ParsedWorkflowDefinition(
-        version="1.0",
-        inputs=[WorkflowImage(type="WorkflowImage", name="image")],
-        steps=[
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1",
-                image="$inputs.image",
-                model_id="my_model",
-            )
-        ],
-        outputs=[],
-    )
-
-    # when
-    with pytest.raises(DanglingExecutionBranchError):
-        # TODO: consider if that's actually good to raise error in this case
         _ = prepare_execution_graph(
             workflow_definition=workflow_definition,
         )
@@ -451,7 +478,13 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
             ExampleFlowControlBlockManifest(
                 type="ExampleFlowControl",
                 name="random_choice",
-                steps_to_choose=["$steps.model_1", "$steps.model_2"],
+                a_steps=["$steps.model_1"],
+                b_steps=["$steps.model_2"],
+            ),
+            ExampleNonBatchFlowControlBlockManifest(
+                type="ExampleNonBatchFlowControl",
+                name="non_batch_condition",
+                next_steps=["$steps.model_1"],
             ),
             ExampleModelBlockManifest(
                 type="ExampleModel",
@@ -487,7 +520,7 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
 
     # then
     assert (
-        len(result.nodes) == 6
+        len(result.nodes) == 7
     ), "Expected 1 input node, 3 step nodes and 2 output nodes"
     assert (
         "$inputs.image" in result.nodes
@@ -495,6 +528,31 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     assert (
         "$steps.random_choice" in result.nodes
     ), "Expected random_choice step to be a node in execution graph"
+    assert result.nodes["$steps.random_choice"][
+        "node_compilation_output"
+    ].child_execution_branches == {
+        "$steps.model_1": f"Branch[$steps.random_choice -> a_steps]",
+        "$steps.model_2": f"Branch[$steps.random_choice -> b_steps]",
+    }, "Expected execution branches to be denoted properly for random_choice step"
+    assert (
+        "$steps.non_batch_condition" in result.nodes
+    ), "Expected non_batch_condition step node in execution graph"
+    assert result.nodes["$steps.non_batch_condition"][
+        "node_compilation_output"
+    ].child_execution_branches == {
+        "$steps.model_1": f"Branch[$steps.non_batch_condition -> next_steps]",
+    }, "Expected execution branches to be denoted properly for non_batch_condition step"
+    assert result.nodes["$steps.model_1"][
+        "node_compilation_output"
+    ].execution_branches_impacting_inputs == {
+        f"Branch[$steps.random_choice -> a_steps]",
+        f"Branch[$steps.non_batch_condition -> next_steps]",
+    }, "Expected execution branches impacting inputs to be denoted"
+    assert result.nodes["$steps.model_2"][
+        "node_compilation_output"
+    ].execution_branches_impacting_inputs == {
+        f"Branch[$steps.random_choice -> b_steps]",
+    }
     assert (
         "$steps.model_1" in result.nodes
     ), "Expected model_1 step to be a node in execution graph"
@@ -507,13 +565,16 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     assert (
         "$outputs.predictions_2" in result.nodes
     ), "Expected predictions_2 output to be a node in execution graph"
-    assert len(result.edges) == 6, "Only 6 unique edges expected in the graph"
+    assert len(result.edges) == 7, "Only 7 unique edges expected in the graph"
     assert result.has_edge(
         "$inputs.image", "$steps.model_1"
     ), "Expected to see connection between image and model_1"
     assert result.has_edge(
         "$steps.random_choice", "$steps.model_1"
     ), "Expected to see connection between random_choice and model_1"
+    assert result.has_edge(
+        "$steps.non_batch_condition", "$steps.model_1"
+    ), "Expected to see connection between non_batch_condition and model_1"
     assert result.has_edge(
         "$inputs.image", "$steps.model_2"
     ), "Expected to see connection between image and model_2"
@@ -526,144 +587,9 @@ def test_execution_graph_construction_when_there_is_flow_control_step() -> None:
     assert result.has_edge(
         "$steps.model_2", "$outputs.predictions_2"
     ), "Expected to see connection between model_2 and predictions_2"
-    assert (
-        result.nodes["$steps.random_choice"][FLOW_CONTROL_NODE_KEY] is True
-    ), "Expected random_choice step to be recognised as control flow"
-
-
-def test_execution_graph_construction_when_there_is_condition_branches_collapse() -> (
-    None
-):
-    # given
-    workflow_definition = ParsedWorkflowDefinition(
-        version="1.0",
-        inputs=[
-            WorkflowImage(type="WorkflowImage", name="image"),
-        ],
-        steps=[
-            ExampleFlowControlBlockManifest(
-                type="ExampleFlowControl",
-                name="random_choice",
-                steps_to_choose=["$steps.model_1", "$steps.model_2"],
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1",
-                image="$inputs.image",
-                model_id="my_model",
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_2",
-                image="$inputs.image",
-                model_id="my_model",
-            ),
-            ExampleFusionBlockManifest(  # this step causes collapse
-                type="ExampleFusion",
-                name="fusion",
-                predictions=[
-                    "$steps.model_1.predictions",
-                    "$steps.model_2.predictions",
-                ],
-            ),
-        ],
-        outputs=[
-            JsonField(
-                type="JsonField",
-                name="predictions",
-                selector="$steps.fusion.predictions",
-            ),
-        ],
-    )
-
-    # when
-    with pytest.raises(ConditionalBranchesCollapseError):
-        _ = prepare_execution_graph(
-            workflow_definition=workflow_definition,
-        )
-
-
-def test_execution_graph_construction_when_there_is_collapse_of_two_conditional_branches_originated_in_different_root() -> (
-    None
-):
-    # given
-    workflow_definition = ParsedWorkflowDefinition(
-        version="1.0",
-        inputs=[
-            WorkflowImage(type="WorkflowImage", name="image_1"),
-            WorkflowImage(type="WorkflowImage", name="image_2"),
-        ],
-        steps=[
-            ExampleFlowControlBlockManifest(
-                type="ExampleFlowControl",
-                name="random_choice_1",
-                steps_to_choose=["$steps.model_1a", "$steps.model_1b"],
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1a",
-                image="$inputs.image_1",
-                model_id="my_model",
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_1b",
-                image="$inputs.image_1",
-                model_id="my_model",
-            ),
-            ExampleFlowControlBlockManifest(
-                type="ExampleFlowControl",
-                name="random_choice_2",
-                steps_to_choose=["$steps.model_2a", "$steps.model_2b"],
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_2a",
-                image="$inputs.image_2",
-                model_id="my_model",
-            ),
-            ExampleModelBlockManifest(
-                type="ExampleModel",
-                name="model_2b",
-                image="$inputs.image_2",
-                model_id="my_model",
-            ),
-            ExampleFusionBlockManifest(  # this step causes collapse
-                type="ExampleFusion",
-                name="fusion_a",
-                predictions=[
-                    "$steps.model_1a.predictions",
-                    "$steps.model_2a.predictions",
-                ],
-            ),
-            ExampleFusionBlockManifest(  # this step causes collapse
-                type="ExampleFusion",
-                name="fusion_b",
-                predictions=[
-                    "$steps.model_1b.predictions",
-                    "$steps.model_2b.predictions",
-                ],
-            ),
-        ],
-        outputs=[
-            JsonField(
-                type="JsonField",
-                name="predictions_a",
-                selector="$steps.fusion_a.predictions",
-            ),
-            JsonField(
-                type="JsonField",
-                name="predictions_b",
-                selector="$steps.fusion_b.predictions",
-            ),
-        ],
-    )
-
-    # when
-    with pytest.raises(ConditionalBranchesCollapseError):
-        _ = prepare_execution_graph(
-            workflow_definition=workflow_definition,
-        )
+    assert result.nodes["$steps.random_choice"][
+        "node_compilation_output"
+    ].controls_flow(), "Expected random_choice step to be recognised as control flow"
 
 
 def test_execution_graph_construction_when_cycle_is_detected() -> None:

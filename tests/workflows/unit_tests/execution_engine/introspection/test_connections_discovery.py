@@ -33,6 +33,7 @@ class Block1Manifest(WorkflowBlockManifest):
     name: str = Field(description="name field")
     field_1: Union[bool, WorkflowParameterSelector(kind=[MY_KIND_1])]
     field_2: Union[str, StepOutputSelector(kind=[MY_KIND_2])]
+    field_3: Dict[str, WorkflowParameterSelector(kind=[MY_KIND_1])]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -153,6 +154,16 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="workflow_parameter",
                 is_list_element=False,
+                is_dict_element=False,
+            ),
+            BlockPropertySelectorDefinition(
+                block_type=Block1,
+                manifest_type_identifier="Block1Manifest",
+                property_name="field_3",
+                property_description="not available",
+                compatible_element="workflow_parameter",
+                is_list_element=False,
+                is_dict_element=True,
             ),
             BlockPropertySelectorDefinition(
                 block_type=Block2,
@@ -161,6 +172,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="step_output",
                 is_list_element=True,
+                is_dict_element=False,
             ),
         },
         "2": {
@@ -171,6 +183,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="step_output",
                 is_list_element=False,
+                is_dict_element=False,
             ),
         },
         "*": {
@@ -181,6 +194,16 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="workflow_parameter",
                 is_list_element=False,
+                is_dict_element=False,
+            ),
+            BlockPropertySelectorDefinition(
+                block_type=Block1,
+                manifest_type_identifier="Block1Manifest",
+                property_name="field_3",
+                property_description="not available",
+                compatible_element="workflow_parameter",
+                is_list_element=False,
+                is_dict_element=True,
             ),
             BlockPropertySelectorDefinition(
                 block_type=Block2,
@@ -189,6 +212,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="step_output",
                 is_list_element=True,
+                is_dict_element=False,
             ),
             BlockPropertySelectorDefinition(
                 block_type=Block1,
@@ -197,6 +221,7 @@ def test_discover_blocks_connections_properly_recognises_where_specific_kinds_ca
                 property_description="not available",
                 compatible_element="step_output",
                 is_list_element=False,
+                is_dict_element=False,
             ),
         },
     }, "Kinds connections do not match expectations"
@@ -208,10 +233,7 @@ def test_discover_blocks_connections_properly_recognises_input_connections() -> 
 
     # then
     assert result.input_connections.property_wise == {
-        Block1: {
-            "field_1": set(),
-            "field_2": {Block2},
-        },
+        Block1: {"field_1": set(), "field_2": {Block2}, "field_3": set()},
         Block2: {"field_1": {Block1, Block3}},
         Block3: {},
     }, "Property-wise input connections are not as expected"

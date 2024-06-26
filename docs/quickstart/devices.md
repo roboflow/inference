@@ -15,7 +15,7 @@ You can set up a server to use computer vision models with Inference on the foll
 
 The table below shows on what devices you can deploy models supported by Inference.
 
-See our [Docker Getting Started](/docs/quickstart/docker) guide for more information on how to deploy Inference on your device.
+See our [Docker Getting Started](/quickstart/docker) guide for more information on how to deploy Inference on your device.
 
 Table key:
 

@@ -23,6 +23,7 @@ from inference.core.exceptions import (
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
 )
+from inference.core.utils.function import deprecated
 from inference.core.utils.requests import api_key_safe_raise_for_status
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
@@ -417,8 +418,12 @@ def convert_gray_image_to_bgr(image: np.ndarray) -> np.ndarray:
     return image
 
 
+@deprecated(
+    reason="Method replaced with inference.core.utils.image_utils.encode_image_to_jpeg_bytes"
+)
 def np_image_to_base64(image: np.ndarray) -> bytes:
     """
+    TODO: This function is broken: https://github.com/roboflow/inference/issues/439
     Convert a numpy image to a base64 encoded byte string.
 
     Args:
@@ -458,7 +463,7 @@ def encode_image_to_jpeg_bytes(image: np.ndarray, jpeg_quality: int = 90) -> byt
     Encode a numpy image to JPEG format in bytes.
 
     Args:
-        image (np.ndarray): The numpy array representing an image.
+        image (np.ndarray): The numpy array representing a BGR image.
         jpeg_quality (int): Quality of the JPEG image.
 
     Returns:

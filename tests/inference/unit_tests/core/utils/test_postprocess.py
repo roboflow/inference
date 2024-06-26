@@ -27,7 +27,6 @@ from inference.core.utils.postprocess import (
     undo_image_padding_for_predicted_polygons,
 )
 
-
 Height = int
 Width = int
 XCoord = int

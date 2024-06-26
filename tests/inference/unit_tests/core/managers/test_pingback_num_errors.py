@@ -1,5 +1,6 @@
-from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.base import ModelManager, ModelRegistry
+from inference.core.managers.decorators.base import ModelManagerDecorator
+
 
 def test_increment_num_errors():
     mm = ModelManager(ModelRegistry(dict()))
