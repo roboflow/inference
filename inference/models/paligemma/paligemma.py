@@ -189,8 +189,3 @@ class LoRAPaliGemma(PaliGemma):
         self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
         self.processor = AutoProcessor.from_pretrained(self.cache_dir)
-
-
-if __name__ == "__main__":
-    m = PaliGemma()
-    print(m.infer())
