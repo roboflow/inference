@@ -99,7 +99,7 @@ def construct_workflow_output(
         for name, value in non_batch_outputs.items():
             single_result[name] = value
         for name, array in outputs_arrays.items():
-            if array is None:
+            if array is None or len(array) <= i:
                 level = dimensionality_for_output_nodes[name] - 1
                 if level > 0:
                     element = create_empty_index_array(

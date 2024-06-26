@@ -58,20 +58,6 @@ def build_sorting_workflow_definition(
     }
 
 
-EXPECTED_OBJECT_DETECTION_BBOXES = np.array(
-    [
-        [180, 273, 244, 383],
-        [271, 266, 328, 383],
-    ]
-)
-EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
-    [
-        0.84284,
-        0.83957,
-    ]
-)
-
-
 @pytest.mark.asyncio
 async def test_sorting_workflow_for_when_nothing_to_sort(
     model_manager: ModelManager,
