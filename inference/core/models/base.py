@@ -128,6 +128,8 @@ class Model(BaseInference):
         responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
+            if request.id:
+                response.inference_id = request.id
 
         if request.visualize_predictions:
             for response in responses:
