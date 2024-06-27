@@ -1,22 +1,34 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 import cv2
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.utils.image_utils import load_image
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.constants import (
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
+)
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
-    BATCH_OF_IMAGE_METADATA_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
-    FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -40,22 +52,17 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["QRCodeDetector", "QRCodeDetection"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
                 name="predictions", kind=[BATCH_OF_BAR_CODE_DETECTION_KIND]
-            ),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
             ),
         ]
 
@@ -66,42 +73,57 @@ class QRCodeDetectorBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: List[dict],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        decoded_images = [load_image(e)[0] for e in images]
-        image_parent_ids = [img["parent_id"] for img in images]
-        return [
-            {
-                "predictions": detect_qr_codes(image=image, parent_id=parent_id),
-                "parent_id": parent_id,
-                "image": {"width": image.shape[1], "height": image.shape[0]},
-                "prediction_type": "qrcode-detection",
-            }
-            for image, parent_id in zip(decoded_images, image_parent_ids)
-        ]
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
+        results = []
+        for image in images:
+            qr_code_detections = detect_qr_codes(image=image)
+            results.append({"predictions": qr_code_detections})
+        return results
 
 
-def detect_qr_codes(image: np.ndarray, parent_id: str) -> List[dict]:
+def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     detector = cv2.QRCodeDetector()
-    retval, detections, points_list, _ = detector.detectAndDecodeMulti(image)
-    predictions = []
+    retval, detections, points_list, _ = detector.detectAndDecodeMulti(
+        image.numpy_image
+    )
+    xyxy = []
+    confidence = []
+    class_id = []
+    class_name = []
+    extracted_data = []
     for data, points in zip(detections, points_list):
         width = points[2][0] - points[0][0]
         height = points[2][1] - points[0][1]
-        predictions.append(
-            {
-                "parent_id": parent_id,
-                "class": "qr_code",
-                "class_id": 0,
-                "confidence": 1.0,
-                "x": points[0][0] + width / 2,
-                "y": points[0][1] + height / 2,
-                "width": width,
-                "height": height,
-                "detection_id": str(uuid4()),
-                "data": data,
-            }
-        )
-    return predictions
+        x_min = points[0][0]
+        y_min = points[0][1]
+        x_max = x_min + width
+        y_max = y_min + height
+        xyxy.append([x_min, y_min, x_max, y_max])
+        class_id.append(0)
+        class_name.append("qr_code")
+        confidence.append(1.0)
+        extracted_data.append(data)
+    xyxy = np.array(xyxy) if len(xyxy) > 0 else np.empty((0, 4))
+    confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
+    class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
+    class_name = np.array(class_name) if len(class_name) > 0 else np.empty(0)
+    detections = sv.Detections(
+        xyxy=np.array(xyxy),
+        confidence=confidence,
+        class_id=class_id,
+        data={CLASS_NAME_DATA_FIELD: class_name},
+    )
+    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["qrcode-detection"] * len(detections))
+    detections[DETECTED_CODE_KEY] = np.array(extracted_data)
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
+    )

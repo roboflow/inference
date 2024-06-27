@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
     SelectorDefinition,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
-    parse_block_manifest_schema,
+    parse_block_manifest,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -93,7 +93,7 @@ def parse_all_schemas(
     blocks_description: BlocksDescription,
 ) -> Dict[Type[WorkflowBlock], BlockManifestMetadata]:
     return {
-        block.block_class: parse_block_manifest_schema(schema=block.block_schema)
+        block.block_class: parse_block_manifest(manifest_type=block.manifest_class)
         for block in blocks_description.blocks
     }
 
@@ -134,6 +134,7 @@ def get_all_inputs_kind_major(
                     property_description=selector.property_description,
                     compatible_element=allowed_reference.selected_element,
                     is_list_element=selector.is_list_element,
+                    is_dict_element=selector.is_dict_element,
                 )
             )
         kind_major_step_inputs[WILDCARD_KIND.name].add(
@@ -144,6 +145,7 @@ def get_all_inputs_kind_major(
                 property_description=selector.property_description,
                 compatible_element=allowed_reference.selected_element,
                 is_list_element=selector.is_list_element,
+                is_dict_element=selector.is_dict_element,
             )
         )
     return kind_major_step_inputs

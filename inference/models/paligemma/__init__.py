@@ -1,1 +1,1 @@
-from inference.models.paligemma.paligemma import PaliGemma, LoRAPaliGemma
+from inference.models.paligemma.paligemma import LoRAPaliGemma, PaliGemma

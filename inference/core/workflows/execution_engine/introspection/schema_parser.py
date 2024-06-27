@@ -47,20 +47,37 @@ DESCRIPTION_KEY = "description"
 ALL_OF_KEY = "allOf"
 ANY_OF_KEY = "anyOf"
 ONE_OF_KEY = "oneOf"
+OBJECT_TYPE = "object"
 
 
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
     schema = manifest_type.model_json_schema()
-    return parse_block_manifest_schema(schema=schema)
+    inputs_dimensionality_offsets = manifest_type.get_input_dimensionality_offsets()
+    dimensionality_reference_property = (
+        manifest_type.get_dimensionality_reference_property()
+    )
+    return parse_block_manifest_schema(
+        schema=schema,
+        inputs_dimensionality_offsets=inputs_dimensionality_offsets,
+        dimensionality_reference_property=dimensionality_reference_property,
+    )
 
 
-def parse_block_manifest_schema(schema: dict) -> BlockManifestMetadata:
+def parse_block_manifest_schema(
+    schema: dict,
+    inputs_dimensionality_offsets: Dict[str, int],
+    dimensionality_reference_property: Optional[str],
+) -> BlockManifestMetadata:
     primitive_types = retrieve_primitives_from_schema(
         schema=schema,
     )
-    selectors = retrieve_selectors_from_schema(schema=schema)
+    selectors = retrieve_selectors_from_schema(
+        schema=schema,
+        inputs_dimensionality_offsets=inputs_dimensionality_offsets,
+        dimensionality_reference_property=dimensionality_reference_property,
+    )
     return BlockManifestMetadata(
         primitive_types=primitive_types,
         selectors=selectors,
@@ -202,24 +219,50 @@ def retrieve_primitive_type_from_dict_property(
     )
 
 
-def retrieve_selectors_from_schema(schema: dict) -> Dict[str, SelectorDefinition]:
+def retrieve_selectors_from_schema(
+    schema: dict,
+    inputs_dimensionality_offsets: Dict[str, int],
+    dimensionality_reference_property: Optional[str],
+) -> Dict[str, SelectorDefinition]:
     result = []
     for property_name, property_definition in schema[PROPERTIES_KEY].items():
         if property_name in EXCLUDED_PROPERTIES:
             continue
+        property_dimensionality_offset = inputs_dimensionality_offsets.get(
+            property_name, 0
+        )
+        is_dimensionality_reference_property = (
+            property_name == dimensionality_reference_property
+        )
         property_description = property_definition.get(DESCRIPTION_KEY, "not available")
         if ITEMS_KEY in property_definition:
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
                 property_description=property_description,
                 property_definition=property_definition[ITEMS_KEY],
+                property_dimensionality_offset=property_dimensionality_offset,
+                is_dimensionality_reference_property=is_dimensionality_reference_property,
                 is_list_element=True,
+            )
+        elif (
+            property_definition.get(TYPE_KEY) == OBJECT_TYPE
+            and ADDITIONAL_PROPERTIES_KEY in property_definition
+        ):
+            selector = retrieve_selectors_from_simple_property(
+                property_name=property_name,
+                property_description=property_description,
+                property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+                property_dimensionality_offset=property_dimensionality_offset,
+                is_dimensionality_reference_property=is_dimensionality_reference_property,
+                is_dict_element=True,
             )
         else:
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
                 property_description=property_description,
                 property_definition=property_definition,
+                property_dimensionality_offset=property_dimensionality_offset,
+                is_dimensionality_reference_property=is_dimensionality_reference_property,
             )
         if selector is not None:
             result.append(selector)
@@ -230,7 +273,10 @@ def retrieve_selectors_from_simple_property(
     property_name: str,
     property_description: str,
     property_definition: dict,
+    property_dimensionality_offset: int,
+    is_dimensionality_reference_property: bool,
     is_list_element: bool = False,
+    is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
     if REFERENCE_KEY in property_definition:
         allowed_references = [
@@ -247,15 +293,20 @@ def retrieve_selectors_from_simple_property(
             property_description=property_description,
             allowed_references=allowed_references,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
+            dimensionality_offset=property_dimensionality_offset,
+            is_dimensionality_reference_property=is_dimensionality_reference_property,
         )
     if ITEMS_KEY in property_definition:
-        if is_list_element:
+        if is_list_element or is_dict_element:
             # ignoring nested references above first level of depth
             return None
         return retrieve_selectors_from_simple_property(
             property_name=property_name,
             property_description=property_description,
             property_definition=property_definition[ITEMS_KEY],
+            property_dimensionality_offset=property_dimensionality_offset,
+            is_dimensionality_reference_property=is_dimensionality_reference_property,
             is_list_element=True,
         )
     if property_defines_union(property_definition=property_definition):
@@ -264,6 +315,9 @@ def retrieve_selectors_from_simple_property(
             property_description=property_description,
             union_definition=property_definition,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
+            property_dimensionality_offset=property_dimensionality_offset,
+            is_dimensionality_reference_property=is_dimensionality_reference_property,
         )
     return None
 
@@ -281,6 +335,9 @@ def retrieve_selectors_from_union_definition(
     property_description: str,
     union_definition: dict,
     is_list_element: bool,
+    is_dict_element: bool,
+    property_dimensionality_offset: int,
+    is_dimensionality_reference_property: bool,
 ) -> Optional[SelectorDefinition]:
     union_types = (
         union_definition.get(ANY_OF_KEY, [])
@@ -293,6 +350,8 @@ def retrieve_selectors_from_union_definition(
             property_name=property_name,
             property_description=property_description,
             property_definition=type_definition,
+            property_dimensionality_offset=property_dimensionality_offset,
+            is_dimensionality_reference_property=is_dimensionality_reference_property,
             is_list_element=is_list_element,
         )
         if result is None:
@@ -324,4 +383,7 @@ def retrieve_selectors_from_union_definition(
         property_description=property_description,
         allowed_references=merged_references,
         is_list_element=is_list_element,
+        is_dict_element=is_dict_element,
+        dimensionality_offset=property_dimensionality_offset,
+        is_dimensionality_reference_property=is_dimensionality_reference_property,
     )

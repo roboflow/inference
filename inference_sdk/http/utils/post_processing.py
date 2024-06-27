@@ -22,19 +22,32 @@ IMAGES_TRANSCODING_METHODS = {
 
 
 def decode_workflow_outputs(
-    workflow_outputs: Dict[str, Any],
+    workflow_outputs: List[Dict[str, Any]],
+    expected_format: VisualisationResponseFormat,
+) -> List[Dict[str, Any]]:
+    return [
+        decode_workflow_output(
+            workflow_output=workflow_output,
+            expected_format=expected_format,
+        )
+        for workflow_output in workflow_outputs
+    ]
+
+
+def decode_workflow_output(
+    workflow_output: Dict[str, Any],
     expected_format: VisualisationResponseFormat,
 ) -> Dict[str, Any]:
     result = {}
-    for key, value in workflow_outputs.items():
+    for key, value in workflow_output.items():
         if is_workflow_image(value=value):
             value = decode_workflow_output_image(
                 value=value,
                 expected_format=expected_format,
             )
         elif issubclass(type(value), dict):
-            value = decode_workflow_outputs(
-                workflow_outputs=value, expected_format=expected_format
+            value = decode_workflow_output(
+                workflow_output=value, expected_format=expected_format
             )
         elif issubclass(type(value), list):
             value = decode_workflow_output_list(
@@ -57,8 +70,8 @@ def decode_workflow_output_list(
                 expected_format=expected_format,
             )
         elif issubclass(type(element), dict):
-            element = decode_workflow_outputs(
-                workflow_outputs=element, expected_format=expected_format
+            element = decode_workflow_output(
+                workflow_output=element, expected_format=expected_format
             )
         elif issubclass(type(element), list):
             element = decode_workflow_output_list(
@@ -76,18 +89,13 @@ def is_workflow_image(value: Any) -> bool:
 def decode_workflow_output_image(
     value: Dict[str, Any],
     expected_format: VisualisationResponseFormat,
-) -> Dict[str, Any]:
+) -> Union[str, np.ndarray, Image.Image]:
     if expected_format is VisualisationResponseFormat.BASE64:
-        return value
-    if expected_format is VisualisationResponseFormat.NUMPY:
-        value["type"] = "numpy_object"
-    else:
-        value["type"] = "pil"
-    value["value"] = transform_base64_visualisation(
+        return value["value"]
+    return transform_base64_visualisation(
         visualisation=value["value"],
         expected_format=expected_format,
     )
-    return value
 
 
 def response_contains_jpeg_image(response: Response) -> bool:

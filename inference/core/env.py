@@ -16,7 +16,7 @@ PROJECT = os.getenv("PROJECT", "roboflow-platform")
 ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
 
 # List of allowed origins
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "")
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 
 # Base URL for the API

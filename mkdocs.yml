@@ -38,6 +38,7 @@ nav:
           - "Models: Universe": quickstart/load_from_universe.md
           - "Models: Local Weights": models/from_local_weights.md
       - Supported Fine-Tuned Models:
+          - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
           - YOLOv8: fine-tuned/yolov8.md
           - YOLOv7: fine-tuned/yolov7.md
