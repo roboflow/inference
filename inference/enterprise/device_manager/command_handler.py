@@ -38,21 +38,21 @@ def handle_command(cmd_payload: dict):
         return
     cmd = cmd_payload.get("command")
     data = None
-    match cmd:
-        case "restart":
-            was_processed, data = container.restart()
-        case "stop":
-            was_processed, data = container.stop()
-        case "ping":
-            was_processed, data = container.ping()
-        case "snapshot":
-            was_processed, data = container.snapshot()
-        case "start":
-            was_processed, data = container.start()
-        case "update_version":
-            was_processed, data = handle_version_update(container)
-        case _:
-            logger.error("Unknown command: {}".format(cmd))
+    if cmd == "restart":
+        was_processed, data = container.restart()
+    elif cmd == "stop":
+        was_processed, data = container.stop()
+    elif cmd == "ping":
+        was_processed, data = container.ping()
+    elif cmd == "snapshot":
+        was_processed, data = container.snapshot()
+    elif cmd == "start":
+        was_processed, data = container.start()
+    elif cmd == "update_version":
+        was_processed, data = handle_version_update(container)
+    else:
+        logger.error("Unknown command: {}".format(cmd))
+
     return ack_command(cmd_payload.get("id"), was_processed, data=data)
 
 
