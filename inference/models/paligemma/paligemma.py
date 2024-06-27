@@ -2,10 +2,11 @@ import os
 import re
 
 import numpy as np
+from peft import LoraConfig, get_peft_model
 from PIL import Image
 from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
 import os
@@ -38,6 +39,8 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class PaliGemma(RoboflowInferenceModel):
+    """By using you agree to the terms listed at https://ai.google.dev/gemma/terms"""
+
     task_type = "lmm"
 
     def __init__(self, model_id, *args, **kwargs):
@@ -46,10 +49,18 @@ class PaliGemma(RoboflowInferenceModel):
 
         self.api_key = API_KEY
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        self.model = PaliGemmaForConditionalGeneration.from_pretrained(
-            self.cache_dir,
-            device_map=DEVICE,
-        ).eval()
+        self.initialize_model()
+
+    def initialize_model(self):
+        self.dtype = torch.float16
+        self.model = (
+            PaliGemmaForConditionalGeneration.from_pretrained(
+                self.cache_dir,
+                device_map=DEVICE,
+            )
+            .eval()
+            .to(self.dtype)
+        )
 
         self.processor = AutoProcessor.from_pretrained(
             self.cache_dir,
@@ -150,6 +161,31 @@ class PaliGemma(RoboflowInferenceModel):
         raise NotImplementedError()
 
 
-if __name__ == "__main__":
-    m = PaliGemma()
-    print(m.infer())
+class LoRAPaliGemma(PaliGemma):
+    def __init__(self, model_id, *args, huggingface_token=HUGGINGFACE_TOKEN, **kwargs):
+        self.huggingface_token = huggingface_token
+        super().__init__(model_id, *args, **kwargs)
+
+    def initialize_model(self):
+        lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
+        model_id = lora_config.base_model_name_or_path
+        revision = lora_config.revision
+        self.dtype = torch.float16
+        if revision is not None:
+            self.dtype = getattr(torch, revision)
+        base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
+        if self.huggingface_token is None:
+            raise RuntimeError(
+                "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
+                "(or pass huggingface_token to this __init__)"
+            )
+        self.base_model = PaliGemmaForConditionalGeneration.from_pretrained(
+            model_id,
+            revision=revision,
+            device_map=DEVICE,
+            cache_dir=base_cache_dir,
+            token=self.huggingface_token,
+        ).to(self.dtype)
+        self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
+
+        self.processor = AutoProcessor.from_pretrained(self.cache_dir)

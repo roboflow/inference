@@ -32,7 +32,11 @@ def describe_available_blocks() -> BlocksDescription:
     for block in blocks:
         block_schema = block.manifest_class.model_json_schema()
         outputs_manifest = block.manifest_class.describe_outputs()
-        schema_selectors = retrieve_selectors_from_schema(schema=block_schema)
+        schema_selectors = retrieve_selectors_from_schema(
+            schema=block_schema,
+            inputs_dimensionality_offsets=block.manifest_class.get_input_dimensionality_offsets(),
+            dimensionality_reference_property=block.manifest_class.get_dimensionality_reference_property(),
+        )
         block_kinds = [
             k
             for s in schema_selectors.values()
@@ -56,7 +60,7 @@ def describe_available_blocks() -> BlocksDescription:
                 block_source=block.block_source,
                 fully_qualified_block_class_name=block.identifier,
                 human_friendly_block_name=build_human_friendly_block_name(
-                    fully_qualified_name=block.identifier,
+                    fully_qualified_name=block.identifier, block_schema=block_schema
                 ),
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
@@ -103,15 +107,21 @@ def load_workflow_blocks() -> List[BlockSpecification]:
 
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
-    return [
-        BlockSpecification(
-            block_source="workflows_core",
-            identifier=get_full_type_name(selected_type=block),
-            block_class=block,
-            manifest_class=block.get_manifest(),
+    already_spotted_blocks = set()
+    result = []
+    for block in core_blocks:
+        if block in already_spotted_blocks:
+            continue
+        result.append(
+            BlockSpecification(
+                block_source="workflows_core",
+                identifier=get_full_type_name(selected_type=block),
+                block_class=block,
+                manifest_class=block.get_manifest(),
+            )
         )
-        for block in core_blocks
-    ]
+        already_spotted_blocks.add(block)
+    return result
 
 
 def load_plugins_blocks() -> List[BlockSpecification]:
@@ -151,15 +161,21 @@ def load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     module = importlib.import_module(plugin_name)
     blocks = module.load_blocks()
-    return [
-        BlockSpecification(
-            block_source=plugin_name,
-            identifier=get_full_type_name(selected_type=block),
-            block_class=block,
-            manifest_class=block.get_manifest(),
+    already_spotted_blocks = set()
+    result = []
+    for block in blocks:
+        if block in already_spotted_blocks:
+            continue
+        result.append(
+            BlockSpecification(
+                block_source=plugin_name,
+                identifier=get_full_type_name(selected_type=block),
+                block_class=block,
+                manifest_class=block.get_manifest(),
+            )
         )
-        for block in blocks
-    ]
+        already_spotted_blocks.add(block)
+    return result
 
 
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:

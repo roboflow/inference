@@ -1,5 +1,44 @@
-Workflows allow you to define multi-step processes that run one or more models and return a result based on the output of the models.
+# How to Create and Run a Workflow
 
+## Example (Web App)
+
+In this example, we are going to build a Workflow from scratch that detects license plates, crops the license plate, and then runs OCR on the license plate.
+
+### Step 1: Create a Workflow
+
+Navigate to the Workflows tab at the top of your workspace and select the Create Workflows button. We are going to start with a Single Model Workflow.
+
+![Workflow start](https://media.roboflow.com/inference/workflow-example-start.png)
+
+### Step 2: Add Crop
+
+Next, we are going to add a block to our Workflow that crops the objects that our first model detects.
+
+![Add crop](https://media.roboflow.com/inference/add-crop.gif)
+
+### Step 3: Add OCR
+
+We are then going to add an OCR model for text recognition to our Workflow. We will need to adjust the parameters in order to set the cropped object from our previous block as the input for this block.
+
+![Add OCR](https://media.roboflow.com/inference/add-ocr.gif)
+
+### Step 4: Add outputs to our response
+
+Finally, we are going to add an output to our response which includes the object that we cropped, alongside the outputs of both our detection model and our OCR model.
+
+![Add OCR](https://media.roboflow.com/inference/add-output.gif)
+
+### Run the Workflow
+
+Selecting the Run Workflow button generates the code snippets to then deploy your Workflow via the Roboflow Hosted API, locally on images via the Inference Server, and locally on video streams via the Inference Pipeline. 
+
+![Workflow code snippet](https://media.roboflow.com/inference/workflow-code-snippet.png)
+
+You now have a workflow you can run on your own hardware!
+
+## Example (Code, Advanced)
+
+Workflows allow you to define multi-step processes that run one or more models and return a result based on the output of the models.
 
 You can create and deploy workflows in the cloud or in Inference.
 

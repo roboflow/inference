@@ -1,6 +1,7 @@
-from typing import List, Optional
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from typing_extensions import Annotated, Literal
 
 
@@ -16,7 +17,8 @@ class Kind(BaseModel):
 REFERENCE_KEY = "reference"
 SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
-
+DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
+DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
 DOCS_NOTE_ABOUT_BATCH = """
 **Important note**:
 
@@ -37,7 +39,7 @@ problems with workflow and make those problems to be visible while running the w
 WILDCARD_KIND = Kind(
     name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS
 )
-
+IMAGE_KIND = Kind(name="image", description="Image in workflows", docs="TODO")
 IMAGE_KIND_DOCS = f"""
 This is the representation of image batch in `workflows`. The value behind this kind 
 is Python list of dictionaries. Each of this dictionary is native `inference` image with
@@ -247,7 +249,7 @@ BATCH_OF_DICTIONARY_KIND = Kind(
     docs=BATCH_OF_DICTIONARY_KIND_DOCS,
 )
 BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS = f"""
-This kind represent predictions from Roboflow classification model.
+This kind represent predictions from Classification Models.
 
 Examples:
 ```
@@ -288,11 +290,71 @@ Examples:
 """
 BATCH_OF_CLASSIFICATION_PREDICTION_KIND = Kind(
     name="Batch[classification_prediction]",
-    description="`'predictions'` key from Roboflow classifier output",
+    description="`'predictions'` key from Classification Model outputs",
     docs=BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS,
 )
+
+DETECTION_KIND_DOCS = """
+This kind represents single detection in prediction from a model that detects multiple elements
+(like object detection or instance segmentation model). It is represented as a tuple
+that is created from `sv.Detections(...)` object while iterating over its content. `workflows`
+utilises `data` property of `sv.Detections(...)` to keep additional metadata which will be available
+in the tuple. Some properties may not always be present. Take a look at documentation of 
+`object_detection_prediction`, `instance_segmentation_prediction`, `keypoint_detection_prediction`
+kinds to discover which additional metadata are available.
+
+More technical details about 
+[iterating over `sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/#supervision.detection.core.Detections)
+"""
+
+DETECTION_KIND = Kind(
+    name="detection",
+    description="Single element of detections-based prediction (like `object_detection_prediction`)",
+    docs=DETECTION_KIND_DOCS,
+)
+
+
+POINT_KIND = Kind(
+    name="point",
+    description="Single point in 2D",
+    docs=None,
+)
+
+ZONE_KIND = Kind(
+    name="zone",
+    description="Definition of polygon zone",
+    docs=None,
+)
+
+OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
+This kind represents single object detection prediction in form of 
+[`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
+
+Example:
+```
+sv.Detections(
+    xyxy=array([
+       [        865,       153.5,        1189,       422.5],
+       [      192.5,        77.5,       995.5,       722.5],
+       [        194,          82,         996,         726],
+       [        460,         333,         704,         389]]
+    ), 
+    mask=None, 
+    confidence=array([    0.84955,     0.74344,     0.45636,     0.86537]), 
+    class_id=array([2, 7, 2, 0]), 
+    tracker_id=None, 
+    data={'class_name': array(['car', 'truck', 'car', 'car'], dtype='<U13')}
+)
+```
+"""
+OBJECT_DETECTION_PREDICTION_KIND = Kind(
+    name="object_detection_prediction",
+    description="Prediction with detected bounding boxes in form of sv.Detections(...) object",
+    docs=OBJECT_DETECTION_PREDICTION_KIND_DOCS,
+)
+
 BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow object detection model.
+This kind represents batch of predictions from an Object Detection Model.
 
 Example:
 ```
@@ -313,11 +375,42 @@ Example:
 """
 BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[object_detection_prediction]",
-    description="`'predictions'` key from Roboflow object detection model output",
+    description="`'predictions'` key from Object Detection Model output",
     docs=BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS,
 )
+
+INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = """
+This kind represents single instance segmentation prediction in form of 
+[`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
+
+Example:
+```
+sv.Detections(
+    xyxy=array([[        127,         189,         322,         303]]), 
+    mask=array([
+        [[False, False, False, ..., False, False, False],
+        [False, False, False, ..., False, False, False],
+        [False, False, False, ..., False, False, False],
+        ...,
+        [False, False, False, ..., False, False, False],
+        [False, False, False, ..., False, False, False],
+        [False, False, False, ..., False, False, False]]
+    ]), 
+    confidence=array([    0.95898]), 
+    class_id=array([6]), 
+    tracker_id=None, 
+    data={'class_name': array(['G'], dtype='<U1')}
+)
+```
+"""
+INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
+    name="instance_segmentation_prediction",
+    description="Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object",
+    docs=INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
+)
+
 BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow instance segmentation model.
+This kind represents batch of predictions from Instance Segmentation Models.
 
 Example:
 ```
@@ -339,11 +432,37 @@ providing object contour,
 """
 BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="Batch[instance_segmentation_prediction]",
-    description="`'predictions'` key from Roboflow instance segmentation model output",
+    description="`'predictions'` key from Instance Segmentation Model outputs",
     docs=BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
 )
+
+KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
+This kind represents single keypoints prediction in form of 
+[`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
+
+Example:
+```
+sv.Detections(
+    xyxy=array([[        127,         189,         322,         303]]), 
+    mask=None, 
+    confidence=array([    0.95898]), 
+    class_id=array([6]), 
+    tracker_id=None, 
+    data={
+        'class_name': array(['G'], dtype='<U1'),
+        # TODO: put details here
+    }
+)
+```
+"""
+KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
+    name="keypoint_detection_prediction",
+    description="Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object",
+    docs=KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
+)
+
 BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Roboflow keypoint detection model.
+This kind represents batch of predictions from Keypoint Detection Models.
 
 Example:
 ```
@@ -365,7 +484,7 @@ object skeleton.
 """
 BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="Batch[keypoint_detection_prediction]",
-    description="`'predictions'` key from Roboflow keypoint detection model output",
+    description="`'predictions'` key from Keypoint Detection Model output",
     docs=BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
 )
 BATCH_OF_QR_CODE_DETECTION_KIND_DOCS = f"""
@@ -389,7 +508,7 @@ Example:
 """
 BATCH_OF_QR_CODE_DETECTION_KIND = Kind(
     name="Batch[qr_code_detection]",
-    description="Roboflow prediction with QR code detection",
+    description="Prediction with QR code detection",
     docs=BATCH_OF_QR_CODE_DETECTION_KIND_DOCS,
 )
 BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS = f"""
@@ -413,7 +532,7 @@ Example:
 """
 BATCH_OF_BAR_CODE_DETECTION_KIND = Kind(
     name="Batch[bar_code_detection]",
-    description="Roboflow prediction with barcode detection",
+    description="Prediction with barcode detection",
     docs=BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS,
 )
 BATCH_OF_PREDICTION_TYPE_KIND_DOCS = f"""
@@ -482,6 +601,19 @@ StepSelector = Annotated[
     ),
 ]
 
+ImageInputField = Field(
+    title="Image",
+    description="The image to infer on",
+    examples=["$inputs.image", "$steps.cropping.crops"],
+    validation_alias=AliasChoices("images", "image"),
+)
+
+RoboflowModelField = Field(
+    title="Model",
+    description="Roboflow model identifier",
+    examples=["my_project/3", "$inputs.model"],
+)
+
 
 def StepOutputSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
@@ -541,5 +673,4 @@ FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class FlowControl(BaseModel):
-    mode: Literal["pass", "terminate_branch", "select_step"]
-    context: Optional[str] = Field(default=None)
+    context: Optional[Union[str, List[str]]] = Field(default=None)

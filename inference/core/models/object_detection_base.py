@@ -168,7 +168,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             List[ObjectDetectionInferenceResponse]: The post-processed predictions.
         """
         predictions = predictions[0]
-
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=confidence,

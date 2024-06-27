@@ -2,10 +2,10 @@ import asyncio
 import base64
 import json
 import re
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from openai import AsyncOpenAI
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.env import (
@@ -15,11 +15,14 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parent_info,
-    load_core_model,
+from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
 )
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
@@ -28,12 +31,13 @@ from inference.core.workflows.entities.types import (
     DICTIONARY_KIND,
     STRING_KIND,
     WILDCARD_KIND,
-    FlowControl,
+    ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -84,11 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["LMM"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Reference an image to be used as input for step processing",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
-    )
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],
@@ -115,9 +115,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[BATCH_OF_DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
@@ -127,6 +132,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_outputs(self) -> List[OutputDefinition]:
         result = [
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
@@ -144,42 +150,79 @@ class LMMBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: List[dict],
+        images: Batch[WorkflowImageData],
         prompt: str,
         lmm_type: str,
         lmm_config: LMMConfig,
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(
+                images=images,
+                prompt=prompt,
+                lmm_type=lmm_type,
+                lmm_config=lmm_config,
+                remote_api_key=remote_api_key,
+                json_output=json_output,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(
+                images=images,
+                prompt=prompt,
+                lmm_type=lmm_type,
+                lmm_config=lmm_config,
+                remote_api_key=remote_api_key,
+                json_output=json_output,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    async def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        prompt: str,
+        lmm_type: str,
+        lmm_config: LMMConfig,
+        remote_api_key: Optional[str],
+        json_output: Optional[Dict[str, str]],
+    ) -> BlockResult:
         if json_output:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
+        images_prepared_for_processing = [
+            image.to_inference_format(numpy_preferred=True) for image in images
+        ]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=images_prepared_for_processing,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_locally(
-                image=images,
+                image=images_prepared_for_processing,
                 prompt=prompt,
                 model_manager=self._model_manager,
                 api_key=self._api_key,
@@ -197,36 +240,38 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for prediction, image in zip(predictions, images):
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+        return predictions
 
     async def run_remotely(
         self,
-        images: List[dict],
+        images: Batch[WorkflowImageData],
         prompt: str,
         lmm_type: str,
         lmm_config: LMMConfig,
         remote_api_key: Optional[str],
         json_output: Optional[Dict[str, str]],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         if json_output:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
                 f"{json.dumps(json_output, indent=4)}"
             )
+        inference_images = [i.to_inference_format() for i in images]
         if lmm_type == GPT_4V_MODEL_TYPE:
             raw_output = await run_gpt_4v_llm_prompting(
-                image=images,
+                image=inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
             raw_output = await get_cogvlm_generations_from_remote_api(
-                image=images,
+                image=inference_images,
                 prompt=prompt,
                 api_key=self._api_key,
             )
@@ -243,11 +288,12 @@ class LMMBlock(WorkflowBlock):
             }
             for raw, structured in zip(raw_output, structured_output)
         ]
-        return attach_parent_info(
-            images=images,
-            predictions=predictions,
-            nested_key=None,
-        )
+        for prediction, image in zip(predictions, images):
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
+        return predictions
 
 
 async def run_gpt_4v_llm_prompting(

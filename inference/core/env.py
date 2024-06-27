@@ -16,7 +16,7 @@ PROJECT = os.getenv("PROJECT", "roboflow-platform")
 ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
 
 # List of allowed origins
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "")
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 
 # Base URL for the API
@@ -383,3 +383,5 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
