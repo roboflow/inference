@@ -16,7 +16,7 @@ class BaseRequest(BaseModel):
     """
 
     def __init__(self, **kwargs):
-        kwargs["id"] = str(uuid4())
+        kwargs["id"] = kwargs["id"] or str(uuid4())
         super().__init__(**kwargs)
 
     model_config = ConfigDict(protected_namespaces=())
