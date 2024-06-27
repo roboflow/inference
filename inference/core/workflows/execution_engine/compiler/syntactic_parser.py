@@ -48,3 +48,8 @@ def build_workflow_definition_entity() -> Type[BaseModel]:
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
+
+if __name__ == "__main__":
+    workflow_definition_class = build_workflow_definition_entity()
+    schema = workflow_definition_class.model_json_schema()
+    print(schema)
