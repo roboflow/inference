@@ -207,6 +207,7 @@ class LoRATransformerModel(TransformerModel):
             "special_tokens_map.json",
             "tokenizer.json",
             "tokenizer.model",
-            "adapter_model.safetensors" "preprocessor_config.json",
+            "adapter_model.safetensors",
+            "preprocessor_config.json",
             "tokenizer_config.json",
         ]
