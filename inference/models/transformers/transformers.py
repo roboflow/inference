@@ -1,5 +1,6 @@
 import os
 import re
+import tarfile
 
 import numpy as np
 from peft import LoraConfig, get_peft_model
@@ -17,7 +18,11 @@ from typing import Any, List, Tuple, Union
 import torch
 from PIL import Image
 
-from inference.core.cache.model_artifacts import save_bytes_in_cache
+from inference.core.cache.model_artifacts import (
+    get_cache_dir,
+    get_cache_file_path,
+    save_bytes_in_cache,
+)
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -31,6 +36,7 @@ from inference.core.models.roboflow import RoboflowInferenceModel
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_base_lora,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image_rgb
@@ -42,11 +48,21 @@ class TransformerModel(RoboflowInferenceModel):
     hf_args = {}
     task_type = "lmm"
     transformers_class = AutoModel
+    processor_class = AutoProcessor
     default_dtype = torch.float16
     generation_includes_input = False
+    needs_hf_token = False
 
-    def __init__(self, model_id, *args, dtype=None, **kwargs):
+    def __init__(
+        self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
+    ):
         super().__init__(model_id, *args, **kwargs)
+        self.huggingface_token = huggingface_token
+        if self.needs_hf_token and self.huggingface_token is None:
+            raise RuntimeError(
+                "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
+                "(or pass huggingface_token to this __init__)"
+            )
         self.dtype = dtype
         if self.dtype is None:
             self.dtype = self.default_dtype
@@ -59,13 +75,18 @@ class TransformerModel(RoboflowInferenceModel):
     def initialize_model(self):
         self.model = (
             self.transformers_class.from_pretrained(
-                self.cache_dir, device_map=DEVICE, **self.hf_args
+                self.cache_dir,
+                device_map=DEVICE,
+                token=self.huggingface_token,
+                **self.hf_args,
             )
             .eval()
             .to(self.dtype)
         )
 
-        self.processor = AutoProcessor.from_pretrained(self.cache_dir, **self.hf_args)
+        self.processor = AutoProcessor.from_pretrained(
+            self.cache_dir, token=self.huggingface_token, **self.hf_args
+        )
 
     def preprocess(
         self, image: Any, **kwargs
@@ -165,9 +186,7 @@ class TransformerModel(RoboflowInferenceModel):
 
 
 class LoRATransformerModel(TransformerModel):
-    def __init__(self, model_id, *args, huggingface_token=HUGGINGFACE_TOKEN, **kwargs):
-        self.huggingface_token = huggingface_token
-        super().__init__(model_id, *args, **kwargs)
+    load_base_from_roboflow = False
 
     def initialize_model(self):
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
@@ -178,23 +197,55 @@ class LoRATransformerModel(TransformerModel):
                 self.dtype = getattr(torch, revision)
             except AttributeError:
                 pass
-        base_cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
-        if self.huggingface_token is None:
-            raise RuntimeError(
-                "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
-                "(or pass huggingface_token to this __init__)"
-            )
+        if not self.load_base_from_roboflow:
+            model_load_id = model_id
+            cache_dir = os.path.join(MODEL_CACHE_DIR, "huggingface")
+            revision = revision
+            token = self.huggingface_token
+        else:
+            model_load_id = self.get_lora_base_from_roboflow(model_id, revision)
+            cache_dir = model_load_id
+            revision = None
+            token = None
         self.base_model = self.transformers_class.from_pretrained(
-            model_id,
+            model_load_id,
             revision=revision,
             device_map=DEVICE,
-            cache_dir=base_cache_dir,
-            token=self.huggingface_token,
+            cache_dir=cache_dir,
+            token=token,
             **self.hf_args,
         ).to(self.dtype)
         self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
-        self.processor = AutoProcessor.from_pretrained(self.cache_dir, **self.hf_args)
+        self.processor = self.processor_class.from_pretrained(
+            self.cache_dir, revision=revision, **self.hf_args
+        )
+
+    def get_lora_base_from_roboflow(self, repo, revision) -> str:
+        base_dir = os.path.join("lora-bases", repo, revision)
+        cache_dir = get_cache_dir(base_dir)
+        if os.path.exists(cache_dir):
+            return cache_dir
+        api_data = get_roboflow_base_lora(self.api_key, repo, revision, self.device_id)
+        if "weights" not in api_data:
+            raise ModelArtefactError(
+                f"`weights` key not available in Roboflow API response while downloading model weights."
+            )
+
+        weights_url = api_data["weights"]["model"]
+        model_weights_response = get_from_url(weights_url, json_response=False)
+        filename = weights_url.split("?")[0].split("/")[-1]
+        assert filename.endswith("tar.gz")
+        save_bytes_in_cache(
+            content=model_weights_response.content,
+            file=filename,
+            model_id=base_dir,
+        )
+        tar_file_path = get_cache_file_path(filename, base_dir)
+        with tarfile.open(tar_file_path, "r:gz") as tar:
+            tar.extractall(path=cache_dir)
+
+        return cache_dir
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.
