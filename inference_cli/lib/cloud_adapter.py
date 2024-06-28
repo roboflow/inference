@@ -2,8 +2,6 @@ import random
 import string
 import tempfile
 
-import sky
-
 YAML_DEFS = {
     "gcp_cpu": """
 name: roboflow-gcp-inference-cpu
@@ -91,21 +89,25 @@ def _random_char(y):
 
 
 def cloud_status():
+    import sky
     print("Getting status from skypilot...")
     print(sky.status())
 
 
 def cloud_stop(cluster_name):
+    import sky
     print(f"Stopping skypilot deployment {cluster_name}...")
     print(sky.stop(cluster_name))
 
 
 def cloud_start(cluster_name):
+    import sky
     print(f"Starting skypilot deployment {cluster_name}")
     print(sky.start(cluster_name))
 
 
 def cloud_undeploy(cluster_name):
+    import sky
     print(
         f"Undeploying Roboflow Inference and deleting {cluster_name}, this may take a few minutes."
     )
