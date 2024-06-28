@@ -28,7 +28,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
-from inference.core.env import API_KEY, MODEL_CACHE_DIR, PALIGEMMA_VERSION_ID
+from inference.core.env import API_KEY, DEVICE, MODEL_CACHE_DIR
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -41,11 +41,11 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class TransformerModel(RoboflowInferenceModel):
-    hf_args = {}
     task_type = "lmm"
     transformers_class = AutoModel
     processor_class = AutoProcessor
@@ -68,7 +68,6 @@ class TransformerModel(RoboflowInferenceModel):
             self.dtype = self.default_dtype
         self.cache_model_artefacts()
 
-        self.api_key = API_KEY
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.initialize_model()
 
@@ -78,14 +77,13 @@ class TransformerModel(RoboflowInferenceModel):
                 self.cache_dir,
                 device_map=DEVICE,
                 token=self.huggingface_token,
-                **self.hf_args,
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = AutoProcessor.from_pretrained(
-            self.cache_dir, token=self.huggingface_token, **self.hf_args
+            self.cache_dir, token=self.huggingface_token
         )
 
     def preprocess(
@@ -213,12 +211,11 @@ class LoRATransformerModel(TransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
-            **self.hf_args,
         ).to(self.dtype)
         self.model = get_peft_model(self.base_model, lora_config).eval().to(self.dtype)
 
         self.processor = self.processor_class.from_pretrained(
-            self.cache_dir, revision=revision, **self.hf_args
+            self.cache_dir, revision=revision
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
