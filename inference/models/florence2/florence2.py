@@ -6,9 +6,11 @@ from transformers import AutoModelForCausalLM
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
+
 class Florence2(TransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
+
     def initialize_model(self):
         self.transformers_class = import_class_from_file(
             os.path.join(self.cache_dir, "modeling_florence2.py"),
@@ -20,6 +22,7 @@ class Florence2(TransformerModel):
             "Florence2Processor",
         )
         super().initialize_model()
+
 
 class LoRAFlorence2(LoRATransformerModel):
     load_base_from_roboflow = True
