@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from openai import BaseModel
 from pydantic import ConfigDict, Field
@@ -11,6 +11,12 @@ from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.introspection.utils import (
     get_full_type_name,
 )
+
+BatchElementOutputs = Dict[str, Any]
+BatchElementResult = Union[BatchElementOutputs, FlowControl]
+BlockResult = Union[
+    BatchElementResult, List[BatchElementResult], List[List[BatchElementResult]]
+]
 
 
 class WorkflowBlockManifest(BaseModel, ABC):
@@ -34,6 +40,28 @@ class WorkflowBlockManifest(BaseModel, ABC):
     def get_actual_outputs(self) -> List[OutputDefinition]:
         return self.describe_outputs()
 
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {}
+
+    @classmethod
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return None
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return 0
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return False
+
+    @classmethod
+    def accepts_empty_values(cls) -> bool:
+        return False
+
 
 class WorkflowBlock(ABC):
 
@@ -50,28 +78,10 @@ class WorkflowBlock(ABC):
             context="getting_block_manifest",
         )
 
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
-
-    @classmethod
-    def produces_batch_output(cls) -> bool:
-        return True
-
     @abstractmethod
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         pass
-
-    async def run_remotely(
-        self,
-        *args,
-        **kwargs,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        logger.info(
-            "Block has no implementation for run_remotely() method - using run_locally() instead"
-        )
-        return await self.run_locally(*args, **kwargs)

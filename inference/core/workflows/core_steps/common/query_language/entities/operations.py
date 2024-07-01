@@ -5,6 +5,8 @@ from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
+    DetectionsSelectionMode,
+    DetectionsSortProperties,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -203,6 +205,27 @@ class DetectionsPropertyExtract(OperationDefinition):
     property_name: DetectionsProperty
 
 
+class DetectionsSelection(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Selects bounding boxes based on predefined criterias",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["DetectionsSelection"]
+    mode: DetectionsSelectionMode
+
+
 class ExtractDetectionProperty(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -238,6 +261,28 @@ class DetectionsFilter(OperationDefinition):
     )
     type: Literal["DetectionsFilter"]
     filter_operation: "StatementGroup"
+
+
+class SortDetections(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes the order of detected bounding boxes.",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["SortDetections"]
+    mode: DetectionsSortProperties
+    ascending: bool = Field(default=True)
 
 
 class DetectionsOffset(OperationDefinition):
@@ -412,6 +457,8 @@ AllOperationsType = Annotated[
         SequenceLength,
         Multiply,
         Divide,
+        DetectionsSelection,
+        SortDetections,
     ],
     Field(discriminator="type"),
 ]

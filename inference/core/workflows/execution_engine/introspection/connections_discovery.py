@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
     SelectorDefinition,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
-    parse_block_manifest_schema,
+    parse_block_manifest,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -93,7 +93,7 @@ def parse_all_schemas(
     blocks_description: BlocksDescription,
 ) -> Dict[Type[WorkflowBlock], BlockManifestMetadata]:
     return {
-        block.block_class: parse_block_manifest_schema(schema=block.block_schema)
+        block.block_class: parse_block_manifest(manifest_type=block.manifest_class)
         for block in blocks_description.blocks
     }
 

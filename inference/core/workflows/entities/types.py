@@ -1,4 +1,5 @@
-from typing import List, Optional
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from typing_extensions import Annotated, Literal
@@ -16,7 +17,8 @@ class Kind(BaseModel):
 REFERENCE_KEY = "reference"
 SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
-
+DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
+DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
 DOCS_NOTE_ABOUT_BATCH = """
 **Important note**:
 
@@ -671,5 +673,4 @@ FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class FlowControl(BaseModel):
-    mode: Literal["pass", "terminate_branch", "select_step"]
-    context: Optional[str] = Field(default=None)
+    context: Optional[Union[str, List[str]]] = Field(default=None)

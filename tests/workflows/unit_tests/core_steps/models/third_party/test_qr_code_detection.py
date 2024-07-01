@@ -54,16 +54,17 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
     step = QRCodeDetectorBlock()
     images = Batch(
-        [
+        content=[
             WorkflowImageData(
                 parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=qr_codes_image,
             )
-        ]
+        ],
+        indices=[(0,)],
     )
 
     # when
-    result = await step.run_locally(images=images)
+    result = await step.run(images=images)
 
     # then
     actual_parent_id = result[0]["predictions"]["parent_id"]
@@ -79,6 +80,12 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
         confidence,
         url,
         prediction_type,
+        image_dimensions,
+        root_parent_id,
+        root_parent_coordinates,
+        root_parent_dimensions,
+        parent_coordinates,
+        parent_dimensions,
     ) in zip(
         preds.class_id,
         preds.xyxy,
@@ -88,6 +95,12 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
         preds.confidence,
         preds["data"],
         preds.data["prediction_type"],
+        preds.data["image_dimensions"],
+        preds.data["root_parent_id"],
+        preds.data["root_parent_coordinates"],
+        preds.data["root_parent_dimensions"],
+        preds.data["parent_coordinates"],
+        preds.data["parent_dimensions"],
     ):
         assert class_name == "qr_code"
         assert class_id == 0
@@ -100,3 +113,9 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
         assert url == "https://www.qrfy.com/LEwG_Gj"
         assert parent_id == "$inputs.image"
         assert prediction_type == "qrcode-detection"
+        assert np.allclose(image_dimensions, np.array(qr_codes_image.shape[:2]))
+        assert root_parent_id == "$inputs.image"
+        assert np.allclose(root_parent_coordinates, np.array([0, 0]))
+        assert np.allclose(root_parent_dimensions, np.array(qr_codes_image.shape[:2]))
+        assert np.allclose(parent_coordinates, np.array([0, 0]))
+        assert np.allclose(parent_dimensions, np.array(qr_codes_image.shape[:2]))

@@ -165,5 +165,6 @@ scratch
 !tests/inference/unit_tests/core/utils/assets/*.jpg
 docs/workflows/blocks/*
 docs/workflows/kinds/*
-!tests/workflows/integration_tests/assets/*.jpg
+!tests/workflows/integration_tests/execution/assets/*.jpg
+!tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png

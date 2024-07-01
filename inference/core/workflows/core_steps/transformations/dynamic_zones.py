@@ -5,7 +5,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
@@ -15,6 +15,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -55,6 +56,10 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -105,11 +110,11 @@ class DynamicZonesBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DynamicZonesManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions: List[sv.Detections],
+        predictions: Batch[sv.Detections],
         required_number_of_vertices: int,
-    ) -> Tuple[List[Any], FlowControl]:
+    ) -> BlockResult:
         result = []
         for detections in predictions:
             if detections is None:
@@ -128,4 +133,4 @@ class DynamicZonesBlock(WorkflowBlock):
                     continue
                 simplified_polygons.append(simplified_polygon)
             result.append({OUTPUT_KEY: simplified_polygons})
-        return result, FlowControl(mode="pass")
+        return result

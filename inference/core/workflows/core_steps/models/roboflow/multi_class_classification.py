@@ -12,6 +12,7 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
 from inference.core.workflows.entities.base import (
     Batch,
@@ -33,6 +34,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -91,6 +93,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -105,34 +111,62 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [
-            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
-        ]
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(
+                images=images,
+                model_id=model_id,
+                confidence=confidence,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(
+                images=images,
+                model_id=model_id,
+                confidence=confidence,
+                disable_active_learning=disable_active_learning,
+                active_learning_target_dataset=active_learning_target_dataset,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    async def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        confidence: Optional[float],
+        disable_active_learning: Optional[bool],
+        active_learning_target_dataset: Optional[str],
+    ) -> BlockResult:
+        inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
         request = ClassificationInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
-            image=non_empty_inference_images,
+            image=inference_images,
             confidence=confidence,
             disable_active_learning=disable_active_learning,
             source="workflow-execution",
@@ -151,12 +185,9 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             ]
         else:
             predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
-        results = self._post_process_result(
+        return self._post_process_result(
             predictions=predictions,
-            images=non_empty_images,
-        )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
+            images=images,
         )
 
     async def run_remotely(
@@ -166,7 +197,7 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
         confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -187,27 +218,23 @@ class RoboflowClassificationModelBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
+        non_empty_inference_images = [i.numpy_image for i in images]
         predictions = await client.infer_async(
             inference_input=non_empty_inference_images,
             model_id=model_id,
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        results = self._post_process_result(
+        return self._post_process_result(
             predictions=predictions,
-            images=non_empty_images,
-        )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
+            images=images,
         )
 
     def _post_process_result(
         self,
-        images: List[WorkflowImageData],
+        images: Batch[WorkflowImageData],
         predictions: List[dict],
-    ) -> List[dict]:
+    ) -> BlockResult:
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",

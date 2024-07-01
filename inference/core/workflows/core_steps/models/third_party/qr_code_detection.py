@@ -7,7 +7,12 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PREDICTION_TYPE_KEY
+from inference.core.workflows.constants import (
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
+)
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
@@ -23,6 +28,7 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -49,6 +55,10 @@ class BlockManifest(WorkflowBlockManifest):
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -63,17 +73,15 @@ class QRCodeDetectorBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+        images: Batch[WorkflowImageData],
+    ) -> BlockResult:
         results = []
-        for image in images.iter_nonempty():
+        for image in images:
             qr_code_detections = detect_qr_codes(image=image)
             results.append({"predictions": qr_code_detections})
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
-        )
+        return results
 
 
 def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
@@ -110,7 +118,11 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     )
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
     detections[PREDICTION_TYPE_KEY] = np.array(["qrcode-detection"] * len(detections))
-    detections["data"] = np.array(extracted_data)
+    detections[DETECTED_CODE_KEY] = np.array(extracted_data)
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,

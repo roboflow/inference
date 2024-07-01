@@ -30,7 +30,9 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["ExampleModel"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        RoboflowModelField
+    )
     string_value: Optional[str] = Field(default=None)
 
     @classmethod
@@ -50,7 +52,7 @@ class ExampleModelBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleModelBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -58,9 +60,19 @@ class ExampleModelBlock(WorkflowBlock):
         pass
 
 
+class ExampleNonBatchFlowControlBlockManifest(WorkflowBlockManifest):
+    type: Literal["ExampleNonBatchFlowControl"]
+    next_steps: List[StepSelector]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+
 class ExampleFlowControlBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleFlowControl"]
-    steps_to_choose: List[StepSelector]
+    a_steps: List[StepSelector]
+    b_steps: List[StepSelector]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -72,7 +84,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleFlowControlBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -106,7 +118,7 @@ class ExampleTransformationBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleTransformationBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -137,7 +149,7 @@ class ExampleSinkBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleSinkBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -169,7 +181,7 @@ class ExampleFusionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleFusionBlockManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -210,7 +222,7 @@ class ExampleBlockWithInit(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithInitManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
@@ -251,7 +263,7 @@ class ExampleBlockWithFaultyInit(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExampleBlockWithFaultyInitManifest
 
-    async def run_locally(
+    async def run(
         self,
         *args,
         **kwargs,
