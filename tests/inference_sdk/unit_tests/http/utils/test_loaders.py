@@ -630,7 +630,7 @@ def test_load_directory_inference_input_when_filtering_by_extension_is_enabled(
     assert file_name2results["file_1.jpg"].shape == (128, 128, 3)
 
 
-@mock.patch.object(loaders.sv, "get_video_frames_generator")
+@mock.patch("supervision.get_video_frames_generator")
 def test_load_stream_inference_input(
     get_video_frames_generator_mock: MagicMock,
 ) -> None:

@@ -6,7 +6,6 @@ import aiohttp
 import cv2
 import numpy as np
 import requests
-import supervision as sv
 from PIL import Image
 
 from inference_sdk.http.entities import ImagesReference
@@ -27,6 +26,8 @@ def load_stream_inference_input(
     input_uri: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
+    import supervision as sv
+
     if os.path.isdir(input_uri):
         yield from load_directory_inference_input(
             directory_path=input_uri, image_extensions=image_extensions
@@ -39,6 +40,8 @@ def load_directory_inference_input(
     directory_path: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
+    import supervision as sv
+
     paths = {
         path.as_posix().lower()
         for path in sv.list_files_with_extensions(
