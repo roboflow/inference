@@ -7,7 +7,11 @@ import supervision as sv
 from inference.core.entities.requests.inference import (
     ObjectDetectionInferenceRequest,
 )
-from inference.core.entities.responses.inference import InferenceResponseImage, ObjectDetectionInferenceResponse, ObjectDetectionPrediction
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+)
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -26,7 +30,7 @@ from inference.core.workflows.core_steps.common.utils import (
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
-    WorkflowImageData   
+    WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -104,19 +108,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.3, "$inputs.confidence_threshold"],
     )
 
-    slice_width: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=320,
-        description="Width of each slice, in pixels",
-        examples=[320, "$inputs.slice_width"],
+    slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=320,
+            description="Width of each slice, in pixels",
+            examples=[320, "$inputs.slice_width"],
+        )
     )
-    slice_height: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=320,
-        description="Height of each slice, in pixels",
-        examples=[320, "$inputs.slice_height"],
+    slice_height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=320,
+            description="Height of each slice, in pixels",
+            examples=[320, "$inputs.slice_height"],
+        )
     )
     overlap_ratio_width: Union[
         FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
@@ -138,7 +142,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="nms",
         description="Which strategy to employ when filtering overlapping boxes. "
-            "None does nothing, NMS discards surplus detections, NMM merges them.",
+        "None does nothing, NMS discards surplus detections, NMM merges them.",
         examples=["nms", "$inputs.overlap_filtering_strategy"],
     )
     iou_threshold: Union[
@@ -147,7 +151,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=0.3,
         description="Parameter of overlap filtering strategy. If box intersection over union is above this "
-            " ratio, discard or merge the lower confidence box.",
+        " ratio, discard or merge the lower confidence box.",
         examples=[0.4, "$inputs.iou_threshold"],
     )
 
@@ -155,7 +159,8 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                name="predictions",
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
             )
         ]
 
@@ -201,10 +206,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         model = self._model_manager.models()[model_id]
 
         def slicer_callback(image_slice: np.ndarray):
-            inference_image = {
-                "type": "numpy",
-                "value": pickle.dumps(image_slice)
-            }
+            inference_image = {"type": "numpy", "value": pickle.dumps(image_slice)}
 
             request = ObjectDetectionInferenceRequest(
                 api_key=self._api_key,
@@ -228,7 +230,9 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         elif overlap_filtering_strategy == "nmm":
             overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
         else:
-            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+            raise ValueError(
+                f"Invalid overlap filtering strategy: {overlap_filtering_strategy}"
+            )
 
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
@@ -236,7 +240,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
             overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
-            thread_workers=1
+            thread_workers=1,
         )
 
         detections_batch = [slicer(image) for image in non_empty_inference_images]
@@ -286,7 +290,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         client.configure(inference_configuration=client_config)
         non_empty_images = [i for i in images.iter_nonempty()]
         non_empty_inference_images = [i.numpy_image for i in non_empty_images]
-        
+
         def slicer_callback(image_slice: np.ndarray):
             prediction = client.infer(
                 inference_input=image_slice,
@@ -296,7 +300,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
                 prediction = prediction[0]
             detections = sv.Detections.from_inference(prediction)
             return detections
-        
+
         if overlap_filtering_strategy == "none":
             overlap_filter = sv.OverlapFilter.NONE
         if overlap_filtering_strategy == "nms":
@@ -304,7 +308,9 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         elif overlap_filtering_strategy == "nmm":
             overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
         else:
-            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+            raise ValueError(
+                f"Invalid overlap filtering strategy: {overlap_filtering_strategy}"
+            )
 
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
@@ -312,7 +318,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
             overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
-            thread_workers=1
+            thread_workers=1,
         )
 
         detections_batch = [slicer(image) for image in non_empty_inference_images]
@@ -329,7 +335,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         self,
         images: List[WorkflowImageData],
         predictions: List[sv.Detections],
-        class_filter: Optional[List[str]]
+        class_filter: Optional[List[str]],
     ) -> List[Dict[str, sv.Detections]]:
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,

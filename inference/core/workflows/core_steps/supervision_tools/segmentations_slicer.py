@@ -7,7 +7,12 @@ import supervision as sv
 from inference.core.entities.requests.inference import (
     InstanceSegmentationInferenceRequest,
 )
-from inference.core.entities.responses.inference import InferenceResponseImage, InstanceSegmentationInferenceResponse, InstanceSegmentationPrediction, Point
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    Point,
+)
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -26,7 +31,7 @@ from inference.core.workflows.core_steps.common.utils import (
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
-    WorkflowImageData   
+    WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -75,7 +80,9 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["RoboflowSegmentationsInferenceSlicer", "SegmentationsInferenceSlicer"]
+    type: Literal[
+        "RoboflowSegmentationsInferenceSlicer", "SegmentationsInferenceSlicer"
+    ]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
@@ -128,19 +135,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.4, "$inputs.iou_threshold"],
     )
 
-    slice_width: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=320,
-        description="Width of each slice, in pixels",
-        examples=[320, "$inputs.slice_width"],
+    slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=320,
+            description="Width of each slice, in pixels",
+            examples=[320, "$inputs.slice_width"],
+        )
     )
-    slice_height: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=320,
-        description="Height of each slice, in pixels",
-        examples=[320, "$inputs.slice_height"],
+    slice_height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=320,
+            description="Height of each slice, in pixels",
+            examples=[320, "$inputs.slice_height"],
+        )
     )
     overlap_ratio_width: Union[
         FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
@@ -162,7 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="nms",
         description="Which strategy to employ when filtering overlapping boxes. "
-            "None does nothing, NMS discards surplus detections, NMM merges them.",
+        "None does nothing, NMS discards surplus detections, NMM merges them.",
         examples=["nms", "$inputs.overlap_filtering_strategy"],
     )
 
@@ -170,7 +177,8 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                name="predictions",
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
             )
         ]
 
@@ -218,10 +226,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         model = self._model_manager.models()[model_id]
 
         def slicer_callback(image_slice: np.ndarray):
-            inference_image = {
-                "type": "numpy",
-                "value": pickle.dumps(image_slice)
-            }
+            inference_image = {"type": "numpy", "value": pickle.dumps(image_slice)}
 
             request = InstanceSegmentationInferenceRequest(
                 api_key=self._api_key,
@@ -247,7 +252,9 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         elif overlap_filtering_strategy == "nmm":
             overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
         else:
-            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+            raise ValueError(
+                f"Invalid overlap filtering strategy: {overlap_filtering_strategy}"
+            )
 
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
@@ -255,7 +262,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
             overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
-            thread_workers=1
+            thread_workers=1,
         )
 
         predictions_batch = []
@@ -269,13 +276,17 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
-                        "points": [Point(x=point[0], y=point[1]) for point in sv.mask_to_polygons(detections.mask[i])[0]],
+                        "points": [
+                            Point(x=point[0], y=point[1])
+                            for point in sv.mask_to_polygons(detections.mask[i])[0]
+                        ],
                         "confidence": detections.confidence[i],
                         "class": detections["class_name"][i],
                         "class_id": int(detections.class_id[i]),
                     }
                 )
-                for i in range(len(detections)) if not class_filter
+                for i in range(len(detections))
+                if not class_filter
             ]
 
             response = InstanceSegmentationInferenceResponse(
@@ -287,7 +298,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             )
             prediction = response.model_dump(by_alias=True, exclude_none=True)
             predictions_batch.append(prediction)
-        
+
         results = self._post_process_result(
             images=non_empty_images,
             predictions=predictions_batch,
@@ -348,7 +359,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
                 prediction = prediction[0]
             detections = sv.Detections.from_inference(prediction)
             return detections
-        
+
         if overlap_filtering_strategy == "none":
             overlap_filter = sv.OverlapFilter.NONE
         if overlap_filtering_strategy == "nms":
@@ -356,7 +367,9 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         elif overlap_filtering_strategy == "nmm":
             overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
         else:
-            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+            raise ValueError(
+                f"Invalid overlap filtering strategy: {overlap_filtering_strategy}"
+            )
 
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
@@ -364,7 +377,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
             overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
-            thread_workers=1
+            thread_workers=1,
         )
 
         predictions_batch = []
@@ -378,13 +391,17 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
                         "y": xywh_bboxes[i][1],
                         "width": xywh_bboxes[i][2],
                         "height": xywh_bboxes[i][3],
-                        "points": [Point(x=point[0], y=point[1]) for point in sv.mask_to_polygons(detections.mask[i])[0]],
+                        "points": [
+                            Point(x=point[0], y=point[1])
+                            for point in sv.mask_to_polygons(detections.mask[i])[0]
+                        ],
                         "confidence": detections.confidence[i],
                         "class": detections["class_name"][i],
                         "class_id": int(detections.class_id[i]),
                     }
                 )
-                for i in range(len(detections)) if not class_filter
+                for i in range(len(detections))
+                if not class_filter
             ]
 
             response = InstanceSegmentationInferenceResponse(
@@ -396,7 +413,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             )
             prediction = response.model_dump(by_alias=True, exclude_none=True)
             predictions_batch.append(prediction)
-        
+
         results = self._post_process_result(
             images=non_empty_images,
             predictions=predictions_batch,
@@ -426,4 +443,3 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             predictions=predictions,
         )
         return [{"predictions": prediction} for prediction in predictions]
-
