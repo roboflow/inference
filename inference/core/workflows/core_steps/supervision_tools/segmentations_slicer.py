@@ -22,11 +22,10 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import xyxy_to_xywh
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from inference.core.workflows.entities.base import (
@@ -50,6 +49,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -189,21 +189,76 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    async def run(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_agnostic_nms: Optional[bool],
+        class_filter: Optional[List[str]],
+        confidence: Optional[float],
+        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
+        tradeoff_factor: Optional[float],
+        slice_width: Optional[int],
+        slice_height: Optional[int],
+        overlap_ratio_width: Optional[float],
+        overlap_ratio_height: Optional[float],
+        overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
+        iou_threshold: Optional[float],
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(
+                images=images,
+                model_id=model_id,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                confidence=confidence,
+                mask_decode_mode=mask_decode_mode,
+                tradeoff_factor=tradeoff_factor,
+                slice_width=slice_width,
+                slice_height=slice_height,
+                overlap_ratio_width=overlap_ratio_width,
+                overlap_ratio_height=overlap_ratio_height,
+                overlap_filtering_strategy=overlap_filtering_strategy,
+                iou_threshold=iou_threshold,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(
+                images=images,
+                model_id=model_id,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                confidence=confidence,
+                mask_decode_mode=mask_decode_mode,
+                tradeoff_factor=tradeoff_factor,
+                slice_width=slice_width,
+                slice_height=slice_height,
+                overlap_ratio_width=overlap_ratio_width,
+                overlap_ratio_height=overlap_ratio_height,
+                overlap_filtering_strategy=overlap_filtering_strategy,
+                iou_threshold=iou_threshold,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
     async def run_locally(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -215,11 +270,8 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         slice_height: Optional[int],
         overlap_ratio_width: Optional[float],
         overlap_ratio_height: Optional[float],
-        overlap_filtering_strategy: Literal["none", "nms", "nmm"],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
-
+        overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
+    ) -> BlockResult:
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
@@ -265,54 +317,16 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             iou_threshold=iou_threshold,
             thread_workers=1,
         )
-
-        predictions_batch = []
-        for image in non_empty_inference_images:
-            detections = slicer(image)
-            xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
-            predictions = [
-                InstanceSegmentationPrediction(
-                    **{
-                        "x": xywh_bboxes[i][0],
-                        "y": xywh_bboxes[i][1],
-                        "width": xywh_bboxes[i][2],
-                        "height": xywh_bboxes[i][3],
-                        "points": [
-                            Point(x=point[0], y=point[1])
-                            for point in sv.mask_to_polygons(detections.mask[i])[0]
-                        ],
-                        "confidence": detections.confidence[i],
-                        "class": detections["class_name"][i],
-                        "class_id": int(detections.class_id[i]),
-                    }
-                )
-                for i in range(len(detections))
-                if not class_filter
-            ]
-
-            response = InstanceSegmentationInferenceResponse(
-                predictions=predictions,
-                image=InferenceResponseImage(
-                    width=image.shape[1],
-                    height=image.shape[0],
-                ),
-            )
-            prediction = response.model_dump(by_alias=True, exclude_none=True)
-            predictions_batch.append(prediction)
-
-        results = self._post_process_result(
-            images=non_empty_images,
-            predictions=predictions_batch,
+        detections_batch = [slicer(image.numpy_image) for image in images]
+        return self._post_process_sv_detections(
+            images=images,
+            predictions=detections_batch,
             class_filter=class_filter,
-        )
-        return images.align_batch_results(
-            results=results,
-            null_element={"predictions": None},
         )
 
     async def run_remotely(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -325,7 +339,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         overlap_ratio_width: Optional[float],
         overlap_ratio_height: Optional[float],
         overlap_filtering_strategy: Literal["none", "nms", "nmm"],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -348,8 +362,6 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
 
         def slicer_callback(image_slice: np.ndarray):
             prediction = client.infer(
@@ -381,56 +393,19 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             thread_workers=1,
         )
 
-        predictions_batch = []
-        for image in non_empty_inference_images:
-            detections = slicer(image)
-            xywh_bboxes = [xyxy_to_xywh(detection) for detection in detections.xyxy]
-            predictions = [
-                InstanceSegmentationPrediction(
-                    **{
-                        "x": xywh_bboxes[i][0],
-                        "y": xywh_bboxes[i][1],
-                        "width": xywh_bboxes[i][2],
-                        "height": xywh_bboxes[i][3],
-                        "points": [
-                            Point(x=point[0], y=point[1])
-                            for point in sv.mask_to_polygons(detections.mask[i])[0]
-                        ],
-                        "confidence": detections.confidence[i],
-                        "class": detections["class_name"][i],
-                        "class_id": int(detections.class_id[i]),
-                    }
-                )
-                for i in range(len(detections))
-                if not class_filter
-            ]
-
-            response = InstanceSegmentationInferenceResponse(
-                predictions=predictions,
-                image=InferenceResponseImage(
-                    width=image.shape[1],
-                    height=image.shape[0],
-                ),
-            )
-            prediction = response.model_dump(by_alias=True, exclude_none=True)
-            predictions_batch.append(prediction)
-
-        results = self._post_process_result(
-            images=non_empty_images,
-            predictions=predictions_batch,
+        detections_batch = [slicer(image.numpy_image) for image in images]
+        return self._post_process_sv_detections(
+            images=images,
+            predictions=detections_batch,
             class_filter=class_filter,
         )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
-        )
 
-    def _post_process_result(
+    def _post_process_sv_detections(
         self,
-        images: List[WorkflowImageData],
-        predictions: List[dict],
+        images: Batch[WorkflowImageData],
+        predictions: List[sv.Detections],
         class_filter: Optional[List[str]],
-    ) -> List[Dict[str, sv.Detections]]:
-        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+    ) -> BlockResult:
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="instance-segmentation",

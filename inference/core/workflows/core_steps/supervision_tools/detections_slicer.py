@@ -1,16 +1,11 @@
 import pickle
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
-from inference.core.entities.responses.inference import (
-    InferenceResponseImage,
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
-)
 from inference.core.env import (
     HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
@@ -19,11 +14,10 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import xyxy_to_xywh
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
 )
 from inference.core.workflows.entities.base import (
@@ -47,6 +41,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -169,21 +164,23 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -194,10 +191,54 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         overlap_ratio_height: Optional[float],
         overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
         iou_threshold: Optional[float],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(
+                images=images,
+                model_id=model_id,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                confidence=confidence,
+                slice_width=slice_width,
+                slice_height=slice_height,
+                overlap_ratio_width=overlap_ratio_width,
+                overlap_ratio_height=overlap_ratio_height,
+                overlap_filtering_strategy=overlap_filtering_strategy,
+                iou_threshold=iou_threshold,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(
+                images=images,
+                model_id=model_id,
+                class_agnostic_nms=class_agnostic_nms,
+                class_filter=class_filter,
+                confidence=confidence,
+                slice_width=slice_width,
+                slice_height=slice_height,
+                overlap_ratio_width=overlap_ratio_width,
+                overlap_ratio_height=overlap_ratio_height,
+                overlap_filtering_strategy=overlap_filtering_strategy,
+                iou_threshold=iou_threshold,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
 
+    async def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        class_agnostic_nms: Optional[bool],
+        class_filter: Optional[List[str]],
+        confidence: Optional[float],
+        slice_width: Optional[int],
+        slice_height: Optional[int],
+        overlap_ratio_width: Optional[float],
+        overlap_ratio_height: Optional[float],
+        overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
+        iou_threshold: Optional[float],
+    ) -> BlockResult:
         self._model_manager.add_model(
             model_id=model_id,
             api_key=self._api_key,
@@ -242,20 +283,16 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             thread_workers=1,
         )
 
-        detections_batch = [slicer(image) for image in non_empty_inference_images]
-        results = self._post_process_sv_detections(
-            images=non_empty_images,
+        detections_batch = [slicer(image.numpy_image) for image in images]
+        return self._post_process_sv_detections(
+            images=images,
             predictions=detections_batch,
             class_filter=class_filter,
-        )
-        return images.align_batch_results(
-            results=results,
-            null_element={"predictions": None},
         )
 
     async def run_remotely(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -266,7 +303,7 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
         overlap_ratio_width: Optional[float],
         overlap_ratio_height: Optional[float],
         overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -287,8 +324,6 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
 
         def slicer_callback(image_slice: np.ndarray):
             prediction = client.infer(
@@ -320,22 +355,19 @@ class RoboflowDetectionSlicerBlock(WorkflowBlock):
             thread_workers=1,
         )
 
-        detections_batch = [slicer(image) for image in non_empty_inference_images]
-        results = self._post_process_sv_detections(
-            images=non_empty_images,
+        detections_batch = [slicer(image.numpy_image) for image in images]
+        return self._post_process_sv_detections(
+            images=images,
             predictions=detections_batch,
             class_filter=class_filter,
-        )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
         )
 
     def _post_process_sv_detections(
         self,
-        images: List[WorkflowImageData],
+        images: Batch[WorkflowImageData],
         predictions: List[sv.Detections],
         class_filter: Optional[List[str]],
-    ) -> List[Dict[str, sv.Detections]]:
+    ) -> BlockResult:
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
             prediction_type="object-detection",
