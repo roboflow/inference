@@ -1,12 +1,28 @@
 import json
 import os.path
+from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from supervision.utils.file import read_yaml_file
+import yaml
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+
+def read_yaml_file(file_path: Union[str, Path]) -> Dict:
+    """
+    Read a yaml file and return a dict.
+
+    Args:
+        file_path (Union[str, Path]): The file path as a string or Path object.
+
+    Returns:
+        dict: A dict of content information
+    """
+    with open(str(file_path), "r") as file:
+        data = yaml.safe_load(file)
+    return data
 
 
 def read_env_file(path: str) -> Dict[str, str]:
