@@ -1,6 +1,10 @@
 from typing import List, Type
 
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
+from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
+    DetectionsClassesReplacementBlock,
+)
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
 )
@@ -91,4 +95,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,
+        DetectionsClassesReplacementBlock,
+        ExpressionBlock,
     ]

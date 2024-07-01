@@ -143,6 +143,7 @@ class MultiLabelClassificationPrediction(BaseModel):
     confidence: float = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )
+    class_id: int = Field(description="Numeric ID associated with the class label")
 
 
 class InferenceResponseImage(BaseModel):
