@@ -39,6 +39,12 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
 )
+from inference.core.workflows.core_steps.supervision_tools.detections_slicer import (
+    RoboflowDetectionSlicerBlock,
+)
+from inference.core.workflows.core_steps.supervision_tools.segmentations_slicer import (
+    RoboflowSegmentationSlicerBlock,
+)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
@@ -79,6 +85,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlock,
         RoboflowMultiLabelClassificationModelBlock,
         RoboflowObjectDetectionModelBlock,
+        RoboflowDetectionSlicerBlock,
+        RoboflowSegmentationSlicerBlock,
         BarcodeDetectorBlock,
         QRCodeDetectorBlock,
         AbsoluteStaticCropBlock,
