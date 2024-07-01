@@ -385,3 +385,4 @@ if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+DEVICE = os.getenv("DEVICE")
