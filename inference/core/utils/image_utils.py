@@ -229,6 +229,11 @@ def attempt_loading_image_from_string(
         )
     except:
         pass
+    if not ALLOW_NUMPY_INPUT:
+        raise InputFormatInferenceFailed(
+            message="Input image format could not be inferred from string.",
+            public_message="Input image format could not be inferred from string.",
+        )
     try:
         return load_image_from_numpy_str(value=value), True
     except InvalidNumpyInput as error:
@@ -287,6 +292,11 @@ def load_image_from_buffer(
     return result
 
 
+@deprecated(
+    reason="This function is unsafe and causes security issues whenever used in server. "
+           "It will be removed from inference and inference server hosted locally "
+           "end of Q4 2024. It is also removed from Roboflow hosted platform effective immediately."
+)
 def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     """Loads an image from a numpy array string.
 
