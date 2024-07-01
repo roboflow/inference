@@ -1,7 +1,7 @@
-import time
-from typing import Dict, Optional
+from __future__ import annotations
 
-from fastapi import BackgroundTasks
+import time
+from typing import TYPE_CHECKING, Dict, Optional
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
@@ -12,6 +12,9 @@ from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
+
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"

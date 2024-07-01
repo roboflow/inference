@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 import base64
 import os.path
 from functools import partial
 from glob import glob
-from typing import Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import cv2
-import numpy as np
 from supervision import (
     BlurAnnotator,
     BoundingBoxAnnotator,
@@ -27,7 +28,6 @@ from supervision import (
     VideoInfo,
     VideoSink,
 )
-from supervision.annotators.base import BaseAnnotator
 from supervision.utils.file import read_yaml_file
 from tqdm import tqdm
 
@@ -36,6 +36,10 @@ from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import dump_json, initialise_client
 from inference_sdk.http.utils.encoding import bytes_to_opencv_image
 from inference_sdk.http.utils.loaders import load_image_from_string
+
+if TYPE_CHECKING:
+    import numpy as np
+    from supervision.annotators.base import BaseAnnotator
 
 CONFIGS_DIR_PATH = os.path.abspath(
     os.path.join(

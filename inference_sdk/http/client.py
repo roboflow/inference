@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
 
 import aiohttp
-import numpy as np
 import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
@@ -63,6 +64,10 @@ from inference_sdk.http.utils.requests import (
     inject_images_into_payload,
 )
 from inference_sdk.utils.decorators import deprecated
+
+if TYPE_CHECKING:
+    import numpy as np
+
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
