@@ -156,6 +156,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Overlap ratio between consecutive slices in the height dimension",
         examples=[0.2, "$inputs.overlap_ratio_height"],
     )
+    overlap_filtering_strategy: Union[
+        Literal["none", "nms", "nmm"],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field(
+        default="nms",
+        description="Which strategy to employ when filtering overlapping boxes. "
+            "None does nothing, NMS discards surplus detections, NMM merges them.",
+        examples=["nms", "$inputs.overlap_filtering_strategy"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -197,6 +206,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         slice_height: Optional[int],
         overlap_ratio_width: Optional[float],
         overlap_ratio_height: Optional[float],
+        overlap_filtering_strategy: Literal["none", "nms", "nmm"],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         non_empty_images = [i for i in images.iter_nonempty()]
         non_empty_inference_images = [i.numpy_image for i in non_empty_images]
@@ -230,10 +240,20 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             detections = sv.Detections.from_inference(predictions)
             return detections
 
+        if overlap_filtering_strategy == "none":
+            overlap_filter = sv.OverlapFilter.NONE
+        if overlap_filtering_strategy == "nms":
+            overlap_filter = sv.OverlapFilter.NON_MAX_SUPPRESSION
+        elif overlap_filtering_strategy == "nmm":
+            overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
+        else:
+            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
             slice_wh=(slice_width, slice_height),
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
+            overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
             thread_workers=1
         )
@@ -292,6 +312,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         slice_height: Optional[int],
         overlap_ratio_width: Optional[float],
         overlap_ratio_height: Optional[float],
+        overlap_filtering_strategy: Literal["none", "nms", "nmm"],
     ) -> List[Dict[str, Union[sv.Detections, Any]]]:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -317,7 +338,7 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
         client.configure(inference_configuration=client_config)
         non_empty_images = [i for i in images.iter_nonempty()]
         non_empty_inference_images = [i.numpy_image for i in non_empty_images]
-        
+
         def slicer_callback(image_slice: np.ndarray):
             prediction = client.infer(
                 inference_input=image_slice,
@@ -328,10 +349,20 @@ class RoboflowSegmentationSlicerBlock(WorkflowBlock):
             detections = sv.Detections.from_inference(prediction)
             return detections
         
+        if overlap_filtering_strategy == "none":
+            overlap_filter = sv.OverlapFilter.NONE
+        if overlap_filtering_strategy == "nms":
+            overlap_filter = sv.OverlapFilter.NON_MAX_SUPPRESSION
+        elif overlap_filtering_strategy == "nmm":
+            overlap_filter = sv.OverlapFilter.NON_MAX_MERGE
+        else:
+            raise ValueError(f"Invalid overlap filtering strategy: {overlap_filtering_strategy}")
+
         slicer = sv.InferenceSlicer(
             callback=slicer_callback,
             slice_wh=(slice_width, slice_height),
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
+            overlap_filter_strategy=overlap_filter,
             iou_threshold=iou_threshold,
             thread_workers=1
         )
