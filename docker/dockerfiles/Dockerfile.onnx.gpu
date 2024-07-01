@@ -32,7 +32,6 @@ COPY requirements/requirements.sam.txt \
     ./
 
 # Remove torch installed cudnn since we already have it in the dockerfile
-RUN pip3 uninstall -y nvidia-cudnn-cu11
 RUN pip3 install -U wheel packaging
 RUN pip3 install \
     -r _requirements.txt \
@@ -51,6 +50,8 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
+RUN pip3 uninstall -y nvidia-cudnn-cu11
+RUN pip install flash_attn
 FROM scratch
 COPY --from=base / /
 
@@ -75,5 +76,6 @@ ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

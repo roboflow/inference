@@ -3,5 +3,4 @@ accelerate
 onnx
 peft
 timm
-flash_attn
 einops
