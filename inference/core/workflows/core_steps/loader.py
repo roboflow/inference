@@ -30,12 +30,6 @@ from inference.core.workflows.core_steps.models.roboflow.multi_label_classificat
 from inference.core.workflows.core_steps.models.roboflow.object_detection import (
     RoboflowObjectDetectionModelBlock,
 )
-from inference.core.workflows.core_steps.supervision_tools.detections_slicer import (
-    RoboflowDetectionSlicerBlock,
-)
-from inference.core.workflows.core_steps.supervision_tools.segmentations_slicer import (
-    RoboflowSegmentationSlicerBlock,
-)
 from inference.core.workflows.core_steps.models.third_party.barcode_detection import (
     BarcodeDetectorBlock,
 )
@@ -44,6 +38,12 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 )
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
+)
+from inference.core.workflows.core_steps.supervision_tools.detections_slicer import (
+    RoboflowDetectionSlicerBlock,
+)
+from inference.core.workflows.core_steps.supervision_tools.segmentations_slicer import (
+    RoboflowSegmentationSlicerBlock,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,

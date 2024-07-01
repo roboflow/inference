@@ -1,12 +1,11 @@
 import pickle
 from typing import Any, Dict, List, Literal, Optional, Type, Union
-from pydantic import ConfigDict, Field, PositiveInt
+
 import numpy as np
 import supervision as sv
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import (
-    ObjectDetectionInferenceRequest,
-)
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
@@ -19,8 +18,8 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-from inference.core.utils.image_utils import xyxy_to_xywh
 from inference.core.managers.base import ModelManager
+from inference.core.utils.image_utils import xyxy_to_xywh
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
