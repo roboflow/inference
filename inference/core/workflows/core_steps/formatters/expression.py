@@ -1,7 +1,8 @@
 from copy import copy
-from typing import Annotated, Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
