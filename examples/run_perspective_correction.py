@@ -8,6 +8,7 @@ import supervision as sv
 
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.transformations.dynamic_zones import (
     OUTPUT_KEY as DYNAMIC_ZONES_OUTPUT_KEY,
 )
@@ -15,7 +16,8 @@ from inference.core.workflows.core_steps.transformations.dynamic_zones import (
     TYPE as DYNAMIC_ZONES_TYPE,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction import (
-    OUTPUT_KEY as PERSPECTIVE_CORRECTION_OUTPUT_KEY,
+    OUTPUT_DETECTIONS_KEY as PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY,
+    OUTPUT_IMAGE_KEY as PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction import (
     TYPE as PERSPECTIVE_CORRECTION_TYPE,
@@ -68,6 +70,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         action=MustBeValidSVPosition,
     )
+    parser.add_argument("--warp-image", required=False, action="store_true")
     return parser.parse_args()
 
 
@@ -89,6 +92,7 @@ if __name__ == "__main__":
                 "type": "InferenceParameter",
                 "name": "extend_perspective_polygon_by_detections_anchor",
             },
+            {"type": "InferenceParameter", "name": "warp_image"},
         ],
         "steps": [
             {
@@ -183,10 +187,12 @@ if __name__ == "__main__":
                 "type": PERSPECTIVE_CORRECTION_TYPE,
                 "name": "coordinates_transformer",
                 "predictions": "$steps.not_zone_class_filter.predictions",
+                "images": "$inputs.image",
                 "perspective_polygons": f"$steps.dynamic_zones.{DYNAMIC_ZONES_OUTPUT_KEY}",
                 "transformed_rect_width": "$inputs.transformed_rect_width",
                 "transformed_rect_height": "$inputs.transformed_rect_height",
                 "extend_perspective_polygon_by_detections_anchor": "$inputs.extend_perspective_polygon_by_detections_anchor",
+                "warp_image": "$inputs.warp_image",
             },
         ],
         "outputs": [
@@ -202,8 +208,13 @@ if __name__ == "__main__":
             },
             {
                 "type": "JsonField",
-                "name": PERSPECTIVE_CORRECTION_OUTPUT_KEY,
-                "selector": f"$steps.coordinates_transformer.{PERSPECTIVE_CORRECTION_OUTPUT_KEY}",
+                "name": PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY,
+                "selector": f"$steps.coordinates_transformer.{PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY}",
+            },
+            {
+                "type": "JsonField",
+                "name": PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY,
+                "selector": f"$steps.coordinates_transformer.{PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY}",
             },
         ],
     }
@@ -216,6 +227,7 @@ if __name__ == "__main__":
         init_parameters={
             "workflows_core.model_manager": model_manager,
             "workflows_core.api_key": os.getenv("ROBOFLOW_API_KEY"),
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
         },
     )
 
@@ -233,24 +245,25 @@ if __name__ == "__main__":
             "transformed_rect_width": args.transformed_rect_width,
             "transformed_rect_height": args.transformed_rect_height,
             "extend_perspective_polygon_by_detections_anchor": args.extend_perspective_polygon_by_detections_anchor,
+            "warp_image": args.warp_image,
         }
     )
 
-    if not result.get(DYNAMIC_ZONES_OUTPUT_KEY):
+    if not result[0].get(DYNAMIC_ZONES_OUTPUT_KEY):
         print("Nothing detected, script terminated.")
         exit(0)
 
     img = cv.imread(args.source_path)
 
     polygon_annotator = sv.PolygonAnnotator(thickness=10)
-    detections = result.get("predictions")[0]
+    detections = result[0].get("predictions")[0]
     original_polygons = polygon_annotator.annotate(
         scene=img.copy(),
         detections=detections[detections["class_name"] != args.zones_from_class_name],
     )
     cv.drawContours(
         original_polygons,
-        [np.array(result.get(DYNAMIC_ZONES_OUTPUT_KEY)[0][0], dtype=int)],
+        [np.array(result[0].get(DYNAMIC_ZONES_OUTPUT_KEY)[0], dtype=int)],
         -1,
         (0, 0, 255),
         10,
@@ -261,8 +274,9 @@ if __name__ == "__main__":
     blank_image = np.ones(
         (args.transformed_rect_width, args.transformed_rect_height, 3), np.uint8
     )
-    h, w, _ = blank_image.shape
-    corrected_detections = result.get(PERSPECTIVE_CORRECTION_OUTPUT_KEY)[0]
+    corrected_detections = result[0].get(PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY)
+    if args.warp_image:
+        blank_image = result[0].get(PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY)
     annotated_frame = polygon_annotator.annotate(
         blank_image,
         detections=corrected_detections[
