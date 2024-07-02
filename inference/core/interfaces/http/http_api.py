@@ -450,7 +450,6 @@ class HttpInterface(BaseInterface):
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
-            print(inference_request.model_id)
             self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
             resp = await self.model_manager.infer_from_request(
                 de_aliased_model_id, inference_request, **kwargs
