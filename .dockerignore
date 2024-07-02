@@ -36,3 +36,6 @@ coverage.xml
 development
 .pytest_cache
 cache-test
+scratch
+lora-bases
+lora-tars

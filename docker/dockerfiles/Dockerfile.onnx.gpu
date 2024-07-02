@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-devel-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -51,7 +51,7 @@ RUN pip3 install \
     && rm -rf ~/.cache/pip
 
 RUN pip3 uninstall -y nvidia-cudnn-cu11
-RUN pip install flash_attn
+RUN pip3 install flash-attn --no-build-isolation
 FROM scratch
 COPY --from=base / /
 
