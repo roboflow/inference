@@ -53,6 +53,7 @@ def test_retrieve_init_parameter_values_when_explicit_parameters_define_value() 
 
     # when
     result = retrieve_init_parameter_values(
+        block_name="block",
         block_init_parameter="param",
         block_source="some",
         explicit_init_parameters=explicit_init_parameters,
@@ -71,6 +72,7 @@ def test_retrieve_init_parameter_values_when_initializers_define_value() -> None
 
     # when
     result = retrieve_init_parameter_values(
+        block_name="block",
         block_init_parameter="param",
         block_source="some",
         explicit_init_parameters={},
@@ -91,6 +93,7 @@ def test_retrieve_init_parameter_values_when_explicit_parameters_define_generic_
 
     # when
     result = retrieve_init_parameter_values(
+        block_name="block",
         block_init_parameter="param",
         block_source="some",
         explicit_init_parameters=explicit_init_parameters,
@@ -110,6 +113,7 @@ def test_retrieve_init_parameter_values_when_initializers_define_generic_value_f
 
     # when
     result = retrieve_init_parameter_values(
+        block_name="block",
         block_init_parameter="param",
         block_source="some",
         explicit_init_parameters={},
@@ -124,6 +128,7 @@ def test_retrieve_init_parameter_values_when_parameter_cannot_be_resolved() -> N
     # when
     with pytest.raises(BlockInitParameterNotProvidedError):
         _ = retrieve_init_parameter_values(
+        block_name="block",
             block_init_parameter="param",
             block_source="some",
             explicit_init_parameters={},
@@ -144,6 +149,7 @@ def test_retrieve_init_parameters_values() -> None:
 
     # when
     result = retrieve_init_parameters_values(
+        block_name="block",
         block_init_parameters=["param_1", "param_2", "param_3", "param_4"],
         block_source="some",
         explicit_init_parameters=explicit_init_parameters,
