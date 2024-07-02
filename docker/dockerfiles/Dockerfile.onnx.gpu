@@ -33,7 +33,6 @@ COPY requirements/requirements.sam.txt \
 
 # Remove torch installed cudnn since we already have it in the dockerfile
 RUN pip3 install -U wheel packaging
-RUN pip3 uninstall -y nvidia-cudnn-cu11
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -51,7 +50,6 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall -y nvidia-cudnn-cu11
 RUN pip3 install flash-attn --no-build-isolation
 FROM scratch
 COPY --from=base / /
