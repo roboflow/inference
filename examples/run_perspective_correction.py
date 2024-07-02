@@ -256,14 +256,14 @@ if __name__ == "__main__":
     img = cv.imread(args.source_path)
 
     polygon_annotator = sv.PolygonAnnotator(thickness=10)
-    detections = result[0].get("predictions")[0]
+    detections = result[0].get("predictions")
     original_polygons = polygon_annotator.annotate(
         scene=img.copy(),
         detections=detections[detections["class_name"] != args.zones_from_class_name],
     )
     cv.drawContours(
         original_polygons,
-        [np.array(result[0].get(DYNAMIC_ZONES_OUTPUT_KEY)[0], dtype=int)],
+        [np.array(result[0].get(DYNAMIC_ZONES_OUTPUT_KEY), dtype=int)],
         -1,
         (0, 0, 255),
         10,
