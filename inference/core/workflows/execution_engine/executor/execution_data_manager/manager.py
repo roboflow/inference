@@ -286,12 +286,13 @@ class ExecutionDataManager:
             )
         if not selector_lineage:
             return None
-        if not self._dynamic_batches_manager.is_lineage_registered(
-            lineage=selector_lineage
-        ):
+        return self.get_lineage_indices(lineage=selector_lineage)
+
+    def get_lineage_indices(self, lineage: List[str]) -> List[DynamicBatchIndex]:
+        if not self._dynamic_batches_manager.is_lineage_registered(lineage=lineage):
             return []
         return self._dynamic_batches_manager.get_indices_for_data_lineage(
-            lineage=selector_lineage
+            lineage=lineage
         )
 
     def get_non_batch_data(self, selector: str) -> Any:

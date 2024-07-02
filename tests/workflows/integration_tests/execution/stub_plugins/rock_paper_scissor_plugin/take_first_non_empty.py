@@ -3,24 +3,12 @@ This is just example, test implementation, please do not assume it being fully f
 This is extremely unsafe block - be aware for injected code execution!
 """
 
-from copy import deepcopy
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Type, Union
 
-import numpy as np
-import supervision as sv
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    Batch,
-    OutputDefinition,
-    WorkflowImageData,
-)
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -30,11 +18,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-
-class PythonCodeBlock(BaseModel):
-    type: Literal["PythonBlock"]
-    code: str
 
 
 class BlockManifest(WorkflowBlockManifest):

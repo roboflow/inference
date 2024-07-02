@@ -25,8 +25,10 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 
 BINARY_OPERATORS = {
+    "==": lambda a, b: a == b,
     "(Number) ==": lambda a, b: a == b,
     "(Number) !=": lambda a, b: a != b,
+    "!=": lambda a, b: a != b,
     "(Number) >": lambda a, b: a > b,
     "(Number) >=": lambda a, b: a >= b,
     "(Number) <": lambda a, b: a < b,

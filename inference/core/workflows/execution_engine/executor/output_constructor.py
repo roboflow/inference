@@ -4,6 +4,7 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
+from inference.core.workflows.constants import WORKFLOW_INPUT_BATCH_LINEAGE_ID
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
@@ -63,10 +64,13 @@ def construct_workflow_output(
         for output in workflow_outputs
         if output.coordinates_system is CoordinatesSystem.PARENT
     }
-    major_batch_size = 0
+    major_batch_size = len(
+        execution_data_manager.get_lineage_indices(
+            lineage=[WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+        )
+    )
     for name in batch_oriented_outputs:
         array = outputs_arrays[name]
-        major_batch_size = max(len(array) if array else 0, major_batch_size)
         indices = output_name2indices[name]
         data = execution_data_manager.get_batch_data(
             selector=name2selector[name],

@@ -522,6 +522,7 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
         return [batch_data_lookup[selector][index] for index in indices]
 
     execution_data_manager.get_batch_data = get_batch_data
+    execution_data_manager.get_lineage_indices.return_value = [(0,), (1,), (2,)]
 
     # when
     result = construct_workflow_output(

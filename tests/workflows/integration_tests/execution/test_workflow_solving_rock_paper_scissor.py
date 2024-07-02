@@ -53,7 +53,7 @@ ROCK_PAPER_SCISSOR_IF_ELSE_WORKFLOW = {
             "steps_if_false": ["$steps.undefined_verdict_generator"],
         },
         {
-            "type": "Expression",
+            "type": "ExpressionTestBlock",
             "name": "undefined_verdict_generator",
             "data": {
                 "image_only_for_dimension": "$inputs.image",
@@ -73,7 +73,7 @@ ROCK_PAPER_SCISSOR_IF_ELSE_WORKFLOW = {
             "operations": [{"type": "DetectionsSelection", "mode": "right_most"}],
         },
         {
-            "type": "Expression",
+            "type": "ExpressionTestBlock",
             "name": "defined_verdict_generator",
             "data": {
                 "left_player_detections": "$steps.take_leftmost_detection.predictions",

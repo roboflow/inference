@@ -46,7 +46,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "",
         }
     )
-    type: Literal["Expression"]
+    type: Literal["ExpressionTestBlock"]
     data: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
