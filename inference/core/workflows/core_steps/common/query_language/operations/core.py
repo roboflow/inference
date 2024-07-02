@@ -18,6 +18,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.booleans.base import (
     to_bool,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.classification_results.base import (
+    extract_classification_property,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.detection.base import (
     extract_detection_property,
 )
@@ -183,6 +186,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "Divide": divide,
     "DetectionsSelection": select_detections,
     "SortDetections": sort_detections,
+    "ClassificationPropertyExtract": extract_classification_property,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

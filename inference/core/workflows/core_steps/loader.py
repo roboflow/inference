@@ -1,12 +1,21 @@
 from typing import List, Type
 
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
+from inference.core.workflows.core_steps.formatters.empty_values_replacement import (
+    FirstNonEmptyOrDefaultBlock,
+)
 from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
+from inference.core.workflows.core_steps.formatters.property_extraction import (
+    PropertyExtractionBlock,
+)
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
     DetectionsClassesReplacementBlock,
 )
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
+)
+from inference.core.workflows.core_steps.fusion.outputs_concatenation import (
+    NestedOutputsConcatenationBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
@@ -97,4 +106,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlock,
         DetectionsClassesReplacementBlock,
         ExpressionBlock,
+        PropertyExtractionBlock,
+        NestedOutputsConcatenationBlock,
+        FirstNonEmptyOrDefaultBlock,
     ]

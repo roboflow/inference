@@ -102,7 +102,7 @@ class DetectionsClassesReplacementBlock(WorkflowBlock):
     async def run(
         self,
         object_detection_predictions: Optional[sv.Detections],
-        classification_predictions: Optional[Batch[dict]],
+        classification_predictions: Optional[Batch[Optional[dict]]],
     ) -> BlockResult:
         if object_detection_predictions is None:
             return {"predictions": None}

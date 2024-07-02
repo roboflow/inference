@@ -173,7 +173,7 @@ def sort_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     if mode not in SORT_PROPERTIES_EXTRACT:
-        InvalidInputTypeError(
+        raise InvalidInputTypeError(
             public_message=f"Executing sort_detections(...), expected mode to be one of "
             f"{SORT_PROPERTIES_EXTRACT.values()}, got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",

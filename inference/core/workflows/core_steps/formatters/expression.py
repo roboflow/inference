@@ -82,9 +82,19 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         description="References data to be used to construct results",
         examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
+    )
+    data_operations: Dict[str, List[AllOperationsType]] = Field(
+        description="UQL definitions of operations to be performed on defined data "
+        "before switch-case instruction",
+        examples=[
+            {
+                "predictions": [
+                    {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
+                ]
+            }
+        ],
         default_factory=lambda: {},
     )
-    data_operations: Dict[str, List[AllOperationsType]]
     switch: CasesDefinition
 
     @classmethod
