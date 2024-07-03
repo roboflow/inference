@@ -185,7 +185,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
             ],
         },
         {
-            "type": "NestedOutputsConcatenation",
+            "type": "DimensionCollapse",
             "name": "outputs_concatenation",
             "data": "$steps.property_extraction.output",
         },
@@ -347,7 +347,7 @@ WORKFLOW_PERFORMING_OCR_AND_AGGREGATION_TO_PERFORM_PASS_FAIL_FOR_ALL_PLATES_FOUN
             "image": "$steps.plates_crops.crops",
         },
         {
-            "type": "NestedOutputsConcatenation",
+            "type": "DimensionCollapse",
             "name": "outputs_concatenation",
             "data": "$steps.ocr.result",
         },
@@ -605,7 +605,7 @@ WORKFLOW_WITH_INVALID_AGGREGATION = {
             "model_id": "vehicle-registration-plates-trudk/2",
         },
         {
-            "type": "NestedOutputsConcatenation",
+            "type": "DimensionCollapse",
             "name": "invalid_concatenation",
             "data": "$steps.plates_detection.predictions",
         },

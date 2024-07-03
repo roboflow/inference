@@ -1,4 +1,5 @@
 from typing import Dict, List, Literal, Optional, Tuple, Type
+from uuid import uuid4
 
 import numpy as np
 import supervision as sv
@@ -116,7 +117,7 @@ class DetectionsClassesReplacementBlock(WorkflowBlock):
             if prediction is not None
         }
         detections_to_remain_mask = [
-            detection_id_by_class[detection_id] is not None
+            detection_id_by_class.get(detection_id) is not None
             for detection_id in object_detection_predictions.data[DETECTION_ID_KEY]
         ]
         selected_object_detection_predictions = object_detection_predictions[
@@ -151,6 +152,9 @@ class DetectionsClassesReplacementBlock(WorkflowBlock):
         selected_object_detection_predictions.data[CLASS_NAME_DATA_FIELD] = (
             replaced_class_names
         )
+        selected_object_detection_predictions.data[DETECTION_ID_KEY] = np.array(
+            [f"{uuid4()}" for _ in range(len(selected_object_detection_predictions))]
+        )
         return {"predictions": selected_object_detection_predictions}
 
 
@@ -160,7 +164,7 @@ def extract_leading_class_from_prediction(
     if "top" in prediction:
         class_name = prediction["top"]
         matching_class_ids = [
-            (p["class"], p["confidence"])
+            (p["class_id"], p["confidence"])
             for p in prediction["predictions"]
             if p["class"] == class_name
         ]

@@ -22,7 +22,9 @@ Useful in scenarios like:
 * aggregation of OCR results for dynamically cropped images
 """
 
-SHORT_DESCRIPTION = "Aggregates step outputs at specific data depth into list of values at one level above."
+SHORT_DESCRIPTION = (
+    "Collapses dimensionality level by aggregation of nested data into list"
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -34,7 +36,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "fusion",
         }
     )
-    type: Literal["NestedOutputsConcatenation"]
+    type: Literal["DimensionCollapse"]
     data: StepOutputSelector() = Field(
         description="Reference to step outputs at depth level n to be concatenated and moved into level n-1.",
         examples=["$steps.ocr_step.results"],
@@ -56,7 +58,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
 
 
-class NestedOutputsConcatenationBlock(WorkflowBlock):
+class DimensionCollapseBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

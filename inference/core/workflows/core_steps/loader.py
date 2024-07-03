@@ -14,8 +14,8 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement i
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
 )
-from inference.core.workflows.core_steps.fusion.outputs_concatenation import (
-    NestedOutputsConcatenationBlock,
+from inference.core.workflows.core_steps.fusion.dimension_collapse import (
+    DimensionCollapseBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
@@ -107,6 +107,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsClassesReplacementBlock,
         ExpressionBlock,
         PropertyExtractionBlock,
-        NestedOutputsConcatenationBlock,
+        DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
     ]
