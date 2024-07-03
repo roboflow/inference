@@ -6,12 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
-from typing_extensions import Literal
 
 import cv2
 import numpy as np
 import onnxruntime
 from PIL import Image
+from typing_extensions import Literal
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -254,8 +254,11 @@ class RoboflowInferenceModel(Model):
         return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        logger.debug("Downloading model artifacts for %s model (%s) from Roboflow API",
-            self.endpoint, self.model_variant)
+        logger.debug(
+            "Downloading model artifacts for %s model (%s) from Roboflow API",
+            self.endpoint,
+            self.model_variant,
+        )
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,

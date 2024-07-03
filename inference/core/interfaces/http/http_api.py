@@ -3,7 +3,6 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
-from typing_extensions import Literal
 
 import asgi_correlation_id
 import uvicorn
@@ -12,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from typing_extensions import Literal
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -511,7 +511,11 @@ class HttpInterface(BaseInterface):
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
             )
-            self.model_manager.add_model(core_model_id, inference_request.api_key, inference_request.model_variant)
+            self.model_manager.add_model(
+                core_model_id,
+                inference_request.api_key,
+                inference_request.model_variant,
+            )
             return core_model_id
 
         load_clip_model = partial(load_core_model, core_model="clip")
@@ -643,7 +647,9 @@ class HttpInterface(BaseInterface):
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
-                self.model_manager.add_model(de_aliased_model_id, request.api_key, request.model_variant)
+                self.model_manager.add_model(
+                    de_aliased_model_id, request.api_key, request.model_variant
+                )
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -1660,7 +1666,10 @@ class HttpInterface(BaseInterface):
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
-                    model_id=request_model_id, api_key=api_key, model_id_alias=model_id, model_variant=model_variant
+                    model_id=request_model_id,
+                    api_key=api_key,
+                    model_id_alias=model_id,
+                    model_variant=model_variant,
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)

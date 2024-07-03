@@ -1,7 +1,7 @@
 from typing import Optional
-from typing_extensions import Literal
 
 from pydantic import BaseModel, ConfigDict
+from typing_extensions import Literal
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 

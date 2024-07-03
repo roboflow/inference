@@ -1,9 +1,9 @@
 import time
 from typing import Dict, List, Optional, Tuple
-from typing_extensions import Literal
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
+from typing_extensions import Literal
 
 from inference.core.cache import cache
 from inference.core.cache.serializers import to_cachable_inference_item
@@ -55,7 +55,9 @@ class ModelManager:
         """
         logger.debug(
             "ModelManager - Adding model with model_id=%s, model_id_alias=%s, model_variant=%s",
-            model_id, model_id_alias, model_variant
+            model_id,
+            model_id_alias,
+            model_variant,
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
@@ -64,7 +66,9 @@ class ModelManager:
             )
             return
         logger.debug("ModelManager - model initialisation...")
-        model = self.model_registry.get_model(resolved_identifier, api_key, model_variant=model_variant)(
+        model = self.model_registry.get_model(
+            resolved_identifier, api_key, model_variant=model_variant
+        )(
             model_id=model_id,
             api_key=api_key,
             model_variant=model_variant,

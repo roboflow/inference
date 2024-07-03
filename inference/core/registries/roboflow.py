@@ -1,10 +1,17 @@
 import os
 from typing import Optional, Tuple, Union
+
 from typing_extensions import Literal
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.entities.types import DatasetID, ModelType, ModelVariant, TaskType, VersionID
+from inference.core.entities.types import (
+    DatasetID,
+    ModelType,
+    ModelVariant,
+    TaskType,
+    VersionID,
+)
 from inference.core.env import LAMBDA, MODEL_CACHE_DIR
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -48,7 +55,12 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: str, api_key: str, model_variant: Literal["dynamic", "static"] = "dynamic") -> Model:
+    def get_model(
+        self,
+        model_id: str,
+        api_key: str,
+        model_variant: Literal["dynamic", "static"] = "dynamic",
+    ) -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:
@@ -96,7 +108,8 @@ def get_model_type(
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
     cached_metadata = get_model_metadata_from_cache(
-        dataset_id=dataset_id, version_id=version_id,
+        dataset_id=dataset_id,
+        version_id=version_id,
     )
     if cached_metadata is not None:
         if len(cached_metadata) == 3 and cached_metadata[2]:
@@ -104,7 +117,9 @@ def get_model_type(
                 logger.warning(
                     "%s variant of %s was requested, however %s is already in cache, using variant from cache!"
                     "Please clear cache for that model and try again.",
-                    model_variant, model_id, cached_metadata[2]
+                    model_variant,
+                    model_id,
+                    cached_metadata[2],
                 )
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:

@@ -1,6 +1,5 @@
 import json
 import os
-from typing_extensions import Literal
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -8,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import requests
 from requests import Response
 from requests_toolbelt import MultipartEncoder
+from typing_extensions import Literal
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -198,7 +198,9 @@ def get_roboflow_model_data(
         elif model_variant == "static":
             params.append(("dynamic", "false"))
         else:
-            raise ModelArtefactError(f"Unorecognised model variant {model_variant}, allowed values are 'static' or 'dynamic'")
+            raise ModelArtefactError(
+                f"Unorecognised model variant {model_variant}, allowed values are 'static' or 'dynamic'"
+            )
         if api_key is not None:
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
@@ -213,7 +215,8 @@ def get_roboflow_model_data(
         )
         logger.debug(
             "Loaded model data (%s) from Roboflow API and saved to cache with key: %s.",
-            model_variant, api_data_cache_key
+            model_variant,
+            api_data_cache_key,
         )
         return api_data
 

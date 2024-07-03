@@ -1,8 +1,8 @@
 from typing import Any, ClassVar, List, Optional, Union
-from typing_extensions import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Literal
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
