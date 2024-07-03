@@ -1,1 +1,4 @@
-from inference.models.transformers.transformers import TransformerModel, LoRATransformerModel
+from inference.models.transformers.transformers import (
+    LoRATransformerModel,
+    TransformerModel,
+)

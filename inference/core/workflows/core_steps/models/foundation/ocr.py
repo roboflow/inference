@@ -17,7 +17,10 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_ID_KEY,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    remove_unexpected_keys_from_dictionary,
+)
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
@@ -51,6 +54,8 @@ You can then use a DynamicCropBlock to crop the region of interest before runnin
 Using a detections model then cropping detections allows you to isolate your analysis 
 on particular regions of an image.
 """
+
+EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type"}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -182,6 +187,8 @@ class OCRModelBlock(WorkflowBlock):
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
-            if "time" in prediction:
-                del prediction["time"]
+            _ = remove_unexpected_keys_from_dictionary(
+                dictionary=prediction,
+                expected_keys=EXPECTED_OUTPUT_KEYS,
+            )
         return predictions

@@ -128,7 +128,7 @@ def test_retrieve_init_parameter_values_when_parameter_cannot_be_resolved() -> N
     # when
     with pytest.raises(BlockInitParameterNotProvidedError):
         _ = retrieve_init_parameter_values(
-        block_name="block",
+            block_name="block",
             block_init_parameter="param",
             block_source="some",
             explicit_init_parameters={},
