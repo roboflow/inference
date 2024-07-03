@@ -1,5 +1,6 @@
 import json
 import os
+from typing_extensions import Literal
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -22,6 +23,7 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    ModelArtefactError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
@@ -42,6 +44,7 @@ MODEL_TYPE_DEFAULTS = {
 }
 PROJECT_TASK_TYPE_KEY = "project_task_type"
 MODEL_TYPE_KEY = "model_type"
+MODEL_VARIANT_KEY = "model_variant"
 
 NOT_FOUND_ERROR_MESSAGE = (
     "Could not find requested Roboflow resource. Check that the provided dataset and "
@@ -178,6 +181,7 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
+    model_variant: Literal["dynamic", "static"] = "dynamic",
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = cache.get(api_data_cache_key)
@@ -188,8 +192,13 @@ def get_roboflow_model_data(
         params = [
             ("nocache", "true"),
             ("device", device_id),
-            ("dynamic", "true"),
         ]
+        if model_variant == "dynamic":
+            params.append(("dynamic", "true"))
+        elif model_variant == "static":
+            params.append(("dynamic", "false"))
+        else:
+            raise ModelArtefactError(f"Unorecognised model variant {model_variant}, allowed values are 'static' or 'dynamic'")
         if api_key is not None:
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
@@ -203,7 +212,8 @@ def get_roboflow_model_data(
             expire=10,
         )
         logger.debug(
-            f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+            "Loaded model data (%s) from Roboflow API and saved to cache with key: %s.",
+            model_variant, api_data_cache_key
         )
         return api_data
 

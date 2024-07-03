@@ -1,9 +1,10 @@
 import os
 from typing import Optional, Tuple, Union
+from typing_extensions import Literal
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
+from inference.core.entities.types import DatasetID, ModelType, ModelVariant, TaskType, VersionID
 from inference.core.env import LAMBDA, MODEL_CACHE_DIR
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -16,6 +17,7 @@ from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import (
     MODEL_TYPE_DEFAULTS,
     MODEL_TYPE_KEY,
+    MODEL_VARIANT_KEY,
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
     get_roboflow_dataset_type,
@@ -46,12 +48,13 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: str, api_key: str) -> Model:
+    def get_model(self, model_id: str, api_key: str, model_variant: Literal["dynamic", "static"] = "dynamic") -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:
             model_id (str): The ID of the model to be retrieved.
             api_key (str): The API key used to authenticate.
+            model_variant (str): Variant of the model to be retrieved, must be either 'static' or 'dynamic'
 
         Returns:
             Model: The model class corresponding to the given model ID and type.
@@ -59,7 +62,7 @@ class RoboflowModelRegistry(ModelRegistry):
         Raises:
             ModelNotRecognisedError: If the model type is not supported or found.
         """
-        model_type = get_model_type(model_id, api_key)
+        model_type = get_model_type(model_id, api_key, model_variant)
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
         return self.registry_dict[model_type]
@@ -68,11 +71,13 @@ class RoboflowModelRegistry(ModelRegistry):
 def get_model_type(
     model_id: str,
     api_key: Optional[str] = None,
+    model_variant: Literal["dynamic", "static"] = "dynamic",
 ) -> Tuple[TaskType, ModelType]:
     """Retrieves the model type based on the given model ID and API key.
 
     Args:
         model_id (str): The ID of the model.
+        model_variant (str): Variant of the model, must be either 'static' or 'dynamic'
         api_key (str): The API key used to authenticate.
 
     Returns:
@@ -83,6 +88,7 @@ def get_model_type(
         DatasetLoadError: If the dataset could not be loaded due to invalid ID, workspace ID or version ID.
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
+        ModelArtefactError: If value of model_variant is not recognised
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
@@ -90,9 +96,16 @@ def get_model_type(
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
     cached_metadata = get_model_metadata_from_cache(
-        dataset_id=dataset_id, version_id=version_id
+        dataset_id=dataset_id, version_id=version_id,
     )
     if cached_metadata is not None:
+        if len(cached_metadata) == 3 and cached_metadata[2]:
+            if cached_metadata[2] != model_variant:
+                logger.warning(
+                    "Requested %s variant of %s, however %s is already in cache, using variant from cache!"
+                    "Please clear cache for that model and try again.",
+                    model_variant, model_id, cached_metadata[2]
+                )
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
         if api_key is None:
@@ -116,6 +129,7 @@ def get_model_type(
         model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant=model_variant,
     ).get("ort")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
@@ -133,14 +147,16 @@ def get_model_type(
         version_id=version_id,
         project_task_type=project_task_type,
         model_type=model_type,
+        model_variant=model_variant,
     )
 
     return project_task_type, model_type
 
 
 def get_model_metadata_from_cache(
-    dataset_id: str, version_id: str
-) -> Optional[Tuple[TaskType, ModelType]]:
+    dataset_id: str,
+    version_id: str,
+) -> Optional[Tuple[TaskType, ModelType, Optional[ModelVariant]]]:
     if LAMBDA:
         return _get_model_metadata_from_cache(
             dataset_id=dataset_id, version_id=version_id
@@ -155,7 +171,7 @@ def get_model_metadata_from_cache(
 
 def _get_model_metadata_from_cache(
     dataset_id: str, version_id: str
-) -> Optional[Tuple[TaskType, ModelType]]:
+) -> Optional[Tuple[TaskType, ModelType, Optional[ModelVariant]]]:
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
     )
@@ -165,7 +181,10 @@ def _get_model_metadata_from_cache(
         model_metadata = read_json(path=model_type_cache_path)
         if model_metadata_content_is_invalid(content=model_metadata):
             return None
-        return model_metadata[PROJECT_TASK_TYPE_KEY], model_metadata[MODEL_TYPE_KEY]
+        task_type = model_metadata[PROJECT_TASK_TYPE_KEY]
+        model_type = model_metadata[MODEL_TYPE_KEY]
+        model_variant = model_metadata.get(MODEL_VARIANT_KEY)
+        return task_type, model_type, model_variant
     except ValueError as e:
         logger.warning(
             f"Could not load model description from cache under path: {model_type_cache_path} - decoding issue: {e}."
@@ -193,6 +212,7 @@ def save_model_metadata_in_cache(
     version_id: VersionID,
     project_task_type: TaskType,
     model_type: ModelType,
+    model_variant: Literal["dynamic", "static"],
 ) -> None:
     if LAMBDA:
         _save_model_metadata_in_cache(
@@ -200,6 +220,7 @@ def save_model_metadata_in_cache(
             version_id=version_id,
             project_task_type=project_task_type,
             model_type=model_type,
+            model_variant=model_variant,
         )
         return None
     with cache.lock(
@@ -210,6 +231,7 @@ def save_model_metadata_in_cache(
             version_id=version_id,
             project_task_type=project_task_type,
             model_type=model_type,
+            model_variant=model_variant,
         )
         return None
 
@@ -219,19 +241,25 @@ def _save_model_metadata_in_cache(
     version_id: VersionID,
     project_task_type: TaskType,
     model_type: ModelType,
+    model_variant: Literal["dynamic", "static"],
 ) -> None:
     model_type_cache_path = construct_model_type_cache_path(
-        dataset_id=dataset_id, version_id=version_id
+        dataset_id=dataset_id,
+        version_id=version_id,
     )
     metadata = {
         PROJECT_TASK_TYPE_KEY: project_task_type,
         MODEL_TYPE_KEY: model_type,
+        MODEL_VARIANT_KEY: model_variant,
     }
     dump_json(
         path=model_type_cache_path, content=metadata, allow_override=True, indent=4
     )
 
 
-def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:
+def construct_model_type_cache_path(
+    dataset_id: str,
+    version_id: str,
+) -> str:
     cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id)
     return os.path.join(cache_dir, "model_type.json")

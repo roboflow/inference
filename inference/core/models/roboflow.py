@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
+from typing_extensions import Literal
 
 import cv2
 import numpy as np
@@ -102,6 +103,7 @@ class RoboflowInferenceModel(Model):
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
         load_weights=True,
+        model_variant: Optional[Literal["dynamic", "static"]] = "dynamic",
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -121,6 +123,7 @@ class RoboflowInferenceModel(Model):
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
         self.keypoints_metadata: Optional[dict] = None
+        self.model_variant = model_variant
         initialise_cache(model_id=self.endpoint)
 
     def cache_file(self, f: str) -> str:
@@ -257,6 +260,7 @@ class RoboflowInferenceModel(Model):
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            model_variant=self.model_variant,
         )
         if "ort" not in api_data.keys():
             raise ModelArtefactError(
@@ -579,6 +583,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         onnxruntime_execution_providers: List[
             str
         ] = get_onnxruntime_execution_providers(ONNXRUNTIME_EXECUTION_PROVIDERS),
+        model_variant: Optional[Literal["dynamic", "static"]] = "dynamic",
         *args,
         **kwargs,
     ):
@@ -589,7 +594,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        super().__init__(model_id, *args, **kwargs)
+        super().__init__(model_id, model_variant=model_variant, *args, **kwargs)
         if self.load_weights or not self.has_model_metadata:
             self.onnxruntime_execution_providers = onnxruntime_execution_providers
             expanded_execution_providers = []

@@ -1,3 +1,4 @@
+from typing_extensions import Literal
 from inference.core.env import API_KEY, API_KEY_ENV_NAMES
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
@@ -259,9 +260,9 @@ except:
     pass
 
 
-def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
-    task, model = get_model_type(model_id, api_key=api_key)
-    return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)
+def get_model(model_id, api_key=API_KEY, model_variant: Literal["dynamic", "static"] = "dynamic", **kwargs) -> Model:
+    task, model = get_model_type(model_id, api_key=api_key, model_variant=model_variant)
+    return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, model_variant=model_variant, **kwargs)
 
 
 def get_roboflow_model(*args, **kwargs):
