@@ -1,4 +1,5 @@
 from typing import Any, ClassVar, List, Optional, Union
+from typing_extensions import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,7 @@ class InferenceRequest(BaseRequest):
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
+    model_variant: Literal["dynamic", "static"] = "dynamic"
 
 
 class InferenceRequestImage(BaseModel):

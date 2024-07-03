@@ -1,5 +1,6 @@
 import time
 from typing import Dict, List, Optional, Tuple
+from typing_extensions import Literal
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -40,7 +41,11 @@ class ModelManager:
             self.pingback.start()
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        model_variant: Literal["dynamic", "static"] = "dynamic",
     ) -> None:
         """Adds a new model to the manager.
 
@@ -49,7 +54,8 @@ class ModelManager:
             model (Model): The model instance.
         """
         logger.debug(
-            f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
+            "ModelManager - Adding model with model_id=%s, model_id_alias=%s, model_variant=%s",
+            model_id, model_id_alias, model_variant
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
@@ -58,9 +64,10 @@ class ModelManager:
             )
             return
         logger.debug("ModelManager - model initialisation...")
-        model = self.model_registry.get_model(resolved_identifier, api_key)(
+        model = self.model_registry.get_model(resolved_identifier, api_key, model_variant=model_variant)(
             model_id=model_id,
             api_key=api_key,
+            model_variant=model_variant,
         )
         logger.debug("ModelManager - model successfully loaded.")
         self._models[resolved_identifier] = model

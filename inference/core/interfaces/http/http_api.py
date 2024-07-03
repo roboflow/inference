@@ -3,6 +3,7 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
+from typing_extensions import Literal
 
 import asgi_correlation_id
 import uvicorn
@@ -450,7 +451,11 @@ class HttpInterface(BaseInterface):
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
-            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
+            self.model_manager.add_model(
+                de_aliased_model_id,
+                inference_request.api_key,
+                model_variant=inference_request.model_variant,
+            )
             resp = await self.model_manager.infer_from_request(
                 de_aliased_model_id, inference_request, **kwargs
             )
@@ -506,7 +511,7 @@ class HttpInterface(BaseInterface):
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
             )
-            self.model_manager.add_model(core_model_id, inference_request.api_key)
+            self.model_manager.add_model(core_model_id, inference_request.api_key, inference_request.model_variant)
             return core_model_id
 
         load_clip_model = partial(load_core_model, core_model="clip")
@@ -638,7 +643,7 @@ class HttpInterface(BaseInterface):
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
-                self.model_manager.add_model(de_aliased_model_id, request.api_key)
+                self.model_manager.add_model(de_aliased_model_id, request.api_key, request.model_variant)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -1571,6 +1576,10 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                model_variant: Optional[Literal["dynamic", "static"]] = Query(
+                    default="dynamic",
+                    description="Model variant",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -1651,7 +1660,7 @@ class HttpInterface(BaseInterface):
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
-                    request_model_id, api_key, model_id_alias=model_id
+                    model_id=request_model_id, api_key=api_key, model_id_alias=model_id, model_variant=model_variant
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
@@ -1671,6 +1680,7 @@ class HttpInterface(BaseInterface):
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,
+                    model_variant=model_variant,
                     image=request_image,
                     confidence=confidence,
                     iou_threshold=overlap,

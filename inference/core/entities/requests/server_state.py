@@ -1,4 +1,5 @@
 from typing import Optional
+from typing_extensions import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +18,7 @@ class AddModelRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     model_id: str = ModelID
     model_type: Optional[str] = ModelType
+    model_variant: Literal["dynamic", "static"] = "dynamic"
     api_key: Optional[str] = ApiKey
 
 

@@ -254,7 +254,8 @@ class RoboflowInferenceModel(Model):
         return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        logger.debug("Downloading model artifacts from Roboflow API")
+        logger.debug("Downloading model artifacts for %s model (%s) from Roboflow API",
+            self.endpoint, self.model_variant)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,

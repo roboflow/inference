@@ -1,5 +1,6 @@
 from collections import deque
 from typing import List, Optional
+from typing_extensions import Literal
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -22,7 +23,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue = deque(self.model_manager.keys())
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None, model_variant: Literal["dynamic", "static"] = "dynamic"
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -52,7 +53,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
         try:
-            return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
+            return super().add_model(model_id, api_key, model_id_alias=model_id_alias, model_variant=model_variant)
         except Exception as error:
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
