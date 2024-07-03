@@ -112,30 +112,35 @@ def test_load_image_from_url_when_png_image_should_be_successfully_decoded(
     assert np.allclose(image_as_numpy, result)
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_empty_bytes_given() -> None:
     # when
     with pytest.raises(InvalidNumpyInput):
         _ = load_image_from_numpy_str(value=b"")
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_arbitrary_object_given() -> None:
     # when
     with pytest.raises(InvalidNumpyInput):
         _ = load_image_from_numpy_str(value=[1, 2, 3])
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_string_given() -> None:
     # when
     with pytest.raises(InvalidNumpyInput):
         _ = load_image_from_numpy_str(value="some")
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_non_object_bytes_given() -> None:
     # when
     with pytest.raises(InvalidNumpyInput):
         _ = load_image_from_numpy_str(value=b"some")
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_non_array_bytes_given() -> None:
     # given
     payload = pickle.dumps([1, 2, 3])
@@ -145,6 +150,7 @@ def test_load_image_from_numpy_str_when_non_array_bytes_given() -> None:
         _ = load_image_from_numpy_str(value=payload)
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_invalid_shape_array_bytes_given() -> None:
     # given
     payload = pickle.dumps(np.array([1, 2, 3]))
@@ -154,6 +160,7 @@ def test_load_image_from_numpy_str_when_invalid_shape_array_bytes_given() -> Non
         _ = load_image_from_numpy_str(value=payload)
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_array_with_non_standard_channels_given() -> (
     None
 ):
@@ -165,6 +172,7 @@ def test_load_image_from_numpy_str_when_array_with_non_standard_channels_given()
         _ = load_image_from_numpy_str(value=payload)
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_valid_image_given(
     image_as_pickled_bytes: bytes,
     image_as_numpy: np.ndarray,
@@ -175,6 +183,15 @@ def test_load_image_from_numpy_str_when_valid_image_given(
     # then
     assert image_as_numpy.shape == result.shape
     assert np.allclose(image_as_numpy, result)
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
+def test_load_image_from_numpy_str_when_valid_image_given_but_not_allowed_to_unpickle(
+    image_as_pickled_bytes: bytes,
+) -> None:
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = load_image_from_numpy_str(value=image_as_pickled_bytes)
 
 
 def test_load_image_from_buffer_when_valid_input_provided(
@@ -349,6 +366,7 @@ def test_load_image_from_encoded_bytes_when_decoding_should_fail() -> None:
         _ = load_image_from_encoded_bytes(value=b"FOR SURE NOT AN IMAGE :)")
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 @pytest.mark.parametrize(
     "fixture_name",
     [
@@ -375,6 +393,26 @@ def test_attempt_loading_image_from_string_when_parsing_should_be_successful(
     assert result[1] is True
     assert image_as_numpy.shape == result[0].shape
     assert np.allclose(image_as_numpy, result[0])
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "image_as_pickled_bytes",
+        "image_as_base64_encoded_pickled_bytes",
+    ],
+)
+def test_attempt_loading_image_from_string_when_parsing_should_be_fail_due_to_unpickling_being_prohibited(
+    fixture_name: str,
+    request: FixtureRequest,
+) -> None:
+    # given
+    value = request.getfixturevalue(fixture_name)
+
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = attempt_loading_image_from_string(value=value)
 
 
 @pytest.mark.parametrize(
@@ -618,6 +656,7 @@ def test_convert_gray_image_to_bgr_when_2d_input_submitted(
     assert np.allclose(image_as_numpy, result)
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 @pytest.mark.parametrize(
     "fixture_name, is_bgr",
     [
@@ -651,11 +690,21 @@ def test_load_image_when_load_should_succeed_from_inferred_type(
     assert np.allclose(image_as_numpy, result[0])
 
 
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_when_load_should_fail_on_rgba_numpy_input(
     image_as_pickled_bytes_rgba: bytes,
 ) -> None:
     # when
     with pytest.raises(InputFormatInferenceFailed):
+        _ = load_image(value=image_as_pickled_bytes_rgba)
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
+def test_load_image_when_load_should_fail_on_not_allowed_input(
+    image_as_pickled_bytes_rgba: bytes,
+) -> None:
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
         _ = load_image(value=image_as_pickled_bytes_rgba)
 
 
@@ -705,6 +754,18 @@ def test_load_image_when_load_should_succeed_from_known_type(
     assert result[1] is is_bgr
     assert image_as_numpy.shape == result[0].shape
     assert np.allclose(image_as_numpy, result[0])
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
+def test_load_image_when_load_should_fail_from_known_type_due_to_numpy_unpickling_forbidden(
+    image_as_pickled_bytes: bytes,
+) -> None:
+    # given
+    request = InferenceRequestImage(value=image_as_pickled_bytes, type=ImageType.NUMPY)
+
+    # when
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = load_image(value=request)
 
 
 @mock.patch.object(image_utils, "load_image")
