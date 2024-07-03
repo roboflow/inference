@@ -2,20 +2,8 @@ from typing import Any, List, Literal, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    AllOperationsType,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.core import (
-    build_operations_chain,
-)
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
-)
+from inference.core.workflows.entities.base import Batch, OutputDefinition
+from inference.core.workflows.entities.types import StepOutputSelector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -68,7 +56,7 @@ class FirstNonEmptyOrDefaultBlock(WorkflowBlock):
 
     async def run(
         self,
-        data: List[Any],
+        data: Batch[Any],
         default: Any,
     ) -> BlockResult:
         result = default

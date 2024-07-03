@@ -137,5 +137,5 @@ def build_result(
     if not result_definition.operations:
         return {"output": selected_variable}
     operations_chain = build_operations_chain(operations=result_definition.operations)
-    result = operations_chain(selected_variable, global_parameters={})
+    result = operations_chain(selected_variable, global_parameters=variables)
     return {"output": result}

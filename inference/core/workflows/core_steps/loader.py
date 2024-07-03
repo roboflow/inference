@@ -1,10 +1,10 @@
 from typing import List, Type
 
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
-from inference.core.workflows.core_steps.formatters.empty_values_replacement import (
+from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
+from inference.core.workflows.core_steps.formatters.first_non_empty_or_default import (
     FirstNonEmptyOrDefaultBlock,
 )
-from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
 from inference.core.workflows.core_steps.formatters.property_extraction import (
     PropertyExtractionBlock,
 )
