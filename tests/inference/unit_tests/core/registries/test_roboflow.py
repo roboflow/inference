@@ -128,7 +128,7 @@ def test_get_model_metadata_from_cache_when_metadata_is_valid(
         result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
-    assert result == ("object-detection", "yolov8n")
+    assert result == ("object-detection", "yolov8n", None)
 
 
 def test_model_metadata_content_is_invalid_when_content_is_empty() -> None:
@@ -189,6 +189,7 @@ def test_save_model_metadata_in_cache(
             version_id="1",
             project_task_type="instance-segmentation",
             model_type="yolov8l",
+            model_variant="dynamic",
         )
     with open(metadata_path) as f:
         result = json.load(f)
@@ -282,6 +283,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant="dynamic",
     )
 
 
@@ -319,6 +321,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant="dynamic",
     )
 
 
@@ -355,6 +358,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant="dynamic",
     )
 
 
@@ -387,6 +391,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_proje
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant="dynamic",
     )
 
 
@@ -424,6 +429,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_a
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        model_variant="dynamic",
     )
 
 

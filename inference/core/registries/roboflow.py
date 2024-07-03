@@ -137,6 +137,7 @@ def get_model_type(
             version_id=version_id,
             project_task_type=project_task_type,
             model_type=model_type,
+            model_variant=model_variant,
         )
         return project_task_type, model_type
     api_data = get_roboflow_model_data(
