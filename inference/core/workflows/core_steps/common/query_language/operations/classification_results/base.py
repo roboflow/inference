@@ -22,7 +22,7 @@ def extract_top_class_confidence(prediction: dict) -> Union[float, List[float]]:
         return prediction["confidence"]
     predicted_classes = prediction.get("predicted_classes", [])
     return [
-        prediction["predictions"]["confidence"][class_name]
+        prediction["predictions"][class_name]["confidence"]
         for class_name in predicted_classes
     ]
 
@@ -30,16 +30,23 @@ def extract_top_class_confidence(prediction: dict) -> Union[float, List[float]]:
 def extract_all_class_names(prediction: dict) -> List[str]:
     predictions = prediction["predictions"]
     if isinstance(predictions, list):
-        return [p["class_name"] for p in predictions]
-    return sorted(predictions.keys())
+        return [p["class"] for p in predictions]
+    class_id2_class_name = {
+        value["class_id"]: name for name, value in predictions.items()
+    }
+    sorted_ids = sorted(class_id2_class_name.keys())
+    return [class_id2_class_name[class_id] for class_id in sorted_ids]
 
 
 def extract_all_classes_confidence(prediction: dict) -> List[float]:
     predictions = prediction["predictions"]
     if isinstance(predictions, list):
         return [p["confidence"] for p in predictions]
-    class_order = sorted(predictions.keys())
-    return [predictions[class_name]["confidence"] for class_name in class_order]
+    class_id2_class_confidence = {
+        value["class_id"]: value["confidence"] for value in predictions.values()
+    }
+    sorted_ids = sorted(class_id2_class_confidence.keys())
+    return [class_id2_class_confidence[class_id] for class_id in sorted_ids]
 
 
 CLASSIFICATION_PROPERTY_EXTRACTORS = {
