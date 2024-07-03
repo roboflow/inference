@@ -102,7 +102,7 @@ def get_model_type(
         if len(cached_metadata) == 3 and cached_metadata[2]:
             if cached_metadata[2] != model_variant:
                 logger.warning(
-                    "Requested %s variant of %s, however %s is already in cache, using variant from cache!"
+                    "%s variant of %s was requested, however %s is already in cache, using variant from cache!"
                     "Please clear cache for that model and try again.",
                     model_variant, model_id, cached_metadata[2]
                 )
