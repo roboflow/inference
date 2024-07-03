@@ -2,6 +2,7 @@ import binascii
 import os
 import pickle
 import re
+import urllib.parse
 from enum import Enum
 from io import BytesIO
 from typing import Any, Optional, Tuple, Union
@@ -10,13 +11,22 @@ import cv2
 import numpy as np
 import pybase64
 import requests
+import tldextract
 from _io import _IOBase
 from PIL import Image
 from requests import RequestException
+from tldextract.tldextract import ExtractResult
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.env import ALLOW_NUMPY_INPUT
+from inference.core.env import (
+    ALLOW_NON_HTTPS_URL_INPUT,
+    ALLOW_NUMPY_INPUT,
+    ALLOW_URL_INPUT,
+    ALLOW_URL_INPUT_WITHOUT_FQDN,
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
+)
 from inference.core.exceptions import (
     InputFormatInferenceFailed,
     InputImageLoadError,
@@ -155,11 +165,6 @@ def load_image_with_known_type(
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
     """
-    if image_type is ImageType.NUMPY and not ALLOW_NUMPY_INPUT:
-        raise InvalidImageTypeDeclared(
-            message=f"NumPy image type is not supported in this configuration of `inference`.",
-            public_message=f"NumPy image type is not supported in this configuration of `inference`.",
-        )
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
     image = loader(value, cv_imread_flags)
@@ -229,13 +234,10 @@ def attempt_loading_image_from_string(
         )
     except:
         pass
-    if not ALLOW_NUMPY_INPUT:
-        raise InputFormatInferenceFailed(
-            message="Input image format could not be inferred from string.",
-            public_message="Input image format could not be inferred from string.",
-        )
     try:
         return load_image_from_numpy_str(value=value), True
+    except InvalidImageTypeDeclared as error:
+        raise error
     except InvalidNumpyInput as error:
         raise InputFormatInferenceFailed(
             message="Input image format could not be inferred from string.",
@@ -292,11 +294,6 @@ def load_image_from_buffer(
     return result
 
 
-@deprecated(
-    reason="This function is unsafe and causes security issues whenever used in server. "
-    "It will be removed from inference and inference server hosted locally "
-    "end of Q4 2024. It is also removed from Roboflow hosted platform effective immediately."
-)
 def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     """Loads an image from a numpy array string.
 
@@ -309,6 +306,11 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     Raises:
         InvalidNumpyInput: If the numpy data is invalid.
     """
+    if not ALLOW_NUMPY_INPUT:
+        raise InvalidImageTypeDeclared(
+            message=f"NumPy image type is not supported in this configuration of `inference`.",
+            public_message=f"NumPy image type is not supported in this configuration of `inference`.",
+        )
     try:
         if isinstance(value, str):
             value = pybase64.b64decode(value)
@@ -365,6 +367,30 @@ def load_image_from_url(
     Returns:
         Image.Image: The loaded PIL image.
     """
+    _ensure_url_input_allowed()
+    try:
+        parsed_url = urllib.parse.urlparse(value)
+    except ValueError as error:
+        message = "Provided image URL is invalid"
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        ) from error
+    _ensure_resource_schema_allowed(schema=parsed_url.scheme)
+    domain_extraction_result = tldextract.TLDExtract(suffix_list_urls=())(
+        parsed_url.netloc
+    )  # we get rid of potential ports and parse FQDNs
+    _ensure_resource_fqdn_allowed(fqdn=domain_extraction_result.fqdn)
+    address_parts_concatenated = _concatenate_chunks_of_network_location(
+        extraction_result=domain_extraction_result
+    )  # concatenation of chunks - even if there is no FQDN, but address
+    # it allows white-/black-list verification
+    _ensure_location_matches_destination_whitelist(
+        destination=address_parts_concatenated
+    )
+    _ensure_location_matches_destination_blacklist(
+        destination=address_parts_concatenated
+    )
     try:
         response = requests.get(value, stream=True)
         api_key_safe_raise_for_status(response=response)
@@ -376,6 +402,74 @@ def load_image_from_url(
             message=f"Could not load image from url: {value}. Details: {error}",
             public_message="Data pointed by URL could not be decoded into image.",
         )
+
+
+def _ensure_url_input_allowed() -> None:
+    if not ALLOW_URL_INPUT:
+        message = "Providing images via URL is not supported in this configuration of `inference`."
+        raise InvalidImageTypeDeclared(
+            message=message,
+            public_message=message,
+        )
+    return None
+
+
+def _ensure_resource_schema_allowed(schema: str) -> None:
+    if schema != "https" and not ALLOW_NON_HTTPS_URL_INPUT:
+        message = "Providing images via non https:// URL is not supported in this configuration of `inference`."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    return None
+
+
+def _ensure_resource_fqdn_allowed(fqdn: str) -> None:
+    if not fqdn and not ALLOW_URL_INPUT_WITHOUT_FQDN:
+        message = "Providing images via URL without FQDN is not supported in this configuration of `inference`."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    return None
+
+
+def _concatenate_chunks_of_network_location(extraction_result: ExtractResult) -> str:
+    chunks = [
+        extraction_result.subdomain,
+        extraction_result.domain,
+        extraction_result.suffix,
+    ]
+    non_empty_chunks = [chunk for chunk in chunks if chunk]
+    result = ".".join(non_empty_chunks)
+    if result.startswith("[") and result.endswith("]"):
+        # dropping brackets for IPv6
+        return result[1:-1]
+    return result
+
+
+def _ensure_location_matches_destination_whitelist(destination: str) -> None:
+    if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is None:
+        return None
+    if destination not in WHITELISTED_DESTINATIONS_FOR_URL_INPUT:
+        message = "It is not allowed to reach image URL - prohibited by whitelisted destinations."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    return None
+
+
+def _ensure_location_matches_destination_blacklist(destination: str) -> None:
+    if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is None:
+        return None
+    if destination in BLACKLISTED_DESTINATIONS_FOR_URL_INPUT:
+        message = "It is not allowed to reach image URL - prohibited by blacklisted destinations."
+        raise InputImageLoadError(
+            message=message,
+            public_message=message,
+        )
+    return None
 
 
 def load_image_from_encoded_bytes(
