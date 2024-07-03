@@ -112,6 +112,153 @@ def test_load_image_from_url_when_png_image_should_be_successfully_decoded(
     assert np.allclose(image_as_numpy, result)
 
 
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", False)
+def test_load_image_from_url_when_url_loading_not_allowed() -> None:
+    with pytest.raises(InvalidImageTypeDeclared):
+        _ = load_image_from_url(value="https://google.com/image.jpg")
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://google.com/image.jpg",
+        "http://127.0.0.1:90/image.jpg",
+        "http://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "http://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
+    ],
+)
+def test_load_image_from_url_http_url_when_https_is_enforced(url: str) -> None:
+    with pytest.raises(InputImageLoadError):
+        _ = load_image_from_url(value=url)
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/image.jpg",
+        "https://127.0.0.1:90/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
+    ],
+)
+def test_load_image_from_ip_based_url_when_fqdns_are_enforced(url: str) -> None:
+    with pytest.raises(InputImageLoadError):
+        _ = load_image_from_url(value=url)
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
+    image_utils, "WHITELISTED_DESTINATIONS_FOR_URL_INPUT", {"not_existing"}
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/image.jpg",
+        "https://127.0.0.1:90/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
+    ],
+)
+def test_load_image_from_ip_based_url_when_locations_not_whitelisted(url: str) -> None:
+    # when
+    with pytest.raises(InputImageLoadError) as error:
+        _ = load_image_from_url(value=url)
+
+    # then
+    assert "whitelisted" in str(error.value)
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
+    image_utils,
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT",
+    {
+        "127.0.0.1",
+        "fe80::1ff:fe23:4567:890a%25eth0",
+        "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+        "google.com",
+        "subdomain.google.com",
+    },
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/image.jpg",
+        "https://127.0.0.1:90/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
+        "https://subdomain.google.com/image.jpg?param=some",
+        "https://google.com/image.jpg?param=some",
+    ],
+)
+def test_load_image_from_ip_based_url_when_locations_whitelisted(
+    url: str,
+    requests_mock: Mocker,
+    image_as_numpy: np.ndarray,
+    image_as_png_bytes: bytes,
+) -> None:
+    requests_mock.get(
+        url,
+        content=image_as_png_bytes,
+    )
+
+    # when
+    result = load_image_from_url(value=url)
+
+    # then
+    assert image_as_numpy.shape == result.shape
+    assert np.allclose(image_as_numpy, result)
+
+
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT", True)
+@mock.patch.object(image_utils, "ALLOW_NON_HTTPS_URL_INPUT", False)
+@mock.patch.object(image_utils, "ALLOW_URL_INPUT_WITHOUT_FQDN", True)
+@mock.patch.object(
+    image_utils,
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT",
+    {
+        "127.0.0.1",
+        "fe80::1ff:fe23:4567:890a%25eth0",
+        "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+        "google.com",
+        "subdomain.google.com",
+    },
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/image.jpg",
+        "https://127.0.0.1:90/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]/image.jpg",
+        "https://[fe80::1ff:fe23:4567:890a%25eth0]:90/image.jpg",
+        "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
+        "https://subdomain.google.com/image.jpg?param=some",
+        "https://google.com/image.jpg?param=some",
+    ],
+)
+def test_load_image_from_ip_based_url_when_locations_blacklisted(
+    url: str,
+) -> None:
+    # when
+    with pytest.raises(InputImageLoadError) as error:
+        _ = load_image_from_url(value=url)
+
+    # then
+    assert "blacklisted" in str(error.value)
+
+
 @mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_empty_bytes_given() -> None:
     # when
