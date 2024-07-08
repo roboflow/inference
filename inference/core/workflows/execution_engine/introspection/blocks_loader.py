@@ -110,14 +110,22 @@ def load_core_workflow_blocks() -> List[BlockSpecification]:
     already_spotted_blocks = set()
     result = []
     for block in core_blocks:
+        if isinstance(block, tuple):
+            manifest_class = block[0]
+            block = block[1]
+            identifier = get_full_type_name(selected_type=manifest_class)
+            identifier = f"{identifier}DynamicBlock"
+        else:
+            manifest_class = block.get_manifest()
+            identifier = get_full_type_name(selected_type=block)
         if block in already_spotted_blocks:
             continue
         result.append(
             BlockSpecification(
                 block_source="workflows_core",
-                identifier=get_full_type_name(selected_type=block),
+                identifier=identifier,
                 block_class=block,
-                manifest_class=block.get_manifest(),
+                manifest_class=manifest_class,
             )
         )
         already_spotted_blocks.add(block)

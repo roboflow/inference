@@ -1,5 +1,9 @@
-from typing import List, Type
+from typing import Callable, List, Tuple, Type, Union
 
+from inference.core.workflows.core_steps.dynamic_blocs.python_code import (
+    CustomPythonDeclaredManifest,
+    assembly_custom_python_block,
+)
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
@@ -63,10 +67,21 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
-from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.prototypes.block import (
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
-def load_blocks() -> List[Type[WorkflowBlock]]:
+def load_blocks() -> List[
+    Union[
+        Type[WorkflowBlock],
+        Tuple[
+            Type[WorkflowBlockManifest],
+            Callable[[Type[WorkflowBlockManifest]], WorkflowBlock],
+        ],
+    ]
+]:
     return [
         DetectionsConsensusBlock,
         ClipComparisonBlock,
@@ -91,4 +106,5 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,
+        (CustomPythonDeclaredManifest, assembly_custom_python_block),
     ]

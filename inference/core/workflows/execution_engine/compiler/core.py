@@ -10,6 +10,7 @@ from inference.core.workflows.execution_engine.compiler.graph_constructor import
     prepare_execution_graph,
 )
 from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
+    initialise_dynamic_blocks,
     initialise_steps,
 )
 from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
@@ -38,6 +39,10 @@ def compile_workflow(
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=workflow_definition,
     )
+    parsed_workflow_definition, dynamic_blocks_classes = initialise_dynamic_blocks(
+        available_blocks=available_blocks,
+        parsed_workflow_definition=parsed_workflow_definition,
+    )
     validate_workflow_specification(workflow_definition=parsed_workflow_definition)
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
@@ -45,6 +50,7 @@ def compile_workflow(
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
         available_bocks=available_blocks,
+        dynamic_blocks_classes=dynamic_blocks_classes,
         explicit_init_parameters=init_parameters,
         initializers=initializers,
     )

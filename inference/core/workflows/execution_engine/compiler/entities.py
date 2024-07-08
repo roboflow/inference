@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Generator, List, Optional, Set, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Type, Union
 
 import networkx as nx
 
@@ -19,7 +19,9 @@ from inference.core.workflows.prototypes.block import (
 class BlockSpecification:
     block_source: str
     identifier: str
-    block_class: Type[WorkflowBlock]
+    block_class: Union[
+        Type[WorkflowBlock], Callable[[WorkflowBlockManifest], Type[WorkflowBlock]]
+    ]
     manifest_class: Type[WorkflowBlockManifest]
 
 

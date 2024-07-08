@@ -1,25 +1,37 @@
-from typing import Literal, Dict, Tuple, Any, Union, Optional, List
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import create_model, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from inference.core.workflows.core_steps.common.dynamic_blocks.entities import DynamicBlockManifest, \
-    DynamicInputDefinition, \
-    SelectorType, ValueType, DynamicOutputDefinition
+from inference.core.workflows.core_steps.common.dynamic_blocks.entities import (
+    DynamicInputDefinition,
+    DynamicOutputDefinition,
+    ManifestDescription,
+    SelectorType,
+    ValueType,
+)
 from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import Kind, WorkflowImageSelector, WorkflowParameterSelector, \
-    StepOutputSelector, WILDCARD_KIND
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+from inference.core.workflows.entities.types import (
+    WILDCARD_KIND,
+    Kind,
+    StepOutputSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
+)
 
 
 def assembly_dynamic_block_manifest(
     block_name: str,
     block_type: str,
-    dynamic_manifest: DynamicBlockManifest,
-    kinds_lookup: Dict[str, Kind]
-) -> WorkflowBlockManifest:
-    model_name = f"DynamicBlock{block_name}Type{block_type}"
-    inputs_definitions = build_inputs(inputs=dynamic_manifest.inputs, kinds_lookup=kinds_lookup)
-    model = create_model(
+    manifest_description: ManifestDescription,
+    kinds_lookup: Optional[Dict[str, Kind]] = None,
+) -> Type[BaseModel]:
+    if not kinds_lookup:
+        kinds_lookup = {}
+    model_name = create_block_type_name(block_name=block_name)
+    inputs_definitions = build_inputs(
+        inputs=manifest_description.inputs, kinds_lookup=kinds_lookup
+    )
+    manifest_class = create_model(
         model_name,
         __config__=ConfigDict(extra="allow"),
         name=(str, ...),
@@ -27,27 +39,21 @@ def assembly_dynamic_block_manifest(
         **inputs_definitions,
     )
     outputs_definitions = build_outputs_definitions(
-        outputs=dynamic_manifest.outputs,
+        outputs=manifest_description.outputs,
         kinds_lookup=kinds_lookup,
     )
-    describe_outputs = lambda cls: outputs_definitions
-    setattr(model, "describe_outputs", classmethod(describe_outputs))
-    setattr(model, "get_actual_outputs", describe_outputs)
-    accepts_batch_input = lambda cls: dynamic_manifest.accepts_batch_input
-    setattr(model, "accepts_batch_input", classmethod(accepts_batch_input))
-    input_dimensionality_offsets = collect_input_dimensionality_offsets(inputs=dynamic_manifest.inputs)
-    get_input_dimensionality_offsets = lambda cls: input_dimensionality_offsets
-    setattr(model, "get_input_dimensionality_offsets", classmethod(get_input_dimensionality_offsets))
-    dimensionality_reference = pick_dimensionality_referencE_property(inputs=dynamic_manifest.inputs)
-    get_dimensionality_reference_property = lambda cls: dimensionality_reference
-    setattr(model, "get_dimensionality_reference_property", classmethod(get_dimensionality_reference_property))
-    get_output_dimensionality_offset = lambda cls: dynamic_manifest.output_dimensionality_offset
-    setattr(model, "get_output_dimensionality_offset", classmethod(get_output_dimensionality_offset))
-    accepts_batch_input = lambda cls: dynamic_manifest.accepts_batch_input
-    setattr(model, "accepts_batch_input", classmethod(accepts_batch_input))
-    accepts_empty_values = lambda cls: dynamic_manifest.accepts_empty_values
-    setattr(model, "accepts_empty_values", classmethod(accepts_empty_values))
-    return model
+    return assembly_manifest_class_methods(
+        manifest_class=manifest_class,
+        outputs_definitions=outputs_definitions,
+        manifest_description=manifest_description,
+    )
+
+
+def create_block_type_name(block_name: str) -> str:
+    block_title = (
+        block_name.strip().replace("-", " ").replace("_", " ").title().replace(" ", "")
+    )
+    return f"DynamicBlock{block_title}"
 
 
 PYTHON_TYPES_MAPPING = {
@@ -67,40 +73,93 @@ def build_inputs(
 ) -> Dict[str, Tuple[type, Field]]:
     result = {}
     for input_name, input_definition in inputs.items():
-        input_type_union_elements = []
-        for selector_type in input_definition.selector_types:
-            selector_kind_names = input_definition.selector_data_kind.get(selector_type, ["*"])
-            selector_kind = []
-            for kind_name in selector_kind_names:
-                selector_kind.append(kinds_lookup[kind_name])
-            if selector_type is SelectorType.INPUT_IMAGE:
-                input_type_union_elements.append(WorkflowImageSelector)
-            elif selector_type is SelectorType.INPUT_PARAMETER:
-                input_type_union_elements.append(WorkflowParameterSelector(kind=selector_kind))
-            else:
-                input_type_union_elements.append(StepOutputSelector(kind=selector_kind))
-        for value_type_name in input_definition.value_types:
-            value_type = PYTHON_TYPES_MAPPING[value_type_name]
-            input_type_union_elements.append(value_type)
-        if not input_type_union_elements:
-            input_type_union_elements.append(Any)
-        if len(input_type_union_elements) > 1:
-            input_type = Union[tuple(input_type_union_elements)]
-        else:
-            input_type = input_type_union_elements[0]
-        if input_definition.is_optional:
-            input_type = Optional[input_type]
-        field_metadata = Field()
-        if input_definition.has_default_value:
-            default_value = input_definition.default_value
-            field_metadata_params = {}
-            if isinstance(default_value, list) or isinstance(default_value, dict) or isinstance(default_value, set):
-                field_metadata_params["default_factory"] = lambda: default_value
-            else:
-                field_metadata_params["default"] = default_value
-            field_metadata = Field(**field_metadata_params)
-        result[input_name] = input_type, field_metadata
+        result[input_name] = build_input(
+            input_definition=input_definition, kinds_lookup=kinds_lookup
+        )
     return result
+
+
+def build_input(
+    input_definition: DynamicInputDefinition,
+    kinds_lookup: Dict[str, Kind],
+) -> Tuple[type, Field]:
+    input_type = build_input_field_type(
+        input_definition=input_definition, kinds_lookup=kinds_lookup
+    )
+    field_metadata = build_input_field_metadata(input_definition=input_definition)
+    return input_type, field_metadata
+
+
+def build_input_field_type(
+    input_definition: DynamicInputDefinition,
+    kinds_lookup: Dict[str, Kind],
+) -> type:
+    input_type_union_elements = collect_python_types_for_selectors(
+        input_definition=input_definition,
+        kinds_lookup=kinds_lookup,
+    )
+    input_type_union_elements += collect_python_types_for_values(
+        input_definition=input_definition
+    )
+    if not input_type_union_elements:
+        input_type_union_elements.append(Any)
+    if len(input_type_union_elements) > 1:
+        input_type = Union[tuple(input_type_union_elements)]
+    else:
+        input_type = input_type_union_elements[0]
+    if input_definition.is_optional:
+        input_type = Optional[input_type]
+    return input_type
+
+
+def collect_python_types_for_selectors(
+    input_definition: DynamicInputDefinition,
+    kinds_lookup: Dict[str, Kind],
+) -> List[type]:
+    result = []
+    for selector_type in input_definition.selector_types:
+        selector_kind_names = input_definition.selector_data_kind.get(
+            selector_type, ["*"]
+        )
+        selector_kind = []
+        for kind_name in selector_kind_names:
+            selector_kind.append(kinds_lookup.get(kind_name, Kind(name=kind_name)))
+        if selector_type is SelectorType.INPUT_IMAGE:
+            result.append(WorkflowImageSelector)
+        elif selector_type is SelectorType.INPUT_PARAMETER:
+            result.append(WorkflowParameterSelector(kind=selector_kind))
+        else:
+            result.append(StepOutputSelector(kind=selector_kind))
+    return result
+
+
+def collect_python_types_for_values(
+    input_definition: DynamicInputDefinition,
+) -> List[type]:
+    result = []
+    for value_type_name in input_definition.value_types:
+        value_type = PYTHON_TYPES_MAPPING[value_type_name]
+        result.append(value_type)
+    return result
+
+
+def build_input_field_metadata(input_definition: DynamicInputDefinition) -> Field:
+    default_value = input_definition.default_value
+    field_metadata_params = {}
+    if default_holds_compound_object(default_value=default_value):
+        field_metadata_params["default_factory"] = lambda: default_value
+    else:
+        field_metadata_params["default"] = default_value
+    field_metadata = Field(**field_metadata_params)
+    return field_metadata
+
+
+def default_holds_compound_object(default_value: Any) -> bool:
+    return (
+        isinstance(default_value, list)
+        or isinstance(default_value, dict)
+        or isinstance(default_value, set)
+    )
 
 
 def build_outputs_definitions(
@@ -112,7 +171,10 @@ def build_outputs_definitions(
         if not definition.kind:
             result.append(OutputDefinition(name=name, kind=[WILDCARD_KIND]))
         else:
-            actual_kinds = [kinds_lookup[kind_name] for kind_name in definition.kind]
+            actual_kinds = [
+                kinds_lookup.get(kind_name, Kind(name=kind_name))
+                for kind_name in definition.kind
+            ]
             result.append(OutputDefinition(name=name, kind=actual_kinds))
     return result
 
@@ -127,7 +189,50 @@ def collect_input_dimensionality_offsets(
     return result
 
 
-def pick_dimensionality_referencE_property(inputs: Dict[str, DynamicInputDefinition]) -> Optional[str]:
+def assembly_manifest_class_methods(
+    manifest_class: Type[BaseModel],
+    outputs_definitions: List[OutputDefinition],
+    manifest_description: ManifestDescription,
+) -> Type[BaseModel]:
+    describe_outputs = lambda cls: outputs_definitions
+    setattr(manifest_class, "describe_outputs", classmethod(describe_outputs))
+    setattr(manifest_class, "get_actual_outputs", describe_outputs)
+    accepts_batch_input = lambda cls: manifest_description.accepts_batch_input
+    setattr(manifest_class, "accepts_batch_input", classmethod(accepts_batch_input))
+    input_dimensionality_offsets = collect_input_dimensionality_offsets(
+        inputs=manifest_description.inputs
+    )
+    get_input_dimensionality_offsets = lambda cls: input_dimensionality_offsets
+    setattr(
+        manifest_class,
+        "get_input_dimensionality_offsets",
+        classmethod(get_input_dimensionality_offsets),
+    )
+    dimensionality_reference = pick_dimensionality_reference_property(
+        inputs=manifest_description.inputs
+    )
+    get_dimensionality_reference_property = lambda cls: dimensionality_reference
+    setattr(
+        manifest_class,
+        "get_dimensionality_reference_property",
+        classmethod(get_dimensionality_reference_property),
+    )
+    get_output_dimensionality_offset = (
+        lambda cls: manifest_description.output_dimensionality_offset
+    )
+    setattr(
+        manifest_class,
+        "get_output_dimensionality_offset",
+        classmethod(get_output_dimensionality_offset),
+    )
+    accepts_empty_values = lambda cls: manifest_description.accepts_empty_values
+    setattr(manifest_class, "accepts_empty_values", classmethod(accepts_empty_values))
+    return manifest_class
+
+
+def pick_dimensionality_reference_property(
+    inputs: Dict[str, DynamicInputDefinition]
+) -> Optional[str]:
     references = []
     for name, definition in inputs.items():
         if definition.is_dimensionality_reference:
@@ -137,57 +242,3 @@ def pick_dimensionality_referencE_property(inputs: Dict[str, DynamicInputDefinit
     if len(references) == 1:
         return references[0]
     raise ValueError("Not expected to have multiple dimensionality references")
-
-
-if __name__ == '__main__':
-    lookup = {"image": Kind(name="image"), "predictions": Kind(name="predictions")}
-    dynamic_manifest = DynamicBlockManifest(
-        inputs={
-            "images": DynamicInputDefinition(
-                is_dimensionality_reference=True,
-                selector_types=[SelectorType.INPUT_IMAGE, SelectorType.STEP_OUTPUT],
-                selector_data_kind={
-                    SelectorType.INPUT_IMAGE: ["image"],
-                    SelectorType.STEP_OUTPUT: ["image"],
-                },
-            ),
-            "predictions": DynamicInputDefinition(
-                selector_types=[SelectorType.STEP_OUTPUT],
-                selector_data_kind={
-                    SelectorType.STEP_OUTPUT: ["predictions"],
-                },
-                dimensionality_offset=1,
-            ),
-            "param": DynamicInputDefinition(
-                is_optional=True,
-                has_default_value=True,
-                value_types=[ValueType.STRING, ValueType.FLOAT],
-                default_value=None,
-            )
-        },
-        outputs={"result": DynamicOutputDefinition()},
-    )
-
-    result = assembly_dynamic_block_manifest(
-        block_name="my_block",
-        block_type="custom_block",
-        dynamic_manifest=dynamic_manifest,
-        kinds_lookup=lookup,
-    )
-
-    result_instance = result(
-        name="a",
-        type="custom_block",
-        images="$inputs.image",
-        predictions="$steps.step.predictions",
-    )
-    print(result_instance)
-    print(result_instance.describe_outputs())
-    print(result_instance.get_actual_outputs())
-    print(result_instance.get_input_dimensionality_offsets())
-    print(result_instance.get_dimensionality_reference_property())
-    print(result_instance.get_output_dimensionality_offset())
-    print(result_instance.accepts_batch_input())
-    print(result_instance.accepts_empty_values())
-
-
