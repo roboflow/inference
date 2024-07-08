@@ -64,7 +64,6 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.entities.responses.paligemma import PaliGemmaInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
