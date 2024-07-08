@@ -1,19 +1,20 @@
 import asyncio
 import atexit
+from collections import defaultdict
+from functools import wraps
 import hashlib
 import json
 import mimetypes
+from queue import Queue
 import socket
 import sys
 import time
-from collections import defaultdict
-from functools import wraps
-from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, DefaultDict, Dict, List, Optional
 from uuid import uuid4
 
 import importlib_metadata
+import requests
 import torch
 
 from inference.core.env import API_KEY
@@ -151,12 +152,33 @@ class UsageCollector:
 
     def _send_usage(self):
         with UsageCollector._lock:
+            # TODO: split insertion to queue and sending into separate threads
+            # TODO: iterate over api keys
             if not self._usage:
                 return
-            # TODO: aggregate last element of the queue if maxsize is reached
-            #       system info and workflow should remain in the queue
-            self._enqueue_usage_payload(payload=self._usage)
-            logger.debug("Usage: %s", json.dumps(self._usage))
+            for api_key, workflows in self._usage.items():
+                if not api_key:
+                    api_key = API_KEY
+
+                print("!!!!!!!!!!!!!!!!!!!!!")
+                print(workflows)
+                print("!!!!!!!!!!!!!!!!!!!!!")
+                try:
+                    response = requests.post(
+                        self._settings.api_usage_endpoint_url,
+                        json=workflows,
+                        verify=False,
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+                except Exception as exc:
+                    logger.warning("Failed to send usage - %s", exc)
+                    # TODO: aggregate last element of the queue if maxsize is reached
+                    #       system info and workflow should remain in the queue
+                    self._enqueue_usage_payload(payload=self._usage)
+                    break
+                if response.status_code != 200:
+                    logger.warning("Failed to send usage - got %s status code (%s)", response.status_code, response.raw)
+                    self._enqueue_usage_payload(payload=self._usage)
+                    break
             self._usage = self._get_empty_usage_dict()
 
     @staticmethod
