@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.parse
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -203,6 +204,40 @@ def get_roboflow_model_data(
         )
         logger.debug(
             f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+        )
+        return api_data
+
+
+@wrap_roboflow_api_errors()
+def get_roboflow_base_lora(
+    api_key: str, repo: str, revision: str, device_id: str
+) -> dict:
+    full_path = os.path.join(repo, revision)
+    api_data_cache_key = f"roboflow_api_data:lora-bases:{full_path}"
+    api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    else:
+        params = [
+            ("nocache", "true"),
+            ("device", device_id),
+            ("repoAndRevision", full_path),
+        ]
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/lora_bases",
+            params=params,
+        )
+        api_data = _get_from_url(url=api_url)
+        cache.set(
+            api_data_cache_key,
+            api_data,
+            expire=10,
+        )
+        logger.debug(
+            f"Loaded lora base model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
         )
         return api_data
 

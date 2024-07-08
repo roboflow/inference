@@ -309,7 +309,7 @@ class BatchStepCache:
             element_properties = set(element.keys())
             if element_properties != self._outputs:
                 raise ExecutionEngineRuntimeError(
-                    public_message=f"Step {self._step_name} did not produced required outputs. "
+                    public_message=f"Step {self._step_name} did not produce required outputs. "
                     f"Expected: {self._outputs}. Got: {element_properties}. "
                     f"Contact Roboflow team through github issues "
                     f"(https://github.com/roboflow/inference/issues) providing full context of"
@@ -381,7 +381,7 @@ class NonBatchStepCache:
     def register_outputs(self, outputs: Dict[str, Any]):
         if set(outputs.keys()) != self._outputs:
             raise ExecutionEngineRuntimeError(
-                public_message=f"Step {self._step_name} did not produced required outputs. "
+                public_message=f"Step {self._step_name} did not produce required outputs. "
                 f"Expected: {self._outputs}. Got: {outputs.keys()}. "
                 f"Contact Roboflow team through github issues "
                 f"(https://github.com/roboflow/inference/issues) providing full context of"

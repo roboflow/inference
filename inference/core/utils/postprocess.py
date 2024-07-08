@@ -151,8 +151,8 @@ def undo_image_padding_for_predicted_boxes(
     scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
     inter_h = round(origin_shape[0] * scale)
     inter_w = round(origin_shape[1] * scale)
-    pad_x = (infer_shape[0] - inter_w) / 2
-    pad_y = (infer_shape[1] - inter_h) / 2
+    pad_x = (infer_shape[1] - inter_w) / 2
+    pad_y = (infer_shape[0] - inter_h) / 2
     predicted_bboxes = shift_bboxes(
         bboxes=predicted_bboxes, shift_x=-pad_x, shift_y=-pad_y
     )
