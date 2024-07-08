@@ -92,7 +92,7 @@ nav:
           - Inference CLI: inference_helpers/inference_cli.md
           - Inference SDK: inference_helpers/inference_sdk.md
       - Server configuration:
-          - Input formats: server_configuration/accepted_input_formats.md
+          - Security of input formats: server_configuration/accepted_input_formats.md
       - Reference:
           - Inference API Reference: docs/reference/
           - Running With Docker: quickstart/docker.md
