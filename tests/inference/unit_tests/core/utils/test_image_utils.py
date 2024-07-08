@@ -129,7 +129,9 @@ def test_load_image_from_url_when_url_loading_not_allowed() -> None:
         "http://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
     ],
 )
-def test_load_image_from_url_http_url_when_https_is_enforced(url: str) -> None:
+def test_load_image_from_url_when_https_is_enforced_and_provided_urls_with_http_schema(
+    url: str,
+) -> None:
     with pytest.raises(InputImageLoadError):
         _ = load_image_from_url(value=url)
 
@@ -147,7 +149,9 @@ def test_load_image_from_url_http_url_when_https_is_enforced(url: str) -> None:
         "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
     ],
 )
-def test_load_image_from_ip_based_url_when_fqdns_are_enforced(url: str) -> None:
+def test_load_image_from_url_when_fqdns_are_enforced_and_urls_based_on_ips_provided(
+    url: str,
+) -> None:
     with pytest.raises(InputImageLoadError):
         _ = load_image_from_url(value=url)
 
@@ -168,7 +172,7 @@ def test_load_image_from_ip_based_url_when_fqdns_are_enforced(url: str) -> None:
         "https://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]/image.jpg",
     ],
 )
-def test_load_image_from_ip_based_url_when_locations_not_whitelisted(url: str) -> None:
+def test_load_image_from_url_when_locations_not_whitelisted(url: str) -> None:
     # when
     with pytest.raises(InputImageLoadError) as error:
         _ = load_image_from_url(value=url)
@@ -203,7 +207,7 @@ def test_load_image_from_ip_based_url_when_locations_not_whitelisted(url: str) -
         "https://google.com/image.jpg?param=some",
     ],
 )
-def test_load_image_from_ip_based_url_when_locations_whitelisted(
+def test_load_image_from_url_when_locations_whitelisted(
     url: str,
     requests_mock: Mocker,
     image_as_numpy: np.ndarray,
@@ -248,7 +252,7 @@ def test_load_image_from_ip_based_url_when_locations_whitelisted(
         "https://google.com/image.jpg?param=some",
     ],
 )
-def test_load_image_from_ip_based_url_when_locations_blacklisted(
+def test_load_image_from_url_when_locations_blacklisted(
     url: str,
 ) -> None:
     # when

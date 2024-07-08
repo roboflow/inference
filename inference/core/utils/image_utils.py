@@ -260,7 +260,18 @@ def load_image_base64(
     if not isinstance(value, str):
         value = value.decode("utf-8")
     value = BASE64_DATA_TYPE_PATTERN.sub("", value)
-    value = pybase64.b64decode(value)
+    try:
+        value = pybase64.b64decode(value)
+    except binascii.Error as error:
+        raise InputImageLoadError(
+            message="Could not load valid image from base64 string.",
+            public_message="Malformed base64 input image.",
+        ) from error
+    if len(value) == 0:
+        raise InputImageLoadError(
+            message="Could not load valid image from base64 string.",
+            public_message="Empty image payload.",
+        )
     image_np = np.frombuffer(value, np.uint8)
     result = cv2.imdecode(image_np, cv_imread_flags)
     if result is None:
@@ -385,6 +396,7 @@ def load_image_from_url(
         extraction_result=domain_extraction_result
     )  # concatenation of chunks - even if there is no FQDN, but address
     # it allows white-/black-list verification
+    print("address_parts_concatenated", address_parts_concatenated)
     _ensure_location_matches_destination_whitelist(
         destination=address_parts_concatenated
     )

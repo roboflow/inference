@@ -2,15 +2,16 @@
 
 ## Why should I care?
 
-Roboflow team has designed the `inference` server to be as easy to integrate as possible. That is why
-we did not forbid to use potentially unsafe data loading methods - having in mind that some amount of
-users would simply like to have easy serving mechanism, without full-pledged security rigor applied.
+The Roboflow team has designed the inference server to be as user-friendly and straightforward to integrate as 
+possible. We understand that some users prioritize ease of use, which is why we did not restrict the use of 
+potentially less secure data loading methods. This approach caters to those who prefer a simple and accessible 
+serving mechanism without the need for rigorous security measures.
 
-At the same time we want the server to be production-redy solution - that's why we provide configuration
-options making it possible to disable unsafe behaviours.
+However, we also recognize the importance of having a production-ready solution. Therefore, we offer configuration 
+options that allow users to disable potentially unsafe behaviors.
 
-In this document we explain how to configure the server to mitigate security risks or enable unsafe
-behaviours if needed.
+In this document, we explain how to configure the server to either enhance security or enable more 
+flexible behaviors, depending on your needs.
 
 
 ## Deserialization of pickled `numpy` objects
@@ -40,20 +41,20 @@ res = requests.post(
 )
 ```
 
-Deserializing of this type of payload got disabled by default in `v0.14.0`, but it is possible to enable it
-by setting `ALLOW_NUMPY_INPUT=True`. Check [inference cli docs](../inference_helpers/inference_cli.md) to
+Starting from version `v0.14.0`, deserialization of this type of payload is disabled by default. However, you can 
+enable it by setting environmental variable `ALLOW_NUMPY_INPUT=True`. Check [inference cli docs](../inference_helpers/inference_cli.md) to
 see how to run server with that flag. This option is **not available at Roboflow hosted inference**.
 
 !!! warning
 
-    Roboflow advices all users hosting inference server in PRODUCTION environments not to enable that
-    option if there is any chance for malicious requests reaching the server.
+    Roboflow advises all users hosting the inference server in production environments not to enable this option if 
+    there is any risk of malicious requests reaching the server.
 
 ## Sending URLs to inference images
 
-Making GET requests to obtain images from URLs make it vulnerable to 
-[server-side request forgery (SSRF) attacks](https://en.wikipedia.org/wiki/Server-side_request_forgery). At the same
-time it is extremely convenient to run requests only specifying image URL:
+Making GET requests to obtain images from URLs can expose the server to 
+[server-side request forgery (SSRF) attacks](https://en.wikipedia.org/wiki/Server-side_request_forgery). However, it is also very convenient to simply provide an image URL 
+for requests:
 ```python
 import requests
 
@@ -73,20 +74,20 @@ res = requests.post(
 )
 ```
 
-This option is **enabled by default**, but we advise configuring the server to make it more secure, using one or many of the
-following environmental variables:
-* `ALLOW_URL_INPUT` - boolean flag to disable URL inputs - set that into `True` whenever you do not need pulling images from
-URLs server-side
+This option is **enabled by default**, but we recommend configuring the server to enhance security using one or more of
+the following environment variables:
+* `ALLOW_URL_INPUT` - Set to `False` to allow only HTTPS protocol in URLs. This helps ensure that domain names are 
+not maliciously resolved.
 * `ALLOW_NON_HTTPS_URL_INPUT` - set to `False` to only allow https protocol in URLs (useful to make sure domain names are
 not maliciously resolved)
 * `ALLOW_URL_INPUT_WITHOUT_FQDN` - set to `False` to enforce URLs with fully qualified domain names only - and reject
 URLs based on IPs
-* `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` - can be optionally set with comma separated destination for requests that are 
-allowed, example: `WHITELISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com` - setting the value makes URLs pointing
-to different targets being rejected
-* `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` - can be optionally set with comma separated destination for requests that are 
-forbidden, example: `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com` - setting the value makes URLs pointing
-to selected targets being rejected
+* `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` - Optionally, you can specify a comma-separated list of allowed destinations 
+for URL requests. For example: `WHITELISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com`. URLs pointing to 
+other targets will be rejected.
+* `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` - Optionally, you can specify a comma-separated list of forbidden 
+destinations for URL requests. For example:  `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com`.
+URLs pointing to these targets will be rejected.
 
 
 Check [inference cli docs](../inference_helpers/inference_cli.md) to see how to run server with specific flags.
