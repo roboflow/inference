@@ -17,6 +17,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 IMPORTS_LINES = [
+    "from typing import Any, List, Dict, Set",
     "import supervision as sv",
     "import numpy as np",
     "import math",
