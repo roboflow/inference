@@ -396,7 +396,6 @@ def load_image_from_url(
         extraction_result=domain_extraction_result
     )  # concatenation of chunks - even if there is no FQDN, but address
     # it allows white-/black-list verification
-    print("address_parts_concatenated", address_parts_concatenated)
     _ensure_location_matches_destination_whitelist(
         destination=address_parts_concatenated
     )
