@@ -10,6 +10,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     python3-pip \
     git \
     libgdal-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CUDA Toolkit 11.8 as per https://developer.nvidia.com/cuda-11-8-0-download-archive?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=22.04&target_type=deb_local
