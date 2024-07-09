@@ -51,23 +51,14 @@ RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
 
+FROM scratch
+COPY --from=base / /
+
 WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
-
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as runtime
-COPY --from=base /usr/local/bin /usr/local/bin
-COPY --from=base /usr/local/lib /usr/local/lib
-
-RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ffmpeg \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /notebooks
 COPY examples/notebooks .
