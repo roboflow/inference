@@ -40,7 +40,7 @@ def server_url() -> str:
     return server_url
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def clean_loaded_models() -> None:
     response = requests.post(f"{base_url}:{port}/model/clear")
     response.raise_for_status()
