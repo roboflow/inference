@@ -21,7 +21,7 @@ with open(os.path.join(Path(__file__).resolve().parent, "sam_tests.json"), "r") 
     reason="Skipping grounding dino test",
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_sam(test):
+def test_sam(test, clean_loaded_models):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
