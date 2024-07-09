@@ -67,26 +67,53 @@ class UsageCollector:
             self._inference_version: str = "dev"
         self._execution_details_sent: bool = False
 
-        self._terminate_scheduler = Event()
-        self._scheduler_thread = Thread(target=self._scheduler, daemon=True)
-        self._scheduler_thread.start()
+        self._terminate_threads = Event()
+        self._collector_thread = Thread(target=self._usage_collector, daemon=True)
+        self._collector_thread.start()
+        self._sender_thread = Thread(target=self._usage_sender, daemon=True)
+        self._sender_thread.start()
 
         atexit.register(self._cleanup)
+
+    def _get_empty_usage_dict(self) -> APIKeyUsage:
+        return defaultdict(  # API key
+            lambda: defaultdict(  # workflow ID
+                lambda: defaultdict(  # source hash
+                    lambda: {
+                        "timestamp_start": None,
+                        "timestamp_stop": None,
+                        "exec_session_id": self._exec_session_id,
+                        "source_hash": None,
+                        "source_type": None,
+                        "processed_frames": 0,
+                        "fps": 0,
+                        "source_duration": 0,
+                        "workflow_id": "",
+                        "api_key": None,
+                    }
+                )
+            )
+        )
 
     @staticmethod
     def _hash(payload: str, length=5):
         payload_hash = hashlib.sha256(payload.encode())
-        return payload_hash.hexdigest()[:5]
+        return payload_hash.hexdigest()[:length]
 
-    def _enqueue_usage_payload(self, payload: Dict[str, Any]):
-        if not self._queue.full():
-            self._queue.put(payload)
-        else:
-            # TODO: aggregate
-            self._queue.get()
-            self._queue.put(payload)
+    def _enqueue_payload(self, payload: Dict[str, Any]):
+        with UsageCollector._lock:
+            if not self._queue.full():
+                self._queue.put(payload)
+            else:
+                # TODO: aggregate
+                self._queue.get()
+                self._queue.put(payload)
 
-    def _record_workflow_specification(
+    @staticmethod
+    def _calculate_workflow_hash(workflow: Dict[str, Any]) -> str:
+        return UsageCollector._hash(json.dumps(workflow, sort_keys=True))
+
+    def record_workflow_specification(
         self,
         workflow_specification: Dict[str, Any],
         workflow_id: Optional[str] = None,
@@ -114,96 +141,7 @@ class UsageCollector:
         logger.debug(
             "Usage (workflow specification): %s", workflow_specification_payload
         )
-        self._enqueue_usage_payload(payload=workflow_specification_payload)
-
-    def record_workflow_specification(
-        self,
-        workflow_specification: Dict[str, Any],
-        workflow_id: Optional[str] = None,
-        api_key: Optional[str] = None,
-    ):
-        with UsageCollector._lock:
-            self._record_workflow_specification(
-                workflow_specification=workflow_specification,
-                workflow_id=workflow_id,
-                api_key=api_key,
-            )
-
-    async def async_record_workflow_specification(
-        self,
-        workflow_specification: Dict[str, Any],
-        workflow_id: Optional[str] = None,
-        api_key: Optional[str] = None,
-    ):
-        async with UsageCollector._async_lock:
-            self._record_workflow_specification(
-                workflow_specification=workflow_specification,
-                workflow_id=workflow_id,
-                api_key=api_key,
-            )
-
-    def _scheduler(self):
-        while True:
-            if self._terminate_scheduler.wait(self._settings.flush_interval):
-                break
-            self._send_usage()
-        logger.debug("Terminating %s", self.__class__.__name__)
-        self._send_usage()
-
-    def _send_usage(self):
-        with UsageCollector._lock:
-            # TODO: split insertion to queue and sending into separate threads
-            # TODO: iterate over api keys
-            if not self._usage:
-                return
-            for api_key, workflows in self._usage.items():
-                if not api_key:
-                    api_key = API_KEY
-
-                print("!!!!!!!!!!!!!!!!!!!!!")
-                print(workflows)
-                print("!!!!!!!!!!!!!!!!!!!!!")
-                try:
-                    response = requests.post(
-                        self._settings.api_usage_endpoint_url,
-                        json=workflows,
-                        verify=False,
-                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
-                except Exception as exc:
-                    logger.warning("Failed to send usage - %s", exc)
-                    # TODO: aggregate last element of the queue if maxsize is reached
-                    #       system info and workflow should remain in the queue
-                    self._enqueue_usage_payload(payload=self._usage)
-                    break
-                if response.status_code != 200:
-                    logger.warning("Failed to send usage - got %s status code (%s)", response.status_code, response.raw)
-                    self._enqueue_usage_payload(payload=self._usage)
-                    break
-            self._usage = self._get_empty_usage_dict()
-
-    @staticmethod
-    def _guess_source_type(source: str) -> str:
-        mime_type, _ = mimetypes.guess_type(source)
-        stream_schemes = ["rtsp", "rtmp"]
-        source_type = None
-        if mime_type and mime_type.startswith("video"):
-            source_type = "video"
-        elif mime_type and mime_type.startswith("image"):
-            source_type = "image"
-        elif mime_type:
-            logger.debug("Unhandled mime type")
-            source_type = mime_type.split("/")[0]
-        elif not mime_type and str.isnumeric(source):
-            source_type = "camera"
-        elif not mime_type and any(
-            source.lower().startswith(s) for s in stream_schemes
-        ):
-            source_type = "stream"
-        return source_type
-
-    @staticmethod
-    def _calculate_workflow_hash(workflow: Dict[str, Any]) -> str:
-        return UsageCollector._hash(json.dumps(workflow, sort_keys=True))
+        self._enqueue_payload(payload=workflow_specification_payload)
 
     def _get_system_info(
         self, api_key: Optional[str] = None, ip_address: Optional[str] = None
@@ -225,7 +163,7 @@ class UsageCollector:
             "inference_version": self._inference_version,
         }
 
-    def _record_execution_details(
+    def record_execution_details(
         self,
         api_key: Optional[str] = None,
         ip_address: Optional[str] = None,
@@ -238,47 +176,30 @@ class UsageCollector:
             api_key=api_key, ip_address=ip_address
         )
         logger.debug("Usage (execution details): %s", execution_details_payload)
-        self._enqueue_usage_payload(payload=execution_details_payload)
+        self._enqueue_payload(payload=execution_details_payload)
         self._execution_details_sent = True
 
-    def record_execution_details(
-        self, api_key: Optional[str] = None, ip_address: Optional[str] = None
-    ):
-        with UsageCollector._lock:
-            self._record_execution_details(
-                api_key=api_key,
-                ip_address=ip_address,
-            )
+    @staticmethod
+    def _guess_source_type(source: str) -> str:
+        mime_type, _ = mimetypes.guess_type(source)
+        stream_schemes = ["rtsp", "rtmp"]
+        source_type = None
+        if mime_type and mime_type.startswith("video"):
+            source_type = "video"
+        elif mime_type and mime_type.startswith("image"):
+            source_type = "image"
+        elif mime_type:
+            logger.debug("Unhandled mime type")
+            source_type = mime_type.split("/")[0]
+        elif not mime_type and str.isnumeric(source):
+            source_type = "camera"
+        elif not mime_type and any(
+            source.lower().startswith(s) for s in stream_schemes
+        ):
+            source_type = "stream"
+        return source_type
 
-    async def async_record_execution_details(
-        self, api_key: Optional[str] = None, ip_address: Optional[str] = None
-    ):
-        async with UsageCollector._async_lock:
-            self._record_execution_details(
-                api_key=api_key,
-                ip_address=ip_address,
-            )
-
-    def _get_empty_usage_dict(self) -> APIKeyUsage:
-        return defaultdict(  # API key
-            lambda: defaultdict(  # workflow ID
-                lambda: defaultdict(  # source hash
-                    lambda: {
-                        "timestamp": None,
-                        "exec_session_id": self._exec_session_id,
-                        "source_hash": None,
-                        "source_type": None,
-                        "processed_frames": 0,
-                        "fps": 0,
-                        "source_duration": 0,
-                        "workflow_id": False,
-                        "api_key": None,
-                    }
-                )
-            )
-        )
-
-    def _create_usage_payload(
+    def _update_usage_payload(
         self,
         source: str,
         frames: int = 1,
@@ -298,10 +219,10 @@ class UsageCollector:
             workflow_id = (
                 UsageCollector._calculate_workflow_hash(workflow) if workflow else None
             )
-        source_usage = self._usage[api_key][workflow_id][
-            source_hash_hex
-        ]  # TODO: same source can be processed multiple times
-        source_usage["timestamp"] = time.time_ns()
+        source_usage = self._usage[api_key][workflow_id][source_hash_hex]
+        if not source_usage["timestamp_start"]:
+            source_usage["timestamp_start"] = time.time_ns()
+        source_usage["timestamp_stop"] = time.time_ns()
         source_usage["source_hash"] = source_hash_hex
         source_usage["source_type"] = source_type
         source_usage["processed_frames"] += frames
@@ -327,15 +248,14 @@ class UsageCollector:
             workflow_id=workflow_id,
             api_key=api_key,
         )
-        with UsageCollector._lock:
-            self._create_usage_payload(
-                source=source,
-                frames=frames,
-                api_key=api_key,
-                workflow=workflow,
-                workflow_id=workflow_id,
-                fps=fps,
-            )
+        self._update_usage_payload(
+            source=source,
+            frames=frames,
+            api_key=api_key,
+            workflow=workflow,
+            workflow_id=workflow_id,
+            fps=fps,
+        )
 
     async def async_record_usage(
         self,
@@ -346,16 +266,8 @@ class UsageCollector:
         workflow_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
-        await self.async_record_execution_details(
-            api_key=api_key,
-        )
-        await self.async_record_workflow_specification(
-            workflow_specification=workflow,
-            workflow_id=workflow_id,
-            api_key=api_key,
-        )
         async with UsageCollector._async_lock:
-            self._create_usage_payload(
+            self.record_usage(
                 source=source,
                 frames=frames,
                 api_key=api_key,
@@ -363,6 +275,64 @@ class UsageCollector:
                 workflow_id=workflow_id,
                 fps=fps,
             )
+
+    def _usage_collector(self):
+        while True:
+            if self._terminate_threads.wait(self._settings.flush_interval):
+                break
+            self._enqueue_usage_payload()
+        logger.debug("Terminating collector thread")
+        self._enqueue_usage_payload()
+
+    def _enqueue_usage_payload(self):
+        if not self._usage:
+            return
+        self._enqueue_payload(payload=self._usage)
+        self._usage = self._get_empty_usage_dict()
+
+    def _usage_sender(self):
+        while True:
+            if self._terminate_threads.wait(self._settings.flush_interval):
+                break
+            self._flush_queue()
+        logger.debug("Terminating sender thread")
+        self._flush_queue()
+
+    def _flush_queue(self):
+        with UsageCollector._lock:
+            payloads_by_api_key = {}
+            while self._queue:
+                if self._queue.empty():
+                    break
+                item = self._queue.get_nowait()
+                if "timestamp" in item:
+                    payloads_by_api_key.setdefault(item["api_key"], []).append(item)
+                    continue
+                for api_key, workflows in item.items():
+                    for processed_sources in workflows.values():
+                        payloads_by_api_key.setdefault(api_key, []).extend(processed_sources.values())
+
+        ssl_verify = True
+        if "localhost" in self._settings.api_usage_endpoint_url.lower():
+            ssl_verify = False
+        if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
+            ssl_verify = False
+
+        for api_key, payloads in payloads_by_api_key.items():
+            try:
+                response = requests.post(
+                    self._settings.api_usage_endpoint_url,
+                    json=payloads,
+                    verify=ssl_verify,
+                    headers={"Authorization": f"Bearer {api_key}"})
+            except Exception as exc:
+                logger.warning("Failed to send usage - %s", exc)
+                # TODO: put back into the queue
+                continue
+            if response.status_code != 200:
+                logger.warning("Failed to send usage - got %s status code (%s)", response.status_code, response.raw)
+                # TODO: put back into the queue
+                continue
 
     @staticmethod
     def _extract_usage_params_from_func_kwargs(
@@ -456,8 +426,9 @@ class UsageCollector:
             return sync_wrapper
 
     def _cleanup(self):
-        self._terminate_scheduler.set()
-        self._scheduler_thread.join()
+        self._terminate_threads.set()
+        self._collector_thread.join()
+        self._sender_thread.join()
 
 
 usage_collector = UsageCollector()
