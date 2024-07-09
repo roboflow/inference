@@ -1,7 +1,7 @@
 import os
 import urllib.request
 from time import perf_counter
-from typing import Any
+from typing import Any, List
 
 import torch
 from groundingdino.util.inference import Model
@@ -84,7 +84,7 @@ class GroundingDINO(RoboflowCoreModel):
     def infer(
         self,
         image: InferenceRequestImage,
-        text: list[str] = None,
+        text: List[str] = None,
         class_filter: list = None,
         box_threshold=0.5,
         text_threshold=0.5,
