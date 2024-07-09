@@ -39,7 +39,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.server.txt \
     ./
 
-RUN pip3 install --extra-index-url https://download.pytorch.org/whl/cu118 \
+RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
