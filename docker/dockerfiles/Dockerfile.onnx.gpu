@@ -37,10 +37,9 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.pali.server.txt \
+    requirements.pali.flash_attn.txt \
     ./
 
-# Install setup.py requirements for flash_attn
-RUN python3 -m pip install packaging==24.1
 RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -57,6 +56,12 @@ RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+# Install setup.py requirements for flash_attn
+RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
+
+# Install flash_attn required for Paligemma and Florence2
+RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
 
 FROM scratch
 COPY --from=base / /
