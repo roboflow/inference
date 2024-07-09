@@ -58,10 +58,16 @@ RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
 
 FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as runtime
-COPY --from=base /usr/bin/python3 /usr/bin/python3
-COPY --from=base /usr/include/opencv4 /usr/include/opencv4
 COPY --from=base /usr/local/bin /usr/local/bin
 COPY --from=base /usr/local/lib /usr/local/lib
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /notebooks
 COPY examples/notebooks .
