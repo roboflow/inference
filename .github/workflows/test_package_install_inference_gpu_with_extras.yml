@@ -36,8 +36,8 @@ jobs:
         working-directory: "/"
         run: |
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
-          python -c "from inference.models import Clip"
-          python -c "from inference.models import Gaze"
-          python -c "from inference.models import SegmentAnything"
-          python -c "from inference.models import GroundingDINO"
-          python -c "from inference.models import YOLOWorld"
+          python -c "from inference.models.clip import Clip"
+          python -c "from inference.models.gaze import Gaze"
+          python -c "from inference.models.sam import SegmentAnything"
+          python -c "from inference.models.grounding_dino import GroundingDINO"
+          python -c "from inference.models.yolo_world import YOLOWorld"
