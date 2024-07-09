@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -12,18 +12,6 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     libgdal-dev \
     wget \
     && rm -rf /var/lib/apt/lists/*
-
-# Install CUDA Toolkit 11.8 as per https://developer.nvidia.com/cuda-11-8-0-download-archive?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=22.04&target_type=deb_local
-# to provide nvcc in runtime image as that is required to build flash-attn
-
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin && \
-    mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600 && \
-    wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb && \
-    dpkg -i cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb && \
-    cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get -y install cuda
-
 
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
