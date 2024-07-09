@@ -38,3 +38,9 @@ def server_url() -> str:
         except:
             success = False
     return server_url
+
+
+@pytest.fixture(scope="function")
+def clean_loaded_models() -> None:
+    response = requests.post(f"{base_url}:{port}/model/clear")
+    response.raise_for_status()

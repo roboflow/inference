@@ -72,7 +72,7 @@ def get_classes_confidence(response: dict) -> np.ndarray:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_s() -> None:
+def test_yolo_world_v1_s(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -113,7 +113,7 @@ def test_yolo_world_v1_s() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_m() -> None:
+def test_yolo_world_v1_m(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -158,7 +158,7 @@ def test_yolo_world_v1_m() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_l() -> None:
+def test_yolo_world_v1_l(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -203,7 +203,7 @@ def test_yolo_world_v1_l() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v1_x() -> None:
+def test_yolo_world_v1_x(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -248,7 +248,7 @@ def test_yolo_world_v1_x() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_s() -> None:
+def test_yolo_world_v2_s(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -289,7 +289,7 @@ def test_yolo_world_v2_s() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_m() -> None:
+def test_yolo_world_v2_m(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -334,7 +334,7 @@ def test_yolo_world_v2_m() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_l() -> None:
+def test_yolo_world_v2_l(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -380,7 +380,7 @@ def test_yolo_world_v2_l() -> None:
     bool_env(os.getenv("SKIP_YOLO_WORLD_TEST", False)),
     reason="Skipping YOLO-World test",
 )
-def test_yolo_world_v2_x() -> None:
+def test_yolo_world_v2_x(clean_loaded_models) -> None:
     # given
     payload = {
         "api_key": api_key,

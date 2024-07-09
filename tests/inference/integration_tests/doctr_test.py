@@ -38,7 +38,7 @@ def bool_env(val):
     bool_env(os.getenv("SKIP_DOCTR_TEST", False)), reason="Skipping DocTR test"
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_doctr(test):
+def test_doctr(test, clean_loaded_models):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
