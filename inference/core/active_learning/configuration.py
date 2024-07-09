@@ -47,12 +47,18 @@ def prepare_active_learning_configuration(
     model_id: str,
     cache: BaseCache,
 ) -> Optional[ActiveLearningConfiguration]:
-    project_metadata = get_roboflow_project_metadata(
-        api_key=api_key,
-        target_dataset=target_dataset,
-        model_id=model_id,
-        cache=cache,
-    )
+    try:
+        project_metadata = get_roboflow_project_metadata(
+            api_key=api_key,
+            target_dataset=target_dataset,
+            model_id=model_id,
+            cache=cache,
+        )
+    except Exception as e:
+        logger.warn(
+            f"Failed to initialise Active Learning configuration. Active Learning will not be enabled for this session. Cause: {str(e)}"
+        )
+        return None
     if not project_metadata.active_learning_configuration.get("enabled", False):
         return None
     logger.info(

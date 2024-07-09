@@ -57,7 +57,7 @@ class LMMConfig(BaseModel):
         default="auto",
         description="To be used for GPT-4V only.",
     )
-    gpt_model_version: str = Field(default="gpt-4-vision-preview")
+    gpt_model_version: str = Field(default="gpt-4o")
 
 
 LONG_DESCRIPTION = """

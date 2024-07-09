@@ -497,7 +497,7 @@ async def test_execute_gpt_4v_request() -> None:
         "image": {"width": 168, "height": 192},
     }
     call_kwargs = client.chat.completions.create.call_args[1]
-    assert call_kwargs["model"] == "gpt-4-vision-preview"
+    assert call_kwargs["model"] == "gpt-4o"
     assert call_kwargs["max_tokens"] == 120
     assert (
         len(call_kwargs["messages"]) == 1
