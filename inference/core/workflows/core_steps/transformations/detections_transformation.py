@@ -37,7 +37,7 @@ Block changes detected Bounding Boxes in a way specified in configuration.
 It supports such operations as changing the size of Bounding Boxes. 
 """
 
-SHORT_DESCRIPTION = "Transforms detections manipulating detected Bounding Boxes"
+SHORT_DESCRIPTION = "Apply transformations on detected bounding boxes."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -65,7 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
-        description="References to additional parameters that may be provided in runtime to parametrise operations",
+        description="References to additional parameters that may be provided in runtime to parameterize operations",
         examples=["$inputs.confidence", "$inputs.image"],
         default_factory=lambda: {},
     )

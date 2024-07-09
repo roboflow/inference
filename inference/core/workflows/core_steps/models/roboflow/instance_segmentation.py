@@ -64,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Instance Segmentation Model",
-            "short_description": "Predict the shape and size of objects.",
+            "short_description": "Predict the shape, size, and location of objects.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
