@@ -37,7 +37,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.pali.server.txt \
-    requirements.pali.flash_attn.txt \
+    requirements/requirements.pali.flash_attn.txt \
     ./
 
 RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
