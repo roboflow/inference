@@ -38,7 +38,7 @@ def model_add(test, port=9001, api_key="", base_url="http://localhost"):
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_SPEED_TEST", False)), reason="Skipping speed test"
 )
-def test_speed(clean_loaded_models):
+def test_speed(clean_loaded_models_fixture):
     try:
         buffered = BytesIO()
         image_url = "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg"

@@ -64,7 +64,7 @@ def bool_env(val):
     bool_env(os.getenv("SKIP_GAZE_TEST", False)), reason="Skipping gaze test"
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_gaze(test, clean_loaded_models):
+def test_gaze(test, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(

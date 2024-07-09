@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import requests
 
-from tests.inference.integration_tests.conftest import clean_loaded_models
+from tests.inference.integration_tests.conftest import on_demand_clean_loaded_models
 
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
@@ -76,7 +76,7 @@ def get_classes_confidence(response: dict) -> np.ndarray:
 )
 def test_yolo_world_v1_s() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -118,7 +118,7 @@ def test_yolo_world_v1_s() -> None:
 )
 def test_yolo_world_v1_m() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -164,7 +164,7 @@ def test_yolo_world_v1_m() -> None:
 )
 def test_yolo_world_v1_l() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -210,7 +210,7 @@ def test_yolo_world_v1_l() -> None:
 )
 def test_yolo_world_v1_x() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -255,7 +255,7 @@ def test_yolo_world_v1_x() -> None:
     reason="Skipping YOLO-World test",
 )
 def test_yolo_world_v2_s() -> None:
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     # given
     payload = {
         "api_key": api_key,
@@ -298,7 +298,7 @@ def test_yolo_world_v2_s() -> None:
 )
 def test_yolo_world_v2_m() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -344,7 +344,7 @@ def test_yolo_world_v2_m() -> None:
 )
 def test_yolo_world_v2_l() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {
@@ -391,7 +391,7 @@ def test_yolo_world_v2_l() -> None:
 )
 def test_yolo_world_v2_x() -> None:
     # given
-    clean_loaded_models()
+    on_demand_clean_loaded_models()
     payload = {
         "api_key": api_key,
         "image": {

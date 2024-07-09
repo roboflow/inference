@@ -24,7 +24,7 @@ def bool_env(val):
     bool_env(os.getenv("SKIP_CLIP_TEST", False)), reason="Skipping CLIP test"
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_clip(test, clean_loaded_models):
+def test_clip(test, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
