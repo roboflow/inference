@@ -1,5 +1,5 @@
-torch>=2.2.2,<=2.3.1
-torchvision>=0.17.2,<=0.18.1
+torch>=2.0.1,<=2.3.1
+torchvision>=0.15.0,<=0.18.1
 transformers==4.42.2
 timm~=1.0.0
 accelerate>=0.25.0,<=0.32.1
