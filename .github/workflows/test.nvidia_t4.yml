@@ -1,6 +1,8 @@
 name: Code Quality & Regression Tests - NVIDIA T4
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
