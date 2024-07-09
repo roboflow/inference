@@ -1,8 +1,0 @@
-transformers==4.42.2
-accelerate
-onnx
-peft
-timm
-einops
-torch==2.2.2+cu118
-xformers==0.0.12
