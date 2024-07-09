@@ -61,7 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Object Detection Model",
-            "short_description": "Localize objects with bounding boxes.",
+            "short_description": "Predict the location of objects with bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

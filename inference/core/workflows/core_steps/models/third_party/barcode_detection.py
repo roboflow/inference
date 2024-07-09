@@ -45,7 +45,8 @@ each barcode then apply further processing (i.e. OCR of the characters on a barc
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run Optical Character Recognition on a model.",
+            "name": "Barcode Detection",
+            "short_description": "Detect and read barcodes in an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

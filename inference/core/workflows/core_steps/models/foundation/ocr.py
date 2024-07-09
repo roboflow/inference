@@ -56,7 +56,7 @@ on particular regions of an image.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run Optical Character Recognition on a model.",
+            "short_description": "Extract text from an image using optical character recognition.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
