@@ -51,8 +51,11 @@ RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
 
-FROM scratch
-COPY --from=base / /
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as runtime
+COPY --from=base /usr/bin/python3 /usr/bin/python3
+COPY --from=base /usr/include/opencv4 /usr/include/opencv4
+COPY --from=base /usr/local/bin /usr/local/bin
+COPY --from=base /usr/local/lib /usr/local/lib
 
 WORKDIR /build
 COPY . .
