@@ -18,7 +18,7 @@ with open(os.path.join(Path(__file__).resolve().parent, "sam_tests.json"), "r") 
 
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_SAM_TEST", False)),
-    reason="Skipping grounding dino test",
+    reason="Skipping SAM test",
 )
 @pytest.mark.parametrize("test", TESTS)
 def test_sam(test, clean_loaded_models_fixture):
