@@ -29,7 +29,9 @@ def trackUsage(endpoint, actor, n=1):
     """
     # count an inference
     try:
-        print(f"inferenceusagelog: ", {"endpoint": endpoint, "actor": actor, "n": n})
+        logger.warn(
+            f"inferenceusagelog: ", {"endpoint": endpoint, "actor": actor, "n": n}
+        )
         job = endpoint + "endpoint:::actor" + actor
         current_infers = memcache_client.incr(job, n)
         if current_infers is None:  # not yet set; initialize at 1
