@@ -1,6 +1,8 @@
 name: Code Quality & Regression Tests - NVIDIA T4
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -37,7 +39,34 @@ jobs:
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - GPU
         run: |
-          MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+          MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+      - name: 🧹 Cleanup Test Docker - GPU
+        run: make stop_test_docker
+        if: success() || failure()
+      - name: 🔋 Start Test Docker - GPU
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression CogVLM - GPU
+        run: |
+          PORT=9101 API_KEY=${{ secrets.API_KEY }} python3 -m pytest tests/inference/integration_tests/test_cogvlm.py
+      - name: 🧹 Cleanup Test Docker - GPU
+        run: make stop_test_docker
+        if: success() || failure()
+      - name: 🔋 Start Test Docker - GPU
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression Paligemma - GPU
+        run: |
+          PORT=9101 API_KEY=${{ secrets.API_KEY }} python3 -m pytest tests/inference/integration_tests/test_paligemma.py
+      - name: 🧹 Cleanup Test Docker - GPU
+        run: make stop_test_docker
+        if: success() || failure()
+      - name: 🔋 Start Test Docker - GPU
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu_with_roboflow_staging
+      - name: 🧪 Regression Florence - GPU
+        run: |
+          PORT=9101 STAGING_API_KEY_FOR_HACKATON_PROJECT=${{ secrets.STAGING_API_KEY_FOR_HACKATON_PROJECT }} python3 -m pytest tests/inference/integration_tests/test_florence.py
       - name: 🧹 Cleanup Test Docker - GPU
         run: make stop_test_docker
         if: success() || failure()

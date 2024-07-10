@@ -143,7 +143,7 @@ def bool_env(val):
     reason="Skipping grounding dino test",
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_grounding_dino(test):
+def test_grounding_dino(test, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(

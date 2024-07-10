@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import time
 
+from tests.inference.integration_tests.regression_test import bool_env
+
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -14,9 +16,12 @@ with open(os.path.join(Path(__file__).resolve().parent, "sam_tests.json"), "r") 
     TESTS = json.load(f)
 
 
-@pytest.mark.skip(reason="SAM testing is broken, to be fixed in future release")
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_SAM_TEST", False)),
+    reason="Skipping SAM test",
+)
 @pytest.mark.parametrize("test", TESTS)
-def test_sam(test):
+def test_sam(test, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
