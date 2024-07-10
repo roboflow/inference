@@ -13,7 +13,7 @@ cache_dir = os.path.join(MODEL_CACHE_DIR)
 import os
 import time
 from time import perf_counter
-from typing import Any, List, Tuple, Union, Dict
+from typing import Any, Dict, List, Tuple, Union
 
 import torch
 from PIL import Image
@@ -115,7 +115,9 @@ class TransformerModel(RoboflowInferenceModel):
         input_len = model_inputs["input_ids"].shape[-1]
 
         with torch.inference_mode():
-            prepared_inputs = self.prepare_generation_params(preprocessed_inputs=model_inputs)
+            prepared_inputs = self.prepare_generation_params(
+                preprocessed_inputs=model_inputs
+            )
             generation = self.model.generate(
                 **prepared_inputs, max_new_tokens=100, do_sample=False
             )
@@ -126,7 +128,9 @@ class TransformerModel(RoboflowInferenceModel):
 
         return (decoded,)
 
-    def prepare_generation_params(self, preprocessed_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def prepare_generation_params(
+        self, preprocessed_inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return preprocessed_inputs
 
     def get_infer_bucket_file_list(self) -> list:
