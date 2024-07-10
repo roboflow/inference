@@ -76,12 +76,11 @@ res = requests.post(
 
 This option is **enabled by default**, but we recommend configuring the server to enhance security using one or more of
 the following environment variables:
-* `ALLOW_URL_INPUT` - Set to `False` to allow only HTTPS protocol in URLs. This helps ensure that domain names are 
-not maliciously resolved.
+* `ALLOW_URL_INPUT` - Set to `False` disable image URLs of any kind to be accepted by server - default: `True`.
 * `ALLOW_NON_HTTPS_URL_INPUT` - set to `False` to only allow https protocol in URLs (useful to make sure domain names are
-not maliciously resolved)
+not maliciously resolved) - default: `False`
 * `ALLOW_URL_INPUT_WITHOUT_FQDN` - set to `False` to enforce URLs with fully qualified domain names only - and reject
-URLs based on IPs
+URLs based on IPs - default: `False`
 * `WHITELISTED_DESTINATIONS_FOR_URL_INPUT` - Optionally, you can specify a comma-separated list of allowed destinations 
 for URL requests. For example: `WHITELISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com`. URLs pointing to 
 other targets will be rejected.
