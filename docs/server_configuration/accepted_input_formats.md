@@ -48,7 +48,7 @@ see how to run the server with that flag. This option is **not available in Robo
 !!! warning
 
     Roboflow advises all users hosting the inference server in production environments not to enable this option if 
-    there is any risk of malicious requests reaching the server.
+    the server is open to requests from the open Internet or is not locked down to accept only authenticated requests from your workspace's API key.
 
 ## Sending URLs to inference images
 
