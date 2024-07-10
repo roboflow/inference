@@ -43,7 +43,7 @@ res = requests.post(
 
 Starting from version `v0.14.0`, deserialization of this type of payload is disabled by default. However, you can 
 enable it by setting an environmental variable, `ALLOW_NUMPY_INPUT=True`. Check [inference cli docs](../inference_helpers/inference_cli.md) to
-see how to run server with that flag. This option is **not available at Roboflow hosted inference**.
+see how to run the server with that flag. This option is **not available in Roboflow's Hosted Inference API**.
 
 !!! warning
 
