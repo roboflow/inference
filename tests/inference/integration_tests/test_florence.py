@@ -9,7 +9,7 @@ api_key = os.environ.get("STAGING_API_KEY_FOR_HACKATON_PROJECT")
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_FLORENCE_TEST", False)),
+    bool_env(os.getenv("SKIP_FLORENCE_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Florence test",
 )
 def test_florence_inference(server_url: str, clean_loaded_models_fixture) -> None:

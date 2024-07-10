@@ -22,6 +22,10 @@ start_test_docker_cpu:
 start_test_docker_gpu:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
+start_test_docker_gpu_with_roboflow_staging:
+	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all -e PROJECT=roboflow-staging --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+
+
 start_test_docker_jetson:
 	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
