@@ -4,4 +4,4 @@ sentencepiece<=0.1.99
 einops<=0.7.0
 xformers==0.0.22
 accelerate<=0.25.0
-bitsandbytes<=0.41.2.post2
+bitsandbytes<=0.41.3

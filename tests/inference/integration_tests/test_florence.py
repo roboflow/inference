@@ -5,14 +5,14 @@ import requests
 
 from tests.inference.integration_tests.regression_test import bool_env
 
-api_key = os.environ.get("API_KEY")
+api_key = os.environ.get("STAGING_API_KEY_FOR_HACKATON_PROJECT")
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_PALIGEMMA_TEST", False)),
-    reason="Skipping Paligemma test",
+    bool_env(os.getenv("SKIP_FLORENCE_TEST", False)),
+    reason="Skipping Florence test",
 )
-def test_paligemma_inference(server_url: str, clean_loaded_models_fixture) -> None:
+def test_florence_inference(server_url: str, clean_loaded_models_fixture) -> None:
     # given
     payload = {
         "api_key": api_key,
@@ -20,8 +20,8 @@ def test_paligemma_inference(server_url: str, clean_loaded_models_fixture) -> No
             "type": "url",
             "value": "https://media.roboflow.com/dog.jpeg",
         },
-        "prompt": "Describe the image",
-        "model_id": "paligemma-3b-mix-224"
+        "prompt": "<CAPTION>",
+        "model_id": "beer-can-hackathon/127"
     }
 
     # when
