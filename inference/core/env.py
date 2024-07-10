@@ -12,8 +12,27 @@ load_dotenv(os.getcwd() + "/.env")
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
-# Allow numpy input, default is True
-ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
+# Allow numpy input, default is False
+ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", False))
+ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", True))
+ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", False))
+ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
+    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+)
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        WHITELISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
