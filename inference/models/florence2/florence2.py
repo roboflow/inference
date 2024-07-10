@@ -1,4 +1,5 @@
 import os
+from typing import Dict, Any
 
 import torch
 from transformers import AutoModelForCausalLM
@@ -23,6 +24,12 @@ class Florence2(TransformerModel):
         )
         super().initialize_model()
 
+    def prepare_generation_params(self, preprocessed_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "input_ids": preprocessed_inputs["input_ids"],
+            "pixel_values": preprocessed_inputs["pixel_values"],
+        }
+
 
 class LoRAFlorence2(LoRATransformerModel):
     load_base_from_roboflow = True
@@ -42,3 +49,9 @@ class LoRAFlorence2(LoRATransformerModel):
         )
 
         return cache_dir
+
+    def prepare_generation_params(self, preprocessed_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "input_ids": preprocessed_inputs["input_ids"],
+            "pixel_values": preprocessed_inputs["pixel_values"],
+        }
