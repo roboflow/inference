@@ -16,7 +16,7 @@ flexible behaviors, depending on your needs.
 
 ## Deserialization of pickled `numpy` objects
 
-One of the way to make request to inference server is to send serialised numpy object:
+One of the ways to send requests to the inference server is via serialized numpy objects:
 
 ```python
 import cv2
