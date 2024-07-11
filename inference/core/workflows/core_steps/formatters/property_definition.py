@@ -23,7 +23,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Takes input data and execute operation to extract specific data property.
+Define a field using properties from previous workflow steps.
 
 Example use-cases:
 * extraction of all class names for object-detection predictions
@@ -31,7 +31,7 @@ Example use-cases:
 * extraction ocr text from OCR result
 """
 
-SHORT_DESCRIPTION = "Extracts specific property from input data."
+SHORT_DESCRIPTION = "Define a field using properties from previous workflow steps."
 
 
 class BlockManifest(WorkflowBlockManifest):

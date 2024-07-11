@@ -30,10 +30,7 @@ for multi-label classification results, most confident label is taken as boundin
 class.  
 """
 
-SHORT_DESCRIPTION = (
-    "Replaces classes of bounding boxes with classes predicted on cropped images"
-    "by classification model."
-)
+SHORT_DESCRIPTION = "Replaces classes of detections with classes predicted by a chained classification model"
 
 
 class BlockManifest(WorkflowBlockManifest):
