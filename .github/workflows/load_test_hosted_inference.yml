@@ -2,19 +2,20 @@ name: LOAD TEST - hosted inference
 
 on:
   workflow_dispatch:
-    environment:
-      type: choice
-      description: Which environment to test?
-      options:
-        - staging
-        - production
-    model_type:
-      type: choice
-      description: Which model type to test?
-      options:
-        - object-detection
-        - instance-segmentation
-        - classification
+    inputs:
+      environment:
+        type: choice
+        description: Which environment to test?
+        options:
+          - staging
+          - production
+      model_type:
+        type: choice
+        description: Which model type to test?
+        options:
+          - object-detection
+          - instance-segmentation
+          - classification
 
 jobs:
   build:
