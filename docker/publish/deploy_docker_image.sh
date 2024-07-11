@@ -20,6 +20,3 @@ check_return_code $? "Docker tag"
 
 docker push $REPOSITORY:$VERSION
 check_return_code $? "Docker push $VERSION"
-
-docker push $REPOSITORY:latest
-check_return_code $? "Docker push latest"
