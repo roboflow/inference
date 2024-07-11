@@ -2,19 +2,20 @@ name: LOAD TEST - hosted inference
 
 on:
   workflow_dispatch:
-    environment:
-      type: choice
-      description: Which environment to test?
-      options:
-        - staging
-        - production
-    model_type:
-      type: choice
-      description: Which model type to test?
-      options:
-        - object-detection
-        - instance-segmentation
-        - classification
+    inputs:
+      environment:
+        type: choice
+        description: Which environment to test?
+        options:
+          - staging
+          - production
+      model_type:
+        type: choice
+        description: Which model type to test?
+        options:
+          - object-detection
+          - instance-segmentation
+          - classification
 
 jobs:
   build:
@@ -36,15 +37,15 @@ jobs:
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
 
-      - name: 🏋️‍♂️ Load test ⚠️ PRODUCTION ⚠️ | object-detection 🔥🔥🔥🔥
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | object-detection 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'object-detection' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m coco/16 -d coco -rps 5 -br 500 -h https://detect.roboflow.com --yes --output_location test_results.json
-      - name: 🏋️‍♂️ Load test ⚠️ PRODUCTION ⚠️ | instance-segmentation 🔥🔥🔥🔥
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | instance-segmentation 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'instance-segmentation' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-poly-instance-seg/53 -d coco -rps 5 -br 500 -h https://outline.roboflow.com --yes --output_location test_results.json
-      - name: 🏋️‍♂️ Load test ⚠️ PRODUCTION ⚠️ | classification 🔥🔥🔥🔥
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | classification 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json
