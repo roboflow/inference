@@ -461,13 +461,10 @@ class HttpInterface(BaseInterface):
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
         ) -> WorkflowInferenceResponse:
-            step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
-                "workflows_core.cache": cache,
-                "workflows_core.step_execution_mode": step_execution_mode,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,

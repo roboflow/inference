@@ -555,10 +555,6 @@ class InferencePipeline:
             workflow_init_parameters["workflows_core.background_tasks"] = (
                 background_tasks
             )
-            workflow_init_parameters["workflows_core.cache"] = cache
-            workflow_init_parameters["workflows_core.step_execution_mode"] = (
-                StepExecutionMode.LOCAL
-            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
