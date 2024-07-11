@@ -48,15 +48,17 @@ class UsageCollector:
             if self._queue:
                 return
 
+        self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
+
         self._settings: TelemetrySettings = get_telemetry_settings()
-        self._usage: APIKeyUsage = self.empty_usage_dict()
+        self._usage: APIKeyUsage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
 
         # TODO: use persistent queue, i.e. https://pypi.org/project/persist-queue/
         self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
-
-        self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
+        self._queue_lock = Lock()
 
         self._system_info_sent: bool = False
+        self._workflow_specifications_lock = Lock()
         self._workflow_specifications: DefaultDict[
             APIKey, Dict[WorkflowID[Dict[str, Any]]]
         ] = defaultdict(dict)
@@ -100,7 +102,7 @@ class UsageCollector:
             raise ValueError("Cannot merge usage for different API keys")
         if "timestamp_start" in d1 and "timestamp_start" in d2:
             merged["timestamp_start"] = min(
-                d1["timestampt_start"], d2["timestampt_start"]
+                d1["timestamp_start"], d2["timestamp_start"]
             )
         if "timestamp_stop" in d1 and "timestamp_stop" in d2:
             merged["timestamp_stop"] = min(d1["timestamp_stop"], d2["timestamp_stop"])
@@ -108,64 +110,60 @@ class UsageCollector:
             merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
         return {**d1, **d2, **merged}
 
-    def _dump_and_zip_usage_queue(self) -> APIKeyUsage:
-        with UsageCollector._lock:
+    def _dump_usage_queue(self) -> List[APIKeyUsage]:
+        with self._queue_lock:
             usage_payloads: List[APIKeyUsage] = []
             while self._queue:
                 if self._queue.empty():
                     break
                 usage_payloads.append(self._queue.get_nowait())
+        return usage_payloads
 
+    @staticmethod
+    def _zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> APIKeyUsage:
         merged_payloads: APIKeyUsage = {}
-        environment_details_payload = {}
-        for api_workflow_payloads in usage_payloads:
-            if "timestamp" in api_workflow_payloads:
-                if "workflow_id" not in api_workflow_payloads:
-                    environment_details_payload = api_workflow_payloads
-                    continue
-                api_key = api_workflow_payloads["api_key"]
-                workflow_id = api_workflow_payloads["workflow_id"]
-                if api_key not in merged_payloads:
-                    merged_payloads[api_key] = {}
-                if workflow_id not in merged_payloads[api_key]:
-                    merged_payloads[api_key][workflow_id] = {}
-                merged_payloads[api_key][workflow_id] = (
+        system_info_payload = {}
+        for usage_payload in usage_payloads:
+            if "inference_version" in usage_payload:
+                system_info_payload = usage_payload
+                continue
+            if "steps" in usage_payload:
+                workflow_details_payload = usage_payload
+                api_key = workflow_details_payload["api_key"]
+                workflow_id = workflow_details_payload["workflow_id"]
+                merged_api_key_payload = merged_payloads.setdefault(api_key, {})
+                merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
+                merged_api_key_payload[workflow_id] = (
                     UsageCollector._merge_usage_dicts(
-                        merged_payloads[api_key][workflow_id],
-                        api_workflow_payloads,
+                        merged_workflow_payload,
+                        workflow_details_payload,
                     )
                 )
                 continue
-            for api_key, workflow_payloads in api_workflow_payloads.items():
-                if api_key not in merged_payloads:
-                    merged_payloads[api_key] = {}
-                merged_api_key_usage = merged_payloads[api_key]
-                for workflow_id, usage_payload in workflow_payloads.items():
-                    if workflow_id not in merged_api_key_usage:
-                        merged_api_key_usage[workflow_id] = {}
-                    merged_api_key_usage[workflow_id] = (
+
+            for api_key, workflow_payloads in usage_payload.items():
+                merged_api_key_payload = merged_payloads.setdefault(api_key, {})
+                for workflow_id, workflow_usage_payload in workflow_payloads.items():
+                    merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
+                    merged_api_key_payload[workflow_id] = (
                         UsageCollector._merge_usage_dicts(
-                            merged_api_key_usage[workflow_id],
-                            usage_payload,
+                            merged_workflow_payload,
+                            workflow_usage_payload,
                         )
                     )
-        if environment_details_payload:
-            if environment_details_payload["api_key"] not in merged_payloads:
-                merged_payloads[environment_details_payload["api_key"]] = {}
-            if not merged_payloads[environment_details_payload["api_key"]]:
-                merged_payloads[environment_details_payload["api_key"]][None] = {}
-                workflow_usage_payload_key = None
-            else:
-                workflow_usage_payload_key = next(
-                    iter(merged_payloads[environment_details_payload["api_key"]].keys())
+
+        if system_info_payload:
+            api_key = system_info_payload["api_key"]
+            merged_api_key_payload = merged_payloads.setdefault(api_key, {})
+            workflow_id = None
+            if merged_api_key_payload:
+                workflow_id = next(
+                    iter(merged_api_key_payload.keys())
                 )
-            merged_payloads[environment_details_payload["api_key"]][
-                workflow_usage_payload_key
-            ] = UsageCollector._merge_usage_dicts(
-                merged_payloads[environment_details_payload["api_key"]][
-                    workflow_usage_payload_key
-                ],
-                environment_details_payload,
+            merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
+            merged_api_key_payload[workflow_id] = UsageCollector._merge_usage_dicts(
+                merged_workflow_payload,
+                system_info_payload,
             )
         return merged_payloads
 
@@ -175,13 +173,20 @@ class UsageCollector:
         return payload_hash.hexdigest()[:length]
 
     def _enqueue_payload(self, payload: UsagePayload):
-        with UsageCollector._lock:
+        queue_full = False
+        with self._queue_lock:
             if not self._queue.full():
                 self._queue.put(payload)
             else:
-                # TODO: aggregate
-                self._queue.get()
-                self._queue.put(payload)
+                queue_full = True
+        if queue_full:
+            usage_payloads = self._dump_usage_queue()
+            usage_payloads.append(payload)
+            merged_usage_payloads = self._zip_usage_payloads(
+                usage_payloads=usage_payloads,
+            )
+            with self._queue_lock:
+                self._queue.put(merged_usage_payloads)
 
     @staticmethod
     def _calculate_workflow_hash(workflow: Dict[str, Any]) -> str:
@@ -205,7 +210,7 @@ class UsageCollector:
                 workflow=workflow_specification
             )
 
-        with UsageCollector._lock:
+        with self._workflow_specifications_lock:
             api_key_specifications = self._workflow_specifications[api_key]
             if workflow_id in api_key_specifications:
                 logger.debug("Attempt to add workflow specification multiple times.")
@@ -384,7 +389,7 @@ class UsageCollector:
             return
         self._enqueue_payload(payload=self._usage)
         with UsageCollector._lock:
-            self._usage = self.empty_usage_dict()
+            self._usage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
 
     def _usage_sender(self):
         while True:
@@ -409,6 +414,7 @@ class UsageCollector:
                     json=list(workflow_payloads.values()),
                     verify=ssl_verify,
                     headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=1,
                 )
                 api_keys_sent.append(api_key)
             except Exception as exc:
@@ -422,14 +428,15 @@ class UsageCollector:
                 )
                 continue
         for api_key in api_keys_sent:
-            del workflow_payloads[api_key]
-        if workflow_payloads:
+            del payloads[api_key]
+        if payloads:
             logger.warning("Enqueuing unsent payloads")
-            self._enqueue_payload(payload=workflow_payloads)
+            self._enqueue_payload(payload=payloads)
 
     def _flush_queue(self):
-        merged_payloads: APIKeyUsage = self._dump_and_zip_usage_queue(
-            usage_queue=self._queue
+        usage_payloads = self._dump_usage_queue()
+        merged_payloads: APIKeyUsage = self._zip_usage_payloads(
+            usage_payloads=usage_payloads,
         )
         # TODO: pub/sub
         if not LAMBDA:
