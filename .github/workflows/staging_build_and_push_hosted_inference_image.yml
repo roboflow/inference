@@ -1,0 +1,30 @@
+name: [STAGING] BUILD & PUSH - hosted inference docker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: ⚙️ Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.STAGING_AWS_ACCESS_KEY }}
+      - name: 🔑 Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          registries: ${{ secrets.STAGING_AWS_ACCOUNT_ID }}
+          mask-password: "true" # see: https://github.com/aws-actions/amazon-ecr-login#docker-credentials
+      - name: 🛠️ Build and push docker image [SLIM] to STAGING 😎
+        run: |
+          ./docker/publish/onnx_lambda.sh roboflow-staging slim
+      - name: 🛠️ Build and push docker image [CORE MODELS]  to STAGING 😎
+        run: |
+          ./docker/publish/onnx_lambda.sh roboflow-staging
