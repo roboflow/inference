@@ -6,7 +6,7 @@ from inference.core.workflows.core_steps.formatters.first_non_empty_or_default i
     FirstNonEmptyOrDefaultBlock,
 )
 from inference.core.workflows.core_steps.formatters.property_extraction import (
-    PropertyExtractionBlock,
+    PropertyDefinitionBlock,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
     DetectionsClassesReplacementBlock,
@@ -106,7 +106,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicZonesBlock,
         DetectionsClassesReplacementBlock,
         ExpressionBlock,
-        PropertyExtractionBlock,
+        PropertyDefinitionBlock,
         DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
     ]

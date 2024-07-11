@@ -43,7 +43,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "formatter",
         }
     )
-    type: Literal["PropertyExtraction"]
+    type: Literal["PropertyDefinition", "PropertyExtraction"]
     data: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -62,7 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="output")]
 
 
-class PropertyExtractionBlock(WorkflowBlock):
+class PropertyDefinitionBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
