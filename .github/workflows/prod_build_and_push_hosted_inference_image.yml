@@ -2,6 +2,15 @@ name: "[PRODUCTION] BUILD & PUSH - hosted inference docker"
 
 on:
   workflow_dispatch:
+    inputs:
+      exclude_slim_lambda:
+        type: boolean
+        description: "Do you want to exclude SLIM version of lambda?"
+        default: false
+      exclude_core_models_lambda:
+        type: boolean
+        description: "Do you want to exclude CORE MODELS version of lambda?"
+        default: false
 
 jobs:
   build:
@@ -23,8 +32,10 @@ jobs:
           registries: ${{ secrets.PRODUCTION_AWS_ACCOUNT_ID }}
           mask-password: "true" # see: https://github.com/aws-actions/amazon-ecr-login#docker-credentials
       - name: 🛠️ Build and push docker image [SLIM] to PRODUCTION 🚨
+        if: ${{ !github.event.inputs.exclude_slim_lambda }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-platform slim
       - name: 🛠️ Build and push docker image [CORE MODELS] to PRODUCTION 🚨
+        if: ${{ !github.event.inputs.exclude_core_models_lambda }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-platform
