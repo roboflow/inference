@@ -19,11 +19,6 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - name: DEBUG
-        run: |
-          echo "event name: ${{ github.event_name }} -> is release: ${{ github.event_name == 'release' }}"
-          echo "force push: ${{ github.event.inputs.force_push }} -> is force push: ${{ github.event.inputs.force_push }}"
-          echo "testing ${{ github.event_name == 'release' || github.event.inputs.force_push }}"
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v2
