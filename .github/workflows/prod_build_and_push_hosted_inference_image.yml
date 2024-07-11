@@ -1,4 +1,4 @@
-name: [PRODUCTION] BUILD & PUSH - hosted inference docker
+name: "[PRODUCTION] BUILD & PUSH - hosted inference docker"
 
 on:
   workflow_dispatch:
