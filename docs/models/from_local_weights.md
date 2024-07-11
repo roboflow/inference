@@ -35,9 +35,24 @@ version.deploy("model-type", "path/to/training/results/")
 
 The following model types are supported:
 
-- yolov5, yolov5-seg
-- yolov7-seg
-- yolov8, yolov8-seg, yolov8-cls
+|Model Architecture|Task      |Model Type ID                 |
+|------------------|----------------|-------------------|
+|YOLOv5            |Object Detection|yolov5             |
+|YOLOv5            |Segmentation    |yolov5-seg         |
+|YOLOv7            |Object Detection|yolov7-seg         |
+|YOLOv8            |Object Detection|yolov8             |
+|YOLOv8            |Segmentation    |yolov8-seg         |
+|YOLOv8            |Classification  |yolov8-cls         |
+|YOLOv8            |Pose Estimation |yolov8-pose        |
+|YOLOv9            |Object Detection|yolov9             |
+|YOLOv9            |Segmentation    |yolov9             |
+|YOLO-NAS          |Object Detection|yolonas            |
+|YOLOv10           |Object Detection|yolov10            |
+|PaliGemma         |Multimodal      |paligemma-3b-pt-224|
+|PaliGemma         |Multimodal      |paligemma-3b-pt-448|
+|PaliGemma         |Multimodal      |paligemma-3b-pt-896|
+|Florence-2        |Multimodal      |florence-2-large   |
+|Florence-2        |Multimodal      |florence-2-base    |
 
 In the code above, replace:
 

@@ -391,3 +391,14 @@ def scale_sv_detections(
             [scale] * len(detections_copy)
         )
     return detections_copy
+
+
+def remove_unexpected_keys_from_dictionary(
+    dictionary: dict,
+    expected_keys: set,
+) -> dict:
+    """This function mutates input `dictionary`"""
+    unexpected_keys = set(dictionary.keys()).difference(expected_keys)
+    for unexpected_key in unexpected_keys:
+        del dictionary[unexpected_key]
+    return dictionary

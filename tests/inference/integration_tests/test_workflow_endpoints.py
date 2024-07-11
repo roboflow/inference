@@ -142,6 +142,7 @@ def test_compilation_endpoint_when_compilation_fails(
 
 def test_workflow_run(
     server_url: str,
+        clean_loaded_models_fixture
 ) -> None:
     # given
     valid_workflow_definition = {

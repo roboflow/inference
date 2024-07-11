@@ -30,7 +30,7 @@ to ensure that you can analyze bounding boxes that may be within the region of a
 object instead of being around an object.
 """
 
-SHORT_DESCRIPTION = "Apply a fixed offset on the width and height of detections."
+SHORT_DESCRIPTION = "Apply a padding around the width and height of detections."
 
 
 class BlockManifest(WorkflowBlockManifest):

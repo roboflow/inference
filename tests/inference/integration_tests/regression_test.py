@@ -415,7 +415,7 @@ for test in TESTS:
 
 
 @pytest.mark.parametrize("test,res_function", DETECTION_TEST_PARAMS)
-def test_detection(test, res_function):
+def test_detection(test, res_function, clean_loaded_models_fixture):
     try:
         try:
             pil_image = Image.open(
@@ -473,7 +473,7 @@ VISUALIZATION_TEST_PARAMS = [
     reason="Skipping visualisation test",
 )
 @pytest.mark.parametrize("test,res_function", VISUALIZATION_TEST_PARAMS)
-def test_visualization(test, res_function):
+def test_visualization(test, res_function, clean_loaded_models_fixture):
     test = deepcopy(test)
     try:
         try:

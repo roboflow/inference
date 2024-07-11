@@ -40,7 +40,7 @@ each of the individual cropped regions.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Use model predictions to dynamically crop.",
+            "short_description": "Crop an image using bounding boxes from a detection model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",

@@ -17,7 +17,10 @@ from inference.core.workflows.constants import (
     ROOT_PARENT_ID_KEY,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    remove_unexpected_keys_from_dictionary,
+)
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
@@ -50,6 +53,8 @@ This block is useful for classifying images without having to train a fine-tuned
 classification model. For example, you could use CLIP to classify the type of vehicle 
 in an image, or if an image contains NSFW material.
 """
+
+EXPECTED_OUTPUT_KEYS = {"similarity", "parent_id", "root_parent_id", "prediction_type"}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -198,8 +203,8 @@ class ClipComparisonBlock(WorkflowBlock):
             )
             # removing fields from `inference` response model
             # that are not registered as outputs
-            if "frame_id" in prediction:
-                del prediction["frame_id"]
-            if "time" in prediction:
-                del prediction["time"]
+            _ = remove_unexpected_keys_from_dictionary(
+                dictionary=prediction,
+                expected_keys=EXPECTED_OUTPUT_KEYS,
+            )
         return predictions

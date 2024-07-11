@@ -1,0 +1,20 @@
+name: Test Action to verify merge to main vs release
+
+on:
+  release:
+    types: [created]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  VERSION: '0.0.0' # Default version, will be overwritten
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test of variable
+        run: |
+          echo "This job's event is ${{ github.event_name }}."
+          echo "Event is release: ${{ github.event_name == 'release' }}."

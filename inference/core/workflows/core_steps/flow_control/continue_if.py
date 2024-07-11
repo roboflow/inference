@@ -27,7 +27,7 @@ Based on provided configuration, block decides if it should follow to pointed
 execution path
 """
 
-SHORT_DESCRIPTION = "Stops execution of processing branch under certain condition"
+SHORT_DESCRIPTION = "Conditionally stop execution of a branch."
 
 
 class BlockManifest(WorkflowBlockManifest):
