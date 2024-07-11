@@ -18,6 +18,13 @@ class SequenceAggregationMode(Enum):
     LEAST_COMMON = "least_common"
 
 
+class ClassificationProperty(Enum):
+    TOP_CLASS = "top_class"
+    TOP_CLASS_CONFIDENCE = "top_class_confidence"
+    ALL_CLASSES = "all_classes"
+    ALL_CONFIDENCES = "all_confidences"
+
+
 class DetectionsProperty(Enum):
     CONFIDENCE = "confidence"
     CLASS_NAME = "class_name"
