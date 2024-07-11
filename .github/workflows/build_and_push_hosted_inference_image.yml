@@ -1,0 +1,41 @@
+name: BUILD & PUSH - hosted inference docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: Which environment to test?
+        options:
+          - roboflow-staging
+          - roboflow-platform
+
+# TERNARY OPERATOR in GHA
+# EXAMPLE:
+# MY_ENV_VAR: ${{ github.ref == 'refs/heads/main' && 'value_for_main_branch' || 'value_for_other_branches' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: ⚙️ Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ github.event.inputs.environment == 'roboflow-platform' && secrets.PRODUCTION_AWS_ACCESS_KEY_ID || secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ github.event.inputs.environment == 'roboflow-platform' && secrets.PRODUCTION_AWS_ACCESS_KEY || secrets.STAGING_AWS_ACCESS_KEY }}
+      - name: 🔑 Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          registries: ${{ github.event.inputs.environment == 'roboflow-platform' && secrets.PRODUCTION_AWS_ACCOUNT_ID || secrets.STAGING_AWS_ACCOUNT_ID }}
+          mask-password: "true" # see: https://github.com/aws-actions/amazon-ecr-login#docker-credentials
+      - name: 🛠️ Build and push docker image [SLIM]
+        run: |
+          ./docker/publish/onnx_lambda.sh ${{ github.event.inputs.environment }} slim
+      - name: 🛠️ Build and push docker image [CORE MODELS]
+        run: |
+          ./docker/publish/onnx_lambda.sh ${{ github.event.inputs.environment }}

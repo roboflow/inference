@@ -1,3 +1,4 @@
+set -e
 
 PROJECT=${1:-roboflow-staging}
 VERSION=${2:-no-slim}
