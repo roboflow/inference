@@ -22,8 +22,8 @@ jobs:
       - name: DEBUG
         run: |
           echo "event name: ${{ github.event_name }} -> is release: ${{ github.event_name == 'release' }}"
-          echo "force push: ${{ github.event.inputs.force_push }} -> is force push: ${{ github.event.inputs.force_push == true }}"
-          echo "testing ${{ github.event_name == 'release' || github.event.inputs.force_push == true }}"
+          echo "force push: ${{ github.event.inputs.force_push }} -> is force push: ${{ github.event.inputs.force_push }}"
+          echo "testing ${{ github.event_name == 'release' || github.event.inputs.force_push }}"
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -46,7 +46,7 @@ jobs:
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
-          push: ${{ github.event_name == 'release' || github.event.inputs.force_push == true }}
+          push: ${{ github.event_name == 'release' || github.event.inputs.force_push }}
           tags: roboflow/roboflow-inference-stream-management-api:latest,roboflow/roboflow-inference-stream-management-api:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-stream-management-api:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-stream-management-api:cache,mode=max
