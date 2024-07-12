@@ -344,12 +344,15 @@ class UsageCollector:
         self,
         source: str,
         category: str,
+        is_enterprise: bool,
         frames: int = 1,
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
+        if self._settings.opt_out and not is_enterprise:
+            return
         self.record_system_info(
             api_key=api_key,
             category=category,
@@ -420,8 +423,6 @@ class UsageCollector:
             ssl_verify = False
         if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
             ssl_verify = False
-
-        # TODO: fast ping before attempting to POST
 
         api_keys_sent = []
         for api_key, workflow_payloads in payloads.items():
@@ -497,6 +498,7 @@ class UsageCollector:
             if hasattr(func_kwargs["workflow"], "workflow_definition"):
                 # TODO: handle enterprise blocks here
                 workflow_definition = func_kwargs["workflow"].workflow_definition
+                is_enterprise = False
             workflow_json = {}
             if hasattr(func_kwargs["workflow"], "workflow_json"):
                 workflow_json = func_kwargs["workflow"].workflow_json
@@ -531,6 +533,7 @@ class UsageCollector:
             "resource_details": resource_details,
             "resource_id": resource_id,
             "fps": usage_fps,
+            "is_enterprise": is_enterprise,
         }
 
     def __call__(self, func: Callable[[Any], Any]):
