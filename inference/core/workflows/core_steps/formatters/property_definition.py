@@ -23,7 +23,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Takes input data and execute operation to extract specific data property.
+Define a field using properties from previous workflow steps.
 
 Example use-cases:
 * extraction of all class names for object-detection predictions
@@ -31,7 +31,7 @@ Example use-cases:
 * extraction ocr text from OCR result
 """
 
-SHORT_DESCRIPTION = "Extracts specific property from input data."
+SHORT_DESCRIPTION = "Define a field using properties from previous workflow steps."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -43,7 +43,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "formatter",
         }
     )
-    type: Literal["PropertyExtraction"]
+    type: Literal["PropertyDefinition", "PropertyExtraction"]
     data: StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -62,7 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [OutputDefinition(name="output")]
 
 
-class PropertyExtractionBlock(WorkflowBlock):
+class PropertyDefinitionBlock(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

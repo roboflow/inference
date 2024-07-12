@@ -1,9 +1,16 @@
 import pytest
 
-from inference.core.entities.responses.inference import ClassificationInferenceResponse, InferenceResponseImage, \
-    ClassificationPrediction
-from inference.core.workflows.core_steps.common.query_language.entities.operations import OperationsChain
-from inference.core.workflows.core_steps.formatters.property_extraction import PropertyExtractionBlock
+from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
+    InferenceResponseImage,
+    ClassificationPrediction,
+)
+from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    OperationsChain,
+)
+from inference.core.workflows.core_steps.formatters.property_definition import (
+    PropertyDefinitionBlock,
+)
 
 
 @pytest.mark.asyncio
@@ -23,19 +30,21 @@ async def test_property_extraction_block() -> None:
         confidence=0.6,
         parent_id="some",
     ).dict(by_alias=True, exclude_none=True)
-    operations = OperationsChain.model_validate({
-        "operations": [
-            {
-                "type": "ClassificationPropertyExtract",
-                "property_name": "top_class",
-            },
-            {
-                "type": "LookupTable",
-                "lookup_table": {"cat": "cat-mutated"},
-            }
-        ]
-    }).operations
-    step = PropertyExtractionBlock()
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {
+                    "type": "ClassificationPropertyExtract",
+                    "property_name": "top_class",
+                },
+                {
+                    "type": "LookupTable",
+                    "lookup_table": {"cat": "cat-mutated"},
+                },
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlock()
 
     # when
     result = await step.run(data=data, operations=operations)

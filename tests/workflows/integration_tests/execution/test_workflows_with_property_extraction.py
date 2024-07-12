@@ -21,7 +21,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS = {
             "model_id": "yolov8n-640",
         },
         {
-            "type": "PropertyExtraction",
+            "type": "PropertyDefinition",
             "name": "property_extraction",
             "data": "$steps.general_detection.predictions",
             "operations": [
@@ -29,7 +29,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS = {
             ],
         },
         {
-            "type": "PropertyExtraction",
+            "type": "PropertyDefinition",
             "name": "instances_counter",
             "data": "$steps.general_detection.predictions",
             "operations": [{"type": "SequenceLength"}],
@@ -177,7 +177,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
             "model_id": "dog-breed-xpaq6/1",
         },
         {
-            "type": "PropertyExtraction",
+            "type": "PropertyDefinition",
             "name": "property_extraction",
             "data": "$steps.breds_classification.predictions",
             "operations": [
