@@ -149,7 +149,7 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models import PaliGemma
+    from inference.models import LoRAPaliGemma, PaliGemma
 
     paligemma_models = {
         (
@@ -164,11 +164,51 @@ try:
         ): PaliGemma,  # TODO: change when we have a new project type
         ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
         ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+        (
+            "object-detection",
+            "paligemma-3b-pt-224-peft",
+        ): LoRAPaliGemma,  # TODO: change when we have a new project type
+        ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+        ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+        (
+            "instance-segmentation",
+            "paligemma-3b-pt-224-peft",
+        ): LoRAPaliGemma,  # TODO: change when we have a new project type
+        ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+        ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
     pass
 
+try:
+    from inference.models import Florence2, LoRAFlorence2
+
+    florence2_models = {
+        (
+            "object-detection",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("object-detection", "florence-2-large"): Florence2,
+        (
+            "instance-segmentation",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("instance-segmentation", "florence-2-large"): Florence2,
+        (
+            "object-detection",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,  # TODO: change when we have a new project type
+        ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
+        (
+            "instance-segmentation",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,  # TODO: change when we have a new project type
+        ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+    }
+    ROBOFLOW_MODEL_TYPES.update(florence2_models)
+except:
+    pass
 try:
     from inference.models import SegmentAnything
 

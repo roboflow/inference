@@ -12,11 +12,30 @@ load_dotenv(os.getcwd() + "/.env")
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
-# Allow numpy input, default is True
-ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
+# Allow numpy input, default is False
+ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", False))
+ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", True))
+ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", False))
+ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
+    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+)
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        WHITELISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
 
 # List of allowed origins
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "")
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGINS = ALLOW_ORIGINS.split(",")
 
 # Base URL for the API
@@ -365,7 +384,7 @@ HOSTED_CORE_MODEL_URL = (
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
-WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
@@ -383,3 +402,6 @@ INFERENCE_WARNINGS_DISABLED = str2bool(
 
 if INFERENCE_WARNINGS_DISABLED:
     warnings.simplefilter("ignore", InferenceDeprecationWarning)
+
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+DEVICE = os.getenv("DEVICE")

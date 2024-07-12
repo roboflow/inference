@@ -54,16 +54,17 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
     step = QRCodeDetectorBlock()
     images = Batch(
-        [
+        content=[
             WorkflowImageData(
                 parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
                 numpy_image=qr_codes_image,
             )
-        ]
+        ],
+        indices=[(0,)],
     )
 
     # when
-    result = await step.run_locally(images=images)
+    result = await step.run(images=images)
 
     # then
     actual_parent_id = result[0]["predictions"]["parent_id"]

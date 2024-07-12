@@ -926,7 +926,10 @@ class VideoConsumer:
         ):
             # not enough observations
             return False
-        stream_consumption_pace = self._stream_consumption_pace_monitor()
+        if hasattr(self._stream_consumption_pace_monitor, "fps"):
+            stream_consumption_pace = self._stream_consumption_pace_monitor.fps
+        else:
+            stream_consumption_pace = self._stream_consumption_pace_monitor()
         announced_stream_fps = stream_consumption_pace
         if declared_source_fps is not None and declared_source_fps > 0:
             announced_stream_fps = declared_source_fps
@@ -948,7 +951,10 @@ class VideoConsumer:
         actual_reader_pace = get_fps_if_tick_happens_now(
             fps_monitor=self._reader_pace_monitor
         )
-        decoding_pace = self._decoding_pace_monitor()
+        if hasattr(self._decoding_pace_monitor, "fps"):
+            decoding_pace = self._decoding_pace_monitor.fps
+        else:
+            decoding_pace = self._decoding_pace_monitor()
         if (
             decoding_pace - actual_reader_pace
             > self._adaptive_mode_reader_pace_tolerance

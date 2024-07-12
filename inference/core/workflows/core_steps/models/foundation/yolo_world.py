@@ -1,6 +1,5 @@
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
-import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -11,6 +10,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
@@ -34,6 +34,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -99,6 +100,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -113,33 +118,57 @@ class YoloWorldModelBlock(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
+        if self._step_execution_mode is StepExecutionMode.LOCAL:
+            return await self.run_locally(
+                images=images,
+                class_names=class_names,
+                version=version,
+                confidence=confidence,
+            )
+        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+            return await self.run_remotely(
+                images=images,
+                class_names=class_names,
+                version=version,
+                confidence=confidence,
+            )
+        else:
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
+
+    async def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        class_names: List[str],
+        version: str,
+        confidence: Optional[float],
+    ) -> BlockResult:
         predictions = []
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [
-            i.to_inference_format(numpy_preferred=True) for i in non_empty_images
-        ]
-        for single_image in non_empty_inference_images:
+        for single_image in images:
             inference_request = YOLOWorldInferenceRequest(
-                image=single_image,
+                image=single_image.to_inference_format(numpy_preferred=True),
                 yolo_world_version_id=version,
                 confidence=confidence,
                 text=class_names,
@@ -154,21 +183,18 @@ class YoloWorldModelBlock(WorkflowBlock):
                 yolo_world_model_id, inference_request
             )
             predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
-        results = self._post_process_result(
-            images=non_empty_images,
+        return self._post_process_result(
+            images=images,
             predictions=predictions,
-        )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
         )
 
     async def run_remotely(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         class_names: List[str],
         version: str,
         confidence: Optional[float],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
@@ -186,11 +212,10 @@ class YoloWorldModelBlock(WorkflowBlock):
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        non_empty_images = [i for i in images.iter_nonempty()]
-        non_empty_inference_images = [i.numpy_image for i in non_empty_images]
+        inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
         image_sub_batches = list(
             make_batches(
-                iterable=non_empty_inference_images,
+                iterable=inference_images,
                 batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             )
         )
@@ -203,18 +228,13 @@ class YoloWorldModelBlock(WorkflowBlock):
                 confidence=confidence,
             )
             predictions.extend(sub_batch_predictions)
-        results = self._post_process_result(
-            images=non_empty_images, predictions=predictions
-        )
-        return images.align_batch_results(
-            results=results, null_element={"predictions": None}
-        )
+        return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(
         self,
-        images: List[WorkflowImageData],
+        images: Batch[WorkflowImageData],
         predictions: List[dict],
-    ) -> List[Dict[str, Union[sv.Detections, Any]]]:
+    ) -> BlockResult:
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,

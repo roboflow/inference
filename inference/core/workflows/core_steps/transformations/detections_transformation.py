@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -21,12 +21,12 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -37,7 +37,7 @@ Block changes detected Bounding Boxes in a way specified in configuration.
 It supports such operations as changing the size of Bounding Boxes. 
 """
 
-SHORT_DESCRIPTION = "Transforms detections manipulating detected Bounding Boxes"
+SHORT_DESCRIPTION = "Apply transformations on detected bounding boxes."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -65,10 +65,14 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
-        description="References to additional parameters that may be provided in runtime to parametrise operations",
+        description="References to additional parameters that may be provided in runtime to parameterize operations",
         examples=["$inputs.confidence", "$inputs.image"],
         default_factory=lambda: {},
     )
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -90,12 +94,12 @@ class DetectionsTransformationBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions: Batch[Optional[sv.Detections]],
+        predictions: Batch[sv.Detections],
         operations: List[OperationDefinition],
         operations_parameters: Dict[str, Any],
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         return execute_transformation(
             predictions=predictions,
             operations=operations,
@@ -104,10 +108,10 @@ class DetectionsTransformationBlock(WorkflowBlock):
 
 
 def execute_transformation(
-    predictions: Batch[Optional[sv.Detections]],
+    predictions: Batch[sv.Detections],
     operations: List[OperationDefinition],
     operations_parameters: Dict[str, Any],
-) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+) -> BlockResult:
     if DEFAULT_OPERAND_NAME in operations_parameters:
         raise ValueError(
             f"Detected reserved parameter name: {DEFAULT_OPERAND_NAME} declared in `operations_parameters` "
@@ -126,7 +130,7 @@ def execute_transformation(
         batch_parameters[k] for k in batch_parameters_keys
     ]
     results = []
-    for payload in Batch.zip_nonempty(batches=batches_to_align):
+    for payload in zip(*batches_to_align):
         detections = payload[0]
         single_evaluation_parameters = copy(non_batch_parameters)
         for key, value in zip(batch_parameters_keys, payload[1:]):
@@ -142,8 +146,4 @@ def execute_transformation(
                 "which is not allowed."
             )
         results.append({"predictions": transformed_detections})
-    return Batch.align_batches_results(
-        batches=batches_to_align,
-        results=results,
-        null_element={"predictions": None},
-    )
+    return results

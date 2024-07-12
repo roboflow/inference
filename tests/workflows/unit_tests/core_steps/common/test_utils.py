@@ -13,6 +13,7 @@ from inference.core.workflows.core_steps.common.utils import (
     filter_out_unwanted_classes_from_sv_detections_batch,
     grab_batch_parameters,
     grab_non_batch_parameters,
+    remove_unexpected_keys_from_dictionary,
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
@@ -777,8 +778,10 @@ def test_grab_batch_parameters() -> None:
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,), (1,)]),
     }
 
     # when
@@ -826,8 +829,12 @@ def test_grab_batch_parameters_when_non_broadcastable_parameter_spotted() -> Non
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A", "B", "C"]),  # cannot be broadcast
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(
+            content=["A", "B", "C"], indices=[(0,), (1,), (2,)]
+        ),  # cannot be broadcast
     }
 
     # when
@@ -857,8 +864,10 @@ def test_grab_non_batch_parameters_when_non_batch_parameters_to_be_found() -> No
     # given
     operations_parameters = {
         "non_batch": [1, 2, 3, 4],
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,)]),
     }
 
     # when
@@ -879,8 +888,10 @@ def test_grab_non_batch_parameters_when_non_batch_parameters_to_be_found() -> No
 def test_grab_non_batch_parameters_when_non_batch_parameters_not_to_be_found() -> None:
     # given
     operations_parameters = {
-        "batch_matching_dim": Batch(content=["a", "b", "c", "d"]),
-        "batch_to_broadcast": Batch(content=["A"]),
+        "batch_matching_dim": Batch(
+            content=["a", "b", "c", "d"], indices=[(0,), (1,), (2,), (3,)]
+        ),
+        "batch_to_broadcast": Batch(content=["A"], indices=[(0,)]),
     }
 
     # when
@@ -1160,3 +1171,37 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     assert np.allclose(
         result["image_dimensions"], np.array([[100, 50], [100, 50]])
     ), "Expected image dimensions to decrease 2x"
+
+
+def test_remove_unexpected_keys_from_dictionary_when_empty_dict_given() -> None:
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={}, expected_keys={"some", "other"}
+    )
+
+    # then
+    assert result == {}
+
+
+def test_remove_unexpected_keys_from_dictionary_when_non_empty_dict_given_but_no_keys_expected() -> (
+    None
+):
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={"a": 1, "b": 2}, expected_keys=set()
+    )
+
+    # then
+    assert result == {}
+
+
+def test_remove_unexpected_keys_from_dictionary_when_part_of_keys_are_not_expected() -> (
+    None
+):
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={"a": 1, "b": 2, "c": 3}, expected_keys={"a", "d"}
+    )
+
+    # then
+    assert result == {"a": 1}

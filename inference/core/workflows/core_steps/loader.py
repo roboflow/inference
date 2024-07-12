@@ -1,6 +1,21 @@
-from inference.core.workflows.core_steps.flow_control.condition import ConditionBlock
+from typing import List, Type
+
+from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
+from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
+from inference.core.workflows.core_steps.formatters.first_non_empty_or_default import (
+    FirstNonEmptyOrDefaultBlock,
+)
+from inference.core.workflows.core_steps.formatters.property_definition import (
+    PropertyDefinitionBlock,
+)
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
+    DetectionsClassesReplacementBlock,
+)
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
+)
+from inference.core.workflows.core_steps.fusion.dimension_collapse import (
+    DimensionCollapseBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
@@ -34,9 +49,6 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
 )
-from inference.core.workflows.core_steps.sampling.detections_rate_limiter import (
-    DetectionsRateLimiterBlock,
-)
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
 )
@@ -64,9 +76,10 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
-def load_blocks() -> list:
+def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         DetectionsConsensusBlock,
         ClipComparisonBlock,
@@ -87,9 +100,13 @@ def load_blocks() -> list:
         DetectionOffsetBlock,
         RelativeStaticCropBlock,
         DetectionsTransformationBlock,
-        DetectionsRateLimiterBlock,
-        ConditionBlock,
         RoboflowDatasetUploadBlock,
+        ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,
+        DetectionsClassesReplacementBlock,
+        ExpressionBlock,
+        PropertyDefinitionBlock,
+        DimensionCollapseBlock,
+        FirstNonEmptyOrDefaultBlock,
     ]

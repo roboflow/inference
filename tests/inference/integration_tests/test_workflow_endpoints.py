@@ -50,10 +50,11 @@ def test_getting_dynamic_outputs(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert len(response_data) == 6
+    assert len(response_data) == 7
     outputs_names = [output["name"] for output in response_data]
     assert outputs_names == [
         "parent_id",
+        "root_parent_id",
         "image",
         "structured_output",
         "raw_output",
@@ -141,6 +142,7 @@ def test_compilation_endpoint_when_compilation_fails(
 
 def test_workflow_run(
     server_url: str,
+        clean_loaded_models_fixture
 ) -> None:
     # given
     valid_workflow_definition = {
@@ -160,7 +162,11 @@ def test_workflow_run(
             }
         ],
         "outputs": [
-            {"type": "JsonField", "name": "result", "selector": "$steps.detection.predictions"}
+            {
+                "type": "JsonField",
+                "name": "result",
+                "selector": "$steps.detection.predictions",
+            }
         ],
     }
 
@@ -171,10 +177,13 @@ def test_workflow_run(
             "specification": valid_workflow_definition,
             "api_key": API_KEY,
             "inputs": {
-                "image": {
-                    "type": "url",
-                    "value": "https://media.roboflow.com/fruit.png",
-                },
+                "image": [
+                    {
+                        "type": "url",
+                        "value": "https://media.roboflow.com/fruit.png",
+                    }
+                ]
+                * 2,
                 "model_id": "yolov8n-640",
             },
         },
@@ -183,6 +192,15 @@ def test_workflow_run(
     # then
     response.raise_for_status()
     response_data = response.json()
+    assert isinstance(
+        response_data["outputs"], list
+    ), "Expected list of elements to be returned"
     assert (
-        len(response_data["outputs"]["result"][0]["predictions"]) == 6
+        len(response_data["outputs"]) == 2
+    ), "Two images submitted - two responses expected"
+    assert (
+        len(response_data["outputs"][0]["result"]["predictions"]) == 6
+    ), "Expected to see 6 predictions"
+    assert (
+        len(response_data["outputs"][1]["result"]["predictions"]) == 6
     ), "Expected to see 6 predictions"

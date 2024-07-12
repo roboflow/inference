@@ -48,6 +48,7 @@ def initialise_step(
 ) -> InitialisedStep:
     block_init_parameters = block_specification.block_class.get_init_parameters()
     init_parameters_values = retrieve_init_parameters_values(
+        block_name=step_manifest.name,
         block_init_parameters=block_init_parameters,
         block_source=block_specification.block_source,
         explicit_init_parameters=explicit_init_parameters,
@@ -59,7 +60,8 @@ def initialise_step(
         raise BlockInterfaceError(
             public_message=f"While initialisation of step {step_manifest.name} of type: {step_manifest.type} there "
             f"was an error in creating instance of workflow block. One of parameters defined "
-            f"({list(init_parameters_values.keys())}) was invalid. Details: {e}",
+            f"({list(init_parameters_values.keys())}) was invalid or block class do not implement all methods. "
+            f"Details: {e}",
             context="workflow_compilation | steps_initialisation",
             inner_error=e,
         ) from e
@@ -71,6 +73,7 @@ def initialise_step(
 
 
 def retrieve_init_parameters_values(
+    block_name: str,
     block_init_parameters: List[str],
     block_source: str,
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
@@ -78,6 +81,7 @@ def retrieve_init_parameters_values(
 ) -> Dict[str, Any]:
     return {
         block_init_parameter: retrieve_init_parameter_values(
+            block_name=block_name,
             block_init_parameter=block_init_parameter,
             block_source=block_source,
             explicit_init_parameters=explicit_init_parameters,
@@ -88,6 +92,7 @@ def retrieve_init_parameters_values(
 
 
 def retrieve_init_parameter_values(
+    block_name: str,
     block_init_parameter: str,
     block_source: str,
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
@@ -104,7 +109,7 @@ def retrieve_init_parameter_values(
         return call_if_callable(initializers[block_init_parameter])
     raise BlockInitParameterNotProvidedError(
         public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
-        f"step from plugin: {block_source}.",
+        f"step `{block_name}` from plugin: {block_source}.",
         context="workflow_compilation | steps_initialisation",
     )
 

@@ -2,6 +2,7 @@ from typing import Dict, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
@@ -38,6 +39,10 @@ def test_parse_block_manifest_when_manifest_only_defines_primitive_python_values
         some_string: str
         some_float: float
         some_boolean: bool
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
@@ -87,6 +92,10 @@ def test_parse_block_manifest_when_manifest_only_defines_compound_python_values(
         some_dict: dict
         some_set: set
 
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
 
@@ -135,6 +144,10 @@ def test_parse_block_manifest_when_manifest_defines_list_with_detailed_type_anno
             ]
         ]
 
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
 
@@ -169,6 +182,10 @@ def test_parse_block_manifest_when_manifest_defines_dict_with_detailed_type_anno
         name: str = Field(description="name field")
         some_dict: Dict[str, Optional[Union[str, MyObject]]]
 
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
 
@@ -202,6 +219,10 @@ def test_parse_block_manifest_when_manifest_defines_set_with_detailed_type_annot
         type: Literal["MyManifest"]
         name: str = Field(description="name field")
         some_set: Set[Optional[Union[str, MyObject]]]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
@@ -240,6 +261,10 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
         )
         step: StepSelector
 
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
 
@@ -263,6 +288,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 ],
                 is_list_element=False,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             ),
             "input_parameter": SelectorDefinition(
                 property_name="input_parameter",
@@ -275,6 +302,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 ],
                 is_list_element=False,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             ),
             "step_output_image": SelectorDefinition(
                 property_name="step_output_image",
@@ -286,6 +315,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 ],
                 is_list_element=False,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             ),
             "step_output_property": SelectorDefinition(
                 property_name="step_output_property",
@@ -301,6 +332,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 ],
                 is_list_element=False,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             ),
             "step": SelectorDefinition(
                 property_name="step",
@@ -310,6 +343,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 ],
                 is_list_element=False,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             ),
         },
     )
@@ -328,6 +363,10 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 List[StepOutputSelector()],
             ]
         ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
@@ -356,6 +395,8 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 ],
                 is_list_element=True,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             )
         },
     )
@@ -372,6 +413,10 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
         compound: List[
             Union[WorkflowImageSelector, StepOutputImageSelector, str, float]
         ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
@@ -405,6 +450,8 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                 ],
                 is_list_element=True,
                 is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             )
         },
     )
@@ -421,6 +468,10 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
         compound: Dict[
             str, Union[WorkflowImageSelector, StepOutputImageSelector, str, float]
         ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
 
     # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
@@ -454,6 +505,8 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
                 ],
                 is_list_element=False,
                 is_dict_element=True,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
             )
         },
     )

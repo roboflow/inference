@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import supervision as sv
 from fastapi import BackgroundTasks
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
@@ -46,7 +46,6 @@ from inference.core.workflows.entities.types import (
     BOOLEAN_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    FlowControl,
     ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -54,6 +53,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -179,6 +179,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
@@ -206,10 +210,10 @@ class RoboflowDatasetUploadBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-        predictions: Batch[Optional[Union[sv.Detections, dict]]],
+        images: Batch[WorkflowImageData],
+        predictions: Batch[Union[sv.Detections, dict]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
@@ -223,7 +227,7 @@ class RoboflowDatasetUploadBlock(WorkflowBlock):
         fire_and_forget: bool,
         labeling_batch_prefix: str,
         labeling_batches_recreation_frequency: BatchCreationFrequency,
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
+    ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
                 "RoboflowDataCollector block cannot run without Roboflow API key. "
@@ -239,9 +243,8 @@ class RoboflowDatasetUploadBlock(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
-        batches_to_iterate = [images, predictions]
         result = []
-        for image, prediction in Batch.zip_nonempty(batches=batches_to_iterate):
+        for image, prediction in zip(images, predictions):
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
@@ -262,11 +265,7 @@ class RoboflowDatasetUploadBlock(WorkflowBlock):
                 api_key=self._api_key,
             )
             result.append({"error_status": error_status, "message": message})
-        return Batch.align_batches_results(
-            batches=batches_to_iterate,
-            results=result,
-            null_element={"error_status": False, "message": "Batch element skipped"},
-        )
+        return result
 
 
 def register_datapoint_at_roboflow(

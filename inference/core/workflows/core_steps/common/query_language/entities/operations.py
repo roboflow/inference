@@ -4,7 +4,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    ClassificationProperty,
     DetectionsProperty,
+    DetectionsSelectionMode,
+    DetectionsSortProperties,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -12,6 +15,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     StatementsGroupsOperator,
 )
 from inference.core.workflows.entities.types import (
+    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
@@ -203,6 +207,43 @@ class DetectionsPropertyExtract(OperationDefinition):
     property_name: DetectionsProperty
 
 
+class ClassificationPropertyExtract(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts property from detections-based prediction"
+            "(as a list of elements - one element represents single detection)",
+            "compound": False,
+            "input_kind": [
+                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+            ],
+            "output_kind": [STRING_KIND, LIST_OF_VALUES_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
+    type: Literal["ClassificationPropertyExtract"]
+    property_name: ClassificationProperty
+
+
+class DetectionsSelection(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Selects bounding boxes based on predefined criterias",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["DetectionsSelection"]
+    mode: DetectionsSelectionMode
+
+
 class ExtractDetectionProperty(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -238,6 +279,28 @@ class DetectionsFilter(OperationDefinition):
     )
     type: Literal["DetectionsFilter"]
     filter_operation: "StatementGroup"
+
+
+class SortDetections(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Changes the order of detected bounding boxes.",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["SortDetections"]
+    mode: DetectionsSortProperties
+    ascending: bool = Field(default=True)
 
 
 class DetectionsOffset(OperationDefinition):
@@ -412,6 +475,9 @@ AllOperationsType = Annotated[
         SequenceLength,
         Multiply,
         Divide,
+        DetectionsSelection,
+        SortDetections,
+        ClassificationPropertyExtract,
     ],
     Field(discriminator="type"),
 ]
@@ -437,6 +503,7 @@ class Equals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
                 [
                     INTEGER_KIND,
@@ -444,12 +511,13 @@ class Equals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
             ],
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["(Number) =="]
+    type: Literal["(Number) ==", "=="]
 
 
 class NotEquals(BinaryOperator):
@@ -464,6 +532,7 @@ class NotEquals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
                 [
                     INTEGER_KIND,
@@ -471,12 +540,13 @@ class NotEquals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
             ],
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["(Number) !="]
+    type: Literal["(Number) !=", "!="]
 
 
 class NumberGreater(BinaryOperator):

@@ -108,6 +108,7 @@ def post_process_bboxes(
         elif (
             resize_method == "Fit (black edges) in"
             or resize_method == "Fit (white edges) in"
+            or resize_method == "Fit (grey edges) in"
         ):
             predicted_bboxes = undo_image_padding_for_predicted_boxes(
                 predicted_bboxes=predicted_bboxes,
@@ -150,8 +151,8 @@ def undo_image_padding_for_predicted_boxes(
     scale = min(infer_shape[0] / origin_shape[0], infer_shape[1] / origin_shape[1])
     inter_h = round(origin_shape[0] * scale)
     inter_w = round(origin_shape[1] * scale)
-    pad_x = (infer_shape[0] - inter_w) / 2
-    pad_y = (infer_shape[1] - inter_h) / 2
+    pad_x = (infer_shape[1] - inter_w) / 2
+    pad_y = (infer_shape[0] - inter_h) / 2
     predicted_bboxes = shift_bboxes(
         bboxes=predicted_bboxes, shift_x=-pad_x, shift_y=-pad_y
     )
@@ -372,7 +373,7 @@ def post_process_polygons(
         infer_shape (tuple of int): Shape of the target image (height, width).
         polys (list of list of tuple): List of polygons, where each polygon is represented by a list of (x, y) coordinates.
         preproc (object): Preprocessing details used for generating the transformation.
-        resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
+        resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", "Fit (white edges) in", or "Fit (grey edges) in". Defaults to "Stretch to".
 
     Returns:
         list of list of tuple: A list of shifted and scaled polygons.
@@ -389,7 +390,11 @@ def post_process_polygons(
             x_scale=width_ratio,
             y_scale=height_ratio,
         )
-    elif resize_method in {"Fit (black edges) in", "Fit (white edges) in"}:
+    elif resize_method in {
+        "Fit (black edges) in",
+        "Fit (white edges) in",
+        "Fit (grey edges) in",
+    }:
         new_polys = undo_image_padding_for_predicted_polygons(
             polygons=polys,
             infer_shape=infer_shape,
@@ -500,7 +505,7 @@ def post_process_keypoints(
         img_dims list of (tuple of int): Shape of the source image (height, width).
         infer_shape (tuple of int): Shape of the target image (height, width).
         preproc (object): Preprocessing details used for generating the transformation.
-        resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", or "Fit (white edges) in". Defaults to "Stretch to".
+        resize_method (str, optional): Resizing method, either "Stretch to", "Fit (black edges) in", "Fit (white edges) in", or "Fit (grey edges) in". Defaults to "Stretch to".
         disable_preproc_static_crop: flag to disable static crop
     Returns:
         list of list of list: predictions with post-processed keypoints
@@ -528,6 +533,7 @@ def post_process_keypoints(
         elif (
             resize_method == "Fit (black edges) in"
             or resize_method == "Fit (white edges) in"
+            or resize_method == "Fit (grey edges) in"
         ):
             keypoints = undo_image_padding_for_predicted_keypoints(
                 keypoints=keypoints,

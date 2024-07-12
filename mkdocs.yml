@@ -38,6 +38,7 @@ nav:
           - "Models: Universe": quickstart/load_from_universe.md
           - "Models: Local Weights": models/from_local_weights.md
       - Supported Fine-Tuned Models:
+          - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
           - YOLOv8: fine-tuned/yolov8.md
           - YOLOv7: fine-tuned/yolov7.md
@@ -90,6 +91,8 @@ nav:
           - Inference Landing Page: inference_helpers/inference_landing_page.md
           - Inference CLI: inference_helpers/inference_cli.md
           - Inference SDK: inference_helpers/inference_sdk.md
+      - Server configuration:
+          - Security of input formats: server_configuration/accepted_input_formats.md
       - Reference:
           - Inference API Reference: docs/reference/
           - Running With Docker: quickstart/docker.md

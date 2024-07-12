@@ -17,6 +17,7 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -29,7 +30,7 @@ to ensure that you can analyze bounding boxes that may be within the region of a
 object instead of being around an object.
 """
 
-SHORT_DESCRIPTION = "Apply a fixed offset on the width and height of detections."
+SHORT_DESCRIPTION = "Apply a padding around the width and height of detections."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -68,6 +69,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
@@ -89,13 +94,13 @@ class DetectionOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        predictions: Batch[Optional[sv.Detections]],
+        predictions: Batch[sv.Detections],
         offset_width: int,
         offset_height: int,
-    ) -> List[Dict[str, Optional[sv.Detections]]]:
-        results = [
+    ) -> BlockResult:
+        return [
             {
                 "predictions": offset_detections(
                     detections=detections,
@@ -103,11 +108,8 @@ class DetectionOffsetBlock(WorkflowBlock):
                     offset_height=offset_height,
                 )
             }
-            for detections in predictions.iter_nonempty()
+            for detections in predictions
         ]
-        return predictions.align_batch_results(
-            results=results, null_element={"predictions": None}
-        )
 
 
 def offset_detections(

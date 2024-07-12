@@ -1,7 +1,19 @@
 import base64
+from copy import copy
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import cv2
 import numpy as np
@@ -18,11 +30,6 @@ from inference.core.workflows.entities.types import (
     WILDCARD_KIND,
     Kind,
 )
-
-
-class StepExecutionMode(Enum):
-    LOCAL = "local"
-    REMOTE = "remote"
 
 
 class OutputDefinition(BaseModel):
@@ -45,13 +52,24 @@ class JsonField(BaseModel):
         return self.type
 
 
-class WorkflowImage(BaseModel):
+class WorkflowInput(BaseModel):
+
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return False
+
+
+class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
     kind: List[Kind] = Field(default=[BATCH_OF_IMAGES_KIND])
 
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return True
 
-class WorkflowParameter(BaseModel):
+
+class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
     kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
@@ -70,60 +88,36 @@ B = TypeVar("B")
 class Batch(Generic[B]):
 
     @classmethod
-    def zip_nonempty(cls, batches: List["Batch"]) -> Iterator[tuple]:
-        mask = cls.mask_common_empty_elements(batches=batches)
-        for zipped in zip(
-            *(batch.iter_selected(mask=mask, return_index=False) for batch in batches)
-        ):
-            yield zipped
-
-    @classmethod
-    def align_batches_results(
+    def init(
         cls,
-        batches: List["Batch"],
-        results: List[Any],
-        null_element: Any = None,
-    ) -> List[Any]:
-        mask = cls.mask_common_empty_elements(batches=batches)
-        non_empty_batches_elements = sum(mask)
-        if non_empty_batches_elements != len(results):
+        content: List[B],
+        indices: List[Tuple[int, ...]],
+    ) -> "Batch":
+        if len(content) != len(indices):
             raise ValueError(
-                "Attempted to align batches results in original batch dimensions, but size of "
-                f"batch results ({len(results)}) does not match the number of non-empty "
-                f"batches elements: {non_empty_batches_elements}."
+                "Attempted to initialise Batch object providing batch indices of size differing "
+                "from size of the data."
             )
-        return align_results(
-            results=results,
-            mask=mask,
-            null_element=null_element,
-        )
 
-    @classmethod
-    def mask_common_empty_elements(cls, batches: List["Batch"]) -> List[bool]:
-        if not batches:
-            return []
-        try:
-            all_masks = np.array([batch.mask_empty_elements() for batch in batches])
-            return np.logical_and.reduce(all_masks).tolist()
-        except ValueError as e:
-            raise ValueError(
-                f"Could not create common masks for batches of not matching size"
-            ) from e
+        return cls(content=content, indices=indices)
 
-    def __init__(self, content: List[B]):
+    def __init__(
+        self,
+        content: List[B],
+        indices: Optional[List[Tuple[int, ...]]],
+    ):
         self._content = content
+        self._indices = indices
+
+    @property
+    def indices(self) -> List[Tuple[int, ...]]:
+        return copy(self._indices)
 
     def __getitem__(
-        self, index: Union[int, List[bool], np.ndarray]
-    ) -> Union[B, List[B]]:
-        if isinstance(index, int):
-            return self._content[index]
-        if len(index) != len(self._content):
-            raise ValueError(
-                f"Mask provided to select batch element has length {len(index)} which does "
-                f"not match batch length: {len(self._content)}"
-            )
-        return list(self.iter_selected(mask=index, return_index=False))
+        self,
+        index: int,
+    ) -> B:
+        return self._content[index]
 
     def __len__(self):
         return len(self._content)
@@ -131,74 +125,34 @@ class Batch(Generic[B]):
     def __iter__(self) -> Iterator[B]:
         yield from self._content
 
-    def iter_nonempty(
-        self,
-        return_index: bool = False,
-    ) -> Iterator[B]:
-        mask = self.mask_empty_elements()
-        yield from self.iter_selected(mask=mask, return_index=return_index)
-
-    def iter_selected(
-        self,
-        mask: Optional[List[bool]] = None,
-        return_index: bool = False,
-    ) -> Iterator[B]:
-        yield from (
-            batch_element if not return_index else (idx, batch_element)
-            for idx, (batch_element, mask_element) in enumerate(
-                zip(self._content, mask)
-            )
-            if mask_element
+    def remove_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
+        content, new_indices = [], []
+        for index, element in self.iter_with_indices():
+            if index in indices_to_remove:
+                continue
+            content.append(element)
+            new_indices.append(index)
+        return Batch(
+            content=content,
+            indices=new_indices,
         )
 
-    def align_batch_results(
-        self,
-        results: List[Any],
-        null_element: Any = None,
-        mask: Optional[List[bool]] = None,
-    ) -> List[Any]:
-        if mask is None:
-            mask = self.mask_empty_elements()
-        non_empty_batches_elements = sum(mask)
-        if non_empty_batches_elements != len(results):
-            raise ValueError(
-                "Attempted to align batches results in original batch dimensions, but size of "
-                f"batch results ({len(results)}) does not match the number of non-empty "
-                f"batches elements: {non_empty_batches_elements}."
-            )
-        return align_results(
-            results=results,
-            mask=mask,
-            null_element=null_element,
-        )
+    def iter_with_indices(self) -> Iterator[Tuple[Tuple[int, ...], B]]:
+        for index, element in zip(self._indices, self._content):
+            yield index, element
 
-    def mask_empty_elements(self) -> List[bool]:
-        return [batch_element is not None for batch_element in self._content]
-
-    def broadcast(self, n: int) -> List[B]:
+    def broadcast(self, n: int) -> "Batch":
         if n <= 0:
             raise ValueError(
                 f"Broadcast to size {n} requested which is invalid operation."
             )
         if len(self._content) == n:
-            return self._content
+            return self
         if len(self._content) == 1:
-            return [self._content[0]] * n
+            return Batch(content=[self._content[0]] * n, indices=[self._indices[0]] * n)
         raise ValueError(
             f"Could not broadcast batch of size {len(self._content)} to size {n}"
         )
-
-
-def align_results(results: List[Any], mask: List[bool], null_element: Any) -> List[Any]:
-    results_index = 0
-    aligned_results = []
-    for mask_element in mask:
-        if mask_element:
-            aligned_results.append(results[results_index])
-            results_index += 1
-        else:
-            aligned_results.append(null_element)
-    return aligned_results
 
 
 @dataclass(frozen=True)

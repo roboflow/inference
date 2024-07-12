@@ -143,6 +143,7 @@ class MultiLabelClassificationPrediction(BaseModel):
     confidence: float = Field(
         description="The class label confidence as a fraction between 0 and 1"
     )
+    class_id: int = Field(description="Numeric ID associated with the class label")
 
 
 class InferenceResponseImage(BaseModel):
@@ -163,11 +164,15 @@ class InferenceResponse(BaseModel):
     """Base inference response.
 
     Attributes:
+        inference_id (Optional[str]): Unique identifier of inference
         frame_id (Optional[int]): The frame id of the image used in inference if the input was a video.
         time (Optional[float]): The time in seconds it took to produce the predictions including image preprocessing.
     """
 
     model_config = ConfigDict(protected_namespaces=())
+    inference_id: Optional[str] = Field(
+        description="Unique identifier of inference", default=None
+    )
     frame_id: Optional[int] = Field(
         default=None,
         description="The frame id of the image used in inference if the input was a video",

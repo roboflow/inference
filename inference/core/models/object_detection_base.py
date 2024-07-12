@@ -168,7 +168,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             List[ObjectDetectionInferenceResponse]: The post-processed predictions.
         """
         predictions = predictions[0]
-
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=confidence,
@@ -241,11 +240,11 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             width_remainder = img_in.shape[2] % 32
             height_remainder = img_in.shape[3] % 32
             if width_remainder > 0:
-                width_padding = 32 - (img_in.shape[2] % 32)
+                width_padding = 32 - width_remainder
             else:
                 width_padding = 0
             if height_remainder > 0:
-                height_padding = 32 - (img_in.shape[3] % 32)
+                height_padding = 32 - height_remainder
             else:
                 height_padding = 0
             img_in = np.pad(

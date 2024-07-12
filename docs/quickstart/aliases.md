@@ -237,4 +237,46 @@ table {
     <td>yolov8n-pose-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco-pose-detection/1">Test in Browser</a></td>
 </tr>
+<tr>
+    <td>YOLOv10n</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10n-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/19">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv10s</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10s-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/20">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv10m</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10m-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/21">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv10b</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10b-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/22">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv10l</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10l-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/23">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv10x</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov10x-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/24">Test in Browser</a></td>
+</tr>
 </table>

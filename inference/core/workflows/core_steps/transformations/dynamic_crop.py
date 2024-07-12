@@ -1,6 +1,5 @@
-import itertools
 from dataclasses import replace
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
@@ -18,13 +17,12 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FlowControl,
-    ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
@@ -42,7 +40,7 @@ each of the individual cropped regions.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Use model predictions to dynamically crop.",
+            "short_description": "Crop an image using bounding boxes from a detection model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
@@ -69,6 +67,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_output_dimensionality_offset(cls) -> int:
+        return 1
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
@@ -81,22 +87,15 @@ class DynamicCropBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run_locally(
+    async def run(
         self,
-        images: Batch[Optional[WorkflowImageData]],
-        predictions: Batch[Optional[sv.Detections]],
-    ) -> Tuple[List[Any], FlowControl]:
-        result = list(
-            itertools.chain.from_iterable(
-                crop_image(image=image, detections=detections)
-                for image, detections in Batch.zip_nonempty(
-                    batches=[images, predictions]
-                )
-            )
-        )
-        if len(result) == 0:
-            return result, FlowControl(mode="terminate_branch")
-        return result, FlowControl(mode="pass")
+        images: Batch[WorkflowImageData],
+        predictions: Batch[sv.Detections],
+    ) -> BlockResult:
+        return [
+            crop_image(image=image, detections=detections)
+            for image, detections in zip(images, predictions)
+        ]
 
 
 def crop_image(
@@ -129,13 +128,13 @@ def crop_image(
             parent_id=image.workflow_root_ancestor_metadata.parent_id,
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
-        crops.append(
-            {
-                "crops": WorkflowImageData(
-                    parent_metadata=parent_metadata,
-                    workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-                    numpy_image=cropped_image,
-                )
-            }
-        )
+        if cropped_image.size:
+            result = WorkflowImageData(
+                parent_metadata=parent_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                numpy_image=cropped_image,
+            )
+        else:
+            result = None
+        crops.append({"crops": result})
     return crops

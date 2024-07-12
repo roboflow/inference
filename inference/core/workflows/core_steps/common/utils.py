@@ -1,7 +1,7 @@
 import logging
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 import supervision as sv
@@ -154,7 +154,7 @@ def add_inference_keypoints_to_sv_detections(
 
 def attach_parents_coordinates_to_batch_of_sv_detections(
     predictions: List[sv.Detections],
-    images: List[WorkflowImageData],
+    images: Iterable[WorkflowImageData],
 ) -> List[sv.Detections]:
     result = []
     for prediction, image in zip(predictions, images):
@@ -321,7 +321,7 @@ def grab_batch_parameters(
     main_batch_size: int,
 ) -> Dict[str, Any]:
     return {
-        key: Batch(value.broadcast(n=main_batch_size))
+        key: value.broadcast(n=main_batch_size)
         for key, value in operations_parameters.items()
         if isinstance(value, Batch)
     }
@@ -391,3 +391,14 @@ def scale_sv_detections(
             [scale] * len(detections_copy)
         )
     return detections_copy
+
+
+def remove_unexpected_keys_from_dictionary(
+    dictionary: dict,
+    expected_keys: set,
+) -> dict:
+    """This function mutates input `dictionary`"""
+    unexpected_keys = set(dictionary.keys()).difference(expected_keys)
+    for unexpected_key in unexpected_keys:
+        del dictionary[unexpected_key]
+    return dictionary

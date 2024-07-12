@@ -27,6 +27,11 @@ def dump_execution_graph(
     ensure_parent_dir_exists(path=path)
     execution_graph = execution_graph.copy()
     for node in execution_graph.nodes:
-        if "definition" in execution_graph.nodes[node]:
-            del execution_graph.nodes[node]["definition"]
+        keys_to_delete = list(execution_graph.nodes[node].keys())
+        for key in keys_to_delete:
+            del execution_graph.nodes[node][key]
+    for edge in execution_graph.edges:
+        keys_to_delete = list(execution_graph.edges[edge].keys())
+        for key in keys_to_delete:
+            del execution_graph.edges[edge][key]
     nx.drawing.nx_pydot.write_dot(execution_graph, path)

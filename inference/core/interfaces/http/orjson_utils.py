@@ -7,6 +7,7 @@ from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import ImageType
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
@@ -44,14 +45,27 @@ def orjson_response(
 
 
 def serialise_workflow_result(
-    result: Dict[str, Any],
+    result: List[Dict[str, Any]],
+    excluded_fields: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    return [
+        serialise_single_workflow_result_element(
+            result_element=result_element,
+            excluded_fields=excluded_fields,
+        )
+        for result_element in result
+    ]
+
+
+def serialise_single_workflow_result_element(
+    result_element: Dict[str, Any],
     excluded_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     if excluded_fields is None:
         excluded_fields = []
     excluded_fields = set(excluded_fields)
     serialised_result = {}
-    for key, value in result.items():
+    for key, value in result_element.items():
         if key in excluded_fields:
             continue
         if isinstance(value, WorkflowImageData):
@@ -96,6 +110,9 @@ def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
     return serialised_result
 
 
+@deprecated(
+    reason="Function contains_image(...) will be removed from `inference` end of Q3 2024"
+)
 def contains_image(element: Any) -> bool:
     return (
         isinstance(element, dict)
