@@ -64,7 +64,6 @@ class UsageCollector:
             APIKey, Dict[ResourceID[Dict[str, Any]]]
         ] = defaultdict(dict)
 
-
         self._terminate_collector_thread = Event()
         self._collector_thread = Thread(target=self._usage_collector, daemon=True)
         self._collector_thread.start()
@@ -88,6 +87,7 @@ class UsageCollector:
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
+                    "hosted": False,  # TODO
                     "api_key": None,
                 }
             )
@@ -137,7 +137,7 @@ class UsageCollector:
                     if not resource_usage or "resource_id" not in resource_usage:
                         continue
                     return resource_usage
-            return None
+        return None
 
     @staticmethod
     def _zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
@@ -244,7 +244,7 @@ class UsageCollector:
                     "timestamp_start": time.time_ns(),
                     "category": category,
                     "resource_id": resource_id,
-                    "resource_details": resource_details,
+                    "resource_details": json.dumps(resource_details),
                     "api_key": api_key,
                 }
             }
