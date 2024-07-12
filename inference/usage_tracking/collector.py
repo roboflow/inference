@@ -10,7 +10,7 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import importlib_metadata
@@ -23,13 +23,13 @@ from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
 
-WorkflowID = str
-WorkflowUsage = DefaultDict[WorkflowID, Any]
+ResourceID = str
+ResourceUsage = DefaultDict[ResourceID, Any]
 APIKey = str
-APIKeyUsage = DefaultDict[APIKey, WorkflowUsage]
-WorkflowDetails = Dict[str, Any]
-EnvironmentDetails = Dict[str, Any]
-UsagePayload = Union[APIKeyUsage, WorkflowDetails, EnvironmentDetails]
+APIKeyUsage = DefaultDict[APIKey, ResourceUsage]
+ResourceDetails = Dict[str, Any]
+SystemDetails = Dict[str, Any]
+UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 
 class UsageCollector:
@@ -51,16 +51,18 @@ class UsageCollector:
         self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
 
         self._settings: TelemetrySettings = get_telemetry_settings()
-        self._usage: APIKeyUsage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
+        self._usage: APIKeyUsage = self.empty_usage_dict(
+            exec_session_id=self._exec_session_id
+        )
 
         # TODO: use persistent queue, i.e. https://pypi.org/project/persist-queue/
         self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
         self._queue_lock = Lock()
 
         self._system_info_sent: bool = False
-        self._workflow_specifications_lock = Lock()
-        self._workflow_specifications: DefaultDict[
-            APIKey, Dict[WorkflowID[Dict[str, Any]]]
+        self._resource_details_lock = Lock()
+        self._resource_details: DefaultDict[
+            APIKey, Dict[ResourceID[Dict[str, Any]]]
         ] = defaultdict(dict)
 
         self._terminate_threads = Event()
@@ -74,8 +76,8 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
-        return defaultdict(  # API key
-            lambda: defaultdict(  # workflow ID
+        return defaultdict(  # api_key
+            lambda: defaultdict(  # category:resource_id
                 lambda: {
                     "timestamp_start": None,
                     "timestamp_stop": None,
@@ -83,7 +85,9 @@ class UsageCollector:
                     "processed_frames": 0,
                     "fps": 0,
                     "source_duration": 0,
-                    "workflow_id": "",
+                    "category": "",
+                    "resource_id": "",
+                    "resource_details": {},
                     "api_key": None,
                 }
             )
@@ -92,12 +96,8 @@ class UsageCollector:
     @staticmethod
     def _merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
         merged = {}
-        if (
-            "workflow_id" in d1
-            and "workflow_id" in d2
-            and d1["workflow_id"] != d2["workflow_id"]
-        ):
-            raise ValueError("Cannot merge usage for different workflow IDs")
+        if d1 and d2 and d1.get("resource_id") != d2.get("resource_id"):
+            raise ValueError("Cannot merge usage for different resource IDs")
         if "api_key" in d1 and "api_key" in d2 and d1["api_key"] != d2["api_key"]:
             raise ValueError("Cannot merge usage for different API keys")
         if "timestamp_start" in d1 and "timestamp_start" in d2:
@@ -108,6 +108,8 @@ class UsageCollector:
             merged["timestamp_stop"] = min(d1["timestamp_stop"], d2["timestamp_stop"])
         if "processed_frames" in d1 and "processed_frames" in d2:
             merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
+        if "source_duration" in d1 and "source_duration" in d2:
+            merged["source_duration"] = d1["source_duration"] + d2["source_duration"]
         return {**d1, **d2, **merged}
 
     def _dump_usage_queue(self) -> List[APIKeyUsage]:
@@ -127,42 +129,46 @@ class UsageCollector:
             if "inference_version" in usage_payload:
                 system_info_payload = usage_payload
                 continue
-            if "steps" in usage_payload:
-                workflow_details_payload = usage_payload
-                api_key = workflow_details_payload["api_key"]
-                workflow_id = workflow_details_payload["workflow_id"]
+            if "resource_details" in usage_payload:
+                resource_details_payload = usage_payload
+                api_key = resource_details_payload["api_key"]
+                resource_id = resource_details_payload["resource_id"]
                 merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-                merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
-                merged_api_key_payload[workflow_id] = (
-                    UsageCollector._merge_usage_dicts(
-                        merged_workflow_payload,
-                        workflow_details_payload,
-                    )
+                merged_resource_payload = merged_api_key_payload.setdefault(
+                    resource_id, {}
+                )
+                merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
+                    merged_resource_payload,
+                    resource_details_payload,
                 )
                 continue
 
-            for api_key, workflow_payloads in usage_payload.items():
+            for api_key, resource_payloads in usage_payload.items():
                 merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-                for workflow_id, workflow_usage_payload in workflow_payloads.items():
-                    merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
-                    merged_api_key_payload[workflow_id] = (
+                for resource_id, resource_usage_payload in resource_payloads.items():
+                    merged_resource_payload = merged_api_key_payload.setdefault(
+                        resource_id, {}
+                    )
+                    merged_api_key_payload[resource_id] = (
                         UsageCollector._merge_usage_dicts(
-                            merged_workflow_payload,
-                            workflow_usage_payload,
+                            merged_resource_payload,
+                            resource_usage_payload,
                         )
                     )
 
         if system_info_payload:
             api_key = system_info_payload["api_key"]
             merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-            workflow_id = None
+            resource_id = None
             if merged_api_key_payload:
-                workflow_id = next(
-                    iter(merged_api_key_payload.keys())
-                )
-            merged_workflow_payload = merged_api_key_payload.setdefault(workflow_id, {})
-            merged_api_key_payload[workflow_id] = UsageCollector._merge_usage_dicts(
-                merged_workflow_payload,
+                resource_id = next(iter(merged_api_key_payload.keys()))
+            system_info_payload["resource_id"] = resource_id
+            category = system_info_payload["category"]
+            merged_resource_payload = merged_api_key_payload.setdefault(
+                f"{category}:{resource_id}", {}
+            )
+            merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
+                merged_resource_payload,
                 system_info_payload,
             )
         return merged_payloads
@@ -189,56 +195,54 @@ class UsageCollector:
                 self._queue.put(merged_usage_payloads)
 
     @staticmethod
-    def _calculate_workflow_hash(workflow: Dict[str, Any]) -> str:
-        return UsageCollector._hash(json.dumps(workflow, sort_keys=True))
+    def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
+        return UsageCollector._hash(json.dumps(resource_details, sort_keys=True))
 
-    def record_workflow_specification(
+    def record_resource_details(
         self,
-        workflow_specification: Dict[str, Any],
-        workflow_id: Optional[str] = None,
+        category: str,
+        resource_details: Dict[str, Any],
+        resource_id: Optional[str] = None,
         api_key: Optional[str] = None,
     ):
-        if not workflow_specification and not workflow_id:
+        if not category:
+            raise ValueError("Category is compulsory when recording resource details.")
+        if not resource_details and not resource_id:
             return
-        if not isinstance(workflow_specification, dict) and not workflow_id:
+        if not isinstance(resource_details, dict) and not resource_id:
             return
 
         if not api_key:
             api_key = API_KEY
-        if not workflow_id:
-            workflow_id = UsageCollector._calculate_workflow_hash(
-                workflow=workflow_specification
+        if not resource_id:
+            resource_id = UsageCollector._calculate_resource_hash(
+                resource_details=resource_details
             )
 
-        with self._workflow_specifications_lock:
-            api_key_specifications = self._workflow_specifications[api_key]
-            if workflow_id in api_key_specifications:
-                logger.debug("Attempt to add workflow specification multiple times.")
+        with self._resource_details_lock:
+            api_key_specifications = self._resource_details[api_key]
+            if resource_id in api_key_specifications:
+                logger.debug("Attempt to add resource details multiple times.")
                 return
-            api_key_specifications[workflow_id] = True
+            api_key_specifications[resource_id] = True
 
-        steps_summary = [
-            f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-            for step in workflow_specification.get("steps", [])
-            if isinstance(step, dict)
-        ]
-        workflow_specification_payload: WorkflowDetails = {
+        resource_details_payload: ResourceDetails = {
             "timestamp_start": time.time_ns(),
-            "workflow_id": workflow_id,
-            "steps": steps_summary,
+            "category": category,
+            "resource_id": resource_id,
+            "resource_details": resource_details,
             "api_key": api_key,
         }
-        logger.debug(
-            "Usage (workflow specification): %s", workflow_specification_payload
-        )
-        self._enqueue_payload(payload=workflow_specification_payload)
+        logger.debug("Usage (%s details): %s", category, resource_details_payload)
+        self._enqueue_payload(payload=resource_details_payload)
 
     @staticmethod
     def system_info(
-        exec_session_id,
+        exec_session_id: str,
+        category: str,
         api_key: Optional[str] = None,
         ip_address: Optional[str] = None,
-    ) -> EnvironmentDetails:
+    ) -> SystemDetails:
         inference_version = "dev"
         try:
             inference_version = importlib_metadata.version("inference")
@@ -257,6 +261,7 @@ class UsageCollector:
         return {
             "timestamp_start": time.time_ns(),
             "exec_session_id": exec_session_id,
+            "category": category,
             "ip_address_hash": ip_address_hash_hex,
             "api_key": api_key,
             "is_gpu_available": torch.cuda.is_available(),
@@ -266,20 +271,22 @@ class UsageCollector:
 
     def record_system_info(
         self,
-        api_key: Optional[str] = None,
+        api_key: str,
+        category: str,
         ip_address: Optional[str] = None,
     ):
         if self._system_info_sent:
             return
         if not api_key:
             api_key = API_KEY
-        execution_details_payload = self.system_info(
+        system_info_payload = self.system_info(
             exec_session_id=self._exec_session_id,
+            category=category,
             api_key=api_key,
             ip_address=ip_address,
         )
-        logger.debug("Usage (execution details): %s", execution_details_payload)
-        self._enqueue_payload(payload=execution_details_payload)
+        logger.debug("Usage (system info): %s", system_info_payload)
+        self._enqueue_payload(payload=system_info_payload)
         self._system_info_sent = True
 
     @staticmethod
@@ -305,74 +312,82 @@ class UsageCollector:
     def _update_usage_payload(
         self,
         source: str,
+        category: str,
         frames: int = 1,
         api_key: Optional[str] = None,
-        workflow: Optional[Dict[str, Any]] = None,
-        workflow_id: Optional[str] = None,
+        resource_details: Optional[Dict[str, Any]] = None,
+        resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ):
         source = str(source) if source else ""
         if not api_key:
             api_key = API_KEY
-        if not workflow:
-            workflow = self._workflow_specifications[api_key].get(workflow_id)
-        if not workflow_id:
-            workflow_id = (
-                UsageCollector._calculate_workflow_hash(workflow) if workflow else None
+        if not resource_id and resource_details:
+            resource_id = UsageCollector._calculate_resource_hash(resource_details)
+        if not resource_details:
+            resource_details = self._resource_details[api_key].get(
+                f"{category}:{resource_id}"
             )
         with UsageCollector._lock:
-            source_usage = self._usage[api_key][workflow_id]
+            source_usage = self._usage[api_key][f"{category}:{resource_id}"]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames
             source_usage["fps"] = round(fps, 2)
             source_usage["source_duration"] += frames / fps if fps else 0
-            source_usage["workflow_id"] = workflow_id
+            source_usage["category"] = category
+            source_usage["resource_id"] = resource_id
             source_usage["api_key"] = api_key
 
     def record_usage(
         self,
         source: str,
+        category: str,
         frames: int = 1,
         api_key: Optional[str] = None,
-        workflow: Optional[Dict[str, Any]] = None,
-        workflow_id: Optional[str] = None,
+        resource_details: Optional[Dict[str, Any]] = None,
+        resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
         self.record_system_info(
             api_key=api_key,
+            category=category,
         )
-        self.record_workflow_specification(
-            workflow_specification=workflow,
-            workflow_id=workflow_id,
+        self.record_resource_details(
+            category=category,
+            resource_details=resource_details,
+            resource_id=resource_id,
             api_key=api_key,
         )
         self._update_usage_payload(
             source=source,
+            category=category,
             frames=frames,
             api_key=api_key,
-            workflow=workflow,
-            workflow_id=workflow_id,
+            resource_details=resource_details,
+            resource_id=resource_id,
             fps=fps,
         )
 
     async def async_record_usage(
         self,
         source: str,
+        category: str,
         frames: int = 1,
         api_key: Optional[str] = None,
-        workflow: Optional[Dict[str, Any]] = None,
-        workflow_id: Optional[str] = None,
+        resource_details: Optional[Dict[str, Any]] = None,
+        resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
         async with UsageCollector._async_lock:
             self.record_usage(
                 source=source,
+                category=category,
                 frames=frames,
                 api_key=api_key,
-                workflow=workflow,
-                workflow_id=workflow_id,
+                resource_details=resource_details,
+                resource_id=resource_id,
                 fps=fps,
             )
 
@@ -406,6 +421,8 @@ class UsageCollector:
         if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
             ssl_verify = False
 
+        # TODO: fast ping before attempting to POST
+
         api_keys_sent = []
         for api_key, workflow_payloads in payloads.items():
             try:
@@ -438,9 +455,28 @@ class UsageCollector:
         merged_payloads: APIKeyUsage = self._zip_usage_payloads(
             usage_payloads=usage_payloads,
         )
-        # TODO: pub/sub
-        if not LAMBDA:
-            self._offload_to_api(payloads=merged_payloads)
+        self._offload_to_api(payloads=merged_payloads)
+
+    @staticmethod
+    def _resource_details_from_workflow_json(
+        usage_workflow_id: str, workflow_json: Dict[str, Any]
+    ) -> Tuple[ResourceID, ResourceDetails]:
+        if not isinstance(workflow_json, dict):
+            raise ValueError("workflow_json must be dict")
+        resource_details = {}
+        resource_details = {
+            "steps": [
+                f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
+                for step in workflow_json.get("steps", [])
+                if isinstance(step, dict)
+            ]
+        }
+        if not usage_workflow_id and resource_details:
+            usage_workflow_id = UsageCollector._calculate_resource_hash(
+                resource_details=resource_details
+            )
+        resource_id: ResourceID = usage_workflow_id
+        return resource_id, resource_details
 
     @staticmethod
     def _extract_usage_params_from_func_kwargs(
@@ -454,17 +490,26 @@ class UsageCollector:
         if not usage_api_key:
             usage_api_key = API_KEY
         func_kwargs = collect_func_params(func, args, kwargs)
-        workflow_json = None
+        resource_details = {}
+        resource_id = None
+        category = None
         if "workflow" in func_kwargs:
             if hasattr(func_kwargs["workflow"], "workflow_definition"):
-                workflow_definition = func_kwargs["workflow"].workflow_definition
                 # TODO: handle enterprise blocks here
+                workflow_definition = func_kwargs["workflow"].workflow_definition
+            workflow_json = {}
             if hasattr(func_kwargs["workflow"], "workflow_json"):
                 workflow_json = func_kwargs["workflow"].workflow_json
-        if not usage_workflow_id and workflow_json:
-            usage_workflow_id = UsageCollector._calculate_workflow_hash(
-                workflow=workflow_json
+            resource_id, resource_details = (
+                UsageCollector._resource_details_from_workflow_json(
+                    usage_workflow_id=usage_workflow_id,
+                    workflow_json=workflow_json,
+                )
             )
+            category = "workflows"
+        elif "model_id" in func_kwargs:
+            # TODO: handle model
+            pass
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
         if (
@@ -482,8 +527,9 @@ class UsageCollector:
         return {
             "source": source,
             "api_key": usage_api_key,
-            "workflow": workflow_json,
-            "workflow_id": usage_workflow_id,
+            "category": category,
+            "resource_details": resource_details,
+            "resource_id": resource_id,
             "fps": usage_fps,
         }
 
