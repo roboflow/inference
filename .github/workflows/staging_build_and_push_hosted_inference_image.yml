@@ -37,6 +37,6 @@ jobs:
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging slim
       - name: 🛠️ Build and push docker image [CORE MODELS]  to STAGING 😎
-        if: ${{ !github.event.inputs.exclude_core_models_lambda == 'false' }}
+        if: ${{ github.event.inputs.exclude_core_models_lambda == 'false' }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging
