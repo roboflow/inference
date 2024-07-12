@@ -39,7 +39,7 @@ FPS_MONITOR = sv.FPSMonitor()
 
 def render(predictions: dict, image: np.ndarray) -> None:
     FPS_MONITOR.tick()
-    fps = FPS_MONITOR()
+    fps = FPS_MONITOR.fps
     image = ANNOTATOR.annotate(
         scene=image, detections=sv.Detections.from_inference(predictions)
     )

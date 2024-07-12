@@ -15,7 +15,7 @@ def main(video: Union[str, int], display: int, each_nth: int) -> None:
         print(frames_counter, frames_counter % each_nth)
         status = stream.grab()
         fps_monitor.tick()
-        fps_value = fps_monitor()
+        fps_value = fps_monitor.fps
         print("GRABBING FPS: ", fps_value)
         if not status:
             print("EOS")

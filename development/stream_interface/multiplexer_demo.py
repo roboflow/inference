@@ -55,7 +55,7 @@ def main(n: int) -> None:
             )
             i = cv2.putText(
                 i,
-                f"THROUGHPUT: {round(monitors[f.source_id](), 2)}",
+                f"THROUGHPUT: {round(monitors[f.source_id].fps, 2)}",
                 (10, f.image.shape[0] - 120),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 2.0,
@@ -65,7 +65,7 @@ def main(n: int) -> None:
             registered_frames[f.source_id] = i
         for _ in range(len(frames)):
             fps_monitor.tick()
-        fps_value = fps_monitor()
+        fps_value = fps_monitor.fps
         images = [letterbox_image(registered_frames.get(i, BLACK_FRAME), (348, 348)) for i in range(n)]
         rows = list(create_batches(sequence=images, batch_size=4))
         while len(rows[-1]) < 4:
