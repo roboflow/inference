@@ -64,10 +64,12 @@ class UsageCollector:
             APIKey, Dict[ResourceID[Dict[str, Any]]]
         ] = defaultdict(dict)
 
-        self._terminate_threads = Event()
 
+        self._terminate_collector_thread = Event()
         self._collector_thread = Thread(target=self._usage_collector, daemon=True)
         self._collector_thread.start()
+
+        self._terminate_sender_thread = Event()
         self._sender_thread = Thread(target=self._usage_sender, daemon=True)
         self._sender_thread.start()
 
@@ -408,7 +410,7 @@ class UsageCollector:
 
     def _usage_collector(self):
         while True:
-            if self._terminate_threads.wait(self._settings.flush_interval):
+            if self._terminate_collector_thread.wait(self._settings.flush_interval):
                 break
             self._enqueue_usage_payload()
         logger.debug("Terminating collector thread")
@@ -423,7 +425,7 @@ class UsageCollector:
 
     def _usage_sender(self):
         while True:
-            if self._terminate_threads.wait(self._settings.flush_interval):
+            if self._terminate_sender_thread.wait(self._settings.flush_interval):
                 break
             self._flush_queue()
         logger.debug("Terminating sender thread")
@@ -598,8 +600,9 @@ class UsageCollector:
             return sync_wrapper
 
     def _cleanup(self):
-        self._terminate_threads.set()
+        self._terminate_collector_thread.set()
         self._collector_thread.join()
+        self._terminate_sender_thread.set()
         self._sender_thread.join()
 
 
