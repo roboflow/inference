@@ -133,20 +133,20 @@ class UsageCollector:
             if "inference_version" in usage_payload:
                 system_info_payload = usage_payload
                 continue
-            # if "resource_details" in usage_payload:
-            #     resource_details_payload = usage_payload
-            #     api_key = resource_details_payload["api_key"]
-            #     resource_id = resource_details_payload["resource_id"]
-            #     category = resource_details_payload["resource_id"]
-            #     merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-            #     merged_resource_payload = merged_api_key_payload.setdefault(
-            #         f"{category}:{resource_id}", {}
-            #     )
-            #     merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
-            #         merged_resource_payload,
-            #         resource_details_payload,
-            #     )
-            #     continue
+            if "resource_details" in usage_payload:
+                resource_details_payload = usage_payload
+                api_key = resource_details_payload["api_key"]
+                resource_id = resource_details_payload["resource_id"]
+                category = resource_details_payload["resource_id"]
+                merged_api_key_payload = merged_payloads.setdefault(api_key, {})
+                merged_resource_payload = merged_api_key_payload.setdefault(
+                    f"{category}:{resource_id}", {}
+                )
+                merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
+                    merged_resource_payload,
+                    resource_details_payload,
+                )
+                continue
 
             for api_key, resource_payloads in usage_payload.items():
                 merged_api_key_payload = merged_payloads.setdefault(api_key, {})
