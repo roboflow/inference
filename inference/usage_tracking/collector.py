@@ -105,20 +105,24 @@ class UsageCollector:
                 d1["timestamp_start"], d2["timestamp_start"]
             )
         if "timestamp_stop" in d1 and "timestamp_stop" in d2:
-            merged["timestamp_stop"] = min(d1["timestamp_stop"], d2["timestamp_stop"])
+            merged["timestamp_stop"] = max(d1["timestamp_stop"], d2["timestamp_stop"])
         if "processed_frames" in d1 and "processed_frames" in d2:
             merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
         if "source_duration" in d1 and "source_duration" in d2:
             merged["source_duration"] = d1["source_duration"] + d2["source_duration"]
         return {**d1, **d2, **merged}
 
-    def _dump_usage_queue(self) -> List[APIKeyUsage]:
+    def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
+        usage_payloads: List[APIKeyUsage] = []
+        while self._queue:
+            if self._queue.empty():
+                break
+            usage_payloads.append(self._queue.get_nowait())
+        return usage_payloads
+
+    def _dump_usage_queue_with_lock(self) -> List[APIKeyUsage]:
         with self._queue_lock:
-            usage_payloads: List[APIKeyUsage] = []
-            while self._queue:
-                if self._queue.empty():
-                    break
-                usage_payloads.append(self._queue.get_nowait())
+            usage_payloads = self._dump_usage_queue_no_lock()
         return usage_payloads
 
     @staticmethod
@@ -129,27 +133,28 @@ class UsageCollector:
             if "inference_version" in usage_payload:
                 system_info_payload = usage_payload
                 continue
-            if "resource_details" in usage_payload:
-                resource_details_payload = usage_payload
-                api_key = resource_details_payload["api_key"]
-                resource_id = resource_details_payload["resource_id"]
-                merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-                merged_resource_payload = merged_api_key_payload.setdefault(
-                    resource_id, {}
-                )
-                merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
-                    merged_resource_payload,
-                    resource_details_payload,
-                )
-                continue
+            # if "resource_details" in usage_payload:
+            #     resource_details_payload = usage_payload
+            #     api_key = resource_details_payload["api_key"]
+            #     resource_id = resource_details_payload["resource_id"]
+            #     category = resource_details_payload["resource_id"]
+            #     merged_api_key_payload = merged_payloads.setdefault(api_key, {})
+            #     merged_resource_payload = merged_api_key_payload.setdefault(
+            #         f"{category}:{resource_id}", {}
+            #     )
+            #     merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
+            #         merged_resource_payload,
+            #         resource_details_payload,
+            #     )
+            #     continue
 
             for api_key, resource_payloads in usage_payload.items():
                 merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-                for resource_id, resource_usage_payload in resource_payloads.items():
+                for usage_resource_key, resource_usage_payload in resource_payloads.items():
                     merged_resource_payload = merged_api_key_payload.setdefault(
-                        resource_id, {}
+                        usage_resource_key, {}
                     )
-                    merged_api_key_payload[resource_id] = (
+                    merged_api_key_payload[usage_resource_key] = (
                         UsageCollector._merge_usage_dicts(
                             merged_resource_payload,
                             resource_usage_payload,
@@ -160,12 +165,15 @@ class UsageCollector:
             api_key = system_info_payload["api_key"]
             merged_api_key_payload = merged_payloads.setdefault(api_key, {})
             resource_id = None
+            usage_resource_key = None
             if merged_api_key_payload:
-                resource_id = next(iter(merged_api_key_payload.keys()))
+                usage_resource_key, usage_payload = next(iter(merged_api_key_payload.items()))
+                logger.error(usage_payload)
+                resource_id = usage_payload["resource_id"]
             system_info_payload["resource_id"] = resource_id
             category = system_info_payload["category"]
             merged_resource_payload = merged_api_key_payload.setdefault(
-                f"{category}:{resource_id}", {}
+                usage_resource_key, {}
             )
             merged_api_key_payload[resource_id] = UsageCollector._merge_usage_dicts(
                 merged_resource_payload,
@@ -179,19 +187,16 @@ class UsageCollector:
         return payload_hash.hexdigest()[:length]
 
     def _enqueue_payload(self, payload: UsagePayload):
-        queue_full = False
+        logger.debug("Enqueuing usage payload %s", payload)
         with self._queue_lock:
             if not self._queue.full():
                 self._queue.put(payload)
             else:
-                queue_full = True
-        if queue_full:
-            usage_payloads = self._dump_usage_queue()
-            usage_payloads.append(payload)
-            merged_usage_payloads = self._zip_usage_payloads(
-                usage_payloads=usage_payloads,
-            )
-            with self._queue_lock:
+                usage_payloads = self._dump_usage_queue_no_lock()
+                usage_payloads.append(payload)
+                merged_usage_payloads = self._zip_usage_payloads(
+                    usage_payloads=usage_payloads,
+                )
                 self._queue.put(merged_usage_payloads)
 
     @staticmethod
@@ -339,6 +344,7 @@ class UsageCollector:
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["api_key"] = api_key
+            logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
         self,
@@ -377,6 +383,7 @@ class UsageCollector:
         self,
         source: str,
         category: str,
+        is_enterprise: bool,
         frames: int = 1,
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
@@ -388,6 +395,7 @@ class UsageCollector:
                 source=source,
                 category=category,
                 frames=frames,
+                is_enterprise=is_enterprise,
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
@@ -417,6 +425,13 @@ class UsageCollector:
         logger.debug("Terminating sender thread")
         self._flush_queue()
 
+    def _flush_queue(self):
+        usage_payloads = self._dump_usage_queue_with_lock()
+        merged_payloads: APIKeyUsage = self._zip_usage_payloads(
+            usage_payloads=usage_payloads,
+        )
+        self._offload_to_api(payloads=merged_payloads)
+
     def _offload_to_api(self, payloads: APIKeyUsage):
         ssl_verify = True
         if "localhost" in self._settings.api_usage_endpoint_url.lower():
@@ -424,9 +439,11 @@ class UsageCollector:
         if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
             ssl_verify = False
 
-        api_keys_sent = []
+        api_keys_failed = set()
         for api_key, workflow_payloads in payloads.items():
             try:
+                logger.debug("Offloading usage to %s, payload: %s",
+                    self._settings.api_usage_endpoint_url, workflow_payloads)
                 response = requests.post(
                     self._settings.api_usage_endpoint_url,
                     json=list(workflow_payloads.values()),
@@ -434,9 +451,9 @@ class UsageCollector:
                     headers={"Authorization": f"Bearer {api_key}"},
                     timeout=1,
                 )
-                api_keys_sent.append(api_key)
             except Exception as exc:
                 logger.warning("Failed to send usage - %s", exc)
+                api_keys_failed.add(api_key)
                 continue
             if response.status_code != 200:
                 logger.warning(
@@ -444,19 +461,14 @@ class UsageCollector:
                     response.status_code,
                     response.raw,
                 )
+                api_keys_failed.add(api_key)
                 continue
-        for api_key in api_keys_sent:
-            del payloads[api_key]
+        for api_key in list(payloads.keys()):
+            if api_key not in api_keys_failed:
+                del payloads[api_key]
         if payloads:
-            logger.warning("Enqueuing unsent payloads")
+            logger.warning("Enqueuing back unsent payloads")
             self._enqueue_payload(payload=payloads)
-
-    def _flush_queue(self):
-        usage_payloads = self._dump_usage_queue()
-        merged_payloads: APIKeyUsage = self._zip_usage_payloads(
-            usage_payloads=usage_payloads,
-        )
-        self._offload_to_api(payloads=merged_payloads)
 
     @staticmethod
     def _resource_details_from_workflow_json(
