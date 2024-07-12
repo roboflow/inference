@@ -3,7 +3,14 @@ name: Build and Push GPU Container Parallel
 on:
   release:
     types: [created]
+  push:
+    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      force_push:
+        type: boolean
+        description: "Do you want to push image after build?"
+        default: false
 
 env:
   VERSION: '0.0.0' # Default version, will be overwritten
@@ -39,7 +46,7 @@ jobs:
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
-          push: true
+          push: ${{ github.event_name == 'release' || github.event.inputs.force_push }}
           tags: roboflow/roboflow-inference-server-gpu-parallel:latest,roboflow/roboflow-inference-server-gpu-parallel:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache,mode=max

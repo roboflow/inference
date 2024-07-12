@@ -2,6 +2,16 @@ name: "[STAGING] BUILD & PUSH - hosted inference docker"
 
 on:
   workflow_dispatch:
+    inputs:
+      exclude_slim_lambda:
+        type: boolean
+        description: "Do you want to exclude SLIM version of lambda?"
+        default: false
+      exclude_core_models_lambda:
+        type: boolean
+        description: "Do you want to exclude CORE MODELS version of lambda?"
+        default: false
+
 
 jobs:
   build:
@@ -23,8 +33,10 @@ jobs:
           registries: ${{ secrets.STAGING_AWS_ACCOUNT_ID }}
           mask-password: "true" # see: https://github.com/aws-actions/amazon-ecr-login#docker-credentials
       - name: 🛠️ Build and push docker image [SLIM] to STAGING 😎
+        if: ${{ !github.event.inputs.exclude_slim_lambda }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging slim
       - name: 🛠️ Build and push docker image [CORE MODELS]  to STAGING 😎
+        if: ${{ !github.event.inputs.exclude_core_models_lambda }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging

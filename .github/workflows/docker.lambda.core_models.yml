@@ -1,0 +1,26 @@
+name: Build CPU Lambda container CORE MODELS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  VERSION: '0.0.0' # Default version, will be overwritten
+
+jobs:
+  docker:
+    runs-on:
+      group: group8core
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v3
+      - name: Read version from file
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Build
+        run:
+          docker buildx build --platform linux/amd64 -t test-lambda-slim -f docker/dockerfiles/Dockerfile.onnx.lambda .
