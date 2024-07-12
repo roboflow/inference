@@ -33,10 +33,10 @@ jobs:
           registries: ${{ secrets.STAGING_AWS_ACCOUNT_ID }}
           mask-password: "true" # see: https://github.com/aws-actions/amazon-ecr-login#docker-credentials
       - name: 🛠️ Build and push docker image [SLIM] to STAGING 😎
-        if: ${{ !github.event.inputs.exclude_slim_lambda }}
+        if: ${{ github.event.inputs.exclude_slim_lambda == 'true' }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging slim
       - name: 🛠️ Build and push docker image [CORE MODELS]  to STAGING 😎
-        if: ${{ !github.event.inputs.exclude_core_models_lambda }}
+        if: ${{ !github.event.inputs.exclude_core_models_lambda == 'true' }}
         run: |
           ./docker/publish/onnx_lambda.sh roboflow-staging
