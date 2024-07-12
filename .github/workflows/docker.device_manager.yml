@@ -41,7 +41,7 @@ jobs:
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
-          push: ${{ github.event_name == 'release' || github.event.inputs.force_push }}
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-device-manager:latest,roboflow/roboflow-device-manager:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-device-manager:cache
           cache-to: type=registry,ref=roboflow/roboflow-device-manager:cache,mode=max
