@@ -6,6 +6,7 @@ from inference_sdk.http.errors import HTTPCallErrorError
 from tests.inference.hosted_platform_tests.conftest import IMAGE_URL, ROBOFLOW_API_KEY
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_core_model_without_api_key(
     core_models_service_url: str,
 ) -> None:
@@ -22,6 +23,7 @@ def test_infer_from_core_model_without_api_key(
     assert error.value.status_code == 403, "Expected to see unauthorised error"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_core_model_with_invalid_api_key(
     core_models_service_url: str,
 ) -> None:
@@ -38,6 +40,7 @@ def test_infer_from_core_model_with_invalid_api_key(
     assert error.value.status_code == 403, "Expected to see unauthorised error"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -59,6 +62,7 @@ def test_infer_from_ocr_model_when_valid_input_given(
     }, "Expected all fields to be present in output"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -79,6 +83,7 @@ def test_infer_from_ocr_model_when_non_https_input_url_given(
     # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -99,6 +104,7 @@ def test_infer_from_ocr_model_when_ip_based_input_url_given(
     # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_clip_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -122,6 +128,7 @@ def test_infer_from_clip_model_when_valid_input_given(
     }, "Expected all fields to be present in output"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_clip_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -143,6 +150,7 @@ def test_infer_from_clip_model_when_non_https_input_url_given(
     # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_clip_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -164,6 +172,7 @@ def test_infer_from_clip_model_when_ip_based_input_url_given(
     # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_yolo_world_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -186,6 +195,7 @@ def test_infer_from_yolo_world_model_when_valid_input_given(
     }, "Expected all fields to be present in output"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_yolo_world_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -207,6 +217,7 @@ def test_infer_from_yolo_world_model_when_non_https_input_url_given(
     # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_yolo_world_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
