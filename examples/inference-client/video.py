@@ -60,7 +60,7 @@ def process_and_annotate_frames(
         response = requests.post(
             url, headers=headers, params=params, data=numpy_data
         ).json()
-        detections = sv.Detections.from_inference(response)
+        detections = sv.Detections.from_roboflow(response)
         labels = [
             f"{class_list[class_id]} {confidence_value:0.2f}"
             for _, _, confidence_value, class_id, _ in detections

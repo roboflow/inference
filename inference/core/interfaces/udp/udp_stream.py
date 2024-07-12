@@ -232,7 +232,7 @@ class UdpStream(BaseInterface):
                             predictions.dict(by_alias=True), self.model.class_names
                         )
                     else:
-                        detections = sv.Detections.from_inference(
+                        detections = sv.Detections.from_roboflow(
                             predictions.dict(by_alias=True), self.model.class_names
                         )
                     detections = self.byte_tracker.update_with_detections(detections)

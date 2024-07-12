@@ -41,7 +41,7 @@ def render(predictions: dict, image: np.ndarray) -> None:
     FPS_MONITOR.tick()
     fps = FPS_MONITOR()
     image = ANNOTATOR.annotate(
-        scene=image, detections=sv.Detections.from_inference(predictions)
+        scene=image, detections=sv.Detections.from_roboflow(predictions)
     )
     image = letterbox_image(image, desired_size=(1280, 720))
     fps = round(fps, 2)

@@ -162,7 +162,7 @@ def _handle_frame_rendering(
             if hasattr(sv.Detections, "from_inference"):
                 detections = sv.Detections.from_inference(prediction)
             else:
-                detections = sv.Detections.from_inference(prediction)
+                detections = sv.Detections.from_roboflow(prediction)
             image = frame.image.copy()
             for annotator in annotators:
                 kwargs = {

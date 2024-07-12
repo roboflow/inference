@@ -8,7 +8,7 @@ byte_tracker = sv.ByteTrack()
 
 
 def render(detections, image):
-    detections = sv.Detections.from_inference(detections)
+    detections = sv.Detections.from_roboflow(detections)
     detections = byte_tracker.update_with_detections(detections)
     image = trace_annotator.annotate(scene=image, detections=detections)
     image = box_annotator.annotate(scene=image, detections=detections)

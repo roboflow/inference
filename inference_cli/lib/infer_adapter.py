@@ -366,7 +366,7 @@ def create_visualisation(
     tracker: Optional[ByteTrack],
 ) -> Optional[np.ndarray]:
     try:
-        detections = Detections.from_inference(prediction)
+        detections = Detections.from_roboflow(prediction)
         if tracker is not None:
             detections = tracker.update_with_detections(detections=detections)
         frame_copy = frame.copy()

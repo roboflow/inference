@@ -60,7 +60,7 @@ def annotate_image(
     response = requests.post(
         url, headers=headers, params=params, data=encoded_image
     ).json()
-    detections = sv.Detections.from_inference(response)
+    detections = sv.Detections.from_roboflow(response)
 
     box_annotator = sv.BoxAnnotator()
     labels = [

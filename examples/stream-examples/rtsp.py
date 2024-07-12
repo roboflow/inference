@@ -8,7 +8,7 @@ annotator = sv.BoxAnnotator()
 def render(predictions, image):
     print(predictions)
     image = annotator.annotate(
-        scene=image, detections=sv.Detections.from_inference(predictions)
+        scene=image, detections=sv.Detections.from_roboflow(predictions)
     )
 
     cv2.imshow("Prediction", image)
