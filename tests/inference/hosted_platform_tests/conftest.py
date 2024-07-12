@@ -9,8 +9,12 @@ import pytest
 from inference.core.utils.environment import str2bool
 from inference_sdk import InferenceHTTPClient
 
-MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS = int(os.getenv("HOSTED_PLATFORM_TESTS_MAX_WARMUP_CONSECUTIVE_ERRORS", 5))
-MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(os.getenv("HOSTED_PLATFORM_TESTS_MIN_WARMUP_SUCCESS_RESPONSES", 5))
+MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS = int(
+    os.getenv("HOSTED_PLATFORM_TESTS_MAX_WARMUP_CONSECUTIVE_ERRORS", 5)
+)
+MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(
+    os.getenv("HOSTED_PLATFORM_TESTS_MIN_WARMUP_SUCCESS_RESPONSES", 5)
+)
 SKIP_WARMUP = str2bool(os.getenv("SKIP_WARMUP", False))
 
 
@@ -148,7 +152,7 @@ def warm_up_ocr_model(
         retry_at_max_n_times(
             function=function,
             n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
-            function_description=f"warm up of OCR model"
+            function_description=f"warm up of OCR model",
         )
 
 
@@ -168,7 +172,7 @@ def warm_up_clip_model(
         retry_at_max_n_times(
             function=function,
             n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
-            function_description=f"warm up of CLIP model"
+            function_description=f"warm up of CLIP model",
         )
 
 
@@ -183,12 +187,14 @@ def warm_up_yolo_world_model(
         api_key=ROBOFLOW_API_KEY,
     ).select_api_v0()
     image = np.zeros((256, 256, 3), dtype=np.uint8)
-    function = partial(client.infer_from_yolo_world, inference_input=image, class_names=["cat", "dog"])
+    function = partial(
+        client.infer_from_yolo_world, inference_input=image, class_names=["cat", "dog"]
+    )
     for _ in range(MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES):
         retry_at_max_n_times(
             function=function,
             n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
-            function_description=f"warm up of CLIP model"
+            function_description=f"warm up of CLIP model",
         )
 
 
@@ -207,7 +213,7 @@ def warm_up_service_with_roboflow_model(
         retry_at_max_n_times(
             function=function,
             n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
-            function_description=f"warm up of {api_url}"
+            function_description=f"warm up of {api_url}",
         )
 
 
@@ -217,8 +223,13 @@ def retry_at_max_n_times(function: callable, n: int, function_description: str) 
         try:
             function()
         except Exception as e:
-            logging.warning(f"Retrying function call. Error: {e}. Attempts: {attempts}/{n}")
+            logging.warning(
+                f"Retrying function call. Error: {e}. Attempts: {attempts}/{n}"
+            )
         else:
             return None
         attempts += 1
     raise Exception(f"Could not achieve success of {function_description}")
+
+
+IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
