@@ -46,7 +46,7 @@ jobs:
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
-          push: ${{ github.event_name == 'release' || github.event.inputs.force_push }}
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-inference-server-gpu-parallel:latest,roboflow/roboflow-inference-server-gpu-parallel:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-parallel:cache,mode=max
