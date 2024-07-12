@@ -124,7 +124,9 @@ class UsageCollector:
         return usage_payloads
 
     @staticmethod
-    def _get_api_key_resource_usage(api_key: APIKey, usage_payloads: List[APIKeyUsage]) -> Optional[ResourceUsage]:
+    def _get_api_key_resource_usage(
+        api_key: APIKey, usage_payloads: List[APIKeyUsage]
+    ) -> Optional[ResourceUsage]:
         for usage_payload in usage_payloads:
             for other_api_key, resource_payloads in usage_payload.items():
                 if other_api_key != api_key:
@@ -141,20 +143,26 @@ class UsageCollector:
         system_info_payload = None
         for usage_payload in usage_payloads:
             for api_key, resource_payloads in usage_payload.items():
-                merged_api_key_payload = merged_api_key_usage_payloads.setdefault(api_key, {})
+                merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
+                    api_key, {}
+                )
                 for (
                     resource_usage_key,
                     resource_usage_payload,
                 ) in resource_payloads.items():
                     if resource_usage_key is None:
-                        non_system_info_resource_usage_payload = UsageCollector._get_api_key_resource_usage(
-                            api_key=api_key,
-                            usage_payloads=usage_payloads,
+                        non_system_info_resource_usage_payload = (
+                            UsageCollector._get_api_key_resource_usage(
+                                api_key=api_key,
+                                usage_payloads=usage_payloads,
+                            )
                         )
                         if not non_system_info_resource_usage_payload:
                             system_info_payload = resource_usage_payload
                             continue
-                        resource_id = non_system_info_resource_usage_payload["resource_id"]
+                        resource_id = non_system_info_resource_usage_payload[
+                            "resource_id"
+                        ]
                         category = non_system_info_resource_usage_payload["category"]
                         resource_usage_key = f"{category}:{resource_id}"
                         resource_usage_payload["resource_id"] = resource_id
@@ -171,11 +179,9 @@ class UsageCollector:
 
         zipped_payloads = [merged_api_key_usage_payloads]
         if system_info_payload:
-            zipped_payloads.append({
-                system_info_payload["api_key"]: {
-                    None: system_info_payload
-                }
-            })
+            zipped_payloads.append(
+                {system_info_payload["api_key"]: {None: system_info_payload}}
+            )
         return zipped_payloads
 
     @staticmethod
@@ -509,10 +515,8 @@ class UsageCollector:
             workflow_json = {}
             if hasattr(func_kwargs["workflow"], "workflow_json"):
                 workflow_json = func_kwargs["workflow"].workflow_json
-            resource_details = (
-                UsageCollector._resource_details_from_workflow_json(
-                    workflow_json=workflow_json,
-                )
+            resource_details = UsageCollector._resource_details_from_workflow_json(
+                workflow_json=workflow_json,
             )
             resource_id = usage_workflow_id
             if not resource_id and resource_details:
