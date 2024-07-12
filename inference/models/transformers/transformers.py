@@ -82,7 +82,7 @@ class TransformerModel(RoboflowInferenceModel):
             .to(self.dtype)
         )
 
-        self.processor = AutoProcessor.from_pretrained(
+        self.processor = self.processor_class.from_pretrained(
             self.cache_dir, token=self.huggingface_token
         )
 
