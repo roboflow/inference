@@ -13,9 +13,8 @@ from threading import Event, Lock, Thread
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
-import importlib_metadata
+from importlib import metadata as importlib_metadata
 import requests
-import torch
 
 from inference.core.env import API_KEY, LAMBDA
 from inference.core.logger import logger
@@ -269,7 +268,7 @@ class UsageCollector:
             "category": category,
             "ip_address_hash": ip_address_hash_hex,
             "api_key": api_key,
-            "is_gpu_available": torch.cuda.is_available(),
+            "is_gpu_available": False,  # TODO
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
         }
