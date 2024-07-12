@@ -2,12 +2,30 @@ import logging
 import os
 from enum import Enum
 from functools import partial
+from typing import Any
 
 import numpy as np
 import pytest
 
-from inference.core.utils.environment import str2bool
 from inference_sdk import InferenceHTTPClient
+
+
+def str2bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if not issubclass(type(value), str):
+        raise ValueError(
+            f"Expected a boolean environment variable (true or false) but got '{value}'"
+        )
+    if value.lower() == "true":
+        return True
+    elif value.lower() == "false":
+        return False
+    else:
+        raise ValueError(
+            f"Expected a boolean environment variable (true or false) but got '{value}'"
+        )
+
 
 MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS = int(
     os.getenv("HOSTED_PLATFORM_TESTS_MAX_WARMUP_CONSECUTIVE_ERRORS", 5)
@@ -16,6 +34,7 @@ MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(
     os.getenv("HOSTED_PLATFORM_TESTS_MIN_WARMUP_SUCCESS_RESPONSES", 5)
 )
 SKIP_WARMUP = str2bool(os.getenv("SKIP_WARMUP", False))
+IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
 
 
 class PlatformEnvironment(Enum):
@@ -232,4 +251,4 @@ def retry_at_max_n_times(function: callable, n: int, function_description: str) 
     raise Exception(f"Could not achieve success of {function_description}")
 
 
-IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
+
