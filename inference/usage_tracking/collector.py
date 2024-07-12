@@ -8,12 +8,12 @@ import sys
 import time
 from collections import defaultdict
 from functools import wraps
+from importlib import metadata as importlib_metadata
 from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
-from importlib import metadata as importlib_metadata
 import requests
 
 from inference.core.env import API_KEY, LAMBDA

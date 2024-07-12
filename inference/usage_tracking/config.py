@@ -1,10 +1,11 @@
 from __future__ import annotations
+
 from functools import lru_cache
+from urllib.parse import urljoin
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Optional
-from urllib.parse import urljoin
 
 from inference.core.env import PROJECT
 from inference.core.utils.url_utils import wrap_url
