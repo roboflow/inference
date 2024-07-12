@@ -42,7 +42,7 @@ MODELS_TO_BE_USED = {
     PlatformEnvironment.ROBOFLOW_PLATFORM: {
         "object-detection": "coin-counting/137",
         "instance-segmentation": "asl-poly-instance-seg/53",
-        "classification": "vehicle-classification-eapcd/2",
+        "classification": "catdog-w9i9e/visualize/18",
     },
     PlatformEnvironment.ROBOFLOW_STAGING: {
         "object-detection": "eye-detection/35",
