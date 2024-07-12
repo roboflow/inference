@@ -149,7 +149,10 @@ class UsageCollector:
 
             for api_key, resource_payloads in usage_payload.items():
                 merged_api_key_payload = merged_payloads.setdefault(api_key, {})
-                for usage_resource_key, resource_usage_payload in resource_payloads.items():
+                for (
+                    usage_resource_key,
+                    resource_usage_payload,
+                ) in resource_payloads.items():
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         usage_resource_key, {}
                     )
@@ -166,7 +169,9 @@ class UsageCollector:
             resource_id = None
             usage_resource_key = None
             if merged_api_key_payload:
-                usage_resource_key, usage_payload = next(iter(merged_api_key_payload.items()))
+                usage_resource_key, usage_payload = next(
+                    iter(merged_api_key_payload.items())
+                )
                 logger.error(usage_payload)
                 resource_id = usage_payload["resource_id"]
             system_info_payload["resource_id"] = resource_id
@@ -441,8 +446,11 @@ class UsageCollector:
         api_keys_failed = set()
         for api_key, workflow_payloads in payloads.items():
             try:
-                logger.debug("Offloading usage to %s, payload: %s",
-                    self._settings.api_usage_endpoint_url, workflow_payloads)
+                logger.debug(
+                    "Offloading usage to %s, payload: %s",
+                    self._settings.api_usage_endpoint_url,
+                    workflow_payloads,
+                )
                 response = requests.post(
                     self._settings.api_usage_endpoint_url,
                     json=list(workflow_payloads.values()),
