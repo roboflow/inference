@@ -80,7 +80,9 @@ def test_infer_from_ocr_model_when_non_https_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -101,7 +103,9 @@ def test_infer_from_ocr_model_when_ip_based_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -147,7 +151,9 @@ def test_infer_from_clip_model_when_non_https_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -169,7 +175,9 @@ def test_infer_from_clip_model_when_ip_based_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -214,7 +222,9 @@ def test_infer_from_yolo_world_model_when_non_https_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -236,4 +246,6 @@ def test_infer_from_yolo_world_model_when_ip_based_input_url_given(
     # then
     assert response.status_code == 400, "Expected bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"

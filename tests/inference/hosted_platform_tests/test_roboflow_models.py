@@ -83,7 +83,9 @@ def test_infer_from_object_detection_model_when_non_https_image_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -103,7 +105,9 @@ def test_infer_from_object_detection_model_when_ip_address_as_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -297,7 +301,9 @@ def test_infer_from_instance_segmentation_model_when_non_https_image_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -317,7 +323,9 @@ def test_infer_from_instance_segmentation_model_when_ip_address_as_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -511,7 +519,9 @@ def test_infer_from_classification_model_when_non_https_image_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "non https:// URL" in error_message, "Expected bad request be caused by http protocol"
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -531,7 +541,9 @@ def test_infer_from_classification_model_when_ip_address_as_url_given(
     # then
     assert response.status_code == 400, "Expected to see bad request"
     error_message = response.json()["message"]
-    # assert "URL without FQDN" in error_message, "Expected bad request be caused by lack of FQDN"
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
