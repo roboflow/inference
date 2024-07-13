@@ -25,7 +25,10 @@ def main(stream_uri: str, max_fps: Optional[int] = None, processing_time: float 
     previous_frame_id = 0
     for video_frame in get_video_frames_generator(video=camera, max_fps=max_fps):
         fps_monitor.tick()
-        fps_value = fps_monitor.fps
+        if hasattr(fps_monitor, "fps"):
+            fps_value = fps_monitor.fps
+        else:
+            fps_value = fps_monitor()
         resized_frame = letterbox_image(video_frame.image, desired_size=(1280, 720))
         if enable_stats:
             dropped_frames = video_frame.frame_id - previous_frame_id - 1
