@@ -37,7 +37,7 @@ def test_serialise_list() -> None:
     ), "Type of third element must be changed into base64"
     decoded = base64.b64decode(result[2]["value"])
     recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
+        np.frombuffer(decoded, dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
     assert (

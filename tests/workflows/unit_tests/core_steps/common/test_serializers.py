@@ -204,7 +204,7 @@ def test_serialise_image() -> None:
     assert result["type"] == "base64", "Type of image must point base64"
     decoded = base64.b64decode(result["value"])
     recovered_image = cv2.imdecode(
-        np.fromstring(decoded, dtype=np.uint8),
+        np.frombuffer(decoded, dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
     assert (
