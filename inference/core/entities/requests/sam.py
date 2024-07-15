@@ -25,7 +25,7 @@ class SamInferenceRequest(BaseRequest):
 
     model_id: Optional[str] = Field(None)
 
-    @field_validator("model_id", always=True)
+    @field_validator("model_id", validate_default=True)
     @classmethod
     def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:
