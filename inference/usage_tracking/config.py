@@ -21,11 +21,10 @@ class TelemetrySettings(BaseSettings):
 
     @model_validator(mode="after")
     def check_values(cls, inst: TelemetrySettings):
-        inst.api_usage_endpoint_url = "https://localhost/usage/inference"
-        # if PROJECT == "roboflow-platform":
-        #     inst.api_usage_endpoint_url = wrap_url("https://api.roboflow.com/usage/pingback")
-        # else:
-        #     inst.api_usage_endpoint_url = wrap_url("https://api.roboflow.one/usage/pingback")
+        if PROJECT == "roboflow-platform":
+            inst.api_usage_endpoint_url = wrap_url("https://api.roboflow.com/usage/pingback")
+        else:
+            inst.api_usage_endpoint_url = wrap_url("https://api.roboflow.one/usage/pingback")
         inst.flush_interval = min(max(inst.flush_interval, 10), 300)
         inst.queue_size = min(max(inst.queue_size, 10), 10000)
         return inst
