@@ -841,5 +841,5 @@ class StatementGroup(BaseModel):
             Union[BinaryStatement, UnaryStatement, "StatementGroup"],
             Field(discriminator="type"),
         ]
-    ] = Field(min_items=1)
+    ] = Field(min_length=1)
     operator: StatementsGroupsOperator = StatementsGroupsOperator.OR

@@ -31,7 +31,7 @@ class BlockManifest(WorkflowBlockManifest):
     data: List[StepOutputSelector()] = Field(
         description="Reference data to replace empty values",
         examples=["$steps.my_step.predictions"],
-        min_items=1,
+        min_length=1,
     )
     default: Any = Field(
         description="Default value that will be placed whenever there is no data found",

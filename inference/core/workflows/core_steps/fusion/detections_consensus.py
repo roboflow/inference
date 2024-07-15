@@ -95,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
             ]
         ),
     ] = Field(
-        min_items=1,
+        min_length=1,
         description="Reference to detection-like model predictions made against single image to agree on model consensus",
         examples=[["$steps.a.predictions", "$steps.b.predictions"]],
         validation_alias=AliasChoices("predictions_batches", "predictions"),
