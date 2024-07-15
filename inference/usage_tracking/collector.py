@@ -87,7 +87,7 @@ class UsageCollector:
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
-                    "hosted": False,  # TODO
+                    "hosted": LAMBDA,
                     "api_key": None,
                 }
             )
@@ -126,14 +126,18 @@ class UsageCollector:
         return usage_payloads
 
     @staticmethod
-    def _get_api_key_resource_usage(
+    def _get_api_key_usage_containing_resource(
         api_key: APIKey, usage_payloads: List[APIKeyUsage]
     ) -> Optional[ResourceUsage]:
         for usage_payload in usage_payloads:
             for other_api_key, resource_payloads in usage_payload.items():
-                if other_api_key != api_key:
+                if api_key and other_api_key != api_key:
                     continue
-                for resource_usage in resource_payloads.values():
+                if other_api_key is None:
+                    continue
+                for resource_id, resource_usage in resource_payloads.items():
+                    if not resource_id:
+                        continue
                     if not resource_usage or "resource_id" not in resource_usage:
                         continue
                     return resource_usage
@@ -145,30 +149,48 @@ class UsageCollector:
         system_info_payload = None
         for usage_payload in usage_payloads:
             for api_key, resource_payloads in usage_payload.items():
-                merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
-                    api_key, {}
-                )
+                if api_key is None:
+                    api_key_usage_with_resource = (
+                        UsageCollector._get_api_key_usage_containing_resource(
+                            api_key=api_key,
+                            usage_payloads=usage_payloads,
+                        )
+                    )
+                    if not api_key_usage_with_resource:
+                        system_info_payload = resource_payloads
+                        continue
+                    api_key = api_key_usage_with_resource["api_key"]
+                    resource_id = api_key_usage_with_resource["resource_id"]
+                    category = api_key_usage_with_resource.get("category")
+                    for v in resource_payloads.values():
+                        v["api_key"] = api_key
+                        if "resource_id" not in v or not v["resource_id"]:
+                            v["resource_id"] = resource_id
+                        if "category" not in v or not v["category"]:
+                            v["category"] = category
                 for (
                     resource_usage_key,
                     resource_usage_payload,
                 ) in resource_payloads.items():
                     if resource_usage_key is None:
-                        non_system_info_resource_usage_payload = (
-                            UsageCollector._get_api_key_resource_usage(
+                        api_key_usage_with_resource = (
+                            UsageCollector._get_api_key_usage_containing_resource(
                                 api_key=api_key,
                                 usage_payloads=usage_payloads,
                             )
                         )
-                        if not non_system_info_resource_usage_payload:
-                            system_info_payload = resource_usage_payload
+                        if not api_key_usage_with_resource:
+                            system_info_payload = {None: resource_usage_payload}
                             continue
-                        resource_id = non_system_info_resource_usage_payload[
+                        resource_id = api_key_usage_with_resource[
                             "resource_id"
                         ]
-                        category = non_system_info_resource_usage_payload["category"]
-                        resource_usage_key = f"{category}:{resource_id}"
+                        category = api_key_usage_with_resource.get("category")
+                        resource_usage_key = resource_id
                         resource_usage_payload["resource_id"] = resource_id
-
+                    merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
+                        api_key, {}
+                    )
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
@@ -181,8 +203,9 @@ class UsageCollector:
 
         zipped_payloads = [merged_api_key_usage_payloads]
         if system_info_payload:
+            system_info_api_key = next(iter(system_info_payload.values()))["api_key"]
             zipped_payloads.append(
-                {system_info_payload["api_key"]: {None: system_info_payload}}
+                {system_info_api_key: system_info_payload}
             )
         return zipped_payloads
 
@@ -244,6 +267,7 @@ class UsageCollector:
                     "timestamp_start": time.time_ns(),
                     "category": category,
                     "resource_id": resource_id,
+                    "hosted": LAMBDA,
                     "resource_details": json.dumps(resource_details),
                     "api_key": api_key,
                 }
@@ -257,6 +281,7 @@ class UsageCollector:
         exec_session_id: str,
         api_key: Optional[str] = None,
         ip_address: Optional[str] = None,
+        time_ns: Optional[int] = None,
     ) -> SystemDetails:
         inference_version = "dev"
         try:
@@ -270,15 +295,19 @@ class UsageCollector:
             ip_address: str = socket.gethostbyname(socket.gethostname())
             ip_address_hash_hex = UsageCollector._hash(ip_address)
 
+        if not time_ns:
+            time_ns = time.time_ns()
+
         if not api_key:
             api_key = API_KEY
 
         return {
-            "timestamp_start": time.time_ns(),
+            "timestamp_start": time_ns,
             "exec_session_id": exec_session_id,
             "ip_address_hash": ip_address_hash_hex,
             "api_key": api_key,
-            "is_gpu_available": False,  # TODO
+            "hosted": LAMBDA,
+            "is_gpu_available": None,  # TODO
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
         }
@@ -419,8 +448,8 @@ class UsageCollector:
     def _enqueue_usage_payload(self):
         if not self._usage:
             return
-        self._enqueue_payload(payload=self._usage)
         with UsageCollector._lock:
+            self._enqueue_payload(payload=self._usage)
             self._usage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
 
     def _usage_sender(self):
