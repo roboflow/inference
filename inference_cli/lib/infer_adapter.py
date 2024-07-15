@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from supervision import (
     BlurAnnotator,
-    BoxAnnotator,
+    BoundingBoxAnnotator,
     BoxCornerAnnotator,
     ByteTrack,
     CircleAnnotator,
@@ -46,7 +46,7 @@ CONFIGS_DIR_PATH = os.path.abspath(
 )
 
 ANNOTATOR_TYPE2CLASS = {
-    "bounding_box": BoxAnnotator,
+    "bounding_box": BoundingBoxAnnotator,
     "mask": MaskAnnotator,
     "polygon": PolygonAnnotator,
     "color": ColorAnnotator,
@@ -313,7 +313,7 @@ def is_something_to_do(
 def build_visualisation_callback(
     visualisation_config: Optional[str],
 ) -> Callable[[np.ndarray, dict], Optional[np.ndarray]]:
-    annotators = [BoxAnnotator()]
+    annotators = [BoundingBoxAnnotator()]
     byte_tracker = None
     if visualisation_config is not None:
         raw_configuration = retrieve_visualisation_config(
