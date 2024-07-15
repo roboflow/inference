@@ -45,13 +45,13 @@ class WebcamStream:
                     self.vcap.set(opencv_constant, value)
                     logger.info(f"set {opencv_prop} to {value}")
                 else:
-                    logger.warn(f"Property {opencv_prop} not found in cv2")
+                    logger.warning(f"Property {opencv_prop} not found in cv2")
 
         self.width = int(self.vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.file_mode = self.vcap.get(cv2.CAP_PROP_FRAME_COUNT) > 0
         if self.enforce_fps and not self.file_mode:
-            logger.warn(
+            logger.warning(
                 "Ignoring enforce_fps flag for this stream. It is not compatible with streams and will cause the process to crash"
             )
             self.enforce_fps = False

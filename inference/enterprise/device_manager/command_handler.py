@@ -33,7 +33,7 @@ def handle_command(cmd_payload: dict):
     container_id = cmd_payload.get("containerId")
     container = get_container_by_id(container_id)
     if not container:
-        logger.warn(f"Container with id {container_id} not found")
+        logger.warning(f"Container with id {container_id} not found")
         ack_command(cmd_payload.get("id"), was_processed)
         return
     cmd = cmd_payload.get("command")

@@ -224,7 +224,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             batch_padding = 0
             if FIX_BATCH_SIZE or fix_batch_size:
                 if MAX_BATCH_SIZE == float("inf"):
-                    logger.warn(
+                    logger.warning(
                         "Requested fix_batch_size but MAX_BATCH_SIZE is not set. Using dynamic batching."
                     )
                     batch_padding = 0
