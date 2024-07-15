@@ -189,9 +189,7 @@ class UsageCollector:
                         if not api_key_usage_with_resource:
                             system_info_payload = {None: resource_usage_payload}
                             continue
-                        resource_id = api_key_usage_with_resource[
-                            "resource_id"
-                        ]
+                        resource_id = api_key_usage_with_resource["resource_id"]
                         category = api_key_usage_with_resource.get("category")
                         resource_usage_key = resource_id
                         resource_usage_payload["resource_id"] = resource_id
@@ -211,9 +209,7 @@ class UsageCollector:
         zipped_payloads = [merged_api_key_usage_payloads]
         if system_info_payload:
             system_info_api_key = next(iter(system_info_payload.values()))["api_key"]
-            zipped_payloads.append(
-                {system_info_api_key: system_info_payload}
-            )
+            zipped_payloads.append({system_info_api_key: system_info_payload})
         return zipped_payloads
 
     @staticmethod
@@ -495,7 +491,9 @@ class UsageCollector:
         api_keys_failed = set()
         for payload in payloads:
             for api_key, workflow_payloads in payload.items():
-                enterprise = any(w.get("enterprise") for w in workflow_payloads.values())
+                enterprise = any(
+                    w.get("enterprise") for w in workflow_payloads.values()
+                )
                 try:
                     logger.debug(
                         "Offloading usage to %s, payload: %s",
