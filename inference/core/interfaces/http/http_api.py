@@ -164,7 +164,6 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -434,8 +433,6 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        usage_collector.record_execution_details()
-
         self.app = app
         self.model_manager = model_manager
 
@@ -479,7 +476,7 @@ class HttpInterface(BaseInterface):
                 prevent_local_images_loading=True,
             )
             result = await execution_engine.run_async(
-                runtime_parameters=workflow_request.inputs,
+                runtime_parameters=workflow_request.inputs
             )
             outputs = serialise_workflow_result(
                 result=result,
