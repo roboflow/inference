@@ -31,7 +31,7 @@ def to_cachable_inference_item(
         "source",
         "source_info",
     }
-    request = infer_request.dict(include=included_request_fields)
+    request = infer_request.model_dump(include=included_request_fields)
     response = build_condensed_response(infer_response)
 
     return {

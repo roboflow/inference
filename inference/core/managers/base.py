@@ -142,7 +142,7 @@ class ModelManager:
                     f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value={
                         "request": jsonable_encoder(
-                            request.dict(exclude={"image", "subject", "prompt"})
+                            request.model_dump(exclude={"image", "subject", "prompt"})
                         ),
                         "error": str(e),
                     },
@@ -222,7 +222,7 @@ class ModelManager:
             Tuple[np.ndarray, List[Tuple[int, int]]]: The preprocessed data.
         """
         self.check_for_model(model_id)
-        return self._models[model_id].preprocess(**request.dict())
+        return self._models[model_id].preprocess(**request.model_dump())
 
     def get_class_names(self, model_id):
         """Retrieves the class names for a given model.

@@ -621,7 +621,7 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     json_schema_extra = {
         REFERENCE_KEY: True,
         SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
-        KIND_KEY: [k.dict() for k in kind],
+        KIND_KEY: [k.model_dump() for k in kind],
     }
     return Annotated[
         str,
@@ -636,7 +636,7 @@ def WorkflowParameterSelector(kind: Optional[List[Kind]] = None):
     json_schema_extra = {
         REFERENCE_KEY: True,
         SELECTED_ELEMENT_KEY: "workflow_parameter",
-        KIND_KEY: [k.dict() for k in kind],
+        KIND_KEY: [k.model_dump() for k in kind],
     }
     return Annotated[
         str,
@@ -652,7 +652,7 @@ WorkflowImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_image",
-            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
+            KIND_KEY: [BATCH_OF_IMAGES_KIND.model_dump()],
         }
     ),
 ]
@@ -664,7 +664,7 @@ StepOutputImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
-            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
+            KIND_KEY: [BATCH_OF_IMAGES_KIND.model_dump()],
         }
     ),
 ]

@@ -327,7 +327,7 @@ class Clip(OnnxRoboflowCoreModel):
             raise ValueError(
                 f"Request type {type(request)} is not a valid ClipInferenceRequest"
             )
-        data = infer_func(**request.dict())
+        data = infer_func(**request.model_dump())
         response = make_response_func(data)
         response.time = perf_counter() - t1
         return response

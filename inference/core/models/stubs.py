@@ -25,7 +25,7 @@ class ModelStub(Model):
         self, request: InferenceRequest
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         t1 = perf_counter()
-        stub_prediction = self.infer(**request.dict())
+        stub_prediction = self.infer(**request.model_dump())
         response = self.make_response(request=request, prediction=stub_prediction)
         response.time = perf_counter() - t1
         return response

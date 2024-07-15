@@ -19,7 +19,7 @@ def default_process_frame(
         )
     )
     return [
-        p.dict(
+        p.model_dump(
             by_alias=True,
             exclude_none=True,
         )

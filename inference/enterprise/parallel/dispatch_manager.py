@@ -41,7 +41,7 @@ class ResultsChecker:
         """
         await self.semaphore.acquire()
         self.tasks[task_id] = asyncio.Event()
-        preprocess.s(request.dict()).delay()
+        preprocess.s(request.model_dump()).delay()
 
     def get_result(self, task_id: str) -> Any:
         """
@@ -111,7 +111,7 @@ class DispatchModelManager(ModelManager):
         list_mode = False
         if isinstance(request.image, list):
             list_mode = True
-            request_dict = request.dict()
+            request_dict = request.model_dump()
             images = request_dict.pop("image")
             del request_dict["id"]
             requests = [

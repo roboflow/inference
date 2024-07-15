@@ -223,17 +223,19 @@ class UdpStream(BaseInterface):
                 )[0]
                 self.active_learning_middleware.register(
                     inference_input=inference_input,
-                    prediction=predictions.dict(by_alias=True, exclude_none=True),
+                    prediction=predictions.model_dump(by_alias=True, exclude_none=True),
                     prediction_type=self.task_type,
                 )
                 if self.use_bytetrack:
                     if hasattr(sv.Detections, "from_inference"):
                         detections = sv.Detections.from_inference(
-                            predictions.dict(by_alias=True), self.model.class_names
+                            predictions.model_dump(by_alias=True),
+                            self.model.class_names,
                         )
                     else:
                         detections = sv.Detections.from_inference(
-                            predictions.dict(by_alias=True), self.model.class_names
+                            predictions.model_dump(by_alias=True),
+                            self.model.class_names,
                         )
                     detections = self.byte_tracker.update_with_detections(detections)
                     for pred, detect in zip(predictions.predictions, detections):

@@ -178,7 +178,7 @@ def test_preprocess_when_model_available() -> None:
 
     # then
     assert result == model_manager._models["some/1"].preprocess.return_value
-    model_manager._models["some/1"].preprocess.assert_called_once_with(**request.dict())
+    model_manager._models["some/1"].preprocess.assert_called_once_with(**request.model_dump())
 
 
 def test_preprocess_when_model_not_available() -> None:

@@ -114,10 +114,13 @@ class ActiveLearningManager(ModelManager):
         if not issubclass(type(inference_inputs), list):
             inference_inputs = [inference_inputs]
         if not issubclass(type(prediction), list):
-            results_dicts = [prediction.dict(by_alias=True, exclude={"visualization"})]
+            results_dicts = [
+                prediction.model_dump(by_alias=True, exclude={"visualization"})
+            ]
         else:
             results_dicts = [
-                e.dict(by_alias=True, exclude={"visualization"}) for e in prediction
+                e.model_dump(by_alias=True, exclude={"visualization"})
+                for e in prediction
             ]
         prediction_type = self.get_task_type(model_id=model_id)
         disable_preproc_auto_orient = (

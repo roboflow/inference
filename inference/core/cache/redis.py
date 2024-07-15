@@ -171,7 +171,7 @@ class RedisCache(BaseCache):
                 if isinstance(v, Exception):
                     value[k] = str(v)
                 elif inspect.isclass(v) and isinstance(v, InferenceResponseImage):
-                    value[k] = v.dict()
+                    value[k] = v.model_dump()
         return value
 
     def acquire_lock(self, key: str, expire=None) -> Any:

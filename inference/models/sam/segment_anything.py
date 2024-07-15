@@ -131,7 +131,7 @@ class SegmentAnything(RoboflowCoreModel):
         """
         t1 = perf_counter()
         if isinstance(request, SamEmbeddingRequest):
-            embedding, _ = self.embed_image(**request.dict())
+            embedding, _ = self.embed_image(**request.model_dump())
             inference_time = perf_counter() - t1
             if request.format == "json":
                 return SamEmbeddingResponse(
@@ -145,7 +145,7 @@ class SegmentAnything(RoboflowCoreModel):
                     embeddings=binary_vector.getvalue(), time=inference_time
                 )
         elif isinstance(request, SamSegmentationRequest):
-            masks, low_res_masks = self.segment_image(**request.dict())
+            masks, low_res_masks = self.segment_image(**request.model_dump())
             if request.format == "json":
                 masks = masks > self.predictor.model.mask_threshold
                 masks = masks2poly(masks)

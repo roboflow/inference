@@ -182,10 +182,10 @@ class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
         )
         if isinstance(predictions, list):
             predictions = [
-                e.dict(by_alias=True, exclude_none=True) for e in predictions
+                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
+            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             predictions=predictions,
             images=images,

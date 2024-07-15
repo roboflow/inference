@@ -80,7 +80,7 @@ def postprocess(
 
             outputs = load_outputs(shm_info_list, shms)
 
-            request_dict = dict(**request.dict())
+            request_dict = dict(**request.model_dump())
             model_id = request_dict.pop("model_id")
 
             response = model_manager.postprocess(
@@ -114,7 +114,7 @@ def queue_infer_task(
 ):
     return_vals = {
         "shm_metadata": asdict(shm_metadata),
-        "request": request.dict(),
+        "request": request.model_dump(),
         "preprocess_metadata": preprocess_return_metadata,
     }
     return_vals = json.dumps(return_vals)
@@ -125,7 +125,7 @@ def queue_infer_task(
 
 
 def write_response(redis: Redis, response: InferenceResponse, request_id: str):
-    response = response.dict(exclude_none=True, by_alias=True)
+    response = response.model_dump(exclude_none=True, by_alias=True)
     redis.publish(
         f"results",
         json.dumps(

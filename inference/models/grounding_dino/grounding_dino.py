@@ -78,7 +78,7 @@ class GroundingDINO(RoboflowCoreModel):
         """
         Perform inference based on the details provided in the request, and return the associated responses.
         """
-        result = self.infer(**request.dict())
+        result = self.infer(**request.model_dump())
         return result
 
     def infer(

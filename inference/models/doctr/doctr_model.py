@@ -72,7 +72,7 @@ class DocTR(RoboflowCoreModel):
         self, request: DoctrOCRInferenceRequest
     ) -> DoctrOCRInferenceResponse:
         t1 = perf_counter()
-        result = self.infer(**request.dict())
+        result = self.infer(**request.model_dump())
         return DoctrOCRInferenceResponse(
             result=result,
             time=perf_counter() - t1,

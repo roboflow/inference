@@ -197,7 +197,7 @@ def write_infer_arrays_and_launch_postprocess(
             shm_metadatas.append(asdict(shm_metadata))
 
         postprocess.s(
-            tuple(shm_metadatas), request.dict(), preproc_return_metadata
+            tuple(shm_metadatas), request.model_dump(), preproc_return_metadata
         ).delay()
 
 

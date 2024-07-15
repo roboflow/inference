@@ -104,7 +104,7 @@ class StreamManagerClient:
     async def initialise_pipeline(
         self, initialisation_request: PipelineInitialisationRequest
     ) -> CommandResponse:
-        command = initialisation_request.dict(exclude_none=True)
+        command = initialisation_request.model_dump(exclude_none=True)
         command[TYPE_KEY] = CommandType.INIT
         response = await self._handle_command(command=command)
         return build_response(response=response)

@@ -23,7 +23,7 @@ def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -58,7 +58,7 @@ def test_yolo_world_v1_m_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -94,7 +94,7 @@ def test_yolo_world_v1_l_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -128,7 +128,7 @@ def test_yolo_world_v1_x_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -162,7 +162,7 @@ def test_yolo_world_v2_s_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -197,7 +197,7 @@ def test_yolo_world_v2_m_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -231,7 +231,7 @@ def test_yolo_world_v2_l_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
@@ -265,7 +265,7 @@ def test_yolo_world_v2_x_against_single_image(person_image: np.ndarray) -> None:
     )
 
     # when
-    results = model.infer(person_image, confidence=0.03).dict(
+    results = model.infer(person_image, confidence=0.03).model_dump(
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)

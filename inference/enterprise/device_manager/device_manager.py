@@ -50,7 +50,7 @@ def root():
 
 @app.post("/exec_command")
 async def exec_command(command: Command):
-    handle_command(command.dict())
+    handle_command(command.model_dump())
     return {"status": "ok"}
 
 

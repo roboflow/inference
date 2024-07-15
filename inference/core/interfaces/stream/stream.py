@@ -270,17 +270,17 @@ class Stream(BaseInterface):
 
                 self.active_learning_middleware.register(
                     inference_input=inference_input,
-                    prediction=predictions.dict(by_alias=True, exclude_none=True),
+                    prediction=predictions.model_dump(by_alias=True, exclude_none=True),
                     prediction_type=self.task_type,
                 )
                 if self.use_bytetrack:
                     if hasattr(sv.Detections, "from_inference"):
                         detections = sv.Detections.from_inference(
-                            predictions.dict(by_alias=True, exclude_none=True)
+                            predictions.model_dump(by_alias=True, exclude_none=True)
                         )
                     else:
                         detections = sv.Detections.from_inference(
-                            predictions.dict(by_alias=True, exclude_none=True)
+                            predictions.model_dump(by_alias=True, exclude_none=True)
                         )
                     detections = self.byte_tracker.update_with_detections(detections)
 
@@ -290,7 +290,7 @@ class Stream(BaseInterface):
                     for pred, detect in zip(predictions.predictions, detections):
                         pred.tracker_id = int(detect[4])
                 predictions.frame_id = frame_id
-                predictions = predictions.dict(by_alias=True, exclude_none=True)
+                predictions = predictions.model_dump(by_alias=True, exclude_none=True)
 
                 self.inference_response = predictions
                 self.frame_count += 1

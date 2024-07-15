@@ -87,7 +87,7 @@ class CogVLM(Model):
 
     def infer_from_request(self, request: CogVLMInferenceRequest) -> CogVLMResponse:
         t1 = perf_counter()
-        text = self.infer(**request.dict())
+        text = self.infer(**request.model_dump())
         response = CogVLMResponse(response=text)
         response.time = perf_counter() - t1
         return response

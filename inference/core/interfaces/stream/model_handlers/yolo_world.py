@@ -34,7 +34,7 @@ def process_frame_yolo_world(
         predictions = model.infer(
             video_frame.image,
             **postprocessing_args,
-        ).dict(
+        ).model_dump(
             by_alias=True,
             exclude_none=True,
         )
