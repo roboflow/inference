@@ -44,6 +44,7 @@ def main(n: int) -> None:
         registered_frames = {}
         for f in frames:
             monitors[f.source_id].tick()
+            fps = monitors[f.source_id].fps if hasattr(monitors[f.source_id], "fps") else monitors[f.source_id]()
             i = cv2.putText(
                 f.image,
                 f"LATENCY: {round((datetime.now() - f.frame_timestamp).total_seconds() * 1000, 2)} ms",
@@ -55,7 +56,7 @@ def main(n: int) -> None:
             )
             i = cv2.putText(
                 i,
-                f"THROUGHPUT: {round(monitors[f.source_id](), 2)}",
+                f"THROUGHPUT: {round(fps, 2)}",
                 (10, f.image.shape[0] - 120),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 2.0,
@@ -65,7 +66,10 @@ def main(n: int) -> None:
             registered_frames[f.source_id] = i
         for _ in range(len(frames)):
             fps_monitor.tick()
-        fps_value = fps_monitor()
+        if hasattr(fps_monitor, "fps"):
+            fps_value = fps_monitor.fps
+        else:
+            fps_value = fps_monitor()
         images = [letterbox_image(registered_frames.get(i, BLACK_FRAME), (348, 348)) for i in range(n)]
         rows = list(create_batches(sequence=images, batch_size=4))
         while len(rows[-1]) < 4:
