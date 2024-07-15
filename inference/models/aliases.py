@@ -1,7 +1,26 @@
 # We have a duplicate in inference_sdk.http.utils.aliases - please maintain both
 # (to have aliasing work in both libraries)
 
-
+PALIGEMMA_ALIASES = {
+    "paligemma-3b-mix-224": "paligemma-pretrains/1",
+    "paligemma-3b-mix-448": "paligemma-pretrains/20",
+    "paligemma-3b-ft-cococap-224": "paligemma-pretrains/8",
+    "paligemma-3b-ft-screen2words-224": "paligemma-pretrains/9",
+    "paligemma-3b-ft-vqav2-224": "paligemma-pretrains/10",
+    "paligemma-3b-ft-tallyqa-224": "paligemma-pretrains/11",
+    "paligemma-3b-ft-docvqa-224": "paligemma-pretrains/12",
+    "paligemma-3b-ft-ocrvqa-224": "paligemma-pretrains/13",
+    "paligemma-3b-ft-cococap-448": "paligemma-pretrains/14",
+    "paligemma-3b-ft-screen2words-448": "paligemma-pretrains/15",
+    "paligemma-3b-ft-vqav2-448": "paligemma-pretrains/16",
+    "paligemma-3b-ft-tallyqa-448": "paligemma-pretrains/17",
+    "paligemma-3b-ft-docvqa-448": "paligemma-pretrains/18",
+    "paligemma-3b-ft-ocrvqa-448": "paligemma-pretrains/19",
+}
+FLORENCE_ALIASES = {
+    "florence-2-base": "florence-pretrains/1",
+    "florence-2-large": "florence-pretrains/2",
+}
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -38,22 +57,8 @@ REGISTERED_ALIASES = {
     "yolov10b-640": "coco/22",
     "yolov10l-640": "coco/23",
     "yolov10x-640": "coco/24",
-    "paligemma-3b-mix-224": "paligemma-pretrains/1",
-    "paligemma-3b-mix-448": "paligemma-pretrains/20",
-    "paligemma-3b-ft-cococap-224": "paligemma-pretrains/8",
-    "paligemma-3b-ft-screen2words-224": "paligemma-pretrains/9",
-    "paligemma-3b-ft-vqav2-224": "paligemma-pretrains/10",
-    "paligemma-3b-ft-tallyqa-224": "paligemma-pretrains/11",
-    "paligemma-3b-ft-docvqa-224": "paligemma-pretrains/12",
-    "paligemma-3b-ft-ocrvqa-224": "paligemma-pretrains/13",
-    "paligemma-3b-ft-cococap-448": "paligemma-pretrains/14",
-    "paligemma-3b-ft-screen2words-448": "paligemma-pretrains/15",
-    "paligemma-3b-ft-vqav2-448": "paligemma-pretrains/16",
-    "paligemma-3b-ft-tallyqa-448": "paligemma-pretrains/17",
-    "paligemma-3b-ft-docvqa-448": "paligemma-pretrains/18",
-    "paligemma-3b-ft-ocrvqa-448": "paligemma-pretrains/19",
-    "florence-2-base": "florence-pretrains/1",
-    "florence-2-large": "florence-pretrains/2",
+    **PALIGEMMA_ALIASES,
+    **FLORENCE_ALIASES
 }
 
 
