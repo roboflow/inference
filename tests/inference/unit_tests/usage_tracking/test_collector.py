@@ -29,6 +29,7 @@ def test_create_empty_usage_dict():
                 "resource_id": "",
                 "hosted": LAMBDA,
                 "api_key": None,
+                "enterprise": False,
             }
         }
     })

@@ -31,6 +31,12 @@ SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 
+ENTERPRISE_WARNING_MESSAGE: str = """
+It seems there was a problem sending telemetry to Roboflow platform.
+If usage tracking is part of your agreement with Roboflow you are required to have your usage sent.
+"""
+
+
 class UsageCollector:
     _lock = Lock()
     _async_lock = asyncio.Lock()
@@ -89,6 +95,7 @@ class UsageCollector:
                     "resource_id": "",
                     "hosted": LAMBDA,
                     "api_key": None,
+                    "enterprise": False,
                 }
             )
         )
@@ -240,6 +247,7 @@ class UsageCollector:
         resource_details: Dict[str, Any],
         resource_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        enterprise: bool = False,
     ):
         if not category:
             raise ValueError("Category is compulsory when recording resource details.")
@@ -270,6 +278,7 @@ class UsageCollector:
                     "hosted": LAMBDA,
                     "resource_details": json.dumps(resource_details),
                     "api_key": api_key,
+                    "enterprise": enterprise,
                 }
             }
         }
@@ -282,6 +291,7 @@ class UsageCollector:
         api_key: Optional[str] = None,
         ip_address: Optional[str] = None,
         time_ns: Optional[int] = None,
+        enterprise: bool = False,
     ) -> SystemDetails:
         inference_version = "dev"
         try:
@@ -310,12 +320,14 @@ class UsageCollector:
             "is_gpu_available": None,  # TODO
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
+            "enterprise": enterprise,
         }
 
     def record_system_info(
         self,
         api_key: str,
         ip_address: Optional[str] = None,
+        enterprise: bool = False,
     ):
         if self._system_info_sent:
             return
@@ -327,6 +339,7 @@ class UsageCollector:
                     exec_session_id=self._exec_session_id,
                     api_key=api_key,
                     ip_address=ip_address,
+                    enterprise=enterprise,
                 )
             }
         }
@@ -363,6 +376,7 @@ class UsageCollector:
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
+        enterprise: bool = False,
     ):
         source = str(source) if source else ""
         if not api_key:
@@ -380,29 +394,32 @@ class UsageCollector:
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["api_key"] = api_key
+            source_usage["enterprise"] = enterprise
             logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
         self,
         source: str,
         category: str,
-        is_enterprise: bool,
+        enterprise: bool,
         frames: int = 1,
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
         fps: Optional[float] = 0,
     ) -> DefaultDict[str, Any]:
-        if self._settings.opt_out and not is_enterprise:
+        if self._settings.opt_out and not enterprise:
             return
         self.record_system_info(
             api_key=api_key,
+            enterprise=enterprise,
         )
         self.record_resource_details(
             category=category,
             resource_details=resource_details,
             resource_id=resource_id,
             api_key=api_key,
+            enterprise=enterprise,
         )
         self._update_usage_payload(
             source=source,
@@ -412,13 +429,14 @@ class UsageCollector:
             resource_details=resource_details,
             resource_id=resource_id,
             fps=fps,
+            enterprise=enterprise,
         )
 
     async def async_record_usage(
         self,
         source: str,
         category: str,
-        is_enterprise: bool,
+        enterprise: bool,
         frames: int = 1,
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
@@ -430,7 +448,7 @@ class UsageCollector:
                 source=source,
                 category=category,
                 frames=frames,
-                is_enterprise=is_enterprise,
+                enterprise=enterprise,
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
@@ -477,6 +495,7 @@ class UsageCollector:
         api_keys_failed = set()
         for payload in payloads:
             for api_key, workflow_payloads in payload.items():
+                enterprise = any(w.get("enterprise") for w in workflow_payloads.values())
                 try:
                     logger.debug(
                         "Offloading usage to %s, payload: %s",
@@ -491,11 +510,15 @@ class UsageCollector:
                         timeout=1,
                     )
                 except Exception as exc:
-                    logger.warning("Failed to send usage - %s", exc)
+                    if enterprise:
+                        logger.error(ENTERPRISE_WARNING_MESSAGE)
+                    logger.debug("Failed to send usage - %s", exc)
                     api_keys_failed.add(api_key)
                     continue
                 if response.status_code != 200:
-                    logger.warning(
+                    if enterprise:
+                        logger.error(ENTERPRISE_WARNING_MESSAGE)
+                    logger.debug(
                         "Failed to send usage - got %s status code (%s)",
                         response.status_code,
                         response.raw,
@@ -542,7 +565,7 @@ class UsageCollector:
             if hasattr(func_kwargs["workflow"], "workflow_definition"):
                 # TODO: handle enterprise blocks here
                 workflow_definition = func_kwargs["workflow"].workflow_definition
-                is_enterprise = False
+                enterprise = False
             workflow_json = {}
             if hasattr(func_kwargs["workflow"], "workflow_json"):
                 workflow_json = func_kwargs["workflow"].workflow_json
@@ -579,7 +602,7 @@ class UsageCollector:
             "resource_details": resource_details,
             "resource_id": resource_id,
             "fps": usage_fps,
-            "is_enterprise": is_enterprise,
+            "enterprise": enterprise,
         }
 
     def __call__(self, func: Callable[[Any], Any]):
