@@ -32,9 +32,9 @@ class GazeDetectionInferenceRequest(BaseRequest):
     )
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
-    model_id: Optional[str] = Field(None)
+    model_id: Optional[str] = Field(None, validate_default=True)
 
-    @field_validator("model_id", validate_default=True)
+    @field_validator("model_id")
     @classmethod
     def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:

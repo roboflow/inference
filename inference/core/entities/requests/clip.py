@@ -22,9 +22,9 @@ class ClipInferenceRequest(BaseRequest):
         examples=["ViT-B-16"],
         description="The version ID of CLIP to be used for this request. Must be one of RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, and ViT-L-14.",
     )
-    model_id: Optional[str] = Field(None)
+    model_id: Optional[str] = Field(None, validate_default=True)
 
-    @field_validator("model_id", validate_default=True)
+    @field_validator("model_id")
     @classmethod
     def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:

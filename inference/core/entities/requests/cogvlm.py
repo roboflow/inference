@@ -22,7 +22,7 @@ class CogVLMInferenceRequest(BaseRequest):
         examples=["cogvlm-chat-hf"],
         description="The version ID of CogVLM to be used for this request. See the huggingface model repo at THUDM.",
     )
-    model_id: Optional[str] = Field(None)
+    model_id: Optional[str] = Field(None, validate_default=True)
     image: InferenceRequestImage = Field(
         description="Image for CogVLM to look at. Use prompt to specify what you want it to do with the image."
     )
@@ -36,7 +36,7 @@ class CogVLMInferenceRequest(BaseRequest):
         " and the second entry is the generated model response",
     )
 
-    @field_validator("model_id", validate_default=True)
+    @field_validator("model_id")
     @classmethod
     def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:

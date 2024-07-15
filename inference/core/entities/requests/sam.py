@@ -23,9 +23,9 @@ class SamInferenceRequest(BaseRequest):
         description="The version ID of SAM to be used for this request. Must be one of vit_h, vit_l, or vit_b.",
     )
 
-    model_id: Optional[str] = Field(None)
+    model_id: Optional[str] = Field(None, validate_default=True)
 
-    @field_validator("model_id", validate_default=True)
+    @field_validator("model_id")
     @classmethod
     def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:
