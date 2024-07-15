@@ -29,7 +29,7 @@ async def test_property_extraction_block() -> None:
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     operations = OperationsChain.model_validate(
         {
             "operations": [

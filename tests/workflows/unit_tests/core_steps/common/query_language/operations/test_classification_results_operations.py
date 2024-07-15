@@ -52,7 +52,7 @@ def test_classification_result_extraction_of_top_class_for_multi_class_classific
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -78,7 +78,7 @@ def test_classification_result_extraction_of_top_class_for_multi_label_classific
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=[],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -104,7 +104,7 @@ def test_classification_result_extraction_of_top_class_for_multi_label_classific
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["cat", "dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -136,7 +136,7 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_clas
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -162,7 +162,7 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_labe
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=[],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -188,7 +188,7 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_labe
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -220,7 +220,7 @@ def test_classification_result_extraction_of_all_classes_for_multi_class_classif
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -247,7 +247,7 @@ def test_classification_result_extraction_of_all_classes_for_multi_label_classif
             "animal": MultiLabelClassificationPrediction(class_id=3, confidence=0.0),
         },
         predicted_classes=["dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -279,7 +279,7 @@ def test_classification_result_extraction_of_all_confidences_for_multi_class_cla
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)
@@ -306,7 +306,7 @@ def test_classification_result_extraction_of_all_confidences_for_multi_label_cla
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = execute_operations(value=data, operations=operations)

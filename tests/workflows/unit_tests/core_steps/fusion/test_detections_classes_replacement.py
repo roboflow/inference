@@ -69,7 +69,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["cat", "dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     second_cls_prediction = MultiLabelClassificationInferenceResponse(
         image=InferenceResponseImage(width=128, height=256),
         predictions={
@@ -77,7 +77,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     first_cls_prediction["parent_id"] = "zero"
     second_cls_prediction["parent_id"] = "one"
     classification_predictions = Batch(
@@ -131,7 +131,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     second_cls_prediction = ClassificationInferenceResponse(
         image=InferenceResponseImage(width=128, height=256),
         predictions=[
@@ -145,7 +145,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
         top="dog",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     first_cls_prediction["parent_id"] = "zero"
     second_cls_prediction["parent_id"] = "one"
     classification_predictions = Batch(
@@ -193,7 +193,7 @@ async def test_classes_replacement_when_replacement_to_happen_and_one_result_to_
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["cat", "dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
     first_cls_prediction["parent_id"] = "zero"
     classification_predictions = Batch(
         content=[
@@ -234,7 +234,7 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() 
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = extract_leading_class_from_prediction(prediction=prediction)
@@ -258,7 +258,7 @@ def test_extract_leading_class_from_prediction_when_prediction_is_faulty_multi_l
         top="cat",
         confidence=0.6,
         parent_id="some",
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     with pytest.raises(ValueError):
@@ -274,7 +274,7 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_class_wi
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=["cat", "dog"],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = extract_leading_class_from_prediction(prediction=prediction)
@@ -292,7 +292,7 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_class_wi
             "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
         },
         predicted_classes=[],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = extract_leading_class_from_prediction(prediction=prediction)
@@ -308,7 +308,7 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_class_wi
         predictions={
         },
         predicted_classes=[],
-    ).dict(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
     # when
     result = extract_leading_class_from_prediction(prediction=prediction)
