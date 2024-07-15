@@ -76,6 +76,11 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+
+from inference.core.workflows.core_steps.visualizations.bounding_box import (
+    BoundingBoxVisualizationBlock
+)
+
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
@@ -109,4 +114,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PropertyDefinitionBlock,
         DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
+
+        BoundingBoxVisualizationBlock,
     ]
