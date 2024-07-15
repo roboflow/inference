@@ -39,7 +39,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.url_utils import wrap_url
 
 
-class TestException(Exception):
+class _TestException(Exception):
     pass
 
 
@@ -105,7 +105,7 @@ def test_wrap_roboflow_api_errors_when_http_error_occurs_and_custom_handlers_use
 ):
     @wrap_roboflow_api_errors(
         http_errors_handlers={
-            500: lambda e: raise_from_lambda(e, TestException, "Some")
+            500: lambda e: raise_from_lambda(e, _TestException, "Some")
         }
     )
     def my_fun(a: int, b: int) -> int:
@@ -114,7 +114,7 @@ def test_wrap_roboflow_api_errors_when_http_error_occurs_and_custom_handlers_use
         raise requests.exceptions.HTTPError("some", response=response)
 
     # when
-    with pytest.raises(TestException):
+    with pytest.raises(_TestException):
         _ = my_fun(2, 3)
 
 
@@ -123,7 +123,7 @@ def test_wrap_roboflow_api_errors_when_http_error_occurs_and_custom_handlers_ove
 ):
     @wrap_roboflow_api_errors(
         http_errors_handlers={
-            401: lambda e: raise_from_lambda(e, TestException, "Some")
+            401: lambda e: raise_from_lambda(e, _TestException, "Some")
         }
     )
     def my_fun(a: int, b: int) -> int:
@@ -132,7 +132,7 @@ def test_wrap_roboflow_api_errors_when_http_error_occurs_and_custom_handlers_ove
         raise requests.exceptions.HTTPError("some", response=response)
 
     # when
-    with pytest.raises(TestException):
+    with pytest.raises(_TestException):
         _ = my_fun(2, 3)
 
 
