@@ -4,7 +4,13 @@ import pytest
 import requests
 
 from tests.inference.integration_tests.regression_test import bool_env
-from inference.models.aliases import FLORENCE_ALIASES
+
+# Keep up to date with inference.models.aliases.FLORENCE_ALIASES
+# Can't import because adds a lot of requirements to testing environment
+FLORENCE_ALIASES = {
+    "florence-2-base": "florence-pretrains/1",
+    "florence-2-large": "florence-pretrains/2",
+}
 
 api_key = os.environ.get("melee_API_KEY")
 
