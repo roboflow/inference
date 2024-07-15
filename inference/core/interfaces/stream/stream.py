@@ -279,7 +279,7 @@ class Stream(BaseInterface):
                             predictions.dict(by_alias=True, exclude_none=True)
                         )
                     else:
-                        detections = sv.Detections.from_roboflow(
+                        detections = sv.Detections.from_inference(
                             predictions.dict(by_alias=True, exclude_none=True)
                         )
                     detections = self.byte_tracker.update_with_detections(detections)

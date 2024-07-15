@@ -1,0 +1,254 @@
+import logging
+import os
+from enum import Enum
+from functools import partial
+from typing import Any
+
+import numpy as np
+import pytest
+
+from inference_sdk import InferenceHTTPClient
+
+
+def str2bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if not issubclass(type(value), str):
+        raise ValueError(
+            f"Expected a boolean environment variable (true or false) but got '{value}'"
+        )
+    if value.lower() == "true":
+        return True
+    elif value.lower() == "false":
+        return False
+    else:
+        raise ValueError(
+            f"Expected a boolean environment variable (true or false) but got '{value}'"
+        )
+
+
+MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS = int(
+    os.getenv("HOSTED_PLATFORM_TESTS_MAX_WARMUP_CONSECUTIVE_ERRORS", 5)
+)
+MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES = int(
+    os.getenv("HOSTED_PLATFORM_TESTS_MIN_WARMUP_SUCCESS_RESPONSES", 5)
+)
+SKIP_WARMUP = str2bool(os.getenv("SKIP_WARMUP", False))
+IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
+
+
+class PlatformEnvironment(Enum):
+    ROBOFLOW_STAGING = "roboflow-staging"
+    ROBOFLOW_PLATFORM = "roboflow-platform"
+
+
+SERVICES_URLS = {
+    PlatformEnvironment.ROBOFLOW_PLATFORM: {
+        "object-detection": "https://detect.roboflow.com",
+        "instance-segmentation": "https://outline.roboflow.com",
+        "classification": "https://classify.roboflow.com",
+        "core-models": "https://infer.roboflow.com",
+    },
+    PlatformEnvironment.ROBOFLOW_STAGING: {
+        "object-detection": "https://lambda-object-detection.staging.roboflow.com",
+        "instance-segmentation": "https://lambda-instance-segmentation.staging.roboflow.com",
+        "classification": "https://lambda-classification.staging.roboflow.com",
+        "core-models": "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com",
+    },
+}
+
+MODELS_TO_BE_USED = {
+    PlatformEnvironment.ROBOFLOW_PLATFORM: {
+        "object-detection": "coin-counting/137",
+        "instance-segmentation": "asl-poly-instance-seg/53",
+        "classification": "catdog-w9i9e/18",
+    },
+    PlatformEnvironment.ROBOFLOW_STAGING: {
+        "object-detection": "eye-detection/35",
+        "instance-segmentation": "asl-instance-seg/116",
+        "classification": "catdog/28",
+    },
+}
+
+ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
+
+
+@pytest.fixture(scope="session")
+def platform_environment() -> PlatformEnvironment:
+    return PlatformEnvironment(os.environ["HOSTED_PLATFORM_TESTS_PROJECT"])
+
+
+@pytest.fixture(scope="session")
+def classification_service_url(platform_environment: PlatformEnvironment) -> str:
+    return SERVICES_URLS[platform_environment]["classification"]
+
+
+@pytest.fixture(scope="session")
+def object_detection_service_url(platform_environment: PlatformEnvironment) -> str:
+    return SERVICES_URLS[platform_environment]["object-detection"]
+
+
+@pytest.fixture(scope="session")
+def instance_segmentation_service_url(platform_environment: PlatformEnvironment) -> str:
+    return SERVICES_URLS[platform_environment]["instance-segmentation"]
+
+
+@pytest.fixture(scope="session")
+def core_models_service_url(platform_environment: PlatformEnvironment) -> str:
+    return SERVICES_URLS[platform_environment]["core-models"]
+
+
+@pytest.fixture(scope="session")
+def classification_model_id(platform_environment: PlatformEnvironment) -> str:
+    return MODELS_TO_BE_USED[platform_environment]["classification"]
+
+
+@pytest.fixture(scope="session")
+def detection_model_id(platform_environment: PlatformEnvironment) -> str:
+    return MODELS_TO_BE_USED[platform_environment]["object-detection"]
+
+
+@pytest.fixture(scope="session")
+def segmentation_model_id(platform_environment: PlatformEnvironment) -> str:
+    return MODELS_TO_BE_USED[platform_environment]["instance-segmentation"]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_classification_lambda(
+    classification_service_url: str,
+    classification_model_id: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    warm_up_service_with_roboflow_model(
+        api_url=classification_service_url,
+        model_id=classification_model_id,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_instance_segmentation_lambda(
+    instance_segmentation_service_url: str,
+    segmentation_model_id: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    warm_up_service_with_roboflow_model(
+        api_url=instance_segmentation_service_url,
+        model_id=segmentation_model_id,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_detection_lambda(
+    object_detection_service_url: str,
+    detection_model_id: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    warm_up_service_with_roboflow_model(
+        api_url=object_detection_service_url,
+        model_id=detection_model_id,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_ocr_model(
+    core_models_service_url: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    function = partial(client.ocr_image, inference_input=image)
+    for _ in range(MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES):
+        retry_at_max_n_times(
+            function=function,
+            n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
+            function_description=f"warm up of OCR model",
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_clip_model(
+    core_models_service_url: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    function = partial(client.clip_compare, subject=image, prompt=["cat", "dog"])
+    for _ in range(MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES):
+        retry_at_max_n_times(
+            function=function,
+            n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
+            function_description=f"warm up of CLIP model",
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_up_yolo_world_model(
+    core_models_service_url: str,
+) -> None:
+    if SKIP_WARMUP:
+        return None
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    function = partial(
+        client.infer_from_yolo_world, inference_input=image, class_names=["cat", "dog"]
+    )
+    for _ in range(MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES):
+        retry_at_max_n_times(
+            function=function,
+            n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
+            function_description=f"warm up of CLIP model",
+        )
+
+
+def warm_up_service_with_roboflow_model(
+    api_url: str,
+    model_id: str,
+    api_key: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=api_url,
+        api_key=api_key,
+    ).select_api_v0()
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    function = partial(client.infer, inference_input=image, model_id=model_id)
+    for _ in range(MINIMUM_NUMBER_OF_SUCCESSFUL_RESPONSES):
+        retry_at_max_n_times(
+            function=function,
+            n=MAXIMUM_CONSECUTIVE_INVOCATION_ERRORS,
+            function_description=f"warm up of {api_url}",
+        )
+
+
+def retry_at_max_n_times(function: callable, n: int, function_description: str) -> None:
+    attempts = 1
+    while attempts <= n:
+        try:
+            function()
+        except Exception as e:
+            logging.warning(
+                f"Retrying function call. Error: {e}. Attempts: {attempts}/{n}"
+            )
+        else:
+            return None
+        attempts += 1
+    raise Exception(f"Could not achieve success of {function_description}")
+
+
+
