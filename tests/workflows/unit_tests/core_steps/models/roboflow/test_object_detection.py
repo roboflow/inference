@@ -25,7 +25,7 @@ def test_object_detection_model_validation_when_minimalistic_config_is_provided(
     }
 
     # when
-    result = BlockManifest.validate(data)
+    result = BlockManifest.model_validate(data)
 
     # then
     assert result == BlockManifest(
@@ -51,7 +51,7 @@ def test_object_detection_model_validation_when_required_field_is_not_given(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.validate(data)
+        _ = BlockManifest.model_validate(data)
 
 
 def test_object_detection_model_validation_when_invalid_type_provided() -> None:
@@ -65,7 +65,7 @@ def test_object_detection_model_validation_when_invalid_type_provided() -> None:
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.validate(data)
+        _ = BlockManifest.model_validate(data)
 
 
 def test_object_detection_model_validation_when_model_id_has_invalid_type() -> None:
@@ -79,7 +79,7 @@ def test_object_detection_model_validation_when_model_id_has_invalid_type() -> N
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.validate(data)
+        _ = BlockManifest.model_validate(data)
 
 
 def test_object_detection_model_validation_when_active_learning_flag_has_invalid_type() -> (
@@ -96,7 +96,7 @@ def test_object_detection_model_validation_when_active_learning_flag_has_invalid
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.validate(data)
+        _ = BlockManifest.model_validate(data)
 
 
 @pytest.mark.parametrize(
@@ -130,4 +130,4 @@ def test_object_detection_model_when_parameters_have_invalid_type(
 
     # when
     with pytest.raises(ValidationError):
-        _ = BlockManifest.validate(data)
+        _ = BlockManifest.model_validate(data)
