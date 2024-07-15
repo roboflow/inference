@@ -58,7 +58,7 @@ REGISTERED_ALIASES = {
     "yolov10l-640": "coco/23",
     "yolov10x-640": "coco/24",
     **PALIGEMMA_ALIASES,
-    **FLORENCE_ALIASES
+    **FLORENCE_ALIASES,
 }
 
 
