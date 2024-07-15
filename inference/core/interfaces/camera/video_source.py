@@ -651,7 +651,6 @@ class VideoSource:
                     buffer=self._frames_buffer,
                     frames_buffering_allowed=self._frames_buffering_allowed,
                     source_id=self._source_id,
-                    fps=self._source_properties.fps,
                 )
                 if not success:
                     break
@@ -810,7 +809,6 @@ class VideoConsumer:
         buffer: Queue,
         frames_buffering_allowed: bool,
         source_id: Optional[int] = None,
-        fps: Optional[float] = 0,
     ) -> bool:
         frame_timestamp = datetime.now()
         success = video.grab()
@@ -835,7 +833,6 @@ class VideoConsumer:
             buffer=buffer,
             frames_buffering_allowed=frames_buffering_allowed,
             source_id=source_id,
-            fps=fps,
         )
 
     def _set_file_mode_buffering_strategies(self) -> None:
@@ -854,7 +851,6 @@ class VideoConsumer:
         buffer: Queue,
         frames_buffering_allowed: bool,
         source_id: Optional[int],
-        fps: Optional[float] = 0,
     ) -> bool:
         """
         Returns: boolean flag with success status
@@ -892,7 +888,7 @@ class VideoConsumer:
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
-                fps=fps,
+                fps=declared_source_fps,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
