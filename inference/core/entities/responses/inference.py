@@ -227,7 +227,12 @@ class Keypoint(Point):
         description="Model confidence regarding keypoint visibility."
     )
     class_id: int = Field(description="Identifier of keypoint.")
-    class_name: str = Field(field="class", description="Type of keypoint.")
+    class_name: str = Field(
+        description="Type of keypoint.",
+        json_schema_extra={
+            "field": "class",
+        },
+    )
 
 
 class KeypointsPrediction(ObjectDetectionPrediction):
