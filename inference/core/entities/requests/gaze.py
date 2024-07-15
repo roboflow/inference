@@ -1,8 +1,7 @@
 from typing import List, Optional, Union
 
-from pydantic import Field, validator
+from pydantic import Field, ValidationInfo, field_validator
 
-from inference.core.entities.common import ApiKey
 from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
@@ -35,12 +34,13 @@ class GazeDetectionInferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     model_id: Optional[str] = Field(None)
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("model_id", always=True, allow_reuse=True)
-    def validate_model_id(cls, value, values):
+    @field_validator("model_id", always=True)
+    @classmethod
+    def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:
             return value
-        if values.get("gaze_version_id") is None:
+
+        gaze_version_id = info.data.get("gaze_version_id")
+        if gaze_version_id is None:
             return None
-        return f"gaze/{values['gaze_version_id']}"
+        return f"doctr/{gaze_version_id}"

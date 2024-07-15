@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Union
 
-from pydantic import Field, validator
+from pydantic import Field, ValidationInfo, field_validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
@@ -24,15 +24,16 @@ class ClipInferenceRequest(BaseRequest):
     )
     model_id: Optional[str] = Field(None)
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("model_id", always=True)
-    def validate_model_id(cls, value, values):
+    @field_validator("model_id", always=True)
+    @classmethod
+    def validate_model_id(cls, value, info: ValidationInfo):
         if value is not None:
             return value
-        if values.get("clip_version_id") is None:
+
+        clip_version_id = info.data.get("clip_version_id")
+        if clip_version_id is None:
             return None
-        return f"clip/{values['clip_version_id']}"
+        return f"clip/{clip_version_id}"
 
 
 class ClipImageEmbeddingRequest(ClipInferenceRequest):
