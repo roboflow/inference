@@ -14,56 +14,15 @@ from inference.core.workflows.execution_engine.compiler.entities import (
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
-def initialise_dynamic_blocks(
-    available_blocks: List[BlockSpecification],
-    parsed_workflow_definition: ParsedWorkflowDefinition,
-) -> Tuple[
-    ParsedWorkflowDefinition, Dict[Type[WorkflowBlockManifest], BlockSpecification]
-]:
-    dynamic_blocks = {
-        block.manifest_class: block.block_class
-        for block in available_blocks
-        if not isinstance(block.block_class, type)
-    }
-    block_specification_by_class = {
-        block.manifest_class: block for block in available_blocks
-    }
-    dynamic_blocks_classes = {}
-    new_steps = []
-    for step in parsed_workflow_definition.steps:
-        if type(step) not in dynamic_blocks:
-            new_steps.append(step)
-            continue
-        dynamic_block = dynamic_blocks[type(step)](step)
-        dynamic_block_manifest = dynamic_block.get_manifest()
-        manifest_instance = dynamic_block_manifest(
-            name=step.name,
-            type=step.type,
-        )
-        new_steps.append(manifest_instance)
-        reference_specification = block_specification_by_class[type(step)]
-        dynamic_blocks_classes[dynamic_block_manifest] = BlockSpecification(
-            block_source=reference_specification.block_source,
-            identifier=reference_specification.identifier,
-            block_class=dynamic_block,
-            manifest_class=dynamic_block_manifest,
-        )
-    updated_definition = replace(parsed_workflow_definition, steps=new_steps)
-    return updated_definition, dynamic_blocks_classes
-
-
 def initialise_steps(
     steps_manifest: List[WorkflowBlockManifest],
     available_bocks: List[BlockSpecification],
-    dynamic_blocks_classes: Dict[Type[WorkflowBlockManifest], BlockSpecification],
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     initializers: Dict[str, Union[Any, Callable[[None], Any]]],
 ) -> List[InitialisedStep]:
     available_blocks_by_manifest_class = {
         block.manifest_class: block for block in available_bocks
     }
-    for manifest_class, specification in dynamic_blocks_classes.items():
-        available_blocks_by_manifest_class[manifest_class] = specification
     initialised_steps = []
     for step_manifest in steps_manifest:
         if type(step_manifest) not in available_blocks_by_manifest_class:

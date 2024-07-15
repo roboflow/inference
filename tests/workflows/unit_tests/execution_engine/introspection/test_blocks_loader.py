@@ -174,7 +174,7 @@ def test_load_initializers_when_plugin_exists_and_initializers_provided() -> Non
     result = load_initializers()
 
     # then
-    assert len(result) == 2
+    assert len(result) == 6
     assert (
         result[
             "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"
@@ -207,7 +207,7 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
     assert result.blocks[0].manifest_class == plugin_with_valid_blocks.Block1Manifest
     assert result.blocks[1].block_class == plugin_with_valid_blocks.Block2
     assert result.blocks[1].manifest_class == plugin_with_valid_blocks.Block2Manifest
-    assert len(result.declared_kinds) == 3
+    assert len(result.declared_kinds) == 33
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")

@@ -10,7 +10,6 @@ from inference.core.workflows.execution_engine.compiler.graph_constructor import
     prepare_execution_graph,
 )
 from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
-    initialise_dynamic_blocks,
     initialise_steps,
 )
 from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
@@ -23,6 +22,9 @@ from inference.core.workflows.execution_engine.compiler.validator import (
     validate_workflow_specification,
 )
 from inference.core.workflows.execution_engine.debugger.core import dump_execution_graph
+from inference.core.workflows.execution_engine.dynamic_blocs.block_assembler import (
+    compile_dynamic_blocks,
+)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
     load_workflow_blocks,
@@ -34,14 +36,16 @@ def compile_workflow(
     workflow_definition: dict,
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
 ) -> CompiledWorkflow:
-    available_blocks = load_workflow_blocks()
+    statically_defined_blocks = load_workflow_blocks()
     initializers = load_initializers()
+    dynamic_blocks = compile_dynamic_blocks(
+        dynamic_blocks_definitions=workflow_definition.get(
+            "dynamic_blocks_definitions", []
+        )
+    )
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=workflow_definition,
-    )
-    parsed_workflow_definition, dynamic_blocks_classes = initialise_dynamic_blocks(
-        available_blocks=available_blocks,
-        parsed_workflow_definition=parsed_workflow_definition,
+        dynamic_blocks=dynamic_blocks,
     )
     validate_workflow_specification(workflow_definition=parsed_workflow_definition)
     execution_graph = prepare_execution_graph(
@@ -49,8 +53,7 @@ def compile_workflow(
     )
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
-        available_bocks=available_blocks,
-        dynamic_blocks_classes=dynamic_blocks_classes,
+        available_bocks=statically_defined_blocks + dynamic_blocks,
         explicit_init_parameters=init_parameters,
         initializers=initializers,
     )

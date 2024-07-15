@@ -1,15 +1,7 @@
 import types
-from typing import List, Literal, Type
-from uuid import uuid4
+from typing import List, Type
 
-from inference.core.workflows.core_steps.common.dynamic_blocks.entities import (
-    ManifestDescription,
-)
-from inference.core.workflows.core_steps.common.dynamic_blocks.manifest_assembler import (
-    assembly_dynamic_block_manifest,
-)
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import WILDCARD_KIND
+from inference.core.workflows.execution_engine.dynamic_blocs.entities import PythonCode
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -26,35 +18,20 @@ IMPORTS_LINES = [
 ]
 
 
-class CustomPythonDeclaredManifest(WorkflowBlockManifest):
-    name: str
-    type: Literal["CustomPython"]
-    manifest_description: ManifestDescription
-    python_code: str
-    function_name: str
-
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="*", kind=[WILDCARD_KIND])]
-
-
 def assembly_custom_python_block(
-    declared_manifest: CustomPythonDeclaredManifest,
+    unique_identifier: str,
+    manifest: Type[WorkflowBlockManifest],
+    python_code: PythonCode,
 ) -> Type[WorkflowBlock]:
-    actual_manifest = assembly_dynamic_block_manifest(
-        block_name=declared_manifest.name,
-        block_type=declared_manifest.type,
-        manifest_description=declared_manifest.manifest_description,
-    )
     code_module = create_dynamic_module(
-        code=declared_manifest.python_code,
-        module_name=f"dynamic_module_{uuid4()}",
+        code=python_code.function_code,
+        module_name=f"dynamic_module_{unique_identifier}",
     )
-    if not hasattr(code_module, declared_manifest.function_name):
+    if not hasattr(code_module, python_code.function_name):
         raise ValueError(
-            f"Cannot find function: {declared_manifest.function_name} in declared code."
+            f"Cannot find function: {python_code.function_name} in declared code."
         )
-    run_function = getattr(code_module, declared_manifest.function_name)
+    run_function = getattr(code_module, python_code.function_name)
 
     async def run(self, *args, **kwargs) -> BlockResult:
         if not self._allow_custom_python_execution:
@@ -73,10 +50,10 @@ def assembly_custom_python_block(
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return actual_manifest
+        return manifest
 
     return type(
-        f"CustomPythonBlock-{uuid4()}",
+        f"DynamicBlock[{unique_identifier}]",
         (WorkflowBlock,),
         {
             "__init__": constructor,

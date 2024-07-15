@@ -4,18 +4,22 @@ import os
 from collections import Counter
 from typing import Any, Callable, Dict, List, Union
 
-from inference.core.workflows.core_steps.loader import load_blocks, load_kinds, REGISTERED_INITIALIZERS
+from inference.core.workflows.core_steps.loader import (
+    REGISTERED_INITIALIZERS,
+    load_blocks,
+    load_kinds,
+)
 from inference.core.workflows.entities.types import Kind
 from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
+from inference.core.workflows.execution_engine.dynamic_blocs.loader import (
+    load_dynamic_blocks_initializers,
+)
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
-)
-from inference.core.workflows.execution_engine.introspection.schema_parser import (
-    retrieve_selectors_from_schema,
 )
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
@@ -147,16 +151,16 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
     if not isinstance(blocks, list):
         raise PluginInterfaceError(
             public_message=f"Provided workflow plugin `{plugin_name}` implement `load_blocks()` function "
-                           f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
-                           f"but entry of different characteristics found: {type(blocks)}.",
+            f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
+            f"but entry of different characteristics found: {type(blocks)}.",
             context="workflow_compilation | blocks_loading",
         )
     for i, block in enumerate(blocks):
         if not isinstance(block, type) or not issubclass(block, WorkflowBlock):
             raise PluginInterfaceError(
                 public_message=f"Provided workflow plugin `{plugin_name}` implement `load_blocks()` function "
-                               f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
-                               f"but entry of different characteristics found: {block} at position: {i}.",
+                f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
+                f"but entry of different characteristics found: {block} at position: {i}.",
                 context="workflow_compilation | blocks_loading",
             )
         if block in already_spotted_blocks:
@@ -176,6 +180,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
     plugins_to_load = get_plugin_modules()
     result = load_core_blocks_initializers()
+    result.update(load_dynamic_blocks_initializers())
     for plugin_name in plugins_to_load:
         result.update(load_initializers_from_plugin(plugin_name=plugin_name))
     return result
@@ -290,14 +295,14 @@ def load_plugin_kinds(plugin_name: str) -> List[Kind]:
     except ImportError as e:
         raise PluginLoadingError(
             public_message=f"It is not possible to load kinds from workflow plugin `{plugin_name}`. "
-                           f"Make sure the library providing custom step is correctly installed in Python environment.",
+            f"Make sure the library providing custom step is correctly installed in Python environment.",
             context="workflow_compilation | blocks_loading",
             inner_error=e,
         ) from e
     except AttributeError as e:
         raise PluginInterfaceError(
             public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
-                           f"interface correctly and cannot be loaded.",
+            f"interface correctly and cannot be loaded.",
             context="workflow_compilation | blocks_loading",
             inner_error=e,
         ) from e
@@ -318,8 +323,8 @@ def _load_plugin_kinds(plugin_name: str) -> List[Kind]:
     if not isinstance(kinds, list) or not all(isinstance(e, Kind) for e in kinds):
         raise PluginInterfaceError(
             public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
-                           f"interface correctly and cannot be loaded. Return value of `load_kinds()` "
-                           f"is not list of objects `Kind`.",
+            f"interface correctly and cannot be loaded. Return value of `load_kinds()` "
+            f"is not list of objects `Kind`.",
             context="workflow_compilation | blocks_loading",
         )
     return kinds

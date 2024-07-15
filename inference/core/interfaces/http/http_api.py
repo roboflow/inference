@@ -957,7 +957,8 @@ class HttpInterface(BaseInterface):
                     "outputs": [],
                 }
                 parsed_definition = parse_workflow_definition(
-                    raw_workflow_definition=dummy_workflow_definition
+                    raw_workflow_definition=dummy_workflow_definition,
+                    dynamic_blocks=[],
                 )
                 parsed_manifest = parsed_definition.steps[0]
                 return parsed_manifest.get_actual_outputs()

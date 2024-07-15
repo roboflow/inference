@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
-def function(predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
+def run(predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
     bboxes_class_x = predictions[predictions.data["class_name"] == class_x]
     bboxes_class_y = predictions[predictions.data["class_name"] == class_y]
     overlap = []
@@ -33,7 +33,7 @@ def function(predictions: sv.Detections, class_x: str, class_y: str) -> BlockRes
 
 
 FUNCTION_TO_GET_MAXIMUM_OVERLAP = """
-def function(overlaps: List[List[float]]) -> BlockResult:
+def run(overlaps: List[List[float]]) -> BlockResult:
     max_value = -1
     for overlap in overlaps:
         for overlap_value in overlap:
@@ -49,6 +49,54 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
     ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "OverlapMeasurement",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                    "class_x": {
+                        "type": "DynamicInputDefinition",
+                        "value_types": ["string"],
+                    },
+                    "class_y": {
+                        "type": "DynamicInputDefinition",
+                        "value_types": ["string"],
+                    },
+                },
+                "outputs": {"overlap": {"type": "DynamicOutputDefinition", "kind": []}},
+            },
+            "code": {
+                "type": "PythonCode",
+                "function_code": FUNCTION_TO_GET_OVERLAP_OF_BBOXES,
+            },
+        },
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "MaximumOverlap",
+                "inputs": {
+                    "overlaps": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {
+                    "max_value": {"type": "DynamicOutputDefinition", "kind": []}
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "function_code": FUNCTION_TO_GET_MAXIMUM_OVERLAP,
+            },
+        },
+    ],
     "steps": [
         {
             "type": "RoboflowObjectDetectionModel",
@@ -57,25 +105,11 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
             "model_id": "yolov8n-640",
         },
         {
-            "type": "CustomPython",
+            "type": "OverlapMeasurement",
             "name": "overlap_measurement",
-            "manifest_description": {
-                "inputs": {
-                    "predictions": {
-                        "selector_types": ["step_output"],
-                        "default_value": "$steps.model.predictions",
-                    },
-                    "class_x": {
-                        "default_value": "dog",
-                    },
-                    "class_y": {
-                        "default_value": "dog",
-                    },
-                },
-                "outputs": {"overlap": {"kind": []}},
-            },
-            "python_code": FUNCTION_TO_GET_OVERLAP_OF_BBOXES,
-            "function_name": "function",
+            "predictions": "$steps.model.predictions",
+            "class_x": "dog",
+            "class_y": "dog",
         },
         {
             "type": "ContinueIf",
@@ -102,19 +136,9 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
             "next_steps": ["$steps.maximum_overlap"],
         },
         {
-            "type": "CustomPython",
+            "type": "MaximumOverlap",
             "name": "maximum_overlap",
-            "manifest_description": {
-                "inputs": {
-                    "overlaps": {
-                        "selector_types": ["step_output"],
-                        "default_value": "$steps.overlap_measurement.overlap",
-                    },
-                },
-                "outputs": {"max_value": {"kind": []}},
-            },
-            "python_code": FUNCTION_TO_GET_MAXIMUM_OVERLAP,
-            "function_name": "function",
+            "overlaps": "$steps.overlap_measurement.overlap",
         },
     ],
     "outputs": [
