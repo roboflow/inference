@@ -9,7 +9,7 @@ def render(predictions, image):
     
     image = annotator.annotate(
         scene=image, 
-        detections=sv.Detections.from_roboflow(predictions)
+        detections=sv.Detections.from_inference(predictions)
     )
 
     cv2.imshow("Prediction", image)

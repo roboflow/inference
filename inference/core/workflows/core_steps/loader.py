@@ -4,8 +4,21 @@ from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
+from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
+from inference.core.workflows.core_steps.formatters.first_non_empty_or_default import (
+    FirstNonEmptyOrDefaultBlock,
+)
+from inference.core.workflows.core_steps.formatters.property_definition import (
+    PropertyDefinitionBlock,
+)
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
+    DetectionsClassesReplacementBlock,
+)
 from inference.core.workflows.core_steps.fusion.detections_consensus import (
     DetectionsConsensusBlock,
+)
+from inference.core.workflows.core_steps.fusion.dimension_collapse import (
+    DimensionCollapseBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
@@ -120,6 +133,11 @@ def load_blocks() -> List[
         ContinueIfBlock,
         PerspectiveCorrectionBlock,
         DynamicZonesBlock,
+        DetectionsClassesReplacementBlock,
+        ExpressionBlock,
+        PropertyDefinitionBlock,
+        DimensionCollapseBlock,
+        FirstNonEmptyOrDefaultBlock,
     ]
 
 

@@ -415,8 +415,12 @@ def get_non_compound_parameter_value(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_input_assembling",
         )
+    upper_level_indices = dynamic_batches_manager.get_indices_for_data_lineage(
+        lineage=dynamic_parameter.data_lineage[:-1],
+    )
     result = reduce_batch_dimensionality(
         indices=lineage_indices,
+        upper_level_index=upper_level_indices,
         data=batch_input,
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
@@ -425,13 +429,14 @@ def get_non_compound_parameter_value(
 
 def reduce_batch_dimensionality(
     indices: List[DynamicBatchIndex],
+    upper_level_index: List[DynamicBatchIndex],
     data: List[T],
     guard_of_indices_wrapping: GuardForIndicesWrapping,
-) -> Batch[Batch[T]]:
+) -> Batch[Optional[Batch[T]]]:
     guard_of_indices_wrapping.register_wrapping(indices_before_wrapping=indices)
     already_spotted_downgraded_indices = set()
     wrapped_batch_index, wrapped_batch_content = [], []
-    result_index, result_data = [], []
+    upper_level_indices_data = {index: None for index in upper_level_index}
     for index, data in zip(indices, data):
         downgraded_index = index[:-1]
         if downgraded_index in already_spotted_downgraded_indices:
@@ -439,15 +444,20 @@ def reduce_batch_dimensionality(
             wrapped_batch_content.append(data)
         else:
             if wrapped_batch_index:
-                result_index.append(wrapped_batch_index[-1][:-1])
-                result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
+                upper_level_indices_data[wrapped_batch_index[-1][:-1]] = Batch(
+                    content=wrapped_batch_content, indices=wrapped_batch_index
+                )
             already_spotted_downgraded_indices.add(downgraded_index)
             wrapped_batch_index = [index]
             wrapped_batch_content = [data]
     if wrapped_batch_index:
-        result_index.append(wrapped_batch_index[-1][:-1])
-        result_data.append(Batch(wrapped_batch_content, wrapped_batch_index))
-    return Batch(result_data, result_index)
+        upper_level_indices_data[wrapped_batch_index[-1][:-1]] = Batch(
+            content=wrapped_batch_content, indices=wrapped_batch_index
+        )
+    return Batch(
+        content=[upper_level_indices_data[index] for index in upper_level_index],
+        indices=upper_level_index,
+    )
 
 
 def ensure_compound_input_indices_match(indices: List[List[DynamicBatchIndex]]) -> None:
