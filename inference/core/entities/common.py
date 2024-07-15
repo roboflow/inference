@@ -1,10 +1,17 @@
 from pydantic import Field
 
-ModelID = Field(example="raccoon-detector-1", description="A unique model identifier")
+ModelID = Field(
+    description="A unique model identifier",
+    json_schema_extra={
+        "example": "raccoon-detector-1",
+    },
+)
 ModelType = Field(
     default=None,
-    example="object-detection",
     description="The type of the model, usually referring to what task the model performs",
+    json_schema_extra={
+        "example": "object-detection",
+    },
 )
 ApiKey = Field(
     default=None,
