@@ -191,14 +191,17 @@ class UsageCollector:
                             continue
                         resource_id = api_key_usage_with_resource["resource_id"]
                         category = api_key_usage_with_resource.get("category")
-                        resource_usage_key = f"{category}:{resource_id}"
+                        resource_usage_key = resource_id
+                        resource_usage_payload["api_key"] = api_key
                         resource_usage_payload["resource_id"] = resource_id
+                        resource_usage_payload["category"] = category
                     merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
                         api_key, {}
                     )
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
+                    # TODO: check if this will throw
                     merged_api_key_payload[resource_usage_key] = (
                         UsageCollector._merge_usage_dicts(
                             merged_resource_payload,
@@ -371,7 +374,7 @@ class UsageCollector:
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
-        fps: Optional[float] = 0,
+        fps: float = 0,
         enterprise: bool = False,
     ):
         source = str(source) if source else ""
@@ -402,7 +405,7 @@ class UsageCollector:
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
-        fps: Optional[float] = 0,
+        fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
             return
@@ -437,7 +440,7 @@ class UsageCollector:
         api_key: Optional[str] = None,
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: Optional[str] = None,
-        fps: Optional[float] = 0,
+        fps: float = 0,
     ) -> DefaultDict[str, Any]:
         async with UsageCollector._async_lock:
             self.record_usage(
@@ -476,6 +479,8 @@ class UsageCollector:
 
     def _flush_queue(self):
         usage_payloads = self._dump_usage_queue_with_lock()
+        if not usage_payloads:
+            return
         merged_payloads: APIKeyUsage = self._zip_usage_payloads(
             usage_payloads=usage_payloads,
         )
@@ -608,8 +613,8 @@ class UsageCollector:
         def sync_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: str = "",
-            usage_workflow_id: str = "",
+            usage_api_key: Optional[str] = None,
+            usage_workflow_id: Optional[str] = None,
             **kwargs,
         ):
             self.record_usage(
@@ -628,8 +633,8 @@ class UsageCollector:
         async def async_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: str = "",
-            usage_workflow_id: str = "",
+            usage_api_key: Optional[str] = None,
+            usage_workflow_id: Optional[str] = None,
             **kwargs,
         ):
             await self.async_record_usage(
