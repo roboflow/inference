@@ -352,7 +352,8 @@ def with_route_exceptions(route):
 class LambdaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
-        usage_collector._cleanup()
+        logger.info("Lambda is terminating, handle unsent usage payloads.")
+        await usage_collector.async_push_usage_payloads()
         return response
 
 

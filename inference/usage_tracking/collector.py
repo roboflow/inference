@@ -536,6 +536,14 @@ class UsageCollector:
                 logger.warning("Enqueuing back unsent payload")
                 self._enqueue_payload(payload=payload)
 
+    def push_usage_payloads(self):
+        self._enqueue_usage_payload()
+        self._flush_queue()
+
+    async def async_push_usage_payloads(self):
+        async with UsageCollector._async_lock:
+            self.push_usage_payloads()
+
     @staticmethod
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
