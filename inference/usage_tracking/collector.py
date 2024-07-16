@@ -23,9 +23,9 @@ from inference.usage_tracking.utils import collect_func_params
 from .config import TelemetrySettings, get_telemetry_settings
 
 ResourceID = str
-ResourceUsage = DefaultDict[ResourceID, Any]
+ResourceUsage = Union[DefaultDict[ResourceID, Any], Dict[ResourceID, Any]]
 APIKey = str
-APIKeyUsage = DefaultDict[APIKey, ResourceUsage]
+APIKeyUsage = Union[DefaultDict[APIKey, ResourceUsage], Dict[APIKey, ResourceUsage]]
 ResourceDetails = Dict[str, Any]
 SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
@@ -66,9 +66,9 @@ class UsageCollector:
 
         self._system_info_sent: bool = False
         self._resource_details_lock = Lock()
-        self._resource_details: DefaultDict[
-            APIKey, Dict[ResourceID[Dict[str, Any]]]
-        ] = defaultdict(dict)
+        self._resource_details: DefaultDict[APIKey, Dict[ResourceID, bool]] = (
+            defaultdict(dict)
+        )
 
         self._terminate_collector_thread = Event()
         self._collector_thread = Thread(target=self._usage_collector, daemon=True)

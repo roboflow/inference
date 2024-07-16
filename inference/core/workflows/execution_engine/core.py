@@ -23,7 +23,7 @@ class ExecutionEngine:
         init_parameters: Optional[Dict[str, Any]] = None,
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
-        api_key: Optional[str] = "",
+        api_key: Optional[str] = None,
         workflow_id: Optional[str] = "",
     ) -> "ExecutionEngine":
         if api_key is None:
