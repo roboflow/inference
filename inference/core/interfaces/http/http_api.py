@@ -5,12 +5,14 @@ from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
+from fastapi.middleware import Middleware
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -164,6 +166,7 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -346,6 +349,13 @@ def with_route_exceptions(route):
     return wrapped_route
 
 
+class LambdaMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        usage_collector._cleanup()
+        return response
+
+
 class HttpInterface(BaseInterface):
     """Roboflow defined HTTP interface for a general-purpose inference server.
 
@@ -392,6 +402,10 @@ class HttpInterface(BaseInterface):
         if METLO_KEY:
             app.add_middleware(
                 ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
+            )
+        if LAMBDA:
+            app.add_middleware(
+                Middleware(LambdaMiddleware)
             )
 
         if len(ALLOW_ORIGINS) > 0:
