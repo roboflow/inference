@@ -3,7 +3,7 @@ from inference.core.workflows.core_steps.visualizations.base import (
     VisualizationBlock
 )
 
-from typing import Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -15,7 +15,6 @@ from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     FloatZeroToOne,
     FLOAT_ZERO_TO_ONE_KIND,
-    STRING_KIND,
     WorkflowParameterSelector
 )
 from inference.core.workflows.prototypes.block import (
@@ -65,35 +64,59 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
 
     def getAnnotator(
         self,
-        color_lookup:str,
         thickness:int,
-        roundness: float
+        roundness: float,
+        color_palette: str,
+        palette_size: int,
+        custom_colors: Optional[List[str]],
+        color_axis:str,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = f"{color_lookup}_{thickness}_{roundness}"
+        key = "_".join(map(str, [
+            color_palette,
+            palette_size,
+            color_axis,
+            thickness,
+            roundness
+        ]))
+        
         if key not in self.annotatorCache:
+            palette = self.getPalette(color_palette, palette_size, custom_colors)
+
             if roundness == 0:
                 self.annotatorCache[key] = sv.BoxAnnotator(
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
+                    color=palette,
+                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                     thickness=thickness
                 )
             else:
                 self.annotatorCache[key] = sv.RoundBoxAnnotator(
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
+                    color=palette,
+                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                     thickness=thickness,
                     roundness=roundness
                 )
-        return self.annotatorCache[key]
+        return self.annotatorCache[key] 
 
     async def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,
         copy_image: bool,
-        color_lookup: Optional[str],
+        color_palette: Optional[str],
+        palette_size: Optional[int],
+        custom_colors: Optional[List[str]],
+        color_axis: Optional[str],
         thickness: Optional[int],
         roundness: Optional[float],
     ) -> BlockResult:
-        annotator = self.getAnnotator(color_lookup, thickness, roundness)
+        annotator = self.getAnnotator(
+            thickness,
+            roundness,
+            color_palette,
+            palette_size,
+            custom_colors,
+            color_axis
+        )
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,

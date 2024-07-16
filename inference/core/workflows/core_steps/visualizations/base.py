@@ -17,8 +17,10 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    INTEGER_KIND,
     BOOLEAN_KIND,
     STRING_KIND,
+    LIST_OF_VALUES_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -61,7 +63,96 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
         default=True
     )
 
-    color_lookup: Union[
+    color_palette: Union[
+        Literal[
+            "DEFAULT",
+            "CUSTOM",
+            "ROBOFLOW",
+
+            "Matplotlib Viridis",
+            "Matplotlib Plasma",
+            "Matplotlib Inferno",
+            "Matplotlib Magma",
+            "Matplotlib Cividis",
+
+            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # "Matplotlib Twilight",
+            # "Matplotlib Twilight_Shifted",
+            
+            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # "Matplotlib HSV",
+            # "Matplotlib Jet",
+            # "Matplotlib Turbo",
+            # "Matplotlib Rainbow",
+            # "Matplotlib gist_rainbow",
+            # "Matplotlib nipy_spectral",
+            # "Matplotlib gist_ncar",
+
+            "Matplotlib Pastel1",
+            "Matplotlib Pastel2",
+            "Matplotlib Paired",
+            "Matplotlib Accent",
+            "Matplotlib Dark2",
+            "Matplotlib Set1",
+            "Matplotlib Set2",
+            "Matplotlib Set3",
+            "Matplotlib Tab10",
+            "Matplotlib Tab20",
+            "Matplotlib Tab20b",
+            "Matplotlib Tab20c",
+
+            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # "Matplotlib Ocean",
+            # "Matplotlib Gist_Earth",
+            # "Matplotlib Terrain",
+            # "Matplotlib Stern",
+            # "Matplotlib gnuplot",
+            # "Matplotlib gnuplot2",
+
+            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # "Matplotlib Spring",
+            # "Matplotlib Summer",
+            # "Matplotlib Autumn",
+            # "Matplotlib Winter",
+            # "Matplotlib Cool",
+            # "Matplotlib Hot",
+            # "Matplotlib Copper",
+            # "Matplotlib Bone",
+
+            # "Matplotlib Greys_R",
+            # "Matplotlib Purples_R",
+            # "Matplotlib Blues_R",
+            # "Matplotlib Greens_R",
+            # "Matplotlib Oranges_R",
+            # "Matplotlib Reds_R",
+        ],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field( # type: ignore
+        default="DEFAULT",
+        description="Color palette to use for annotations.",
+        examples=["DEFAULT", "$inputs.color_palette"],
+    )
+
+    palette_size: Union[
+        INTEGER_KIND,
+        WorkflowParameterSelector(kind=[INTEGER_KIND]),
+    ] = Field( # type: ignore
+        default=10,
+        description="Number of colors in the color palette. Applies when using a matplotlib `color_palette`.",
+        examples=[10, "$inputs.palette_size"],
+    )
+
+    custom_colors: Union[
+        List[str],
+        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field( # type: ignore
+        default=[],
+        description="List of colors to use for annotations when `color_palette` is set to \"CUSTOM\".",
+        examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
+    )
+
+
+    color_axis: Union[
         Literal[
             "INDEX",
             "CLASS",
@@ -71,7 +162,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
     ] = Field( # type: ignore
         default="CLASS",
         description="Strategy to use for mapping colors to annotations.",
-        examples=["CLASS", "$inputs.color_lookup"],
+        examples=["CLASS", "$inputs.color_axis"],
     )
 
     @classmethod
@@ -98,12 +189,48 @@ class VisualizationBlock(WorkflowBlock, ABC):
     def getAnnotator(self) -> sv.annotators.base.BaseAnnotator:
         pass
 
+    @classmethod
+    def getPalette(self, color_palette, palette_size, custom_colors):
+        if color_palette == "CUSTOM":
+            return custom_colors
+        elif hasattr(sv.ColorPalette, color_palette):
+            return getattr(sv.ColorPalette, color_palette)
+        else:
+            palette_name = color_palette.replace("Matplotlib ", "")
+
+            if palette_name in [
+                "Greys_R",
+                "Purples_R",
+                "Blues_R",
+                "Greens_R",
+                "Oranges_R",
+                "Reds_R",
+
+                "Wistia",
+                "Pastel1",
+                "Pastel2",
+                "Paired",
+                "Accent",
+                "Dark2",
+                "Set1",
+                "Set2",
+                "Set3",
+            ]:
+                palette_name = palette_name.capitalize()
+            else:
+                palette_name = palette_name.lower()
+
+            return sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
+
     @abstractmethod
     async def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,
         copy_image: bool,
-        color_lookup: Optional[str]
+        color_palette: Optional[str],
+        palette_size: Optional[int],
+        custom_colors: Optional[List[str]],
+        color_axis: Optional[str],
     ) -> BlockResult:
         pass
