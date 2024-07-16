@@ -24,7 +24,8 @@ from inference.usage_tracking.utils import collect_func_params
 from .config import TelemetrySettings, get_telemetry_settings
 
 ResourceID = str
-ResourceUsage = Union[DefaultDict[ResourceID, Any], Dict[ResourceID, Any]]
+Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
+ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
 APIKey = str
 APIKeyUsage = Union[DefaultDict[APIKey, ResourceUsage], Dict[APIKey, ResourceUsage]]
 ResourceDetails = Dict[str, Any]
@@ -158,6 +159,18 @@ class UsageCollector:
         for usage_payload in usage_payloads:
             for api_key, resource_payloads in usage_payload.items():
                 if api_key is None:
+                    if (
+                        resource_payloads
+                        and len(resource_payloads) > 1
+                        or list(resource_payloads.keys()) != [None]
+                    ):
+                        if any(r.get("enterprise") for r in resource_payloads.values()):
+                            logger.error(ENTERPRISE_WARNING_MESSAGE)
+                        logger.debug(
+                            "Dropping usage payload %s due to missing API key",
+                            resource_payloads,
+                        )
+                        continue
                     api_key_usage_with_resource = (
                         UsageCollector._get_api_key_usage_containing_resource(
                             api_key=api_key,

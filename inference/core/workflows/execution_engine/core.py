@@ -90,6 +90,5 @@ class ExecutionEngine:
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
             usage_fps=fps,
-            usage_api_key=self._api_key,
             usage_workflow_id=self._workflow_id,
         )
