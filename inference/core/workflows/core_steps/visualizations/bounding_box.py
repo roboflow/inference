@@ -21,6 +21,7 @@ from inference.core.workflows.entities.types import (
     FloatZeroToOne,
     FLOAT_ZERO_TO_ONE_KIND,
     BOOLEAN_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -75,9 +76,22 @@ class BoundingBoxManifest(WorkflowBlockManifest):
         default=True
     )
 
+    color_lookup: Union[
+        Literal[
+            "INDEX",
+            "CLASS",
+            "TRACK"
+        ],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field(
+        default="CLASS",
+        description="Strategy to use for mapping colors to annotations.",
+        examples=["CLASS", "$inputs.color_lookup"],
+    )
+
     thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
         description="Thickness of the bounding box in pixels.",
-        default=1,
+        default=2,
     )
 
     roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
@@ -99,17 +113,20 @@ class BoundingBoxManifest(WorkflowBlockManifest):
 annotatorCache = {}
 
 def getAnnotator(
+    color_lookup:str,
     thickness:int,
     roundness: float
 ):
-    key = f"{thickness}_{roundness}"
+    key = f"{color_lookup}_{thickness}_{roundness}"
     if key not in annotatorCache:
         if roundness == 0:
             annotatorCache[key] = sv.BoxAnnotator(
+                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
                 thickness=thickness
             )
         else:
             annotatorCache[key] = sv.RoundBoxAnnotator(
+                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
                 thickness=thickness,
                 roundness=roundness
             )
@@ -127,10 +144,11 @@ class BoundingBoxVisualizationBlock(WorkflowBlock):
         image: WorkflowImageData,
         predictions: sv.Detections,
         copy_image: bool,
+        color_lookup: Optional[str],
         thickness: Optional[int],
-        roundness: Optional[float]
+        roundness: Optional[float],
     ) -> BlockResult:
-        annotator = getAnnotator(thickness, roundness)
+        annotator = getAnnotator(color_lookup, thickness, roundness)
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
