@@ -2,6 +2,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import DynamicBlockDefinition
+
 
 class WorkflowInferenceRequest(BaseModel):
     api_key: str = Field(
@@ -18,3 +20,10 @@ class WorkflowInferenceRequest(BaseModel):
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
     specification: dict
+
+
+class DescribeBlocksRequest(BaseModel):
+    dynamic_blocks_definitions: List[DynamicBlockDefinition] = Field(
+        default_factory=list,
+        description="Dynamic blocks to be used."
+    )

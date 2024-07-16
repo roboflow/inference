@@ -13,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 
 from inference.core import logger
-from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -43,7 +42,7 @@ from inference.core.entities.requests.server_state import (
 )
 from inference.core.entities.requests.workflows import (
     WorkflowInferenceRequest,
-    WorkflowSpecificationInferenceRequest,
+    WorkflowSpecificationInferenceRequest, DescribeBlocksRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
@@ -73,9 +72,6 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
-    ExternalBlockPropertyPrimitiveDefinition,
-    ExternalWorkflowsBlockSelectorDefinition,
-    UniversalQueryLanguageDescription,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowValidationStatus,
@@ -128,6 +124,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.handlers.workflows import handle_describe_workflows_blocks_request
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
@@ -139,10 +136,6 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
-)
-from inference.core.workflows.core_steps.common.query_language.introspection.core import (
-    prepare_operations_descriptions,
-    prepare_operators_descriptions,
 )
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
@@ -157,12 +150,6 @@ from inference.core.workflows.execution_engine.compiler.syntactic_parser import 
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    describe_available_blocks,
-)
-from inference.core.workflows.execution_engine.introspection.connections_discovery import (
-    discover_blocks_connections,
-)
 from inference.models.aliases import resolve_roboflow_model_alias
 
 if LAMBDA:
@@ -889,54 +876,30 @@ class HttpInterface(BaseInterface):
             @app.get(
                 "/workflows/blocks/describe",
                 response_model=WorkflowsBlocksDescription,
-                summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
+                summary="[LEGACY] Endpoint to get definition of workflows blocks that are accessible",
                 description="Endpoint provides detailed information about workflows building blocks that are "
                 "accessible in the inference server. This information could be used to programmatically "
                 "build / display workflows.",
+                deprecated=True,
             )
             @with_route_exceptions
             async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
-                blocks_description = describe_available_blocks()
-                blocks_connections = discover_blocks_connections(
-                    blocks_description=blocks_description,
-                )
-                kinds_connections = {
-                    kind_name: [
-                        ExternalWorkflowsBlockSelectorDefinition(
-                            manifest_type_identifier=c.manifest_type_identifier,
-                            property_name=c.property_name,
-                            property_description=c.property_description,
-                            compatible_element=c.compatible_element,
-                            is_list_element=c.is_list_element,
-                            is_dict_element=c.is_dict_element,
-                        )
-                        for c in connections
-                    ]
-                    for kind_name, connections in blocks_connections.kinds_connections.items()
-                }
-                primitives_connections = [
-                    ExternalBlockPropertyPrimitiveDefinition(
-                        manifest_type_identifier=primitives_connection.manifest_type_identifier,
-                        property_name=primitives_connection.property_name,
-                        property_description=primitives_connection.property_description,
-                        type_annotation=primitives_connection.type_annotation,
-                    )
-                    for primitives_connection in blocks_connections.primitives_connections
-                ]
-                uql_operations_descriptions = prepare_operations_descriptions()
-                uql_operators_descriptions = prepare_operators_descriptions()
-                universal_query_language_description = (
-                    UniversalQueryLanguageDescription.from_internal_entities(
-                        operations_descriptions=uql_operations_descriptions,
-                        operators_descriptions=uql_operators_descriptions,
-                    )
-                )
-                return WorkflowsBlocksDescription(
-                    blocks=blocks_description.blocks,
-                    declared_kinds=blocks_description.declared_kinds,
-                    kinds_connections=kinds_connections,
-                    primitives_connections=primitives_connections,
-                    universal_query_language_description=universal_query_language_description,
+                return handle_describe_workflows_blocks_request()
+
+            @app.post(
+                "/workflows/blocks/describe",
+                response_model=WorkflowsBlocksDescription,
+                summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
+                description="Endpoint provides detailed information about workflows building blocks that are "
+                            "accessible in the inference server. This information could be used to programmatically "
+                            "build / display workflows. Additionally - in request body one can specify list of "
+                            "dynamic blocks definitions which will be transformed into blocks and used to generate "
+                            "schemas and definitions of connections",
+            )
+            @with_route_exceptions
+            async def describe_workflows_blocks(request: DescribeBlocksRequest) -> WorkflowsBlocksDescription:
+                return handle_describe_workflows_blocks_request(
+                    dynamic_blocks_definitions=request.dynamic_blocks_definitions
                 )
 
             @app.post(

@@ -19,7 +19,7 @@ from inference.core.workflows.prototypes.block import (
 class BlockSpecification:
     block_source: str
     identifier: str
-    block_class: Union[Type[WorkflowBlock]]
+    block_class: Type[WorkflowBlock]
     manifest_class: Type[WorkflowBlockManifest]
 
 

@@ -1,7 +1,8 @@
 import types
 from typing import List, Type
 
-from inference.core.workflows.errors import BlockInterfaceError
+from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+from inference.core.workflows.errors import BlockInterfaceError, WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.dynamic_blocks.entities import PythonCode
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,10 +46,12 @@ def assembly_custom_python_block(
     run_function = getattr(code_module, python_code.run_function_name)
 
     async def run(self, *args, **kwargs) -> BlockResult:
-        if not self._allow_custom_python_execution:
-            raise RuntimeError(
-                "It is not possible to execute CustomPython block in that configuration of `inference`. Set "
-                "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=true"
+        if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+            raise WorkflowEnvironmentConfigurationError(
+                public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
+                               "This can be changed by setting environmental variable "
+                               "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+                context="workflow_execution | step_execution | dynamic_step",
             )
         return run_function(self, *args, **kwargs)
 
@@ -63,13 +66,12 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self, allow_custom_python_execution: bool):
-        self._allow_custom_python_execution = allow_custom_python_execution
+    def constructor(self):
         self._init_results = init_function()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["allow_custom_python_execution"]
+        return []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

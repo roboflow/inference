@@ -1,11 +1,15 @@
+from unittest import mock
+
 import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import BlockInterfaceError, StepExecutionError
+from inference.core.workflows.errors import BlockInterfaceError, \
+    WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
 def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
@@ -168,7 +172,6 @@ async def test_workflow_with_custom_python_blocks_measuring_overlap(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_OVERLAP_MEASUREMENT,
@@ -281,7 +284,6 @@ async def test_workflow_with_custom_python_block_operating_on_batch(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
@@ -415,7 +417,6 @@ async def test_workflow_with_custom_python_block_operating_cross_dimensions(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS,
@@ -457,6 +458,7 @@ async def test_workflow_with_custom_python_block_operating_cross_dimensions(
 
 
 @pytest.mark.asyncio
+@mock.patch.object(block_assembler, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False)
 async def test_workflow_with_custom_python_block_when_custom_python_execution_forbidden(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -467,20 +469,14 @@ async def test_workflow_with_custom_python_block_when_custom_python_execution_fo
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": False,
     }
-    execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS,
-        init_parameters=workflow_init_parameters,
-        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-    )
 
     # when
-    with pytest.raises(StepExecutionError):
-        _ = await execution_engine.run_async(
-            runtime_parameters={
-                "image": [dogs_image, crowd_image],
-            }
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
         )
 
 
@@ -562,7 +558,6 @@ async def test_workflow_with_custom_python_block_reducing_dimensionality(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_DIMENSIONALITY_REDUCTION,
@@ -668,7 +663,6 @@ async def test_workflow_with_custom_python_block_running_custom_model(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_HOSTING_MODEL,
@@ -779,7 +773,6 @@ async def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
 
     # when
@@ -847,7 +840,6 @@ async def test_workflow_with_custom_python_block_when_code_does_not_define_decla
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
 
     # when
@@ -921,7 +913,6 @@ async def test_workflow_with_custom_python_block_when_code_does_not_define_decla
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
 
     # when

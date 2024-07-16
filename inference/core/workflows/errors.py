@@ -33,6 +33,10 @@ class WorkflowError(Exception):
         return self._inner_error
 
 
+class WorkflowEnvironmentConfigurationError(WorkflowError):
+    pass
+
+
 class WorkflowCompilerError(WorkflowError):
     pass
 

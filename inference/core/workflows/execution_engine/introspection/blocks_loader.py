@@ -14,9 +14,6 @@ from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingE
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.loader import (
-    load_dynamic_blocks_initializers,
-)
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
@@ -31,8 +28,8 @@ WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
 
-def describe_available_blocks() -> BlocksDescription:
-    blocks = load_workflow_blocks()
+def describe_available_blocks(dynamic_blocks: List[BlockSpecification]) -> BlocksDescription:
+    blocks = load_workflow_blocks() + dynamic_blocks
     result = []
     for block in blocks:
         block_schema = block.manifest_class.model_json_schema()
@@ -180,7 +177,6 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
     plugins_to_load = get_plugin_modules()
     result = load_core_blocks_initializers()
-    result.update(load_dynamic_blocks_initializers())
     for plugin_name in plugins_to_load:
         result.update(load_initializers_from_plugin(plugin_name=plugin_name))
     return result

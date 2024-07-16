@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     WILDCARD_KIND,
@@ -12,6 +13,7 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
+from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
@@ -39,6 +41,15 @@ from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 def compile_dynamic_blocks(
     dynamic_blocks_definitions: List[dict],
 ) -> List[BlockSpecification]:
+    if not dynamic_blocks_definitions:
+        return []
+    if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+        raise WorkflowEnvironmentConfigurationError(
+            public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
+                           "This can be changed by setting environmental variable "
+                           "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+            context="workflow_compilation | dynamic_blocks_compilation",
+        )
     all_defined_kinds = load_all_defined_kinds()
     kinds_lookup = {kind.name: kind for kind in all_defined_kinds}
     dynamic_blocks = [
