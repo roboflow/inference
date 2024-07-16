@@ -7,6 +7,10 @@ from typing import Any
 import numpy as np
 import pytest
 
+
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 from inference_sdk import InferenceHTTPClient
 
 

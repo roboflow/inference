@@ -8,6 +8,9 @@ ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 ROCK_PAPER_SCISSORS_ASSETS = os.path.join(ASSETS_DIR, "rock_paper_scissors")
 
 
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 @pytest.fixture(scope="function")
 def crowd_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "crowd.jpg"))

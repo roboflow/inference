@@ -8,6 +8,10 @@ import numpy as np
 import pytest
 import requests
 
+
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 from inference.core.env import MODEL_CACHE_DIR
 
 ASSETS_DIR = os.path.abspath(

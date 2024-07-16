@@ -4,6 +4,10 @@ import cv2
 import numpy as np
 import pytest
 
+
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 ASSETS_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),

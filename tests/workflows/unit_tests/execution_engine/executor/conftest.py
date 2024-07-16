@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 
 
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 @pytest.fixture(scope="function")
 def example_image_file() -> Generator[str, None, None]:
     with tempfile.TemporaryDirectory() as tmp_dir:

@@ -13,6 +13,15 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
+@pytest.fixture(scope="session")
+def kinesis():
+    os.environ["TELEMETRY_OPT_OUT"] = True
+    import inference
+
+
 @pytest.fixture(scope="session", autouse=True)
 def server_url() -> str:
     # TODO: start using everywhere

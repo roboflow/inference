@@ -2,6 +2,10 @@ import os
 
 import pytest
 
+
+os.environ["TELEMETRY_OPT_OUT"] = "True"
+
+
 from inference.core.env import MAX_ACTIVE_MODELS
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
