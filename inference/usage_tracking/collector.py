@@ -18,6 +18,7 @@ import requests
 
 from inference.core.env import API_KEY, LAMBDA
 from inference.core.logger import logger
+from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
@@ -565,13 +566,18 @@ class UsageCollector:
         resource_id = None
         category = None
         if "workflow" in func_kwargs:
-            if hasattr(func_kwargs["workflow"], "workflow_definition"):
+            workflow: CompiledWorkflow = func_kwargs["workflow"]
+            if hasattr(workflow, "workflow_definition"):
                 # TODO: handle enterprise blocks here
-                workflow_definition = func_kwargs["workflow"].workflow_definition
+                workflow_definition = workflow.workflow_definition
                 enterprise = False
+            if hasattr(workflow, "init_parameters"):
+                init_parameters = workflow.init_parameters
+                if "workflows_core.api_key" in init_parameters:
+                    usage_api_key = init_parameters["workflows_core.api_key"]
             workflow_json = {}
-            if hasattr(func_kwargs["workflow"], "workflow_json"):
-                workflow_json = func_kwargs["workflow"].workflow_json
+            if hasattr(workflow, "workflow_json"):
+                workflow_json = workflow.workflow_json
             resource_details = UsageCollector._resource_details_from_workflow_json(
                 workflow_json=workflow_json,
             )
