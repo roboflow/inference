@@ -10,7 +10,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
     ParsedWorkflowDefinition,
 )
-from inference.core.workflows.execution_engine.dynamic_blocs.entities import (
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
     DynamicBlockDefinition,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (

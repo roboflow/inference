@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.compiler.validator import (
     validate_workflow_specification,
 )
 from inference.core.workflows.execution_engine.debugger.core import dump_execution_graph
-from inference.core.workflows.execution_engine.dynamic_blocs.block_assembler import (
+from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
     compile_dynamic_blocks,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (

@@ -4,10 +4,11 @@ import pytest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import BlockInterfaceError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
-def run(predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
+def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
     bboxes_class_x = predictions[predictions.data["class_name"] == class_x]
     bboxes_class_y = predictions[predictions.data["class_name"] == class_y]
     overlap = []
@@ -33,7 +34,7 @@ def run(predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
 
 
 FUNCTION_TO_GET_MAXIMUM_OVERLAP = """
-def run(overlaps: List[List[float]]) -> BlockResult:
+def run(self, overlaps: List[List[float]]) -> BlockResult:
     max_value = -1
     for overlap in overlaps:
         for overlap_value in overlap:
@@ -73,7 +74,7 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
             },
             "code": {
                 "type": "PythonCode",
-                "function_code": FUNCTION_TO_GET_OVERLAP_OF_BBOXES,
+                "run_function_code": FUNCTION_TO_GET_OVERLAP_OF_BBOXES,
             },
         },
         {
@@ -93,7 +94,7 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
             },
             "code": {
                 "type": "PythonCode",
-                "function_code": FUNCTION_TO_GET_MAXIMUM_OVERLAP,
+                "run_function_code": FUNCTION_TO_GET_MAXIMUM_OVERLAP,
             },
         },
     ],
@@ -167,7 +168,7 @@ async def test_workflow_with_custom_python_blocks_measuring_overlap(
         "workflows_core.model_manager": model_manager,
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        "workflows_core.allow_custom_python_execution": True,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
     }
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_WITH_OVERLAP_MEASUREMENT,
@@ -205,3 +206,728 @@ async def test_workflow_with_custom_python_blocks_measuring_overlap(
     assert (
         result[1]["max_overlap"] is None
     ), "Expected `max_overlap` not to be calculated for second image due to conditional execution"
+
+
+FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS = """
+def run(self, predictions: Batch[sv.Detections]) -> BlockResult:
+    result = []
+    for prediction in predictions:
+        result.append({"max_confidence": np.max(prediction.confidence).item()})
+    return result
+"""
+
+WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "MaxConfidence",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {
+                    "max_confidence": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["float_zero_to_one"],
+                    }
+                },
+                "accepts_batch_input": True,
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "MaxConfidence",
+            "name": "confidence_aggregation",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "max_confidence",
+            "selector": "$steps.confidence_aggregation.max_confidence",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_operating_on_batch(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "max_confidence",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "max_confidence",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        abs(result[0]["max_confidence"] - 0.85599) < 1e-3
+    ), "Expected max confidence to be extracted"
+    assert (
+        abs(result[1]["max_confidence"] - 0.84284) < 1e-3
+    ), "Expected max confidence to be extracted"
+
+
+FUNCTION_TO_ASSOCIATE_DETECTIONS_FOR_CROPS = """
+def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]) -> BlockResult:
+    detection_id2bbox = {
+        detection_id.item(): i for i, detection_id in enumerate(prediction.data["detection_id"])
+    }
+    results = []
+    for crop in crops:
+        parent_id = crop.parent_metadata.parent_id
+        results.append({"associated_detections": prediction[detection_id2bbox[parent_id]]})
+    return results
+"""
+
+
+WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "DetectionsToCropsAssociation",
+                "inputs": {
+                    "prediction": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "selector_data_kind": {
+                            "step_output": [
+                                "Batch[object_detection_prediction]",
+                                "Batch[instance_segmentation_prediction]",
+                                "Batch[keypoint_detection_prediction]",
+                            ]
+                        },
+                    },
+                    "crops": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output_image"],
+                        "is_dimensionality_reference": True,
+                        "dimensionality_offset": 1,
+                    },
+                },
+                "outputs": {
+                    "associated_detections": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [
+                            "Batch[object_detection_prediction]",
+                            "Batch[instance_segmentation_prediction]",
+                            "Batch[keypoint_detection_prediction]",
+                        ],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_ASSOCIATE_DETECTIONS_FOR_CROPS,
+                "run_function_name": "my_function",
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "Crop",
+            "name": "crop",
+            "image": "$inputs.image",
+            "predictions": "$steps.model.predictions",
+        },
+        {
+            "type": "DetectionsToCropsAssociation",
+            "name": "detections_associations",
+            "prediction": "$steps.model.predictions",
+            "crops": "$steps.crop.crops",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "associated_detections",
+            "selector": "$steps.detections_associations.associated_detections",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_operating_cross_dimensions(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "associated_detections",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "associated_detections",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[1]["associated_detections"]) == 12
+    class_names_first_image_crops = [
+        e["class_name"].tolist() for e in result[0]["associated_detections"]
+    ]
+    for class_names in class_names_first_image_crops:
+        assert len(class_names) == 1, "Expected single bbox to be associated"
+    assert len(class_names_first_image_crops) == 2, "Expected 2 crops for first image"
+    class_names_second_image_crops = [
+        e["class_name"].tolist() for e in result[1]["associated_detections"]
+    ]
+    for class_names in class_names_second_image_crops:
+        assert len(class_names) == 1, "Expected single bbox to be associated"
+    assert (
+        len(class_names_second_image_crops) == 12
+    ), "Expected 12 crops for second image"
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_when_custom_python_execution_forbidden(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": False,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    with pytest.raises(StepExecutionError):
+        _ = await execution_engine.run_async(
+            runtime_parameters={
+                "image": [dogs_image, crowd_image],
+            }
+        )
+
+
+FUNCTION_TO_MERGE_CROPS_INTO_TILES = """
+def run(self, crops: Optional[Batch[Optional[WorkflowImageData]]]) -> BlockResult:
+    if crops is None:
+        return {"tiles": None}
+    black_image = np.zeros((192, 168, 3), dtype=np.uint8)
+    images = [crop.numpy_image if crop is not None else black_image for crop in crops]
+    return {"tiles": sv.create_tiles(images)}
+"""
+
+
+WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_DIMENSIONALITY_REDUCTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "DimensionalityReduction",
+                "inputs": {
+                    "crops": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output_image"],
+                    },
+                },
+                "outputs": {"tiles": {"type": "DynamicOutputDefinition", "kind": []}},
+                "output_dimensionality_offset": -1,
+                "accepts_empty_values": True,
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_MERGE_CROPS_INTO_TILES,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+            "class_filter": ["person"],
+        },
+        {
+            "type": "Crop",
+            "name": "crop",
+            "image": "$inputs.image",
+            "predictions": "$steps.model.predictions",
+        },
+        {
+            "type": "DimensionalityReduction",
+            "name": "tile_creation",
+            "crops": "$steps.crop.crops",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "tiles",
+            "selector": "$steps.tile_creation.tiles",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_reducing_dimensionality(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_DIMENSIONALITY_REDUCTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "tiles",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "tiles",
+    }, "Expected all declared outputs to be delivered"
+    assert result[0]["tiles"] is None, "Expected no crops - hence empty output"
+    assert isinstance(result[1]["tiles"], np.ndarray), "Expected np array with tile"
+
+
+MODEL_INIT_FUNCTION = """
+def init_model() -> Dict[str, Any]:
+    model = YOLOv8ObjectDetection(model_id="yolov8n-640")
+    return {"model": model}
+"""
+
+MODEL_INFER_FUNCTION = """
+def infer(self, image: WorkflowImageData) -> BlockResult:
+    predictions = self._init_results["model"].infer(image.numpy_image)
+    return {"predictions": sv.Detections.from_inference(predictions[0].model_dump(by_alias=True, exclude_none=True))}
+"""
+
+WORKFLOW_WITH_PYTHON_BLOCK_HOSTING_MODEL = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "CustomModel",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [
+                            "Batch[object_detection_prediction]",
+                        ],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": MODEL_INFER_FUNCTION,
+                "run_function_name": "infer",
+                "init_function_code": MODEL_INIT_FUNCTION,
+                "init_function_name": "init_model",
+                "imports": [
+                    "from inference.models.yolov8 import YOLOv8ObjectDetection",
+                ],
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "CustomModel",
+            "name": "model",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.model.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_running_custom_model(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_PYTHON_BLOCK_HOSTING_MODEL,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = await execution_engine.run_async(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output for two input images"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert np.allclose(
+        result[0]["predictions"].confidence,
+        [0.85599, 0.50392],
+        atol=1e-3,
+    ), "Expected reproducible predictions for first image"
+    assert np.allclose(
+        result[1]["predictions"].confidence,
+        [
+            0.84284,
+            0.83957,
+            0.81555,
+            0.80455,
+            0.75804,
+            0.75794,
+            0.71715,
+            0.71408,
+            0.71003,
+            0.56938,
+            0.54092,
+            0.43511,
+        ],
+        atol=1e-3,
+    ), "Expected reproducible predictions for second image"
+
+
+BROKEN_RUN_FUNCTION = """
+def run(some: InvalidType):
+    pass
+"""
+
+
+WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "CustomModel",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": BROKEN_RUN_FUNCTION,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "CustomModel",
+            "name": "model",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.model.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
+    model_manager: ModelManager,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+
+    # when
+    with pytest.raises(BlockInterfaceError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+
+
+WORKFLOW_WITHOUT_RUN_FUNCTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "CustomModel",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": "",
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "CustomModel",
+            "name": "model",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.model.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_when_code_does_not_define_declared_run_function(
+    model_manager: ModelManager,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+
+    # when
+    with pytest.raises(BlockInterfaceError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITHOUT_RUN_FUNCTION,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+
+
+WORKFLOW_WITHOUT_DECLARED_INIT_FUNCTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "CustomModel",
+                "inputs": {
+                    "image": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["input_image"],
+                    },
+                },
+                "outputs": {
+                    "predictions": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": MODEL_INFER_FUNCTION,
+                "run_function_name": "infer",
+                "init_function_code": "",
+                "init_function_name": "init_model",
+                "imports": [
+                    "from inference.models.yolov8 import YOLOv8ObjectDetection",
+                ],
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "CustomModel",
+            "name": "model",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.model.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_workflow_with_custom_python_block_when_code_does_not_define_declared_init_function(
+    model_manager: ModelManager,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "dynamic_workflows_blocks.allow_custom_python_execution": True,
+    }
+
+    # when
+    with pytest.raises(BlockInterfaceError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITHOUT_DECLARED_INIT_FUNCTION,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )

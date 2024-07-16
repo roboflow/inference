@@ -1,11 +1,12 @@
 from enum import Enum
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 
 class SelectorType(Enum):
     INPUT_IMAGE = "input_image"
+    STEP_OUTPUT_IMAGE = "step_output_image"
     INPUT_PARAMETER = "input_parameter"
     STEP_OUTPUT = "step_output"
 
@@ -104,14 +105,30 @@ class ManifestDescription(BaseModel):
 
 class PythonCode(BaseModel):
     type: Literal["PythonCode"]
-    function_code: str = Field(
+    run_function_code: str = Field(
         description="Code of python function. Content should be properly formatted including indentations. "
         "Workflows execution engine is to create dynamic module with provided function - ensuring "
-        "imports of the following symbols: [Any, List, Dict, Set, sv, np, math, Batch, "
-        "WorkflowImageData, BlockResult]"
+        "imports of the following symbols: [Any, List, Dict, Set, sv, np, math, time, json, os, "
+        "requests, cv2, shapely, Batch, WorkflowImageData, BlockResult]. Expected signature is: "
+        "def run(self, ... # parameters of manifest apart from name and type). Through self, "
+        "one may access self._init_results which is dict returned by `init_code` if given."
     )
-    function_name: str = Field(
+    run_function_name: str = Field(
         default="run", description="Name of the function shipped in `function_code`."
+    )
+    init_function_code: Optional[str] = Field(
+        description="Code of the function to perform initialisation of the block. It must be "
+        "parameter-free function with signature `def init() -> Dict[str, Any]` setting "
+        "self._init_results on dynamic class initialisation",
+        default=None,
+    )
+    init_function_name: str = Field(
+        default="init",
+        description="Name of init_code function.",
+    )
+    imports: List[str] = Field(
+        default_factory=list,
+        description="List of additional imports required to run the code",
     )
 
 

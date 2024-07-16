@@ -7,6 +7,7 @@ from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     WILDCARD_KIND,
     Kind,
+    StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -14,10 +15,10 @@ from inference.core.workflows.entities.types import (
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
-from inference.core.workflows.execution_engine.dynamic_blocs.block_scaffolding import (
+from inference.core.workflows.execution_engine.dynamic_blocks.block_scaffolding import (
     assembly_custom_python_block,
 )
-from inference.core.workflows.execution_engine.dynamic_blocs.entities import (
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
     BLOCK_SOURCE,
     DynamicBlockDefinition,
     DynamicInputDefinition,
@@ -65,6 +66,7 @@ def create_dynamic_block_specification(
         kinds_lookup=kinds_lookup,
     )
     block_class = assembly_custom_python_block(
+        block_type_name=dynamic_block_definition.manifest.block_type,
         unique_identifier=unique_identifier,
         manifest=block_manifest,
         python_code=dynamic_block_definition.code,
@@ -194,6 +196,8 @@ def collect_python_types_for_selectors(
             selector_kind.append(kinds_lookup[kind_name])
         if selector_type is SelectorType.INPUT_IMAGE:
             result.append(WorkflowImageSelector)
+        elif selector_type is SelectorType.STEP_OUTPUT_IMAGE:
+            result.append(StepOutputImageSelector)
         elif selector_type is SelectorType.INPUT_PARAMETER:
             result.append(WorkflowParameterSelector(kind=selector_kind))
         else:

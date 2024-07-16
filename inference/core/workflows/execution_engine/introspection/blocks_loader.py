@@ -14,7 +14,7 @@ from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingE
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
-from inference.core.workflows.execution_engine.dynamic_blocs.loader import (
+from inference.core.workflows.execution_engine.dynamic_blocks.loader import (
     load_dynamic_blocks_initializers,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (

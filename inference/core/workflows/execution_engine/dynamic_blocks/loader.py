@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, Union
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
-from inference.core.workflows.execution_engine.dynamic_blocs.entities import (
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
     BLOCK_SOURCE,
 )
 
