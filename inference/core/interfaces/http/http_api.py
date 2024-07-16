@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
-from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -405,7 +404,7 @@ class HttpInterface(BaseInterface):
                 ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
             )
         if LAMBDA:
-            app.add_middleware(Middleware(LambdaMiddleware))
+            app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
             app.add_middleware(
