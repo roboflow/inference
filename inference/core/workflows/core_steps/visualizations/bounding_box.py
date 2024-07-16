@@ -1,39 +1,30 @@
-from dataclasses import replace
-from typing import List, Literal, Optional, Type, Union
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationManifest,
+    VisualizationBlock
+)
+
+from typing import Literal, Optional, Type, Union
 
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.entities.base import (
-    OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    # IMAGE_KIND,
-    # OBJECT_DETECTION_PREDICTION_KIND,
-    # INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    # KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     INTEGER_KIND,
     FloatZeroToOne,
     FLOAT_ZERO_TO_ONE_KIND,
-    BOOLEAN_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
     WorkflowParameterSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
-    WorkflowBlock,
     WorkflowBlockManifest,
 )
 
 OUTPUT_IMAGE_KEY: str = "image"
+
 TYPE: str = "BoundingBoxVisualization"
 SHORT_DESCRIPTION = (
     "Draws a box around detected objects in an image."
@@ -43,8 +34,8 @@ The `BoundingBoxVisualization` block draws a box around detected
 objects in an image using Supervision's `sv.RoundBoxAnnotator`.
 """
 
-
-class BoundingBoxManifest(WorkflowBlockManifest):
+class BoundingBoxManifest(VisualizationManifest):
+    type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
             "short_description": SHORT_DESCRIPTION,
@@ -53,91 +44,45 @@ class BoundingBoxManifest(WorkflowBlockManifest):
             "block_type": "visualization",
         }
     )
-    type: Literal[f"{TYPE}"]
-    predictions: StepOutputSelector(
-        kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
-        description="Predictions",
-        examples=["$steps.object_detection_model.predictions"],
-    )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        title="Input Image",
-        description="The input image for this step.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("image", "images"),
-    )
-
-    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
-        description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
-        default=True
-    )
-
-    color_lookup: Union[
-        Literal[
-            "INDEX",
-            "CLASS",
-            "TRACK"
-        ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field(
-        default="CLASS",
-        description="Strategy to use for mapping colors to annotations.",
-        examples=["CLASS", "$inputs.color_lookup"],
-    )
-
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
         description="Thickness of the bounding box in pixels.",
         default=2,
     )
 
-    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field( # type: ignore
         description="Roundness of the corners of the bounding box.",
         default=0.0,
     )
 
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name=OUTPUT_IMAGE_KEY,
-                kind=[
-                    BATCH_OF_IMAGES_KIND,
-                ],
-            ),
-        ]
-
-annotatorCache = {}
-
-def getAnnotator(
-    color_lookup:str,
-    thickness:int,
-    roundness: float
-):
-    key = f"{color_lookup}_{thickness}_{roundness}"
-    if key not in annotatorCache:
-        if roundness == 0:
-            annotatorCache[key] = sv.BoxAnnotator(
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
-                thickness=thickness
-            )
-        else:
-            annotatorCache[key] = sv.RoundBoxAnnotator(
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
-                thickness=thickness,
-                roundness=roundness
-            )
-    return annotatorCache[key]
-class BoundingBoxVisualizationBlock(WorkflowBlock):
+class BoundingBoxVisualizationBlock(VisualizationBlock):
     def __init__(self):
-        pass
+        self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BoundingBoxManifest
+
+    def getAnnotator(
+        self,
+        color_lookup:str,
+        thickness:int,
+        roundness: float
+    ) -> sv.annotators.base.BaseAnnotator:
+        key = f"{color_lookup}_{thickness}_{roundness}"
+        if key not in self.annotatorCache:
+            if roundness == 0:
+                self.annotatorCache[key] = sv.BoxAnnotator(
+                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
+                    thickness=thickness
+                )
+            else:
+                self.annotatorCache[key] = sv.RoundBoxAnnotator(
+                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_lookup),
+                    thickness=thickness,
+                    roundness=roundness
+                )
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -148,7 +93,7 @@ class BoundingBoxVisualizationBlock(WorkflowBlock):
         thickness: Optional[int],
         roundness: Optional[float],
     ) -> BlockResult:
-        annotator = getAnnotator(color_lookup, thickness, roundness)
+        annotator = self.getAnnotator(color_lookup, thickness, roundness)
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
