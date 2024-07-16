@@ -17,9 +17,14 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    INTEGER_KIND,
+    FloatZeroToOne,
+    FLOAT_ZERO_TO_ONE_KIND,
+    BOOLEAN_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
-    WorkflowImageSelector
+    WorkflowImageSelector,
+    WorkflowParameterSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -65,6 +70,21 @@ class BoundingBoxManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
+    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+        description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
+        default=True
+    )
+
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+        description="Thickness of the bounding box in pixels.",
+        default=1,
+    )
+
+    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="Roundness of the corners of the bounding box.",
+        default=0.0,
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -76,9 +96,27 @@ class BoundingBoxManifest(WorkflowBlockManifest):
             ),
         ]
 
+annotatorCache = {}
+
+def getAnnotator(
+    thickness:int,
+    roundness: float
+):
+    key = f"{thickness}_{roundness}"
+    if key not in annotatorCache:
+        if roundness == 0:
+            annotatorCache[key] = sv.BoxAnnotator(
+                thickness=thickness
+            )
+        else:
+            annotatorCache[key] = sv.RoundBoxAnnotator(
+                thickness=thickness,
+                roundness=roundness
+            )
+    return annotatorCache[key]
 class BoundingBoxVisualizationBlock(WorkflowBlock):
     def __init__(self):
-        self.annotator = None
+        pass
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -87,15 +125,15 @@ class BoundingBoxVisualizationBlock(WorkflowBlock):
     async def run(
         self,
         image: WorkflowImageData,
-        predictions: sv.Detections
+        predictions: sv.Detections,
+        copy_image: bool,
+        thickness: Optional[int],
+        roundness: Optional[float]
     ) -> BlockResult:
-        if self.annotator is None:
-            self.annotator = sv.RoundBoxAnnotator(
-                thickness=3
-            )
+        annotator = getAnnotator(thickness, roundness)
 
-        annotated_image = self.annotator.annotate(
-            scene=image.numpy_image,
+        annotated_image = annotator.annotate(
+            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions
         )
 
