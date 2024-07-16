@@ -404,9 +404,7 @@ class HttpInterface(BaseInterface):
                 ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
             )
         if LAMBDA:
-            app.add_middleware(
-                Middleware(LambdaMiddleware)
-            )
+            app.add_middleware(Middleware(LambdaMiddleware))
 
         if len(ALLOW_ORIGINS) > 0:
             app.add_middleware(
