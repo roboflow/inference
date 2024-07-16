@@ -15,6 +15,9 @@ from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBl
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
 )
+from inference.core.workflows.core_steps.models.foundation.florence_2 import (
+    Florence2ModelBlock,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
     RoboflowInstanceSegmentationModelBlock,
 )
@@ -74,6 +77,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMForClassificationBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
+        Florence2ModelBlock,
         RoboflowInstanceSegmentationModelBlock,
         RoboflowKeypointDetectionModelBlock,
         RoboflowClassificationModelBlock,
