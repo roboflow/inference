@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
@@ -8,10 +9,14 @@ from inference.core.workflows.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    IMAGE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
+    # IMAGE_KIND,
+    # OBJECT_DETECTION_PREDICTION_KIND,
+    # INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    # KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_IMAGES_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector
@@ -45,9 +50,9 @@ class BoundingBoxManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
     predictions: StepOutputSelector(
         kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",
@@ -66,7 +71,7 @@ class BoundingBoxManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
                 kind=[
-                    IMAGE_KIND,
+                    BATCH_OF_IMAGES_KIND,
                 ],
             ),
         ]
@@ -85,11 +90,19 @@ class BoundingBoxVisualizationBlock(WorkflowBlock):
         predictions: sv.Detections
     ) -> BlockResult:
         if self.annotator is None:
-            self.annotator = sv.RoundBoxAnnotator()
+            self.annotator = sv.RoundBoxAnnotator(
+                thickness=3
+            )
 
-        output = self.annotator.annotate(
+        annotated_image = self.annotator.annotate(
             scene=image.numpy_image,
             detections=predictions
+        )
+
+        output = WorkflowImageData(
+            parent_metadata=image.parent_metadata,
+            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+            numpy_image=annotated_image,
         )
 
         return {
