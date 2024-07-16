@@ -5,9 +5,9 @@ from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
-from fastapi.middleware import Middleware
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
+from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
