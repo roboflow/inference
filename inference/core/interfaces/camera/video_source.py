@@ -1083,7 +1083,7 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
-    fps: Optional[float] = 0,
+    fps: float = 0,
 ) -> bool:
     success, image = video.retrieve()
     if not success:

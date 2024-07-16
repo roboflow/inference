@@ -24,7 +24,7 @@ class ExecutionEngine:
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
         api_key: Optional[str] = None,
-        workflow_id: Optional[str] = "",
+        workflow_id: Optional[str] = None,
     ) -> "ExecutionEngine":
         if api_key is None:
             api_key = API_KEY
@@ -47,8 +47,8 @@ class ExecutionEngine:
         compiled_workflow: CompiledWorkflow,
         max_concurrent_steps: int,
         prevent_local_images_loading: bool,
-        api_key: Optional[str] = "",
-        workflow_id: Optional[str] = "",
+        api_key: Optional[str] = None,
+        workflow_id: Optional[str] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
@@ -60,7 +60,7 @@ class ExecutionEngine:
         self,
         runtime_parameters: Dict[str, Any],
         event_loop: Optional[AbstractEventLoop] = None,
-        fps: Optional[float] = 0,
+        fps: float = 0,
     ) -> List[Dict[str, Any]]:
         if event_loop is None:
             try:
@@ -74,7 +74,7 @@ class ExecutionEngine:
     async def run_async(
         self,
         runtime_parameters: Dict[str, Any],
-        fps: Optional[float] = 0,
+        fps: float = 0,
     ) -> List[Dict[str, Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,

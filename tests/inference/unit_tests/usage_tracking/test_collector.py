@@ -116,7 +116,7 @@ def test_get_api_key_usage_containing_resource_with_no_payload_containing_api_ke
                 },
             },
         },
-    ]        
+    ]
 
     # when
     api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(api_key="api1", usage_payloads=usage_payloads)
@@ -162,7 +162,7 @@ def test_get_api_key_usage_containing_resource_with_no_payload_containing_resour
                 },
             },
         }
-    ]        
+    ]
 
     # when
     api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(api_key="api2", usage_payloads=usage_payloads)
