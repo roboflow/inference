@@ -11,7 +11,6 @@ from _pytest.fixtures import fixture
 from PIL import Image
 
 ASSETS_DIR_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
-os.environ["TELEMETRY_OPT_OUT"] = "True"
 
 
 @fixture(scope="function")

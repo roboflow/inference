@@ -13,9 +13,6 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 
-os.environ["TELEMETRY_OPT_OUT"] = "True"
-
-
 @pytest.fixture(scope="session")
 def kinesis():
     os.environ["TELEMETRY_OPT_OUT"] = True

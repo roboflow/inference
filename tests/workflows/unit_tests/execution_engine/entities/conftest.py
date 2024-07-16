@@ -1,11 +1,7 @@
-import os
 import tempfile
 from typing import Generator
 
 import pytest
-
-
-os.environ["TELEMETRY_OPT_OUT"] = "True"
 
 
 @pytest.fixture(scope="function")

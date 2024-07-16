@@ -9,9 +9,6 @@ ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 ALL_IMAGES_LIST = [os.path.join(ASSETS_DIR, f"{i}.jpg") for i in range(1, 6)]
 
 
-os.environ["TELEMETRY_OPT_OUT"] = "True"
-
-
 @pytest.fixture()
 def all_images() -> List[np.ndarray]:
     return [cv2.imread(path) for path in ALL_IMAGES_LIST]

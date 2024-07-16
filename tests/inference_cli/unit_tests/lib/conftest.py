@@ -5,9 +5,6 @@ from typing import Generator
 import pytest
 
 
-os.environ["TELEMETRY_OPT_OUT"] = "True"
-
-
 @pytest.fixture(scope="function")
 def text_file_path() -> str:
     return os.path.join(os.path.dirname(__file__), "assets", "file_with_lines.txt")

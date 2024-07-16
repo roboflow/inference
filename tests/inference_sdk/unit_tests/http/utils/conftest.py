@@ -7,9 +7,6 @@ import numpy as np
 import pytest
 
 
-os.environ["TELEMETRY_OPT_OUT"] = "True"
-
-
 @pytest.fixture(scope="function")
 def example_local_image() -> Generator[Tuple[str, np.ndarray], None, None]:
     with tempfile.TemporaryDirectory() as tmp_directory:

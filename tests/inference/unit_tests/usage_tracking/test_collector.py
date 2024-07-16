@@ -413,6 +413,57 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
         }]
 
 
+def test_zip_usage_payloads_with_system_info_missing_resource_id():
+    dumped_usage_payloads = [
+        {
+            "api2": {
+                None: {
+                    "api_key": "api2",
+                    "resource_id": None,
+                    "timestamp_start": 1721032989934855000,
+                    "is_gpu_available": False,
+                    "python_version": "3.10.0",
+                    "inference_version": "10.10.10",
+                },
+            },
+        },
+        {
+            "api2": {
+                "fake:resource1": {
+                    "api_key": "api2",
+                    "resource_id": "fake:resource1",
+                    "category": "fake",
+                    "timestamp_start": 1721032989934856002,
+                    "timestamp_stop": 1721032989934856003,
+                    "processed_frames": 1,
+                    "source_duration": 1,
+                },
+            },
+        }
+    ]
+
+    # when
+    zipped_usage_payloads = UsageCollector._zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+
+    # then
+    assert zipped_usage_payloads == [{
+            "api2": {
+                "fake:resource1": {
+                    "api_key": "api2",
+                    "resource_id": "fake:resource1",
+                    "category": "fake",
+                    "timestamp_start": 1721032989934855000,
+                    "timestamp_stop": 1721032989934856003,
+                    "processed_frames": 1,
+                    "source_duration": 1,
+                    "is_gpu_available": False,
+                    "python_version": "3.10.0",
+                    "inference_version": "10.10.10",
+                },
+            },
+        },]
+
+
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
     dumped_usage_payloads = [
         {
