@@ -38,6 +38,39 @@ def test_getting_blocks_descriptions_using_legacy_get_endpoint(server_url) -> No
     ), "Expected key `dynamic_block_definition_schema` to be present in response"
 
 
+def test_getting_blocks_descriptions_using_new_post_endpoint(server_url) -> None:
+    # when
+    response = requests.post(f"{server_url}/workflows/blocks/describe")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert "blocks" in response_data, "Response expected to define blocks"
+    assert len(response_data["blocks"]) > 0, "Some blocs expected to be added"
+    assert (
+        "declared_kinds" in response_data
+    ), "Declared kinds must be provided in output"
+    assert len(response_data["declared_kinds"]) > 0, "Some kinds must be declared"
+    assert (
+        "kinds_connections" in response_data
+    ), "Kinds connections expected to be declared"
+    assert len(response_data["declared_kinds"]) >= len(
+        response_data["kinds_connections"]
+    ), "Kinds connections declared as inputs for blocks must be at most in number of all declared kinds"
+    assert (
+        "primitives_connections" in response_data
+    ), "Primitives connections expected to be in response"
+    assert (
+        len(response_data["primitives_connections"]) > 0
+    ), "Expected some primitive parameters for steps to be declared"
+    assert (
+        "universal_query_language_description" in response_data
+    ), "Expected universal_query_language_description key to be present in response"
+    assert (
+        "dynamic_block_definition_schema" in response_data
+    ), "Expected key `dynamic_block_definition_schema` to be present in response"
+
+
 def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps(
     server_url,
 ) -> None:

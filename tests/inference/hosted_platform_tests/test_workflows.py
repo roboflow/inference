@@ -20,6 +20,7 @@ def test_getting_schemas_from_legacy_get_endpoint(
         "kinds_connections",
         "primitives_connections",
         "universal_query_language_description",
+        "dynamic_block_definition_schema",
     }
     assert len(response_data["blocks"]) > 0, "Some blocs expected to be added"
     assert len(response_data["declared_kinds"]) > 0, "Some kinds must be declared"
@@ -29,9 +30,6 @@ def test_getting_schemas_from_legacy_get_endpoint(
     assert (
         len(response_data["primitives_connections"]) > 0
     ), "Expected some primitive parameters for steps to be declared"
-    assert (
-        "dynamic_block_definition_schema" in response_data
-    ), "Expected key `dynamic_block_definition_schema` to be present in response"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -52,6 +50,7 @@ def test_getting_schemas_from_new_post_endpoint(
         "kinds_connections",
         "primitives_connections",
         "universal_query_language_description",
+        "dynamic_block_definition_schema",
     }
     assert len(response_data["blocks"]) > 0, "Some blocs expected to be added"
     assert len(response_data["declared_kinds"]) > 0, "Some kinds must be declared"
@@ -61,9 +60,6 @@ def test_getting_schemas_from_new_post_endpoint(
     assert (
         len(response_data["primitives_connections"]) > 0
     ), "Expected some primitive parameters for steps to be declared"
-    assert (
-        "dynamic_block_definition_schema" in response_data
-    ), "Expected key `dynamic_block_definition_schema` to be present in response"
 
 
 FUNCTION = """

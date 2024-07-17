@@ -903,10 +903,13 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def describe_workflows_blocks(
-                request: DescribeBlocksRequest,
+                request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
+                dynamic_blocks_definitions = None
+                if request is not None:
+                    dynamic_blocks_definitions = request.dynamic_blocks_definitions
                 return handle_describe_workflows_blocks_request(
-                    dynamic_blocks_definitions=request.dynamic_blocks_definitions
+                    dynamic_blocks_definitions=dynamic_blocks_definitions
                 )
 
             @app.post(
