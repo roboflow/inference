@@ -15,3 +15,4 @@ class LoRAPaliGemma(LoRATransformerModel):
 
     generation_includes_input = True
     transformers_class = PaliGemmaForConditionalGeneration
+    load_base_from_roboflow = True
