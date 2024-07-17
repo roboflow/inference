@@ -3,6 +3,10 @@ from inference.core.workflows.core_steps.visualizations.base import (
     VisualizationBlock
 )
 
+from inference.core.workflows.core_steps.visualizations.utils import (
+    strToColor
+)
+
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
@@ -14,7 +18,6 @@ from inference.core.workflows.entities.base import (
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     FLOAT_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     STRING_KIND,
     WorkflowParameterSelector
 )
@@ -131,21 +134,8 @@ class LabelVisualizationBlock(VisualizationBlock):
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            if text_color.startswith("#"):
-                text_color = sv.Color.from_hex(text_color)
-            elif text_color.startswith("rgb"):
-                r, g, b = map(int, text_color[4:-1].split(","))
-                text_color = sv.Color.from_rgb_tuple((r, g, b))
-            elif text_color.startswith("bgr"):
-                b, g, r = map(int, text_color[4:-1].split(","))
-                text_color = sv.Color.from_bgr_tuple((b, g, r))
-            elif hasattr(sv.Color, text_color.upper()):
-                text_color = getattr(sv.Color, text_color.upper())
-            else:
-                raise ValueError(f"Invalid text color: {text_color}; valid formats are #RRGGBB, rgb(R, G, B), bgr(B, G, R), or a valid color name (like WHITE, BLACK, or BLUE).")
-
-            print(f"Text color: {text_color}")
-
+            text_color = strToColor(text_color)
+            
             self.annotatorCache[key] = sv.LabelAnnotator(
                 color=palette,
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),

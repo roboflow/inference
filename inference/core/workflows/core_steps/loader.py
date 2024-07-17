@@ -93,6 +93,9 @@ from inference.core.workflows.core_steps.visualizations.color import (
 from inference.core.workflows.core_steps.visualizations.corner import (
     CornerVisualizationBlock
 )
+from inference.core.workflows.core_steps.visualizations.crop import (
+    CropVisualizationBlock
+)
 from inference.core.workflows.core_steps.visualizations.dot import (
     DotVisualizationBlock
 )
@@ -157,6 +160,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CircleVisualizationBlock,
         ColorVisualizationBlock,
         CornerVisualizationBlock,
+        CropVisualizationBlock,
         DotVisualizationBlock,
         EllipseVisualizationBlock,
         HaloVisualizationBlock,

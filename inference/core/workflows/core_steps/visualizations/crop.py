@@ -13,6 +13,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
+    FLOAT_KIND,
     STRING_KIND,
     WorkflowParameterSelector
 )
@@ -23,16 +24,16 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_IMAGE_KEY: str = "image"
 
-TYPE: str = "TriangleVisualization"
+TYPE: str = "CropVisualization"
 SHORT_DESCRIPTION = (
-    "Draws triangle markers on an image at specific coordinates based on provided detections."
+    "Draws scaled up crops of detections on the scene."
 )
 LONG_DESCRIPTION = """
-The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
-based on provided detections using Supervision's `sv.TriangleAnnotator`.
+The `CropVisualization` block draws scaled up crops of detections
+on the scene using Supervision's `sv.CropAnnotator`.
 """
 
-class TriangleManifest(VisualizationManifest):
+class CropManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -59,35 +60,29 @@ class TriangleManifest(VisualizationManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field( # type: ignore
         default="TOP_CENTER",
-        description="The anchor position for placing the triangle.",
+        description="The anchor position for placing the crop.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Base width of the triangle in pixels.",
-        default=10,
-        examples=[10, "$inputs.base"],
+    scale_factor: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field( # type: ignore
+        description="The factor by which to scale the cropped image part. A factor of 2, for example, would double the size of the cropped area, allowing for a closer view of the detection.",
+        default=2.0,
+        examples=[2.0, "$inputs.scale_factor"],
     )
 
-    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Height of the triangle in pixels.",
-        default=10,
-        examples=[10, "$inputs.height"],
-    )
-    
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Thickness of the outline of the triangle in pixels.",
-        default=0,
-        examples=[2, "$inputs.outline_thickness"],
+    border_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Thickness of the outline in pixels.",
+        default=2,
+        examples=[2, "$inputs.border_thickness"],
     )
 
-class TriangleVisualizationBlock(VisualizationBlock):
+class CropVisualizationBlock(VisualizationBlock):
     def __init__(self):
         self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return TriangleManifest
+        return CropManifest
 
     def getAnnotator(
         self,
@@ -96,30 +91,27 @@ class TriangleVisualizationBlock(VisualizationBlock):
         custom_colors: List[str],
         color_axis: str,
         position: str,
-        base: int,
-        height: int,
-        outline_thickness: int,
+        scale_factor: float,
+        border_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(map(str, [
             color_palette,
             palette_size,
             color_axis,
             position,
-            base,
-            height,
-            outline_thickness,
+            scale_factor,
+            border_thickness,
         ]))
         
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            self.annotatorCache[key] = sv.TriangleAnnotator(
-                color=palette,
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+            self.annotatorCache[key] = sv.CropAnnotator(
+                border_color=palette,
+                border_color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                 position=getattr(sv.Position, position),
-                base=base,
-                height=height,
-                outline_thickness=outline_thickness
+                scale_factor=scale_factor,
+                border_thickness=border_thickness
             )
 
         return self.annotatorCache[key] 
@@ -134,9 +126,8 @@ class TriangleVisualizationBlock(VisualizationBlock):
         custom_colors: Optional[List[str]],
         color_axis: Optional[str],
         position: Optional[str],
-        base: Optional[int],
-        height: Optional[int],
-        outline_thickness: Optional[int],
+        scale_factor: Optional[float],
+        border_thickness: Optional[int],
     ) -> BlockResult:
         annotator = self.getAnnotator(
             color_palette,
@@ -144,9 +135,8 @@ class TriangleVisualizationBlock(VisualizationBlock):
             custom_colors,
             color_axis,
             position,
-            base,
-            height,
-            outline_thickness,
+            scale_factor,
+            border_thickness,
         )
 
         annotated_image = annotator.annotate(
