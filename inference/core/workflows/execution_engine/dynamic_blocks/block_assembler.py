@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
@@ -119,6 +120,7 @@ def assembly_dynamic_block_manifest(
         **inputs_definitions,
     )
     outputs_definitions = build_outputs_definitions(
+        block_type=manifest_description.block_type,
         outputs=manifest_description.outputs,
         kinds_lookup=kinds_lookup,
     )
@@ -181,11 +183,14 @@ def build_input_field_type(
 ) -> type:
     input_type_union_elements = collect_python_types_for_selectors(
         block_type=block_type,
+        input_name=input_name,
         input_definition=input_definition,
         kinds_lookup=kinds_lookup,
     )
     input_type_union_elements += collect_python_types_for_values(
-        input_definition=input_definition
+        block_type=block_type,
+        input_name=input_name,
+        input_definition=input_definition,
     )
     if not input_type_union_elements:
         raise DynamicBlockError(
@@ -204,6 +209,7 @@ def build_input_field_type(
 
 def collect_python_types_for_selectors(
     block_type: str,
+    input_name: str,
     input_definition: DynamicInputDefinition,
     kinds_lookup: Dict[str, Kind],
 ) -> List[type]:
@@ -216,9 +222,9 @@ def collect_python_types_for_selectors(
         for kind_name in selector_kind_names:
             if kind_name not in kinds_lookup:
                 raise DynamicBlockError(
-                    public_message=f"Could not find kind with name {kind_name} declared for dynamic block "
-                    f"`{block_type}` within kinds that would be recognised by Execution Engine knowing the "
-                    f"following kinds: {list(kinds_lookup.keys())}.",
+                    public_message=f"Could not find kind with name `{kind_name}` declared for input `{input_name}` "
+                    f"of dynamic block `{block_type}` within kinds that would be recognised by Execution "
+                    f"Engine knowing the following kinds: {list(kinds_lookup.keys())}.",
                     context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
                 )
             selector_kind.append(kinds_lookup[kind_name])
@@ -228,16 +234,31 @@ def collect_python_types_for_selectors(
             result.append(StepOutputImageSelector)
         elif selector_type is SelectorType.INPUT_PARAMETER:
             result.append(WorkflowParameterSelector(kind=selector_kind))
-        else:
+        elif selector_type is SelectorType.STEP_OUTPUT:
             result.append(StepOutputSelector(kind=selector_kind))
+        else:
+            raise DynamicBlockError(
+                public_message=f"Could not recognise selector type `{selector_type}` declared for input `{input_name}` "
+                               f"of dynamic block `{block_type}`.",
+                context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
+            )
     return result
 
 
 def collect_python_types_for_values(
+    block_type: str,
+    input_name: str,
     input_definition: DynamicInputDefinition,
 ) -> List[type]:
     result = []
     for value_type_name in input_definition.value_types:
+        if value_type_name not in PYTHON_TYPES_MAPPING:
+            raise DynamicBlockError(
+                public_message=f"Could not resolve Python type `{value_type_name}` declared for input `{input_name}` "
+                               f"of dynamic block `{block_type}` within types that would be recognised by Execution "
+                               f"Engine knowing the following types: {list(PYTHON_TYPES_MAPPING.keys())}.",
+                context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
+            )
         value_type = PYTHON_TYPES_MAPPING[value_type_name]
         result.append(value_type)
     return result
@@ -249,7 +270,7 @@ def build_input_field_metadata(input_definition: DynamicInputDefinition) -> Fiel
     default_value = input_definition.default_value
     field_metadata_params = {}
     if default_holds_compound_object(default_value=default_value):
-        field_metadata_params["default_factory"] = lambda: default_value
+        field_metadata_params["default_factory"] = lambda: deepcopy(default_value)
     else:
         field_metadata_params["default"] = default_value
     field_metadata = Field(**field_metadata_params)
@@ -265,6 +286,7 @@ def default_holds_compound_object(default_value: Any) -> bool:
 
 
 def build_outputs_definitions(
+    block_type: str,
     outputs: Dict[str, DynamicOutputDefinition],
     kinds_lookup: Dict[str, Kind],
 ) -> List[OutputDefinition]:
@@ -273,12 +295,33 @@ def build_outputs_definitions(
         if not definition.kind:
             result.append(OutputDefinition(name=name, kind=[WILDCARD_KIND]))
         else:
-            actual_kinds = [
-                kinds_lookup.get(kind_name, Kind(name=kind_name))
-                for kind_name in definition.kind
-            ]
+            actual_kinds = collect_actual_kinds_for_output(
+                block_type=block_type,
+                output_name=name,
+                output=definition,
+                kinds_lookup=kinds_lookup,
+            )
             result.append(OutputDefinition(name=name, kind=actual_kinds))
     return result
+
+
+def collect_actual_kinds_for_output(
+    block_type: str,
+    output_name: str,
+    output: DynamicOutputDefinition,
+    kinds_lookup: Dict[str, Kind],
+) -> List[Kind]:
+    actual_kinds = []
+    for kind_name in output.kind:
+        if kind_name not in kinds_lookup:
+            raise DynamicBlockError(
+                public_message=f"Could not find kind with name `{kind_name}` declared for output `{output_name}` "
+                               f"of dynamic block `{block_type}` within kinds that would be recognised by Execution "
+                               f"Engine knowing the following kinds: {list(kinds_lookup.keys())}.",
+                context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
+            )
+        actual_kinds.append(kinds_lookup[kind_name])
+    return actual_kinds
 
 
 def collect_input_dimensionality_offsets(

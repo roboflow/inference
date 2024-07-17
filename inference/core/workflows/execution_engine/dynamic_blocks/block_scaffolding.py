@@ -3,7 +3,6 @@ from typing import List, Type
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
 from inference.core.workflows.errors import (
-    BlockInterfaceError,
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
