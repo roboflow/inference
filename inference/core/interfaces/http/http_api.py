@@ -920,6 +920,8 @@ class HttpInterface(BaseInterface):
             async def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any]
             ) -> List[OutputDefinition]:
+                # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
+                # we need to provide dynamic blocks manifests here
                 dummy_workflow_definition = {
                     "version": "1.0",
                     "inputs": [],
