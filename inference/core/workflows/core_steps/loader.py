@@ -81,6 +81,10 @@ from inference.core.workflows.core_steps.visualizations.bounding_box import (
     BoundingBoxVisualizationBlock
 )
 
+from inference.core.workflows.core_steps.visualizations.corner import (
+    CornerVisualizationBlock
+)
+
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
@@ -116,4 +120,5 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         FirstNonEmptyOrDefaultBlock,
 
         BoundingBoxVisualizationBlock,
+        CornerVisualizationBlock
     ]
