@@ -105,6 +105,9 @@ from inference.core.workflows.core_steps.visualizations.halo import (
 from inference.core.workflows.core_steps.visualizations.mask import (
     MaskVisualizationBlock
 )
+from inference.core.workflows.core_steps.visualizations.pixelate import (
+    PixelateVisualizationBlock
+)
 from inference.core.workflows.core_steps.visualizations.polygon import (
     PolygonVisualizationBlock
 )
@@ -155,6 +158,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EllipseVisualizationBlock,
         HaloVisualizationBlock,
         MaskVisualizationBlock,
+        PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
     ]

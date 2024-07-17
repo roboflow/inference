@@ -31,16 +31,16 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_IMAGE_KEY: str = "image"
 
-TYPE: str = "BlurVisualization"
+TYPE: str = "PixelateVisualization"
 SHORT_DESCRIPTION = (
-    "Blurs detected objects in an image."
+    "Pixelates detected objects in an image."
 )
 LONG_DESCRIPTION = """
-The `BlurVisualization` block blurs detected
-objects in an image using Supervision's `sv.BlurAnnotator`.
+The `PixelateVisualization` block pixelates detected
+objects in an image using Supervision's `sv.PixelateAnnotator`.
 """
 
-class BlurManifest(WorkflowBlockManifest):
+class PixelateManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -73,10 +73,10 @@ class BlurManifest(WorkflowBlockManifest):
         default=True
     )
     
-    kernel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Size of the average pooling kernel used for blurring.",
-        default=15,
-        examples=[15, "$inputs.kernel_size"],
+    pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Size of the pixelation.",
+        default=20,
+        examples=[20, "$inputs.pixel_size"],
     )
 
     @classmethod
@@ -90,25 +90,25 @@ class BlurManifest(WorkflowBlockManifest):
             ),
         ]
 
-class BlurVisualizationBlock(WorkflowBlock):
+class PixelateVisualizationBlock(WorkflowBlock):
     def __init__(self):
         self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BlurManifest
+        return PixelateManifest
 
     def getAnnotator(
         self,
-        kernel_size: int,
+        pixel_size: int,
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(map(str, [
-            kernel_size
+            pixel_size
         ]))
         
         if key not in self.annotatorCache:
-            self.annotatorCache[key] = sv.BlurAnnotator(
-                kernel_size=kernel_size
+            self.annotatorCache[key] = sv.PixelateAnnotator(
+                pixel_size=pixel_size
             )
         return self.annotatorCache[key] 
 
@@ -117,10 +117,10 @@ class BlurVisualizationBlock(WorkflowBlock):
         image: WorkflowImageData,
         predictions: sv.Detections,
         copy_image: bool,
-        kernel_size: Optional[int],
+        pixel_size: Optional[int],
     ) -> BlockResult:
         annotator = self.getAnnotator(
-            kernel_size,
+            pixel_size,
         )
 
         annotated_image = annotator.annotate(
