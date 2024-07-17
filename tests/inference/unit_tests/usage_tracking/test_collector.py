@@ -431,7 +431,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
             "api2": {
                 "fake:resource1": {
                     "api_key": "api2",
-                    "resource_id": "fake:resource1",
+                    "resource_id": "resource1",
                     "category": "fake",
                     "timestamp_start": 1721032989934856002,
                     "timestamp_stop": 1721032989934856003,
@@ -450,7 +450,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
             "api2": {
                 "fake:resource1": {
                     "api_key": "api2",
-                    "resource_id": "fake:resource1",
+                    "resource_id": "resource1",
                     "category": "fake",
                     "timestamp_start": 1721032989934855000,
                     "timestamp_stop": 1721032989934856003,
@@ -482,7 +482,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
             "api2": {
                 "fake:resource1": {
                     "api_key": "api2",
-                    "resource_id": "fake:resource1",
+                    "resource_id": "resource1",
                     "category": "fake",
                     "timestamp_start": 1721032989934856002,
                     "timestamp_stop": 1721032989934856003,
@@ -501,7 +501,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
             "api2": {
                 "fake:resource1": {
                     "api_key": "api2",
-                    "resource_id": "fake:resource1",
+                    "resource_id": "resource1",
                     "category": "fake",
                     "timestamp_start": 1721032989934855000,
                     "timestamp_stop": 1721032989934856003,

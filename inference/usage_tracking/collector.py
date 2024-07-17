@@ -205,7 +205,7 @@ class UsageCollector:
                             continue
                         resource_id = api_key_usage_with_resource["resource_id"]
                         category = api_key_usage_with_resource.get("category")
-                        resource_usage_key = resource_id
+                        resource_usage_key = f"{category}:{resource_id}"
                         resource_usage_payload["api_key"] = api_key
                         resource_usage_payload["resource_id"] = resource_id
                         resource_usage_payload["category"] = category
