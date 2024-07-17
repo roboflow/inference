@@ -8,7 +8,6 @@ import sys
 import time
 from collections import defaultdict
 from functools import wraps
-from importlib import metadata as importlib_metadata
 from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
@@ -18,6 +17,7 @@ import requests
 
 from inference.core.env import API_KEY, LAMBDA
 from inference.core.logger import logger
+from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.usage_tracking.utils import collect_func_params
 
@@ -303,12 +303,6 @@ class UsageCollector:
         time_ns: Optional[int] = None,
         enterprise: bool = False,
     ) -> SystemDetails:
-        inference_version = "dev"
-        try:
-            inference_version = importlib_metadata.version("inference")
-        except importlib_metadata.PackageNotFoundError:
-            pass
-
         if ip_address:
             ip_address_hash_hex = UsageCollector._hash(ip_address)
         else:

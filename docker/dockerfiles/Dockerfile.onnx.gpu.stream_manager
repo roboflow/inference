@@ -26,7 +26,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
 
 WORKDIR /app/
 COPY inference inference
-RUN cd inference && pip3 install --no-deps -e .
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform

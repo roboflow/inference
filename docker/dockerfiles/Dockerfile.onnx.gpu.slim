@@ -37,7 +37,6 @@ COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
-RUN cd inference && pip3 install --no-deps -e .
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 ENV PYTHONPATH=/app/

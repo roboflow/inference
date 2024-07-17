@@ -44,7 +44,6 @@ RUN pip3 install \
 
 
 COPY inference ${LAMBDA_TASK_ROOT}/inference
-RUN cd ${LAMBDA_TASK_ROOT}/inference && pip3 install --no-deps -e .
 COPY inference_sdk ${LAMBDA_TASK_ROOT}/inference_sdk
 COPY docker/config/lambda.py ${LAMBDA_TASK_ROOT}/lambda.py
 

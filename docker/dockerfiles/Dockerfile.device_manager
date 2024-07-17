@@ -23,7 +23,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     && rm -rf ~/.cache/pip
 
 COPY inference inference
-RUN cd inference && pip3 install --no-deps -e .
 COPY docker/config/device_manager.py device_manager.py
 
 ENV NUM_WORKERS=1
