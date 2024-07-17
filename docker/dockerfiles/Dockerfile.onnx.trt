@@ -37,6 +37,7 @@ RUN pip install --upgrade pip  && pip install \
 
 WORKDIR /app/
 COPY inference inference
+RUN cd inference && pip3 install --no-deps -e .
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 

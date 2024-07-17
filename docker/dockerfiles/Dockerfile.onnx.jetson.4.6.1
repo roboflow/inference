@@ -69,6 +69,7 @@ RUN python3.9 -m pip install onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl 
 
 WORKDIR /app/
 COPY inference inference
+RUN cd inference && pip3 install --no-deps -e .
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 

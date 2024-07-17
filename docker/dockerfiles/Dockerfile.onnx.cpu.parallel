@@ -57,6 +57,7 @@ COPY --from=base / /
 
 WORKDIR /app/
 COPY inference inference
+RUN cd inference && pip3 install --no-deps -e .
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py

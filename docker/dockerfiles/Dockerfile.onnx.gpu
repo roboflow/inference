@@ -65,6 +65,7 @@ COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
+RUN cd inference && pip3 install --no-deps -e .
 COPY docker/config/gpu_http.py gpu_http.py
 
 ENV VERSION_CHECK_MODE=continuous
