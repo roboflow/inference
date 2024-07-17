@@ -107,8 +107,6 @@ class UsageCollector:
         merged = {}
         if d1 and d2 and d1.get("resource_id") != d2.get("resource_id"):
             raise ValueError("Cannot merge usage for different resource IDs")
-        if "api_key" in d1 and "api_key" in d2 and d1["api_key"] != d2["api_key"]:
-            raise ValueError("Cannot merge usage for different API keys")
         if "timestamp_start" in d1 and "timestamp_start" in d2:
             merged["timestamp_start"] = min(
                 d1["timestamp_start"], d2["timestamp_start"]
@@ -215,7 +213,6 @@ class UsageCollector:
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
-                    # TODO: check if this will throw
                     merged_api_key_payload[resource_usage_key] = (
                         UsageCollector._merge_usage_dicts(
                             merged_resource_payload,

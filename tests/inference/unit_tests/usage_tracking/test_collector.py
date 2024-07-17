@@ -44,15 +44,6 @@ def test_merge_usage_dicts_raises_on_mismatched_resource_id():
         UsageCollector._merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
 
 
-def test_merge_usage_dicts_raises_on_mismatched_api_key():
-    # given
-    usage_payload_1 = {"resource_id": "some", "api_key": "some"}
-    usage_payload_2 = {"resource_id": "some", "api_key": "other"}
-
-    with pytest.raises(ValueError):
-        UsageCollector._merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
-
-
 def test_merge_usage_dicts_merge_with_empty():
     # given
     usage_payload_1 = {
