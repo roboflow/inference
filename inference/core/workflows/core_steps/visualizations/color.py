@@ -46,6 +46,7 @@ class ColorManifest(VisualizationManifest):
     opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field( # type: ignore
         description="Transparency of the color overlay.",
         default=0.5,
+        examples=[0.5, "$inputs.opacity"],
     )
 
 class ColorVisualizationBlock(VisualizationBlock):

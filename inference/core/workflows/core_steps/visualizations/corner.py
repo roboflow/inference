@@ -45,11 +45,13 @@ class CornerManifest(VisualizationManifest):
     thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
         description="Thickness of the lines in pixels.",
         default=4,
+        examples=[4, "$inputs.thickness"],
     )
 
     corner_length: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
         description="Length of the corner lines in pixels.",
         default=15,
+        examples=[15, "$inputs.corner_length"],
     )
 
 class CornerVisualizationBlock(VisualizationBlock):

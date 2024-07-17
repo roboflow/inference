@@ -13,8 +13,7 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
-    FloatZeroToOne,
-    FLOAT_ZERO_TO_ONE_KIND,
+    STRING_KIND,
     WorkflowParameterSelector
 )
 from inference.core.workflows.prototypes.block import (
@@ -24,16 +23,16 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_IMAGE_KEY: str = "image"
 
-TYPE: str = "BoundingBoxVisualization"
+TYPE: str = "DotVisualization"
 SHORT_DESCRIPTION = (
-    "Draws a box around detected objects in an image."
+    "Draws dots on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `BoundingBoxVisualization` block draws a box around detected
-objects in an image using Supervision's `sv.RoundBoxAnnotator`.
+The `DotVisualization` block draws dots on an image at specific coordinates
+based on provided detections using Supervision's `sv.DotAnnotator`.
 """
 
-class BoundingBoxManifest(VisualizationManifest):
+class DotManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -43,60 +42,77 @@ class BoundingBoxManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
+
+    position: Union[
+        Literal[
+            "CENTER",
+            "CENTER_LEFT",
+            "CENTER_RIGHT",
+            "TOP_CENTER",
+            "TOP_LEFT",
+            "TOP_RIGHT",
+            "BOTTOM_LEFT",
+            "BOTTOM_CENTER",
+            "BOTTOM_RIGHT",
+            "CENTER_OF_MASS",
+        ],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field( # type: ignore
+        default="CENTER",
+        description="The anchor position for placing the dot.",
+        examples=["CENTER", "$inputs.position"],
+    )
+
+    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Radius of the dot in pixels.",
+        default=4,
+        examples=[4, "$inputs.radius"],
+    )
     
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Thickness of the bounding box in pixels.",
+    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Thickness of the outline of the dot in pixels.",
         default=2,
-        examples=[2, "$inputs.thickness"],
+        examples=[2, "$inputs.outline_thickness"],
     )
 
-    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field( # type: ignore
-        description="Roundness of the corners of the bounding box.",
-        default=0.0,
-        examples=[0.0, "$inputs.roundness"],
-    )
-
-class BoundingBoxVisualizationBlock(VisualizationBlock):
+class DotVisualizationBlock(VisualizationBlock):
     def __init__(self):
         self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return BoundingBoxManifest
+        return DotManifest
 
     def getAnnotator(
         self,
         color_palette: str,
         palette_size: int,
         custom_colors: List[str],
-        color_axis:str,
-        thickness:int,
-        roundness: float,
+        color_axis: str,
+        position: str,
+        radius: int,
+        outline_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(map(str, [
             color_palette,
             palette_size,
             color_axis,
-            thickness,
-            roundness
+            position,
+            radius,
+            outline_thickness,
         ]))
         
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            if roundness == 0:
-                self.annotatorCache[key] = sv.BoxAnnotator(
-                    color=palette,
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
-                    thickness=thickness
-                )
-            else:
-                self.annotatorCache[key] = sv.RoundBoxAnnotator(
-                    color=palette,
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
-                    thickness=thickness,
-                    roundness=roundness
-                )
+            self.annotatorCache[key] = sv.DotAnnotator(
+                color=palette,
+                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                position=getattr(sv.Position, position),
+                radius=radius,
+                outline_thickness=outline_thickness
+            )
+
         return self.annotatorCache[key] 
 
     async def run(
@@ -108,16 +124,18 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
         palette_size: Optional[int],
         custom_colors: Optional[List[str]],
         color_axis: Optional[str],
-        thickness: Optional[int],
-        roundness: Optional[float],
+        position: Optional[str],
+        radius: Optional[int],
+        outline_thickness: Optional[int],
     ) -> BlockResult:
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
             custom_colors,
             color_axis,
-            thickness,
-            roundness,
+            position,
+            radius,
+            outline_thickness,
         )
 
         annotated_image = annotator.annotate(

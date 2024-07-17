@@ -45,6 +45,7 @@ class CircleManifest(VisualizationManifest):
     thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
+        examples=[2, "$inputs.thickness"],
     )
 
 class CircleVisualizationBlock(VisualizationBlock):
