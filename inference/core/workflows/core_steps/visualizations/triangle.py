@@ -23,16 +23,16 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_IMAGE_KEY: str = "image"
 
-TYPE: str = "DotVisualization"
+TYPE: str = "TriangleVisualization"
 SHORT_DESCRIPTION = (
-    "Draws dots on an image at specific coordinates based on provided detections."
+    "Draws  triangle markers on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `DotVisualization` block draws dots on an image at specific coordinates
-based on provided detections using Supervision's `sv.DotAnnotator`.
+The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
+based on provided detections using Supervision's `sv.TriangleAnnotator`.
 """
 
-class DotManifest(VisualizationManifest):
+class TriangleManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -58,30 +58,36 @@ class DotManifest(VisualizationManifest):
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field( # type: ignore
-        default="CENTER",
-        description="The anchor position for placing the dot.",
+        default="TOP_CENTER",
+        description="The anchor position for placing the triangle.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Radius of the dot in pixels.",
-        default=4,
-        examples=[4, "$inputs.radius"],
+    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Base width of the triangle in pixels.",
+        default=10,
+        examples=[10, "$inputs.base"],
+    )
+
+    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+        description="Height of the triangle in pixels.",
+        default=10,
+        examples=[10, "$inputs.height"],
     )
     
     outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
-        description="Thickness of the outline of the dot in pixels.",
+        description="Thickness of the outline of the triangle in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
     )
 
-class DotVisualizationBlock(VisualizationBlock):
+class TriangleVisualizationBlock(VisualizationBlock):
     def __init__(self):
         self.annotatorCache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return DotManifest
+        return TriangleManifest
 
     def getAnnotator(
         self,
@@ -90,7 +96,8 @@ class DotVisualizationBlock(VisualizationBlock):
         custom_colors: List[str],
         color_axis: str,
         position: str,
-        radius: int,
+        base: int,
+        height: int,
         outline_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(map(str, [
@@ -98,18 +105,20 @@ class DotVisualizationBlock(VisualizationBlock):
             palette_size,
             color_axis,
             position,
-            radius,
+            base,
+            height,
             outline_thickness,
         ]))
         
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            self.annotatorCache[key] = sv.DotAnnotator(
+            self.annotatorCache[key] = sv.TriangleAnnotator(
                 color=palette,
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                 position=getattr(sv.Position, position),
-                radius=radius,
+                base=base,
+                height=height,
                 outline_thickness=outline_thickness
             )
 
@@ -125,7 +134,8 @@ class DotVisualizationBlock(VisualizationBlock):
         custom_colors: Optional[List[str]],
         color_axis: Optional[str],
         position: Optional[str],
-        radius: Optional[int],
+        base: Optional[int],
+        height: Optional[int],
         outline_thickness: Optional[int],
     ) -> BlockResult:
         annotator = self.getAnnotator(
@@ -134,7 +144,8 @@ class DotVisualizationBlock(VisualizationBlock):
             custom_colors,
             color_axis,
             position,
-            radius,
+            base,
+            height,
             outline_thickness,
         )
 

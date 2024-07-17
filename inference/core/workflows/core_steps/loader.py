@@ -93,6 +93,9 @@ from inference.core.workflows.core_steps.visualizations.corner import (
 from inference.core.workflows.core_steps.visualizations.dot import (
     DotVisualizationBlock
 )
+from inference.core.workflows.core_steps.visualizations.triangle import (
+    TriangleVisualizationBlock
+)
 
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -133,4 +136,5 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ColorVisualizationBlock,
         CornerVisualizationBlock,
         DotVisualizationBlock,
+        TriangleVisualizationBlock,
     ]
